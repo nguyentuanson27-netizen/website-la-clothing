@@ -29,6 +29,21 @@ export function SiteHeader() {
           ))}
         </nav>
 
+        <div className="mobile-nav">
+          <details>
+            <summary>Menu</summary>
+            <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
+              {primaryNav.map((item) => (
+                <Link key={item.href} href={item.href}>
+                  {item.label}
+                </Link>
+              ))}
+              <Link href="/search">Search</Link>
+              <Link href="/account">Account</Link>
+            </nav>
+          </details>
+        </div>
+
         <nav className="utility-nav" aria-label="Tiện ích">
           <Link href="/search">Search</Link>
           <Link href="/account">Account</Link>
