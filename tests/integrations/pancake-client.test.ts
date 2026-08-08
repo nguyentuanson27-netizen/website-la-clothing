@@ -51,7 +51,7 @@ test("rejects endpoints outside the Pancake API path", async () => {
 
   await assert.rejects(
     () => client.getJson("https://attacker.example/collect"),
-    /endpoint must start with \\//,
+    /Pancake endpoint must start/,
   );
 });
 
