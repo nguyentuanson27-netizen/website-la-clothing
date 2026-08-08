@@ -3,7 +3,7 @@
 Status: build in progress
 Intended repository path: `tasks/todo.md`
 
-- [ ] T0 Establish repository baseline and save approved spec
+- [x] T0 Establish repository baseline and save approved spec
 - [ ] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts
 - [ ] T2 Bootstrap Next.js project and real quality commands
 - [ ] T3 Build design system and storefront shell
