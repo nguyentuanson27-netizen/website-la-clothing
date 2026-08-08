@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:domain": "node --experimental-strip-types --test tests/domain/*.test.ts",
-    "test": "node --experimental-strip-types --test tests/domain/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/domain/*.test.ts tests/integrations/*.test.ts"
   },
   "dependencies": {
     "next": "16.2.11",
