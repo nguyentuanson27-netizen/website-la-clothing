@@ -1,4 +1,4 @@
-name: Bootstrap lockfile
+name: Bootstrap verification
 
 on:
   workflow_dispatch:
@@ -7,12 +7,12 @@ on:
       - build/bootstrap-verify
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  lockfile:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -29,6 +29,33 @@ jobs:
 
       - name: Resolve lockfile without lifecycle scripts
         run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Install from resolved lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Domain tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Commit verified lockfile
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml && git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
+            echo "Lockfile already committed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "chore: add verified pnpm lockfile"
+          git push
 
       - name: Upload lockfile artifact
         uses: actions/upload-artifact@v4
