@@ -33,7 +33,8 @@ a {
 }
 
 a:focus-visible,
-button:focus-visible {
+button:focus-visible,
+summary:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 4px;
 }
@@ -69,6 +70,7 @@ button:focus-visible {
   gap: 2rem;
   padding: 0 1.5rem;
   border-bottom: 1px solid var(--line);
+  position: relative;
 }
 
 .brand-mark {
@@ -90,6 +92,47 @@ button:focus-visible {
 
 .utility-nav {
   justify-self: end;
+}
+
+.mobile-nav {
+  display: none;
+  justify-self: end;
+}
+
+.mobile-nav details {
+  position: static;
+}
+
+.mobile-nav summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.mobile-nav summary::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-menu {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: grid;
+  padding: 0 1.5rem 1.5rem;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.mobile-menu a {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 
 .site-footer {
@@ -127,11 +170,16 @@ button:focus-visible {
 
 @media (max-width: 900px) {
   .nav-shell {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
   }
 
   .desktop-nav {
     display: none;
+  }
+
+  .mobile-nav {
+    display: block;
   }
 
   .utility-nav a:not(:last-child) {
