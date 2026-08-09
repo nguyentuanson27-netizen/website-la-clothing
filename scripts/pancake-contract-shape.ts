@@ -21,4 +21,9 @@ async function main() {
   console.log("PANCAKE_CONTRACT_SHAPES_END");
 }
 
-await main();
+try {
+  await main();
+} catch {
+  console.error("Pancake contract probe failed without logging external values");
+  process.exitCode = 1;
+}
