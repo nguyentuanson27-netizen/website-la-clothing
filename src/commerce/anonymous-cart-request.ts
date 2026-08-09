@@ -1,7 +1,4 @@
-import { cookies } from "next/headers";
-
 import type { PrismaClient } from "../generated/prisma/client.ts";
-import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
 import { createAnonymousCartService } from "./anonymous-cart.ts";
 
@@ -25,9 +22,4 @@ export async function resolveAnonymousCartRequest({
   }
 
   return createAnonymousCartService(client).get({ cartId, now });
-}
-
-export async function getCurrentAnonymousCart(now = new Date()) {
-  const store = await cookies();
-  return resolveAnonymousCartRequest({ client: prisma, store, now });
 }
