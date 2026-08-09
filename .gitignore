@@ -3,6 +3,7 @@ node_modules/
 out/
 .env*
 !.env.example
+src/generated/prisma/
 *.log
 .DS_Store
 coverage/
