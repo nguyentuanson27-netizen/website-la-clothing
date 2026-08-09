@@ -1,10 +1,9 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
-import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
+import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
 import { createAnonymousCartService } from "./anonymous-cart.ts";
 
-type RequestCookieStore = {
+type RequestCookieReader = {
   get(name: string): { value: string } | undefined;
-  set(...args: never[]): void;
 };
 
 export async function resolveAnonymousCartRequest({
@@ -13,10 +12,10 @@ export async function resolveAnonymousCartRequest({
   now,
 }: {
   client: PrismaClient;
-  store: RequestCookieStore;
+  store: RequestCookieReader;
   now: Date;
 }) {
-  const cartId = createAnonymousCartCookieSession(store).read();
+  const cartId = readAnonymousCartCookie(store);
   if (!cartId) {
     return null;
   }
