@@ -3,10 +3,10 @@ import Link from "next/link";
 import { ProductCard } from "@/components/commerce/product-card";
 
 const newArrivals = [
-  { name: "Relaxed Oxford Shirt", href: "/products/relaxed-oxford-shirt", price: "790.000₫", tone: "stone" as const },
-  { name: "Wide Pleat Trousers", href: "/products/wide-pleat-trousers", price: "890.000₫", tone: "ink" as const, badge: "New" },
-  { name: "Utility Overshirt", href: "/products/utility-overshirt", price: "990.000₫", tone: "olive" as const },
-  { name: "Essential Box Tee", href: "/products/essential-box-tee", price: "490.000₫", tone: "sand" as const },
+  { name: "Relaxed Oxford Shirt", price: "790.000₫", tone: "stone" as const },
+  { name: "Wide Pleat Trousers", price: "890.000₫", tone: "ink" as const, badge: "New" },
+  { name: "Utility Overshirt", price: "990.000₫", tone: "olive" as const },
+  { name: "Essential Box Tee", price: "490.000₫", tone: "sand" as const },
 ];
 
 export default function HomePage() {
@@ -23,7 +23,7 @@ export default function HomePage() {
           <p className="campaign-intro">
             Clean lines, relaxed proportions and a muted palette designed for everyday movement.
           </p>
-          <Link className="text-link" href="/collections/fall-winter-2026">
+          <Link className="text-link" href="/collections">
             Explore the collection <span aria-hidden="true">↗</span>
           </Link>
         </div>
@@ -45,7 +45,7 @@ export default function HomePage() {
         </div>
         <div className="product-grid">
           {newArrivals.map((product) => (
-            <ProductCard key={product.href} {...product} />
+            <ProductCard key={product.name} {...product} href="/shop" />
           ))}
         </div>
       </section>
@@ -68,10 +68,10 @@ export default function HomePage() {
       <section className="category-strip" aria-labelledby="categories-title">
         <p className="eyebrow" id="categories-title">Shop by category</p>
         <nav className="category-links" aria-label="Danh mục sản phẩm">
-          <Link href="/category/shirts">Shirts</Link>
-          <Link href="/category/t-shirts">T-shirts</Link>
-          <Link href="/category/trousers">Trousers</Link>
-          <Link href="/category/outerwear">Outerwear</Link>
+          <Link href="/shop?category=shirts">Shirts</Link>
+          <Link href="/shop?category=t-shirts">T-shirts</Link>
+          <Link href="/shop?category=trousers">Trousers</Link>
+          <Link href="/shop?category=outerwear">Outerwear</Link>
         </nav>
       </section>
     </>
