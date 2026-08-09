@@ -17,6 +17,7 @@ const prisma = new PrismaClient({
 });
 
 const carts = createAnonymousCartService(prisma);
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const productExternalId = "anonymous-cart-runtime-product";
 const activeVariationExternalId = "anonymous-cart-runtime-active";
 const inactiveVariationExternalId = "anonymous-cart-runtime-inactive";
@@ -81,45 +82,55 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("creates and reads only a live anonymous cart", async () => {
+test("creates a live anonymous cart with a 30-day absolute expiry", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const expiresAt = new Date("2026-08-16T12:00:00.000Z");
+  const expiresAt = new Date(now.getTime() + THIRTY_DAYS_MS);
 
-  const cart = await carts.create({ now, expiresAt });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.equal(cart.userId, null);
   assert.deepEqual(cart.items, []);
+  assert.deepEqual(cart.expiresAt, expiresAt);
   assert.equal((await carts.get({ cartId: cart.id, now }))?.id, cart.id);
   assert.equal(await carts.get({ cartId: cart.id, now: expiresAt }), null);
 });
 
-test("sets one active variant row per anonymous cart and replaces its quantity", async () => {
+test("sets one active variant row per anonymous cart without extending absolute expiry", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const mutationNow = new Date("2026-08-19T12:00:00.000Z");
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.deepEqual(
-    await carts.setItemQuantity({ cartId: cart.id, variantId: activeVariantId, quantity: 2, now }),
+    await carts.setItemQuantity({
+      cartId: cart.id,
+      variantId: activeVariantId,
+      quantity: 2,
+      now: mutationNow,
+    }),
     { ok: true, item: { variantId: activeVariantId, quantity: 2 } },
   );
   assert.deepEqual(
-    await carts.setItemQuantity({ cartId: cart.id, variantId: activeVariantId, quantity: 3, now }),
+    await carts.setItemQuantity({
+      cartId: cart.id,
+      variantId: activeVariantId,
+      quantity: 3,
+      now: mutationNow,
+    }),
     { ok: true, item: { variantId: activeVariantId, quantity: 3 } },
   );
 
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 1);
+  assert.deepEqual(
+    (await prisma.cart.findUnique({ where: { id: cart.id }, select: { expiresAt: true } }))?.expiresAt,
+    cart.expiresAt,
+  );
 });
 
 test("rejects invalid quantity and unavailable catalog entries without creating an item", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.deepEqual(
@@ -143,10 +154,9 @@ test("rejects invalid quantity and unavailable catalog entries without creating 
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
 });
 
-test("rejects mutations at and after cart expiry", async () => {
+test("rejects mutations at and after the absolute cart expiry", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const expiresAt = new Date("2026-08-16T12:00:00.000Z");
-  const cart = await carts.create({ now, expiresAt });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.deepEqual(
@@ -154,12 +164,12 @@ test("rejects mutations at and after cart expiry", async () => {
       cartId: cart.id,
       variantId: activeVariantId,
       quantity: 1,
-      now: expiresAt,
+      now: cart.expiresAt,
     }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.deepEqual(
-    await carts.removeItem({ cartId: cart.id, variantId: activeVariantId, now: expiresAt }),
+    await carts.removeItem({ cartId: cart.id, variantId: activeVariantId, now: cart.expiresAt }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
@@ -182,7 +192,7 @@ test("never mutates an account-owned cart through the anonymous cart service", a
   const accountCart = await prisma.cart.create({
     data: {
       userId: accountUserId,
-      expiresAt: new Date("2026-08-16T12:00:00.000Z"),
+      expiresAt: new Date(now.getTime() + THIRTY_DAYS_MS),
     },
   });
 
@@ -200,10 +210,7 @@ test("never mutates an account-owned cart through the anonymous cart service", a
 
 test("removes an item only from a live anonymous cart", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   await carts.setItemQuantity({ cartId: cart.id, variantId: activeVariantId, quantity: 2, now });
