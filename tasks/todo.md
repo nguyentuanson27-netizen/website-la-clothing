@@ -4,14 +4,14 @@ Status: build in progress
 Intended repository path: `tasks/todo.md`
 
 - [x] T0 Establish repository baseline and save approved spec
-- [ ] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts
+- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — endpoint/base URL sources verified; exact response/write schemas still require reviewed live discovery
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client/discovery foundation merged; exact product/order/status contracts still require reviewed fields
 - [ ] T6 Implement idempotent catalog synchronization/mirror
 - [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
-- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie boundary, 30-day absolute TTL and read-only Next request identity are implemented; public mutation/UI remain
+- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, read-only request identity and bounded Server Functions are implemented; catalog-backed UI remains
 - [ ] T9 Deliver guest COD checkout → exactly one Pancake order
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
@@ -28,17 +28,19 @@ Intended repository path: `tasks/todo.md`
   - [x] GREEN implementation
   - [x] focused/full verification
   - [x] self-review: correctness → security → architecture → simplicity → performance
-- [ ] C2 Bounded public cart mutations + real cookie emission
-  - [ ] define/enforce a distinct-line abuse bound
-  - [ ] actual Next request evidence for emitted `Set-Cookie`
-  - [ ] self-review
-- [ ] C3 Pancake product/warehouse exact contract
-  - [ ] official OpenAPI review
-  - [ ] reviewed fields/types/fixtures
-  - [ ] explicit online warehouse configuration; no default warehouse assumption
-  - [ ] safe live verification when credentials are available
-  - [ ] self-review
-- [ ] C4 Catalog mirror sync/read model
+- [x] C2 Bounded public cart mutations + cookie orchestration
+  - [x] 50-distinct-line technical abuse ceiling enforced atomically
+  - [x] PostgreSQL + injected cookie-store runtime verification
+  - [~] actual browser/HTTP Server Action `Set-Cookie` round-trip pending browser/DevTools-capable environment
+  - [x] self-review; 0 Critical / 0 Required
+- [~] C3 Pancake product/warehouse exact contract — BLOCKED at trusted live discovery/review boundary
+  - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
+  - [ ] exact product/variation/warehouse fields, types and paths reviewed into fixtures/allowlists
+  - [x] explicit online warehouse configuration parser; no default/first/all-warehouse assumption
+  - [ ] actual LA Clothing online warehouse IDs configured
+  - [ ] safe trusted live discovery using server-only local credentials
+  - [x] self-review of the configuration slice; 0 Critical / 0 Required
+- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 exact contract is complete
   - [ ] schema only for verified external fields
   - [ ] idempotent PostgreSQL sync tests
   - [ ] self-review

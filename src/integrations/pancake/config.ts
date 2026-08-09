@@ -30,3 +30,29 @@ export function readPancakeConfig(env: ServerEnvironment = process.env): Pancake
 
   return { apiKey, shopId };
 }
+
+export function readPancakeOnlineWarehouseIds(
+  env: ServerEnvironment = process.env,
+): readonly string[] {
+  const input = env.PANCAKE_ONLINE_WAREHOUSE_IDS;
+  if (!input?.trim()) {
+    throw new PancakeConfigError(
+      "PANCAKE_ONLINE_WAREHOUSE_IDS must explicitly list at least one online warehouse",
+    );
+  }
+
+  const warehouseIds = input.split(",").map((value) => value.trim());
+  if (warehouseIds.some((warehouseId) => warehouseId.length === 0)) {
+    throw new PancakeConfigError(
+      "PANCAKE_ONLINE_WAREHOUSE_IDS must not contain empty warehouse entries",
+    );
+  }
+
+  if (new Set(warehouseIds).size !== warehouseIds.length) {
+    throw new PancakeConfigError(
+      "PANCAKE_ONLINE_WAREHOUSE_IDS must not contain duplicate warehouse entries",
+    );
+  }
+
+  return warehouseIds;
+}

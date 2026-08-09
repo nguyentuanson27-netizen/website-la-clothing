@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PancakeConfigError, readPancakeConfig } from "../../src/integrations/pancake/config.ts";
+import {
+  PancakeConfigError,
+  readPancakeConfig,
+  readPancakeOnlineWarehouseIds,
+} from "../../src/integrations/pancake/config.ts";
 
 test("reads explicit Pancake API key and shop ID from server environment", () => {
   const config = readPancakeConfig({
@@ -13,6 +17,36 @@ test("reads explicit Pancake API key and shop ID from server environment", () =>
     apiKey: "secret-key",
     shopId: 6036602,
   });
+});
+
+test("reads only explicitly configured online warehouse ids as opaque values", () => {
+  assert.deepEqual(
+    readPancakeOnlineWarehouseIds({
+      PANCAKE_ONLINE_WAREHOUSE_IDS: " warehouse-primary,6036602,warehouse-secondary ",
+    }),
+    ["warehouse-primary", "6036602", "warehouse-secondary"],
+  );
+});
+
+test("online warehouse selection fails closed instead of inventing a default", async (t) => {
+  const cases: Array<{ name: string; value?: string }> = [
+    { name: "missing" },
+    { name: "blank", value: "   " },
+    { name: "empty member", value: "warehouse-a,,warehouse-b" },
+    { name: "duplicate", value: "warehouse-a, warehouse-a" },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, () => {
+      assert.throws(
+        () =>
+          readPancakeOnlineWarehouseIds({
+            PANCAKE_ONLINE_WAREHOUSE_IDS: scenario.value,
+          }),
+        PancakeConfigError,
+      );
+    });
+  }
 });
 
 test("fails closed when required Pancake configuration is missing or invalid", async (t) => {
