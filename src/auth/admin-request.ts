@@ -1,7 +1,4 @@
-import { headers } from "next/headers";
-
 import { requireAdminSession } from "./authorization.ts";
-import { auth } from "./server.ts";
 
 type AdminSessionCandidate =
   | {
@@ -32,13 +29,4 @@ export function createAdminRequestGuard({
   }
 
   return { requireAdmin };
-}
-
-const currentAdminGuard = createAdminRequestGuard({
-  getRequestHeaders: headers,
-  getSession: ({ headers: requestHeaders }) => auth.api.getSession({ headers: requestHeaders }),
-});
-
-export function requireCurrentAdmin() {
-  return currentAdminGuard.requireAdmin();
 }
