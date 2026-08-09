@@ -114,7 +114,7 @@ test("sets one active variant row per anonymous cart and replaces its quantity",
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 1);
 });
 
-test("rejects invalid quantity and inactive variants without creating an item", async () => {
+test("rejects invalid quantity and unavailable catalog entries without creating an item", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
   const cart = await carts.create({
     now,
@@ -129,6 +129,38 @@ test("rejects invalid quantity and inactive variants without creating an item", 
   assert.deepEqual(
     await carts.setItemQuantity({ cartId: cart.id, variantId: inactiveVariantId, quantity: 1, now }),
     { ok: false, reason: "VARIANT_UNAVAILABLE" },
+  );
+
+  await prisma.productMirror.update({
+    where: { pancakeProductId: productExternalId },
+    data: { isActive: false },
+  });
+
+  assert.deepEqual(
+    await carts.setItemQuantity({ cartId: cart.id, variantId: activeVariantId, quantity: 1, now }),
+    { ok: false, reason: "VARIANT_UNAVAILABLE" },
+  );
+  assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
+});
+
+test("rejects mutations at and after cart expiry", async () => {
+  const now = new Date("2026-08-09T12:00:00.000Z");
+  const expiresAt = new Date("2026-08-16T12:00:00.000Z");
+  const cart = await carts.create({ now, expiresAt });
+  createdCartIds.add(cart.id);
+
+  assert.deepEqual(
+    await carts.setItemQuantity({
+      cartId: cart.id,
+      variantId: activeVariantId,
+      quantity: 1,
+      now: expiresAt,
+    }),
+    { ok: false, reason: "CART_UNAVAILABLE" },
+  );
+  assert.deepEqual(
+    await carts.removeItem({ cartId: cart.id, variantId: activeVariantId, now: expiresAt }),
+    { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
 });
@@ -157,6 +189,10 @@ test("never mutates an account-owned cart through the anonymous cart service", a
   assert.equal(await carts.get({ cartId: accountCart.id, now }), null);
   assert.deepEqual(
     await carts.setItemQuantity({ cartId: accountCart.id, variantId: activeVariantId, quantity: 1, now }),
+    { ok: false, reason: "CART_UNAVAILABLE" },
+  );
+  assert.deepEqual(
+    await carts.removeItem({ cartId: accountCart.id, variantId: activeVariantId, now }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: accountCart.id } }), 0);
