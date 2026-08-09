@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function SearchPage() {
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Find / Discover</p>
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         SEARCH
@@ -25,6 +25,6 @@ export default function SearchPage() {
           Search
         </button>
       </form>
-    </main>
+    </div>
   );
 }
