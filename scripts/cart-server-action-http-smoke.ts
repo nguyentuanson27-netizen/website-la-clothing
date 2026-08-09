@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -14,6 +14,8 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const PROBE_PATH = "/cart-action-http-smoke-probe";
 const probeDirectory = new URL("../src/app/cart-action-http-smoke-probe/", import.meta.url);
 const probePage = new URL("page.tsx", probeDirectory);
+const tsconfigPath = new URL("../tsconfig.json", import.meta.url);
+const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
 const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
 
@@ -22,9 +24,10 @@ const productExternalId = `cart-action-http-smoke-product-${runId}`;
 const variationExternalId = `cart-action-http-smoke-variation-${runId}`;
 const slug = `cart-action-http-smoke-${runId}`;
 
-let server: ChildProcessWithoutNullStreams | undefined;
+let server: ChildProcess | undefined;
 let variantId: string | undefined;
 let serverOutput = "";
+let originalTsconfig: string | undefined;
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-12_000);
@@ -103,6 +106,7 @@ try {
   variantId = product.variants[0]?.id;
   assert.ok(variantId, "probe variant must exist");
 
+  originalTsconfig = await readFile(tsconfigPath, "utf-8");
   await mkdir(probeDirectory, { recursive: true });
   await writeFile(
     probePage,
@@ -110,12 +114,17 @@ try {
     "utf-8",
   );
 
-  server = spawn(process.execPath, [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)], {
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  server.stdout.on("data", captureServerOutput);
-  server.stderr.on("data", captureServerOutput);
+  const spawnedServer = spawn(
+    process.execPath,
+    [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)],
+    {
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  server = spawnedServer;
+  spawnedServer.stdout?.on("data", captureServerOutput);
+  spawnedServer.stderr?.on("data", captureServerOutput);
 
   const html = await waitForProbePage();
   const actionField = html.match(/name="(\$ACTION_[^"]+)"/)?.[1];
@@ -161,6 +170,8 @@ try {
 } finally {
   await stopServer();
   await rm(probeDirectory, { recursive: true, force: true });
+  await rm(nextDevDirectory, { recursive: true, force: true });
+  if (originalTsconfig !== undefined) await writeFile(tsconfigPath, originalTsconfig, "utf-8");
   await cleanupDatabase();
   await prisma.$disconnect();
 }
