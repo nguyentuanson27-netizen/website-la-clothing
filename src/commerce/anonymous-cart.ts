@@ -47,16 +47,29 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
+function liveAnonymousCartWhere(cartId: string, now: Date) {
+  return {
+    id: cartId,
+    userId: null,
+    expiresAt: { gt: now },
+  } as const;
+}
+
 export function createAnonymousCartService(client: PrismaClient) {
   async function findLiveAnonymousCart(cartId: string, now: Date) {
     return client.cart.findFirst({
-      where: {
-        id: cartId,
-        userId: null,
-        expiresAt: { gt: now },
-      },
+      where: liveAnonymousCartWhere(cartId, now),
       select: cartSelection,
     });
+  }
+
+  async function hasLiveAnonymousCart(cartId: string, now: Date): Promise<boolean> {
+    const cart = await client.cart.findFirst({
+      where: liveAnonymousCartWhere(cartId, now),
+      select: { id: true },
+    });
+
+    return cart !== null;
   }
 
   async function create({ now, expiresAt }: { now: Date; expiresAt: Date }) {
@@ -96,8 +109,7 @@ export function createAnonymousCartService(client: PrismaClient) {
       return { ok: false, reason: "INVALID_QUANTITY" };
     }
 
-    const cart = await findLiveAnonymousCart(cartId, now);
-    if (!cart) {
+    if (!(await hasLiveAnonymousCart(cartId, now))) {
       return { ok: false, reason: "CART_UNAVAILABLE" };
     }
 
@@ -162,8 +174,7 @@ export function createAnonymousCartService(client: PrismaClient) {
     variantId: string;
     now: Date;
   }): Promise<RemoveItemResult> {
-    const cart = await findLiveAnonymousCart(cartId, now);
-    if (!cart) {
+    if (!(await hasLiveAnonymousCart(cartId, now))) {
       return { ok: false, reason: "CART_UNAVAILABLE" };
     }
 
