@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 
+import { AccountAuthPanel } from "@/components/account/account-auth-panel";
+
 export const metadata: Metadata = {
   title: "Account",
-  description: "LA Clothing customer account.",
+  description: "Đăng nhập hoặc tạo tài khoản LA Clothing để theo dõi đơn hàng thuận tiện hơn.",
 };
 
 export default function AccountPage() {
@@ -12,14 +14,16 @@ export default function AccountPage() {
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         ACCOUNT
       </h1>
-      <div className="mt-12 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
+      <div className="mt-12 grid gap-8 pb-12 md:grid-cols-2 md:pb-16">
         <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
-          An account will be optional — checkout remains available without registration.
+          Lưu thông tin cho lần mua sau và theo dõi lịch sử đơn hàng tại một nơi.
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
-          Sign-in, saved delivery information and order history will appear here when customer accounts are enabled.
+          Đăng ký không bắt buộc. Guest checkout và thanh toán COD vẫn hoạt động độc lập với tài khoản.
         </p>
       </div>
+
+      <AccountAuthPanel />
     </div>
   );
 }
