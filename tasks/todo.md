@@ -28,11 +28,12 @@ Intended repository path: `tasks/todo.md`
   - [x] GREEN implementation
   - [x] focused/full verification
   - [x] self-review: correctness → security → architecture → simplicity → performance
-- [x] C2 Bounded public cart mutations + cookie orchestration
+- [~] C2 Bounded public cart mutations + cookie orchestration — fixes implemented; awaiting clean re-review
   - [x] 50-distinct-line technical abuse ceiling enforced atomically
+  - [x] public Server Function strips `cartId` / `expiresAt` capability metadata from browser-visible success results
   - [x] PostgreSQL + injected cookie-store runtime verification
-  - [~] actual browser/HTTP Server Action `Set-Cookie` round-trip pending browser/DevTools-capable environment
-  - [x] self-review; 0 Critical / 0 Required
+  - [x] actual Next HTTP Server Action `Set-Cookie` round-trip verified in CI
+  - [ ] re-review after fixes; only then return C2 to complete
 - [~] C3 Pancake product/warehouse exact contract — BLOCKED at trusted live discovery/review boundary
   - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
   - [ ] exact product/variation/warehouse fields, types and paths reviewed into fixtures/allowlists
