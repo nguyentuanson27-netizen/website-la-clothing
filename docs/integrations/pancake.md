@@ -35,6 +35,53 @@ The website backend is the only caller allowed to possess the Pancake API key. B
 
 External Pancake payloads are untrusted data. The adapter must validate them before mapping to internal commerce types.
 
+Object **field names can themselves contain data**. Therefore unknown raw field names must not be persisted into GitHub Actions logs. Lexical identifier syntax is not treated as proof that a key is schema metadata.
+
+## Contract discovery vs verification
+
+Exact unknown field-name discovery and persistent CI logging are intentionally separate operations.
+
+### 1. Trusted local discovery — exact field names + value types
+
+Use only in a trusted local/non-persisted inspection environment:
+
+```bash
+pnpm pancake:contract:discover
+```
+
+The discovery command:
+
+- refuses execution when `CI` or `GITHUB_ACTIONS` is enabled;
+- reads the two live read-only endpoints currently needed for the catalog spike;
+- preserves exact object field names so the response structure can actually be reviewed;
+- replaces scalar values with their JSON types, so product IDs, prices, tokens and other scalar values are not printed;
+- still caps nesting, object fields, sampled array items and distinct array shapes.
+
+Because a field name can itself be PII/token-like data, treat this terminal output as sensitive inspection material. Do **not** redirect it to a committed file, upload it as an artifact, paste the complete output into a public/shared log, or run this command in CI.
+
+After inspection, review which names are genuine stable schema fields. Add only those reviewed names to `src/integrations/pancake/reviewed-contract-keys.ts`, then implement fixtures/validators from the reviewed contract.
+
+### 2. GitHub Actions verification — reviewed names only
+
+`.github/workflows/pancake-contract-probe.yml` is now a **verification workflow**, not a discovery mechanism.
+
+It runs:
+
+```bash
+pnpm pancake:contract:verify
+```
+
+The verifier:
+
+- requires non-empty checked-in reviewed key allowlists before making a Pancake request;
+- exposes only field names already present in those allowlists;
+- rejects any unknown field name with a generic error that does not echo that name;
+- remains manual-only with `contents: read`, immutable action SHAs and Pancake secrets scoped to the verification step.
+
+Until trusted discovery has been reviewed and `REVIEWED_PANCAKE_CONTRACT_KEYS` is populated, this Actions workflow is expected to fail closed instead of producing a misleading “discovery” shape.
+
+The historical Actions run executed on `main@2d33d0eb...` used the pre-hardening sanitizer and is invalid as contract evidence. Do not use that output to implement validators or mappers.
+
 ## Still unverified — blocks catalog/write-path completion
 
 The indexed official docs available in this build session do not expose enough detail to safely implement the following yet:
