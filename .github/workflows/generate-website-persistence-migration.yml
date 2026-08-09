@@ -1,0 +1,63 @@
+name: Generate website persistence migration
+
+on:
+  push:
+    branches:
+      - build/website-owned-persistence
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
+    steps:
+      - name: Check out branch with main history
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+        with:
+          ref: build/website-owned-persistence
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate and generate Prisma
+        run: |
+          pnpm prisma:validate
+          pnpm prisma:generate
+
+      - name: Generate website persistence migration from main schema
+        run: |
+          git show origin/main:prisma/schema.prisma > /tmp/schema-before-website-persistence.prisma
+          mkdir -p prisma/migrations/20260809094000_add_website_owned_persistence
+          pnpm exec prisma migrate diff \
+            --from-schema /tmp/schema-before-website-persistence.prisma \
+            --to-schema prisma/schema.prisma \
+            --script \
+            > prisma/migrations/20260809094000_add_website_owned_persistence/migration.sql
+
+      - name: Commit generated migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prisma/migrations/20260809094000_add_website_owned_persistence/migration.sql
+          if git diff --cached --quiet; then
+            echo "No generated migration changes"
+            exit 0
+          fi
+          git commit -m "build: generate website-owned persistence migration"
+          git push origin HEAD:build/website-owned-persistence
