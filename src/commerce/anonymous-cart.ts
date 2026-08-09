@@ -33,18 +33,10 @@ type SetItemResult =
   | ExpectedMutationFailure;
 
 type RemoveItemResult = { ok: true } | { ok: false; reason: "CART_UNAVAILABLE" };
+type RawQueryClient = Pick<PrismaClient, "$queryRaw">;
 
 function isPositiveDatabaseInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_INTEGER;
-}
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
 }
 
 function liveAnonymousCartWhere(cartId: string, now: Date) {
@@ -55,21 +47,29 @@ function liveAnonymousCartWhere(cartId: string, now: Date) {
   } as const;
 }
 
+async function lockLiveAnonymousCart(
+  client: RawQueryClient,
+  cartId: string,
+  now: Date,
+): Promise<boolean> {
+  const rows = await client.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "Cart"
+    WHERE "id" = ${cartId}
+      AND "userId" IS NULL
+      AND "expiresAt" > ${now}
+    FOR UPDATE
+  `;
+
+  return rows.length === 1;
+}
+
 export function createAnonymousCartService(client: PrismaClient) {
   async function findLiveAnonymousCart(cartId: string, now: Date) {
     return client.cart.findFirst({
       where: liveAnonymousCartWhere(cartId, now),
       select: cartSelection,
     });
-  }
-
-  async function hasLiveAnonymousCart(cartId: string, now: Date): Promise<boolean> {
-    const cart = await client.cart.findFirst({
-      where: liveAnonymousCartWhere(cartId, now),
-      select: { id: true },
-    });
-
-    return cart !== null;
   }
 
   async function create({ now, expiresAt }: { now: Date; expiresAt: Date }) {
@@ -109,60 +109,48 @@ export function createAnonymousCartService(client: PrismaClient) {
       return { ok: false, reason: "INVALID_QUANTITY" };
     }
 
-    if (!(await hasLiveAnonymousCart(cartId, now))) {
-      return { ok: false, reason: "CART_UNAVAILABLE" };
-    }
-
-    const variant = await client.variantMirror.findUnique({
-      where: { id: variantId },
-      select: {
-        isActive: true,
-        product: {
-          select: { isActive: true },
-        },
-      },
-    });
-
-    if (!variant?.isActive || !variant.product.isActive) {
-      return { ok: false, reason: "VARIANT_UNAVAILABLE" };
-    }
-
-    const upsertInput = {
-      where: {
-        cartId_variantId: {
-          cartId,
-          variantId,
-        },
-      },
-      create: {
-        cartId,
-        variantId,
-        quantity,
-      },
-      update: {
-        quantity,
-      },
-      select: {
-        variantId: true,
-        quantity: true,
-      },
-    } as const;
-
-    try {
-      const item = await client.cartItem.upsert(upsertInput);
-      return { ok: true, item };
-    } catch (error) {
-      if (!isUniqueConstraintError(error)) {
-        throw error;
+    return client.$transaction(async (tx): Promise<SetItemResult> => {
+      if (!(await lockLiveAnonymousCart(tx, cartId, now))) {
+        return { ok: false, reason: "CART_UNAVAILABLE" };
       }
 
-      const item = await client.cartItem.update({
-        where: upsertInput.where,
-        data: { quantity },
-        select: upsertInput.select,
+      const variant = await tx.variantMirror.findUnique({
+        where: { id: variantId },
+        select: {
+          isActive: true,
+          product: {
+            select: { isActive: true },
+          },
+        },
       });
+
+      if (!variant?.isActive || !variant.product.isActive) {
+        return { ok: false, reason: "VARIANT_UNAVAILABLE" };
+      }
+
+      const item = await tx.cartItem.upsert({
+        where: {
+          cartId_variantId: {
+            cartId,
+            variantId,
+          },
+        },
+        create: {
+          cartId,
+          variantId,
+          quantity,
+        },
+        update: {
+          quantity,
+        },
+        select: {
+          variantId: true,
+          quantity: true,
+        },
+      });
+
       return { ok: true, item };
-    }
+    });
   }
 
   async function removeItem({
@@ -174,18 +162,20 @@ export function createAnonymousCartService(client: PrismaClient) {
     variantId: string;
     now: Date;
   }): Promise<RemoveItemResult> {
-    if (!(await hasLiveAnonymousCart(cartId, now))) {
-      return { ok: false, reason: "CART_UNAVAILABLE" };
-    }
+    return client.$transaction(async (tx): Promise<RemoveItemResult> => {
+      if (!(await lockLiveAnonymousCart(tx, cartId, now))) {
+        return { ok: false, reason: "CART_UNAVAILABLE" };
+      }
 
-    await client.cartItem.deleteMany({
-      where: {
-        cartId,
-        variantId,
-      },
+      await tx.cartItem.deleteMany({
+        where: {
+          cartId,
+          variantId,
+        },
+      });
+
+      return { ok: true };
     });
-
-    return { ok: true };
   }
 
   return {
