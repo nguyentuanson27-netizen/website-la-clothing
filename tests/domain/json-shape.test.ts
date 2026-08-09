@@ -51,6 +51,20 @@ test("redacts data-like object keys before shape serialization", () => {
   assert.equal(serialized.includes('"<dynamic-key>"'), true);
 });
 
+test("redacts identifier-shaped external keys because syntax does not prove metadata", () => {
+  const payload = {
+    sk_live_ABC123SECRET: { value: 1 },
+    Customer123456789: { value: 2 },
+    eyJhbGciOiJIUzI1NiJ9: { value: 3 },
+  };
+
+  const serialized = JSON.stringify(describeJsonShape(payload));
+
+  assert.equal(serialized.includes("sk_live_ABC123SECRET"), false);
+  assert.equal(serialized.includes("Customer123456789"), false);
+  assert.equal(serialized.includes("eyJhbGciOiJIUzI1NiJ9"), false);
+});
+
 test("caps inspected object fields and marks the object shape truncated", () => {
   const shape = describeJsonShape(
     {
@@ -101,6 +115,27 @@ test("deduplicates repeated array item shapes and caps distinct shapes", () => {
       },
     ],
     truncated: true,
+  });
+});
+
+test("canonicalizes bounded object fields before array shape fingerprinting", () => {
+  const shape = describeJsonShape([
+    { alpha: 1, beta: 2 },
+    { beta: 3, alpha: 4 },
+  ]);
+
+  assert.deepEqual(shape, {
+    type: "array",
+    itemShapes: [
+      {
+        type: "object",
+        fields: {
+          alpha: "number",
+          beta: "number",
+        },
+      },
+    ],
+    truncated: false,
   });
 });
 
