@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function ShopPage() {
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">LA Clothing / Store</p>
       <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         SHOP
@@ -21,6 +21,6 @@ export default function ShopPage() {
           editorial stories in the meantime.
         </p>
       </div>
-    </main>
+    </div>
   );
 }
