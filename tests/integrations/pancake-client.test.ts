@@ -25,6 +25,23 @@ test("adds the API key and query params without exposing it to callers", async (
   assert.deepEqual(result, { success: true });
 });
 
+test("bounds Pancake requests with an abort signal", async () => {
+  let requestSignal: AbortSignal | null | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestSignal = init?.signal;
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher, timeoutMs: 2_500 });
+  await client.getJson("/shops");
+
+  assert.ok(requestSignal instanceof AbortSignal);
+  assert.equal(requestSignal.aborted, false);
+});
+
 test("throws a sanitized error that does not reveal the API key", async () => {
   const fetcher: typeof fetch = async () =>
     new Response(JSON.stringify({ message: "unauthorized" }), {
