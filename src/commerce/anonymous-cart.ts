@@ -2,6 +2,7 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const ANONYMOUS_CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const ANONYMOUS_CART_MAX_DISTINCT_ITEMS = 50;
 
 const cartSelection = {
   id: true,
@@ -21,7 +22,8 @@ const cartSelection = {
 type ExpectedMutationFailure =
   | { ok: false; reason: "INVALID_QUANTITY" }
   | { ok: false; reason: "CART_UNAVAILABLE" }
-  | { ok: false; reason: "VARIANT_UNAVAILABLE" };
+  | { ok: false; reason: "VARIANT_UNAVAILABLE" }
+  | { ok: false; reason: "CART_LINE_LIMIT" };
 
 type SetItemResult =
   | {
@@ -32,6 +34,20 @@ type SetItemResult =
       };
     }
   | ExpectedMutationFailure;
+
+type CreateWithItemResult =
+  | {
+      ok: true;
+      cart: {
+        id: string;
+        expiresAt: Date;
+      };
+      item: {
+        variantId: string;
+        quantity: number;
+      };
+    }
+  | Exclude<ExpectedMutationFailure, { reason: "CART_UNAVAILABLE" } | { reason: "CART_LINE_LIMIT" }>;
 
 type RemoveItemResult = { ok: true } | { ok: false; reason: "CART_UNAVAILABLE" };
 type RawQueryClient = Pick<PrismaClient, "$queryRaw">;
@@ -97,6 +113,48 @@ export function createAnonymousCartService(client: PrismaClient) {
     });
   }
 
+  async function createWithItem({
+    variantId,
+    quantity,
+    now,
+  }: {
+    variantId: string;
+    quantity: number;
+    now: Date;
+  }): Promise<CreateWithItemResult> {
+    if (!isPositiveDatabaseInteger(quantity)) {
+      return { ok: false, reason: "INVALID_QUANTITY" };
+    }
+
+    return client.$transaction(async (tx): Promise<CreateWithItemResult> => {
+      const variant = await tx.variantMirror.findUnique({
+        where: { id: variantId },
+        select: {
+          isActive: true,
+          product: { select: { isActive: true } },
+        },
+      });
+
+      if (!variant?.isActive || !variant.product.isActive) {
+        return { ok: false, reason: "VARIANT_UNAVAILABLE" };
+      }
+
+      const cart = await tx.cart.create({
+        data: {
+          userId: null,
+          expiresAt: anonymousCartExpiresAt(now),
+        },
+        select: { id: true, expiresAt: true },
+      });
+      const item = await tx.cartItem.create({
+        data: { cartId: cart.id, variantId, quantity },
+        select: { variantId: true, quantity: true },
+      });
+
+      return { ok: true, cart, item };
+    });
+  }
+
   async function get({ cartId, now }: { cartId: string; now: Date }) {
     return findLiveAnonymousCart(cartId, now);
   }
@@ -133,6 +191,18 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       if (!variant?.isActive || !variant.product.isActive) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
+      }
+
+      const existingItem = await tx.cartItem.findUnique({
+        where: { cartId_variantId: { cartId, variantId } },
+        select: { id: true },
+      });
+
+      if (!existingItem) {
+        const distinctItemCount = await tx.cartItem.count({ where: { cartId } });
+        if (distinctItemCount >= ANONYMOUS_CART_MAX_DISTINCT_ITEMS) {
+          return { ok: false, reason: "CART_LINE_LIMIT" };
+        }
       }
 
       const item = await tx.cartItem.upsert({
@@ -187,6 +257,7 @@ export function createAnonymousCartService(client: PrismaClient) {
 
   return {
     create,
+    createWithItem,
     get,
     setItemQuantity,
     removeItem,

@@ -3,7 +3,7 @@ export const ANONYMOUS_CART_COOKIE_NAME = "la_cart";
 const CANONICAL_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-type CartCookieWrite = {
+export type AnonymousCartCookieWrite = {
   name: string;
   value: string;
   httpOnly: true;
@@ -19,7 +19,7 @@ type CartCookieReader = {
 };
 
 type CartCookieStore = CartCookieReader & {
-  set(cookie: CartCookieWrite): void;
+  set(cookie: AnonymousCartCookieWrite): void;
 };
 
 type AnonymousCartCookieSessionOptions = {
