@@ -9,10 +9,10 @@ export function SiteFooter() {
       </div>
 
       <div className="footer-links" aria-label="Liên kết cuối trang">
-        <Link href="/shipping">Shipping</Link>
-        <Link href="/returns">Returns</Link>
-        <Link href="/size-guide">Size guide</Link>
-        <Link href="/contact">Contact</Link>
+        <Link href="/shop">Shop</Link>
+        <Link href="/new-arrivals">New arrivals</Link>
+        <Link href="/lookbook">Lookbook</Link>
+        <Link href="/account">Account</Link>
       </div>
 
       <p className="footer-meta">© 2026 LA Clothing</p>
