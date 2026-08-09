@@ -1,6 +1,7 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
+const ANONYMOUS_CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const cartSelection = {
   id: true,
@@ -47,6 +48,20 @@ function liveAnonymousCartWhere(cartId: string, now: Date) {
   } as const;
 }
 
+function anonymousCartExpiresAt(now: Date): Date {
+  const nowMs = now.getTime();
+  if (Number.isNaN(nowMs)) {
+    throw new TypeError("Anonymous cart creation time must be a valid timestamp");
+  }
+
+  const expiresAt = new Date(nowMs + ANONYMOUS_CART_TTL_MS);
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new TypeError("Anonymous cart expiry must be a valid timestamp");
+  }
+
+  return expiresAt;
+}
+
 async function lockLiveAnonymousCart(
   client: RawQueryClient,
   cartId: string,
@@ -72,19 +87,11 @@ export function createAnonymousCartService(client: PrismaClient) {
     });
   }
 
-  async function create({ now, expiresAt }: { now: Date; expiresAt: Date }) {
-    if (
-      Number.isNaN(now.getTime()) ||
-      Number.isNaN(expiresAt.getTime()) ||
-      expiresAt.getTime() <= now.getTime()
-    ) {
-      throw new TypeError("Anonymous cart expiry must be a valid future timestamp");
-    }
-
+  async function create({ now }: { now: Date }) {
     return client.cart.create({
       data: {
         userId: null,
-        expiresAt,
+        expiresAt: anonymousCartExpiresAt(now),
       },
       select: cartSelection,
     });
