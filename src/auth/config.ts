@@ -1,12 +1,15 @@
 export type AuthServerConfig = {
   secret: string;
   baseURL: string;
+  ipAddressHeader: string | undefined;
 };
 
 type ServerEnvironment = Readonly<Record<string, string | undefined>>;
 
 const MIN_SECRET_LENGTH = 32;
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const GENERIC_FORWARDED_IP_HEADER = "x-forwarded-for";
 
 export class AuthConfigError extends Error {
   constructor(message: string) {
@@ -42,12 +45,39 @@ export function readAuthServerConfig(env: ServerEnvironment = process.env): Auth
   if (url.pathname !== "/" || url.search || url.hash) {
     throw new AuthConfigError("BETTER_AUTH_URL must be an origin without a path, query, or fragment");
   }
-  if (url.protocol !== "https:" && !LOCAL_HOSTNAMES.has(url.hostname)) {
+
+  const isLocalHost = LOCAL_HOSTNAMES.has(url.hostname);
+  if (url.protocol !== "https:" && !isLocalHost) {
     throw new AuthConfigError("BETTER_AUTH_URL must use HTTPS outside local development");
+  }
+
+  const ipAddressHeaderInput = env.BETTER_AUTH_IP_HEADER?.trim();
+  let ipAddressHeader: string | undefined;
+
+  if (ipAddressHeaderInput) {
+    const normalizedHeader = ipAddressHeaderInput.toLowerCase();
+
+    if (!HTTP_HEADER_NAME.test(normalizedHeader)) {
+      throw new AuthConfigError("BETTER_AUTH_IP_HEADER must be a valid HTTP header name");
+    }
+    if (normalizedHeader === GENERIC_FORWARDED_IP_HEADER) {
+      throw new AuthConfigError(
+        "BETTER_AUTH_IP_HEADER must be a proxy-owned single-value client IP header, not x-forwarded-for",
+      );
+    }
+
+    ipAddressHeader = normalizedHeader;
+  }
+
+  if (!isLocalHost && !ipAddressHeader) {
+    throw new AuthConfigError(
+      "BETTER_AUTH_IP_HEADER must be configured for non-local deployments",
+    );
   }
 
   return {
     secret,
     baseURL: url.origin,
+    ipAddressHeader,
   };
 }
