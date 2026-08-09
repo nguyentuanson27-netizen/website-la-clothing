@@ -49,8 +49,16 @@ function describe(value: unknown, options: ResolvedOptions, depth: number): Json
     return "null";
   }
 
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return typeof value;
+  if (typeof value === "string") {
+    return "string";
+  }
+
+  if (typeof value === "number") {
+    return "number";
+  }
+
+  if (typeof value === "boolean") {
+    return "boolean";
   }
 
   if (Array.isArray(value)) {
