@@ -107,3 +107,24 @@ test("deployed auth schema includes Better Auth database rate-limit storage", as
     { column_name: "lastRequest", data_type: "bigint" },
   ]);
 });
+
+test("deployed auth schema indexes session/account ownership and verification lookup fields", async () => {
+  const indexes = await prisma.$queryRaw<Array<{ tablename: string; indexdef: string }>>`
+    SELECT tablename, indexdef
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND tablename IN ('session', 'account', 'verification')
+    ORDER BY tablename, indexname
+  `;
+
+  function hasIndex(table: string, column: string): boolean {
+    return indexes.some(
+      ({ tablename, indexdef }) =>
+        tablename === table && indexdef.includes(`("${column}")`),
+    );
+  }
+
+  assert.equal(hasIndex("session", "userId"), true);
+  assert.equal(hasIndex("account", "userId"), true);
+  assert.equal(hasIndex("verification", "identifier"), true);
+});
