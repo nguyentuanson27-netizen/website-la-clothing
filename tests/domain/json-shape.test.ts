@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeJsonShape } from "../../src/integrations/pancake/json-shape.ts";
+import * as jsonShapeModule from "../../src/integrations/pancake/json-shape.ts";
+
+const { describeJsonShape } = jsonShapeModule;
 
 test("describes external JSON structure without retaining scalar values", () => {
   const payload = {
@@ -79,6 +81,46 @@ test("redacts identifier-shaped external keys because syntax does not prove meta
   assert.equal(serialized.includes("Customer123456789"), false);
   assert.equal(serialized.includes("eyJhbGciOiJIUzI1NiJ9"), false);
   assert.equal(serialized.includes('"<dynamic-key>"'), true);
+});
+
+test("trusted discovery preserves exact field names and value types without scalar values", () => {
+  const describeTrustedJsonShape = Reflect.get(jsonShapeModule, "describeTrustedJsonShape");
+
+  assert.equal(typeof describeTrustedJsonShape, "function");
+
+  const shape = describeTrustedJsonShape({
+    id: "p1",
+    price: 790000,
+    active: true,
+  });
+
+  assert.deepEqual(shape, {
+    type: "object",
+    fields: {
+      active: "boolean",
+      id: "string",
+      price: "number",
+    },
+  });
+  assert.equal(JSON.stringify(shape).includes("p1"), false);
+  assert.equal(JSON.stringify(shape).includes("790000"), false);
+});
+
+test("verification mode rejects an unknown object key without echoing it", () => {
+  const unknownKey = "sk_live_ABC123SECRET";
+  const options = {
+    allowedObjectKeys: ["success"],
+    rejectUnknownObjectKeys: true,
+  } as Parameters<typeof describeJsonShape>[1];
+
+  assert.throws(
+    () => describeJsonShape({ success: true, [unknownKey]: "value" }, options),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message.includes(unknownKey), false);
+      return true;
+    },
+  );
 });
 
 test("caps inspected object fields and marks the object shape truncated", () => {
