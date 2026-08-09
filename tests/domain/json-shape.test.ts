@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as jsonShapeModule from "../../src/integrations/pancake/json-shape.ts";
 
-const { describeJsonShape } = jsonShapeModule;
+const { describeJsonShape, describeReviewedJsonShape } = jsonShapeModule;
 
 test("describes external JSON structure without retaining scalar values", () => {
   const payload = {
@@ -106,15 +106,15 @@ test("trusted discovery preserves exact field names and value types without scal
   assert.equal(JSON.stringify(shape).includes("790000"), false);
 });
 
-test("verification mode rejects an unknown object key without echoing it", () => {
+test("reviewed-contract verification rejects an unknown object key without echoing it", () => {
   const unknownKey = "sk_live_ABC123SECRET";
-  const options = {
-    allowedObjectKeys: ["success"],
-    rejectUnknownObjectKeys: true,
-  } as Parameters<typeof describeJsonShape>[1];
 
   assert.throws(
-    () => describeJsonShape({ success: true, [unknownKey]: "value" }, options),
+    () =>
+      describeReviewedJsonShape(
+        { success: true, [unknownKey]: "value" },
+        { allowedObjectKeys: ["success"] },
+      ),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal(error.message.includes(unknownKey), false);
@@ -123,19 +123,18 @@ test("verification mode rejects an unknown object key without echoing it", () =>
   );
 });
 
-test("strict verification reaches unknown keys after the rendered array sample", () => {
+test("reviewed-contract verification reaches unknown keys after the rendered array sample", () => {
   const unknownKey = "secret_identifier_after_sample";
   const payload = Array.from({ length: 51 }, (_, index) =>
     index === 50 ? { id: "late", [unknownKey]: true } : { id: `item-${index}` },
   );
-  const options = {
-    allowedObjectKeys: ["id"],
-    rejectUnknownObjectKeys: true,
-    maxArrayItems: 50,
-  } as Parameters<typeof describeJsonShape>[1];
 
   assert.throws(
-    () => describeJsonShape(payload, options),
+    () =>
+      describeReviewedJsonShape(payload, {
+        allowedObjectKeys: ["id"],
+        maxArrayItems: 50,
+      }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal(error.message.includes(unknownKey), false);
@@ -144,7 +143,7 @@ test("strict verification reaches unknown keys after the rendered array sample",
   );
 });
 
-test("strict verification reaches unknown keys below the rendered depth limit", () => {
+test("reviewed-contract verification reaches unknown keys below the rendered depth limit", () => {
   const unknownKey = "secret_identifier_below_depth";
   const payload = {
     level1: {
@@ -153,14 +152,13 @@ test("strict verification reaches unknown keys below the rendered depth limit", 
       },
     },
   };
-  const options = {
-    allowedObjectKeys: ["level1", "level2"],
-    rejectUnknownObjectKeys: true,
-    maxDepth: 2,
-  } as Parameters<typeof describeJsonShape>[1];
 
   assert.throws(
-    () => describeJsonShape(payload, options),
+    () =>
+      describeReviewedJsonShape(payload, {
+        allowedObjectKeys: ["level1", "level2"],
+        maxDepth: 2,
+      }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal(error.message.includes(unknownKey), false);
@@ -169,17 +167,16 @@ test("strict verification reaches unknown keys below the rendered depth limit", 
   );
 });
 
-test("strict verification fails closed when the full-validation work budget is exceeded", () => {
+test("reviewed-contract verification fails closed when the full-validation work budget is exceeded", () => {
   const payload = [{ id: "a" }, { id: "b" }, { id: "c" }];
-  const options = {
-    allowedObjectKeys: ["id"],
-    rejectUnknownObjectKeys: true,
-    maxArrayItems: 1,
-    maxValidationNodes: 2,
-  } as unknown as Parameters<typeof describeJsonShape>[1];
 
   assert.throws(
-    () => describeJsonShape(payload, options),
+    () =>
+      describeReviewedJsonShape(payload, {
+        allowedObjectKeys: ["id"],
+        maxArrayItems: 1,
+        maxValidationNodes: 2,
+      }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /validation|inspection|budget/i);
