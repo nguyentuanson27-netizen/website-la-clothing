@@ -1,9 +1,11 @@
 import { requireAdminSession } from "../auth/authorization.ts";
 
-const MAX_PRODUCT_ID_LENGTH = 128;
-const MAX_EDITORIAL_FIELD_LENGTH = 50_000;
-const MAX_SEO_TITLE_LENGTH = 500;
-const MAX_SEO_DESCRIPTION_LENGTH = 2_000;
+export const PRODUCT_CONTENT_LIMITS = {
+  productId: 128,
+  editorialField: 50_000,
+  seoTitle: 500,
+  seoDescription: 2_000,
+} as const;
 
 type AdminSessionCandidate =
   | {
@@ -53,7 +55,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
   if (
     typeof productId !== "string" ||
     productId.length === 0 ||
-    productId.length > MAX_PRODUCT_ID_LENGTH ||
+    productId.length > PRODUCT_CONTENT_LIMITS.productId ||
     productId !== productId.trim()
   ) {
     return null;
@@ -61,12 +63,18 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
 
   const editorialDescription = parseTextField(
     record.editorialDescription,
-    MAX_EDITORIAL_FIELD_LENGTH,
+    PRODUCT_CONTENT_LIMITS.editorialField,
   );
-  const careInstructions = parseTextField(record.careInstructions, MAX_EDITORIAL_FIELD_LENGTH);
-  const sizeGuide = parseTextField(record.sizeGuide, MAX_EDITORIAL_FIELD_LENGTH);
-  const seoTitle = parseTextField(record.seoTitle, MAX_SEO_TITLE_LENGTH);
-  const seoDescription = parseTextField(record.seoDescription, MAX_SEO_DESCRIPTION_LENGTH);
+  const careInstructions = parseTextField(
+    record.careInstructions,
+    PRODUCT_CONTENT_LIMITS.editorialField,
+  );
+  const sizeGuide = parseTextField(record.sizeGuide, PRODUCT_CONTENT_LIMITS.editorialField);
+  const seoTitle = parseTextField(record.seoTitle, PRODUCT_CONTENT_LIMITS.seoTitle);
+  const seoDescription = parseTextField(
+    record.seoDescription,
+    PRODUCT_CONTENT_LIMITS.seoDescription,
+  );
 
   if (
     !editorialDescription.ok ||
