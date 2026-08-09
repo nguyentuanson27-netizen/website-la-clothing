@@ -96,6 +96,29 @@ test("creates a live anonymous cart with a 30-day absolute expiry", async () => 
   assert.equal(await carts.get({ cartId: cart.id, now: expiresAt }), null);
 });
 
+test("creates a new cart instead of reviving an expired anonymous cart", async () => {
+  const firstNow = new Date("2026-08-09T12:00:00.000Z");
+  const firstCart = await carts.create({ now: firstNow });
+  createdCartIds.add(firstCart.id);
+
+  const replacementNow = new Date(firstCart.expiresAt.getTime() + 1);
+  assert.equal(await carts.get({ cartId: firstCart.id, now: replacementNow }), null);
+
+  const replacementCart = await carts.create({ now: replacementNow });
+  createdCartIds.add(replacementCart.id);
+
+  assert.notEqual(replacementCart.id, firstCart.id);
+  assert.deepEqual(
+    replacementCart.expiresAt,
+    new Date(replacementNow.getTime() + THIRTY_DAYS_MS),
+  );
+  assert.deepEqual(
+    (await prisma.cart.findUnique({ where: { id: firstCart.id }, select: { expiresAt: true } }))
+      ?.expiresAt,
+    firstCart.expiresAt,
+  );
+});
+
 test("sets one active variant row per anonymous cart without extending absolute expiry", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
   const mutationNow = new Date("2026-08-19T12:00:00.000Z");
