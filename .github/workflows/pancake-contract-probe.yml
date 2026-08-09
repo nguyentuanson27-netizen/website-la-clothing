@@ -10,9 +10,6 @@ jobs:
   probe-read-contracts:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      PANCAKE_API_KEY: ${{ secrets.PANCAKE_API_KEY }}
-      PANCAKE_SHOP_ID: ${{ secrets.PANCAKE_SHOP_ID }}
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -31,4 +28,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Print sanitized Pancake read-contract shapes
+        env:
+          PANCAKE_API_KEY: ${{ secrets.PANCAKE_API_KEY }}
+          PANCAKE_SHOP_ID: ${{ secrets.PANCAKE_SHOP_ID }}
         run: pnpm pancake:probe:shape
