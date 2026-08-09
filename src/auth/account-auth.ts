@@ -1,5 +1,7 @@
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
+const SIGN_IN_ERROR_MESSAGE = "Không thể đăng nhập với thông tin này.";
+const SIGN_UP_ERROR_MESSAGE = "Không thể tạo tài khoản với thông tin này. Hãy thử đăng nhập hoặc dùng email khác.";
 
 export type AccountAuthResult =
   | { ok: true }
@@ -30,6 +32,19 @@ function hasValidPasswordLength(password: string): boolean {
   return password.length >= MIN_PASSWORD_LENGTH && password.length <= MAX_PASSWORD_LENGTH;
 }
 
+async function callAuth<TPayload>(
+  call: (payload: TPayload) => Promise<AuthCallResult>,
+  payload: TPayload,
+  errorMessage: string,
+): Promise<AccountAuthResult> {
+  try {
+    const result = await call(payload);
+    return result.error ? { ok: false, message: errorMessage } : { ok: true };
+  } catch {
+    return { ok: false, message: errorMessage };
+  }
+}
+
 export async function submitEmailSignIn(
   call: EmailSignInCall,
   input: { email: string; password: string },
@@ -40,17 +55,15 @@ export async function submitEmailSignIn(
     return { ok: false, message: "Kiểm tra lại email và mật khẩu." };
   }
 
-  const result = await call({
-    email,
-    password: input.password,
-    rememberMe: true,
-  });
-
-  if (result.error) {
-    return { ok: false, message: "Không thể đăng nhập với thông tin này." };
-  }
-
-  return { ok: true };
+  return callAuth(
+    call,
+    {
+      email,
+      password: input.password,
+      rememberMe: true,
+    },
+    SIGN_IN_ERROR_MESSAGE,
+  );
 }
 
 export async function submitEmailSignUp(
@@ -64,18 +77,13 @@ export async function submitEmailSignUp(
     return { ok: false, message: "Kiểm tra lại họ tên, email và mật khẩu." };
   }
 
-  const result = await call({
-    name,
-    email,
-    password: input.password,
-  });
-
-  if (result.error) {
-    return {
-      ok: false,
-      message: "Không thể tạo tài khoản với thông tin này. Hãy thử đăng nhập hoặc dùng email khác.",
-    };
-  }
-
-  return { ok: true };
+  return callAuth(
+    call,
+    {
+      name,
+      email,
+      password: input.password,
+    },
+    SIGN_UP_ERROR_MESSAGE,
+  );
 }
