@@ -66,7 +66,7 @@ test("saved addresses belong to a customer account and are removed with it", asy
   assert.equal(await prisma.address.count({ where: { userId } }), 0);
 });
 
-test("anonymous cart stores variant identity and enforces one row per variant", async () => {
+test("anonymous cart stores variant identity and enforces one positive row per variant", async () => {
   const product = await prisma.productMirror.create({
     data: {
       pancakeProductId: productExternalId,
@@ -108,6 +108,22 @@ test("anonymous cart stores variant identity and enforces one row per variant", 
           cartId: cart.id,
           variantId,
           quantity: 1,
+        },
+      }),
+    (error: unknown) => error instanceof Error,
+  );
+
+  await assert.rejects(
+    () =>
+      prisma.cart.create({
+        data: {
+          expiresAt: new Date("2026-08-16T00:00:00.000Z"),
+          items: {
+            create: {
+              variantId,
+              quantity: 0,
+            },
+          },
         },
       }),
     (error: unknown) => error instanceof Error,
