@@ -1,8 +1,8 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 
-import { readAuthServerConfig } from "@/auth/config";
-import { prisma } from "@/db/prisma";
+import { readAuthServerConfig } from "./config.ts";
+import { prisma } from "../db/prisma.ts";
 
 const config = readAuthServerConfig();
 
