@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Lookbook | LA Clothing",
+  title: "Lookbook",
   description: "LA Clothing seasonal editorial and styling stories.",
 };
 
