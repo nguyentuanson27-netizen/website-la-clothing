@@ -34,6 +34,43 @@ test("describes external JSON structure without retaining scalar values", () => 
   assert.equal(serialized.includes('"null"'), true);
 });
 
+test("redacts data-like object keys before shape serialization", () => {
+  const payload = {
+    safe_schema_key: true,
+    "customer@email.com": { value: 1 },
+    "SKU-PRIVATE-123": { value: 2 },
+    "dynamic-token-value": { value: 3 },
+  };
+
+  const serialized = JSON.stringify(describeJsonShape(payload));
+
+  assert.equal(serialized.includes("customer@email.com"), false);
+  assert.equal(serialized.includes("SKU-PRIVATE-123"), false);
+  assert.equal(serialized.includes("dynamic-token-value"), false);
+  assert.equal(serialized.includes('"safe_schema_key"'), true);
+  assert.equal(serialized.includes('"<dynamic-key>"'), true);
+});
+
+test("caps inspected object fields and marks the object shape truncated", () => {
+  const shape = describeJsonShape(
+    {
+      alpha: 1,
+      beta: 2,
+      gamma: 3,
+    },
+    { maxObjectFields: 2 } as Parameters<typeof describeJsonShape>[1],
+  );
+
+  assert.deepEqual(shape, {
+    type: "object",
+    fields: {
+      alpha: "number",
+      beta: "number",
+    },
+    truncated: true,
+  });
+});
+
 test("deduplicates repeated array item shapes and caps distinct shapes", () => {
   const payload = [
     { id: "a", value: 1 },
