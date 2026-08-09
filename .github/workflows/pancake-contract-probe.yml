@@ -1,0 +1,34 @@
+name: Pancake contract probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe-read-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PANCAKE_API_KEY: ${{ secrets.PANCAKE_API_KEY }}
+      PANCAKE_SHOP_ID: ${{ secrets.PANCAKE_SHOP_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Print sanitized Pancake read-contract shapes
+        run: pnpm pancake:probe:shape
