@@ -11,7 +11,7 @@ Intended repository path: `tasks/todo.md`
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client/discovery foundation merged; exact product/order/status contracts still require reviewed fields
 - [ ] T6 Implement idempotent catalog synchronization/mirror
 - [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
-- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie boundary and 30-day absolute TTL merged; Next request/public mutation/UI remain
+- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie boundary, 30-day absolute TTL and read-only Next request identity are implemented; public mutation/UI remain
 - [ ] T9 Deliver guest COD checkout → exactly one Pancake order
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
@@ -23,11 +23,11 @@ Intended repository path: `tasks/todo.md`
 
 ## Current execution path: finish T8 → T10
 
-- [ ] C1 Next.js guest-cart request identity adapter
-  - [ ] RED test
-  - [ ] GREEN implementation
-  - [ ] focused/full verification
-  - [ ] self-review: correctness → security → architecture → simplicity → performance
+- [x] C1 Next.js guest-cart request identity adapter
+  - [x] RED test
+  - [x] GREEN implementation
+  - [x] focused/full verification
+  - [x] self-review: correctness → security → architecture → simplicity → performance
 - [ ] C2 Bounded public cart mutations + real cookie emission
   - [ ] define/enforce a distinct-line abuse bound
   - [ ] actual Next request evidence for emitted `Set-Cookie`
