@@ -15,7 +15,7 @@ export default function SearchPage() {
       <form className="mt-12 flex max-w-4xl border-b border-black" action="/search" method="get" role="search">
         <label className="sr-only" htmlFor="site-search">Search products</label>
         <input
-          className="min-w-0 flex-1 bg-transparent py-4 text-xl outline-none placeholder:text-black/40 md:text-3xl"
+          className="min-w-0 flex-1 bg-transparent py-4 text-xl outline-none placeholder:text-black/40 focus-visible:outline-2 focus-visible:outline-offset-4 md:text-3xl"
           id="site-search"
           name="q"
           placeholder="Shirts, trousers, outerwear…"
