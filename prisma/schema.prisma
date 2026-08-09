@@ -19,17 +19,29 @@ enum UserRole {
   ADMIN
 }
 
+enum LocalOrderState {
+  DRAFT
+  VALIDATING
+  POS_SUBMITTING
+  CONFIRMED
+  REJECTED
+  SYNC_UNKNOWN
+}
+
 model User {
-  id            String    @id
+  id            String        @id
   name          String
-  email         String    @unique
+  email         String        @unique
   emailVerified Boolean
   image         String?
-  role          UserRole  @default(CUSTOMER)
+  role          UserRole      @default(CUSTOMER)
   createdAt     DateTime
   updatedAt     DateTime
   sessions      Session[]
   accounts      Account[]
+  addresses     Address[]
+  carts         Cart[]
+  orders        OrderMirror[]
 
   @@map("user")
 }
@@ -78,6 +90,23 @@ model Verification {
   @@map("verification")
 }
 
+model Address {
+  id            String   @id @default(cuid())
+  userId        String
+  label         String?
+  recipientName String
+  phone         String
+  provinceRef   String
+  districtRef   String
+  communeRef    String
+  detail        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model ProductMirror {
   id               String          @id @default(cuid())
   pancakeProductId String          @unique
@@ -88,6 +117,20 @@ model ProductMirror {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   variants         VariantMirror[]
+  content          ProductContent?
+}
+
+model ProductContent {
+  id                   String        @id @default(cuid())
+  productId            String        @unique
+  editorialDescription String?
+  careInstructions     String?
+  sizeGuide             String?
+  seoTitle              String?
+  seoDescription        String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  product               ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model VariantMirror {
@@ -103,6 +146,7 @@ model VariantMirror {
   updatedAt          DateTime         @updatedAt
   product            ProductMirror    @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouseStocks    WarehouseStock[]
+  cartItems           CartItem[]
 
   @@index([productId])
   @@index([sku])
@@ -120,6 +164,48 @@ model WarehouseStock {
 
   @@unique([variantId, pancakeWarehouseId])
   @@index([pancakeWarehouseId])
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items     CartItem[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model CartItem {
+  id        String        @id @default(cuid())
+  cartId    String
+  variantId String
+  quantity  Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  cart      Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant   VariantMirror @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+}
+
+model OrderMirror {
+  id             String          @id @default(uuid())
+  publicCode     String          @unique
+  userId         String?
+  pancakeOrderId String?         @unique
+  state          LocalOrderState @default(DRAFT)
+  syncErrorCode  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([state, createdAt])
 }
 
 model SyncEvent {
