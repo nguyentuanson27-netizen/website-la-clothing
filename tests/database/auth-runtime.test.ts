@@ -27,6 +27,10 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
+test("Better Auth is wired to the explicitly trusted client IP header", () => {
+  assert.deepEqual(auth.options.advanced?.ipAddress?.ipAddressHeaders, ["x-ci-client-ip"]);
+});
+
 test("Better Auth signs up a CUSTOMER and its returned cookie resolves to a server session", async () => {
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,

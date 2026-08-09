@@ -28,4 +28,13 @@ export const auth = betterAuth({
       },
     },
   },
+  ...(config.ipAddressHeader
+    ? {
+        advanced: {
+          ipAddress: {
+            ipAddressHeaders: [config.ipAddressHeader],
+          },
+        },
+      }
+    : {}),
 });
