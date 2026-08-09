@@ -58,7 +58,7 @@ test("caps inspected object fields and marks the object shape truncated", () => 
       beta: 2,
       gamma: 3,
     },
-    { maxObjectFields: 2 } as Parameters<typeof describeJsonShape>[1],
+    { maxObjectFields: 2 },
   );
 
   assert.deepEqual(shape, {
