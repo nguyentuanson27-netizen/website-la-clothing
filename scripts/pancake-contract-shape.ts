@@ -1,16 +1,18 @@
 import { PancakeClient } from "../src/integrations/pancake/client.ts";
 import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
-import { describeJsonShape } from "../src/integrations/pancake/json-shape.ts";
+import { describeReviewedJsonShape } from "../src/integrations/pancake/json-shape.ts";
 import {
   assertReviewedPancakeContractKeysConfigured,
   REVIEWED_PANCAKE_CONTRACT_KEYS,
 } from "../src/integrations/pancake/reviewed-contract-keys.ts";
 
+const PANCAKE_CONTRACT_VALIDATION_NODE_BUDGET = 250_000;
+
 function verificationOptions(allowedObjectKeys: readonly string[]) {
   return {
     allowedObjectKeys,
-    rejectUnknownObjectKeys: true,
     maxObjectFields: Math.max(allowedObjectKeys.length, 1),
+    maxValidationNodes: PANCAKE_CONTRACT_VALIDATION_NODE_BUDGET,
   } as const;
 }
 
@@ -26,11 +28,11 @@ async function main() {
   ]);
 
   const contractShapes = {
-    productVariations: describeJsonShape(
+    productVariations: describeReviewedJsonShape(
       productVariations,
       verificationOptions(REVIEWED_PANCAKE_CONTRACT_KEYS.productVariations),
     ),
-    warehouses: describeJsonShape(
+    warehouses: describeReviewedJsonShape(
       warehouses,
       verificationOptions(REVIEWED_PANCAKE_CONTRACT_KEYS.warehouses),
     ),
