@@ -22,11 +22,6 @@ const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 const textareaClassName = `${inputClassName} min-h-36 resize-y leading-7`;
 
-function formText(formData: FormData, name: string): string {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
-}
-
 function queryValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
 }
@@ -64,11 +59,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     const adminSession = await requireCurrentAdmin();
     const result = await adminService.update(adminSession, {
       productId: persistedProductId,
-      editorialDescription: formText(formData, "editorialDescription"),
-      careInstructions: formText(formData, "careInstructions"),
-      sizeGuide: formText(formData, "sizeGuide"),
-      seoTitle: formText(formData, "seoTitle"),
-      seoDescription: formText(formData, "seoDescription"),
+      editorialDescription: formData.get("editorialDescription"),
+      careInstructions: formData.get("careInstructions"),
+      sizeGuide: formData.get("sizeGuide"),
+      seoTitle: formData.get("seoTitle"),
+      seoDescription: formData.get("seoDescription"),
     });
 
     if (!result.ok) {
