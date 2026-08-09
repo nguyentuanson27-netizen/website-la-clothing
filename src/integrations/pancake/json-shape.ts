@@ -21,7 +21,13 @@ type JsonShapeOptions = {
   maxArrayItems?: number;
   maxObjectFields?: number;
   allowedObjectKeys?: readonly string[];
+  rejectUnknownObjectKeys?: boolean;
 };
+
+type TrustedJsonShapeOptions = Omit<
+  JsonShapeOptions,
+  "allowedObjectKeys" | "rejectUnknownObjectKeys"
+>;
 
 type ResolvedOptions = {
   maxDepth: number;
@@ -29,6 +35,8 @@ type ResolvedOptions = {
   maxArrayItems: number;
   maxObjectFields: number;
   allowedObjectKeys: ReadonlySet<string>;
+  rejectUnknownObjectKeys: boolean;
+  exposeAllObjectKeys: boolean;
 };
 
 const DEFAULT_OPTIONS = {
@@ -40,9 +48,13 @@ const DEFAULT_OPTIONS = {
 
 const DYNAMIC_KEY_MARKER = "<dynamic-key>";
 
-function resolveOptions(options: JsonShapeOptions): ResolvedOptions {
+function resolveOptions(
+  options: JsonShapeOptions,
+  exposeAllObjectKeys = false,
+): ResolvedOptions {
   const {
     allowedObjectKeys = [],
+    rejectUnknownObjectKeys = false,
     maxDepth = DEFAULT_OPTIONS.maxDepth,
     maxDistinctArrayShapes = DEFAULT_OPTIONS.maxDistinctArrayShapes,
     maxArrayItems = DEFAULT_OPTIONS.maxArrayItems,
@@ -72,9 +84,15 @@ function resolveOptions(options: JsonShapeOptions): ResolvedOptions {
     }
   }
 
+  if (typeof rejectUnknownObjectKeys !== "boolean") {
+    throw new TypeError("rejectUnknownObjectKeys must be a boolean");
+  }
+
   return {
     ...numericOptions,
     allowedObjectKeys: new Set(allowedObjectKeys),
+    rejectUnknownObjectKeys,
+    exposeAllObjectKeys,
   };
 }
 
@@ -91,7 +109,15 @@ function compareStrings(left: string, right: string): number {
 }
 
 function safeObjectKey(key: string, options: ResolvedOptions): string {
-  return options.allowedObjectKeys.has(key) ? key : DYNAMIC_KEY_MARKER;
+  if (options.exposeAllObjectKeys || options.allowedObjectKeys.has(key)) {
+    return key;
+  }
+
+  if (options.rejectUnknownObjectKeys) {
+    throw new TypeError("External object contains an unreviewed field name");
+  }
+
+  return DYNAMIC_KEY_MARKER;
 }
 
 function describe(value: unknown, options: ResolvedOptions, depth: number): JsonShape {
@@ -143,14 +169,24 @@ function describe(value: unknown, options: ResolvedOptions, depth: number): Json
 
   if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
     const keys = Object.keys(value);
+
+    if (options.rejectUnknownObjectKeys && !options.exposeAllObjectKeys) {
+      for (const key of keys) {
+        if (!options.allowedObjectKeys.has(key)) {
+          throw new TypeError("External object contains an unreviewed field name");
+        }
+      }
+    }
+
     const sampledKeys = keys.slice(0, options.maxObjectFields);
     let truncated = keys.length > sampledKeys.length;
 
     const boundedFields = sampledKeys.map((key) => {
+      const outputKey = safeObjectKey(key, options);
       const shape = describe((value as Record<string, unknown>)[key], options, depth + 1);
 
       return {
-        outputKey: safeObjectKey(key, options),
+        outputKey,
         shape,
         shapeFingerprint: JSON.stringify(shape),
       };
@@ -192,4 +228,11 @@ function describe(value: unknown, options: ResolvedOptions, depth: number): Json
 
 export function describeJsonShape(value: unknown, options: JsonShapeOptions = {}): JsonShape {
   return describe(value, resolveOptions(options), 0);
+}
+
+export function describeTrustedJsonShape(
+  value: unknown,
+  options: TrustedJsonShapeOptions = {},
+): JsonShape {
+  return describe(value, resolveOptions(options, true), 0);
 }
