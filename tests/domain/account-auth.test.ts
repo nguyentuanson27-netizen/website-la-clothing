@@ -113,3 +113,30 @@ test("auth service errors become generic user messages instead of raw provider d
   assert.equal(JSON.stringify(signInResult).includes(rawError), false);
   assert.equal(JSON.stringify(signUpResult).includes(rawError), false);
 });
+
+test("transport failures are converted to the same generic messages", async () => {
+  const rawError = "network failed for customer@example.com";
+  const rejectCall = async () => {
+    throw new Error(rawError);
+  };
+
+  const signInResult = await submitEmailSignIn(
+    rejectCall,
+    { email: "customer@example.com", password: "12345678" },
+  );
+  const signUpResult = await submitEmailSignUp(
+    rejectCall,
+    { name: "Customer", email: "customer@example.com", password: "12345678" },
+  );
+
+  assert.deepEqual(signInResult, {
+    ok: false,
+    message: "Không thể đăng nhập với thông tin này.",
+  });
+  assert.deepEqual(signUpResult, {
+    ok: false,
+    message: "Không thể tạo tài khoản với thông tin này. Hãy thử đăng nhập hoặc dùng email khác.",
+  });
+  assert.equal(JSON.stringify(signInResult).includes(rawError), false);
+  assert.equal(JSON.stringify(signUpResult).includes(rawError), false);
+});
