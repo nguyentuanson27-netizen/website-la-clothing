@@ -123,6 +123,74 @@ test("verification mode rejects an unknown object key without echoing it", () =>
   );
 });
 
+test("strict verification reaches unknown keys after the rendered array sample", () => {
+  const unknownKey = "secret_identifier_after_sample";
+  const payload = Array.from({ length: 51 }, (_, index) =>
+    index === 50 ? { id: "late", [unknownKey]: true } : { id: `item-${index}` },
+  );
+  const options = {
+    allowedObjectKeys: ["id"],
+    rejectUnknownObjectKeys: true,
+    maxArrayItems: 50,
+  } as Parameters<typeof describeJsonShape>[1];
+
+  assert.throws(
+    () => describeJsonShape(payload, options),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message.includes(unknownKey), false);
+      return true;
+    },
+  );
+});
+
+test("strict verification reaches unknown keys below the rendered depth limit", () => {
+  const unknownKey = "secret_identifier_below_depth";
+  const payload = {
+    level1: {
+      level2: {
+        [unknownKey]: "hidden",
+      },
+    },
+  };
+  const options = {
+    allowedObjectKeys: ["level1", "level2"],
+    rejectUnknownObjectKeys: true,
+    maxDepth: 2,
+  } as Parameters<typeof describeJsonShape>[1];
+
+  assert.throws(
+    () => describeJsonShape(payload, options),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message.includes(unknownKey), false);
+      return true;
+    },
+  );
+});
+
+test("strict verification fails closed when the full-validation work budget is exceeded", () => {
+  const payload = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const options = {
+    allowedObjectKeys: ["id"],
+    rejectUnknownObjectKeys: true,
+    maxArrayItems: 1,
+    maxValidationNodes: 2,
+  } as unknown as Parameters<typeof describeJsonShape>[1];
+
+  assert.throws(
+    () => describeJsonShape(payload, options),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /validation|inspection|budget/i);
+      assert.equal(error.message.includes("a"), false);
+      assert.equal(error.message.includes("b"), false);
+      assert.equal(error.message.includes("c"), false);
+      return true;
+    },
+  );
+});
+
 test("caps inspected object fields and marks the object shape truncated", () => {
   const shape = describeJsonShape(
     {
