@@ -14,8 +14,11 @@ type CartCookieWrite = {
   maxAge?: number;
 };
 
-type CartCookieStore = {
+type CartCookieReader = {
   get(name: string): { value: string } | undefined;
+};
+
+type CartCookieStore = CartCookieReader & {
   set(cookie: CartCookieWrite): void;
 };
 
@@ -42,6 +45,15 @@ function baseCookieOptions(production: boolean) {
   } as const;
 }
 
+export function readAnonymousCartCookie(store: CartCookieReader): string | null {
+  const value = store.get(ANONYMOUS_CART_COOKIE_NAME)?.value;
+  if (!value || !isCanonicalCartId(value)) {
+    return null;
+  }
+
+  return value;
+}
+
 export function createAnonymousCartCookieSession(
   store: CartCookieStore,
   options: AnonymousCartCookieSessionOptions = {},
@@ -49,12 +61,7 @@ export function createAnonymousCartCookieSession(
   const production = options.production ?? process.env.NODE_ENV === "production";
 
   function read(): string | null {
-    const value = store.get(ANONYMOUS_CART_COOKIE_NAME)?.value;
-    if (!value || !isCanonicalCartId(value)) {
-      return null;
-    }
-
-    return value;
+    return readAnonymousCartCookie(store);
   }
 
   function write({ cartId, expiresAt }: AnonymousCartCookie): void {
