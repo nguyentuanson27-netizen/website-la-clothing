@@ -21,6 +21,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const carts = createAnonymousCartService(prisma);
 const productExternalId = "anonymous-cart-mutation-product";
 const variantExternalPrefix = "anonymous-cart-mutation-variant";
+const accountUserId = "anonymous-cart-mutation-user";
 const createdCartIds = new Set<string>();
 let variantIds: string[] = [];
 
@@ -48,6 +49,8 @@ async function cleanup() {
     await prisma.cart.deleteMany({ where: { id: { in: [...createdCartIds] } } });
     createdCartIds.clear();
   }
+  await prisma.cart.deleteMany({ where: { userId: accountUserId } });
+  await prisma.user.deleteMany({ where: { id: accountUserId } });
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
 }
 
@@ -146,6 +149,61 @@ test("a stale cart cookie is replaced only after a valid new cart mutation", asy
   assert.deepEqual(
     (await prisma.cart.findUnique({ where: { id: stale.id }, select: { expiresAt: true } }))?.expiresAt,
     stale.expiresAt,
+  );
+});
+
+test("an account-owned cart cookie is never mutated and rotates to a new anonymous cart", async () => {
+  const now = new Date("2026-08-10T00:00:00.000Z");
+  await prisma.user.create({
+    data: {
+      id: accountUserId,
+      name: "Anonymous Cart Mutation User",
+      email: "anonymous-cart-mutation@example.invalid",
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  const accountCart = await prisma.cart.create({
+    data: {
+      userId: accountUserId,
+      expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+    },
+  });
+  await prisma.cartItem.create({
+    data: {
+      cartId: accountCart.id,
+      variantId: variantIds[0],
+      quantity: 7,
+    },
+  });
+
+  const cookies = mutableCookieStore(accountCart.id);
+  const mutations = createAnonymousCartMutationService(prisma, cookies.store);
+  const result = await mutations.setItemQuantity({ variantId: variantIds[0], quantity: 2, now });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  createdCartIds.add(result.cartId);
+
+  assert.notEqual(result.cartId, accountCart.id);
+  assert.equal(cookies.value(), result.cartId);
+  assert.equal(cookies.writes.length, 1);
+  assert.equal(
+    (await prisma.cartItem.findUnique({
+      where: { cartId_variantId: { cartId: accountCart.id, variantId: variantIds[0] } },
+    }))?.quantity,
+    7,
+  );
+  assert.equal(
+    (await prisma.cartItem.findUnique({
+      where: { cartId_variantId: { cartId: result.cartId, variantId: variantIds[0] } },
+    }))?.quantity,
+    2,
+  );
+  assert.equal(
+    (await prisma.cart.findUnique({ where: { id: accountCart.id }, select: { userId: true } }))?.userId,
+    accountUserId,
   );
 });
 
