@@ -17,7 +17,8 @@ export default function ShopPage() {
           Relaxed proportions, clean construction and an everyday neutral palette.
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
-          The live catalog will populate from the store inventory source as the commerce integration is completed.
+          New pieces will appear here as each drop goes live. Explore the current season through collections and
+          editorial stories in the meantime.
         </p>
       </div>
     </main>
