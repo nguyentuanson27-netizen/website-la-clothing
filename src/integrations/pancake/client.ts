@@ -1,4 +1,5 @@
 const PANCAKE_API_BASE_URL = "https://pos.pages.fm/api/v1";
+const PANCAKE_API_BASE = new URL(`${PANCAKE_API_BASE_URL}/`);
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
@@ -70,6 +71,10 @@ export class PancakeClient {
     }
 
     const url = new URL(`${PANCAKE_API_BASE_URL}${endpoint}`);
+    if (url.origin !== PANCAKE_API_BASE.origin || !url.pathname.startsWith(PANCAKE_API_BASE.pathname)) {
+      throw new TypeError("Pancake endpoint must remain within the API prefix after canonicalization");
+    }
+
     url.searchParams.set("api_key", this.apiKey);
 
     for (const [key, value] of Object.entries(query)) {

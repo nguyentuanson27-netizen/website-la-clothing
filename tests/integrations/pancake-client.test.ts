@@ -55,6 +55,27 @@ test("rejects endpoints outside the Pancake API path", async () => {
   );
 });
 
+test("rejects encoded traversal after URL canonicalization before making a request", async () => {
+  let requestCount = 0;
+  const fetcher: typeof fetch = async () => {
+    requestCount += 1;
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher });
+
+  for (const endpoint of ["/%2e%2e/x", "/.%2e/x", "/%2e./x"]) {
+    await assert.rejects(
+      () => client.getJson(endpoint),
+      /Pancake endpoint must remain within the API prefix/,
+    );
+  }
+
+  assert.equal(requestCount, 0);
+});
+
 test("sanitizes transport failures that may include the credentialed URL", async () => {
   const fetcher: typeof fetch = async () => {
     throw new Error(`network failure for https://pos.pages.fm/api/v1/test?api_key=${API_KEY}`);
