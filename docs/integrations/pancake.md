@@ -66,7 +66,7 @@ After inspection, review which names are genuine stable schema fields. Add only 
 
 ### 2. GitHub Actions verification — reviewed names only
 
-`.github/workflows/pancake-contract-probe.yml` is now a **verification workflow**, not a discovery mechanism.
+`.github/workflows/pancake-contract-probe.yml` is a **verification workflow**, not a discovery mechanism.
 
 It runs:
 
@@ -74,11 +74,17 @@ It runs:
 pnpm pancake:contract:verify
 ```
 
-The verifier:
+The verifier uses two separate phases:
+
+1. **Full allowlist validation** traverses every JSON value in the live payload, independent of render sampling/depth limits. Any unreviewed object field causes a generic failure that does not echo the field name.
+2. **Bounded shape rendering** runs only after full validation succeeds. Its `maxArrayItems`, `maxDepth`, distinct-shape and object-field caps keep the persisted Actions output small; those rendering caps cannot hide an unknown field from validation.
+
+Full validation uses an explicit global node budget of `250000` nodes for each endpoint payload. If traversing the entire payload would exceed that budget, verification fails closed with a generic inspection-budget error instead of accepting a partially inspected contract.
+
+The verifier also:
 
 - requires non-empty checked-in reviewed key allowlists before making a Pancake request;
 - exposes only field names already present in those allowlists;
-- rejects any unknown field name with a generic error that does not echo that name;
 - remains manual-only with `contents: read`, immutable action SHAs and Pancake secrets scoped to the verification step.
 
 Until trusted discovery has been reviewed and `REVIEWED_PANCAKE_CONTRACT_KEYS` is populated, this Actions workflow is expected to fail closed instead of producing a misleading “discovery” shape.
