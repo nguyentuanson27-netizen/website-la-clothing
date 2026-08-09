@@ -5,7 +5,16 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const APP_DIRECTORY = fileURLToPath(new URL("../../src/app/", import.meta.url));
-const HOMEPAGE_SOURCE = new URL("../../src/app/page.tsx", import.meta.url);
+const STOREFRONT_SOURCES = [
+  {
+    name: "homepage",
+    url: new URL("../../src/app/page.tsx", import.meta.url),
+  },
+  {
+    name: "footer",
+    url: new URL("../../src/components/layout/site-footer.tsx", import.meta.url),
+  },
+] as const;
 const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;
 
 type RouteExists = (pathname: string) => Promise<boolean>;
@@ -44,14 +53,22 @@ async function findMissingInternalLinks(
   return missing;
 }
 
-test("homepage literal internal links resolve to implemented App Router pages", async () => {
-  const source = await readFile(HOMEPAGE_SOURCE, "utf8");
-  const missing = await findMissingInternalLinks(source);
+test("shared storefront literal internal links resolve to implemented App Router pages", async () => {
+  const missingBySource: Record<string, string[]> = {};
 
-  assert.deepEqual(missing, []);
+  for (const source of STOREFRONT_SOURCES) {
+    const content = await readFile(source.url, "utf8");
+    const missing = await findMissingInternalLinks(content);
+
+    if (missing.length > 0) {
+      missingBySource[source.name] = missing;
+    }
+  }
+
+  assert.deepEqual(missingBySource, {});
 });
 
-test("homepage link guard detects a missing internal destination", async () => {
+test("storefront link guard detects a missing internal destination", async () => {
   const source = `
     const valid = "/shop?category=shirts";
     const broken = "/products/missing-product";
