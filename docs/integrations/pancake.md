@@ -43,7 +43,7 @@ Exact unknown field-name discovery and persistent CI logging are intentionally s
 
 ### 1. Trusted local discovery — exact field names + value types
 
-Use only in a trusted local/non-persisted inspection environment:
+Copy the server-only Pancake placeholders from `.env.example` into ignored `.env.local`, then use only a trusted local/non-persisted inspection environment:
 
 ```bash
 pnpm pancake:contract:discover
@@ -51,11 +51,14 @@ pnpm pancake:contract:discover
 
 The discovery command:
 
+- loads `.env.local` through the Node 22 CLI without requiring the API key in shell history;
 - refuses execution when `CI` or `GITHUB_ACTIONS` is enabled;
 - reads the two live read-only endpoints currently needed for the catalog spike;
 - preserves exact object field names so the response structure can actually be reviewed;
 - replaces scalar values with their JSON types, so product IDs, prices, tokens and other scalar values are not printed;
 - still caps nesting, object fields, sampled array items and distinct array shapes.
+
+A `truncated: true` or `max-depth` marker means the inspection is incomplete and must **not** be treated as exact contract evidence. Increase/rework the trusted inspection deliberately before populating reviewed keys rather than guessing missing structure.
 
 Because a field name can itself be PII/token-like data, treat this terminal output as sensitive inspection material. Do **not** redirect it to a committed file, upload it as an artifact, paste the complete output into a public/shared log, or run this command in CI.
 
