@@ -1,6 +1,7 @@
 const PANCAKE_API_BASE_URL = "https://pos.pages.fm/api/v1";
 const PANCAKE_API_BASE = new URL(`${PANCAKE_API_BASE_URL}/`);
 const DEFAULT_TIMEOUT_MS = 10_000;
+const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
@@ -46,6 +47,11 @@ export class PancakeClient {
     }
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
       throw new TypeError("Pancake request timeout must be a positive integer");
+    }
+    if (timeoutMs > MAX_NODE_TIMER_DELAY_MS) {
+      throw new TypeError(
+        `Pancake request timeout must not exceed ${MAX_NODE_TIMER_DELAY_MS} milliseconds`,
+      );
     }
 
     this.apiKey = apiKey;
