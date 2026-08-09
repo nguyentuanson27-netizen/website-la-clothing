@@ -91,3 +91,19 @@ test("deployed auth schema applies the server-owned CUSTOMER role default", asyn
 
   await prisma.user.delete({ where: { id } });
 });
+
+test("deployed auth schema includes Better Auth database rate-limit storage", async () => {
+  const columns = await prisma.$queryRaw<Array<{ column_name: string; data_type: string }>>`
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'rateLimit'
+    ORDER BY ordinal_position
+  `;
+
+  assert.deepEqual(columns, [
+    { column_name: "id", data_type: "text" },
+    { column_name: "key", data_type: "text" },
+    { column_name: "count", data_type: "integer" },
+    { column_name: "lastRequest", data_type: "bigint" },
+  ]);
+});
