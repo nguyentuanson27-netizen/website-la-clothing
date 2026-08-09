@@ -71,11 +71,19 @@ test("invalid account input fails before making an auth request", async () => {
     { ok: false, message: "Kiểm tra lại email và mật khẩu." },
   );
   assert.deepEqual(
+    await submitEmailSignIn(signIn, { email: "a@example.com", password: "x".repeat(129) }),
+    { ok: false, message: "Kiểm tra lại email và mật khẩu." },
+  );
+  assert.deepEqual(
     await submitEmailSignUp(signUp, { name: " ", email: "a@example.com", password: "12345678" }),
     { ok: false, message: "Kiểm tra lại họ tên, email và mật khẩu." },
   );
   assert.deepEqual(
     await submitEmailSignUp(signUp, { name: "A", email: " ", password: "12345678" }),
+    { ok: false, message: "Kiểm tra lại họ tên, email và mật khẩu." },
+  );
+  assert.deepEqual(
+    await submitEmailSignUp(signUp, { name: "A", email: "a@example.com", password: "x".repeat(129) }),
     { ok: false, message: "Kiểm tra lại họ tên, email và mật khẩu." },
   );
 
