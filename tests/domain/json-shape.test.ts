@@ -21,7 +21,20 @@ test("describes external JSON structure without retaining scalar values", () => 
     ],
   };
 
-  const shape = describeJsonShape(payload);
+  const shape = describeJsonShape(payload, {
+    allowedObjectKeys: [
+      "success",
+      "token_like_value",
+      "products",
+      "id",
+      "price",
+      "active",
+      "nullable",
+      "warehouses",
+      "warehouse_id",
+      "quantity",
+    ],
+  });
   const serialized = JSON.stringify(shape);
 
   assert.equal(serialized.includes("super-secret-value"), false);
@@ -34,7 +47,7 @@ test("describes external JSON structure without retaining scalar values", () => 
   assert.equal(serialized.includes('"null"'), true);
 });
 
-test("redacts data-like object keys before shape serialization", () => {
+test("redacts non-allowlisted object keys before shape serialization", () => {
   const payload = {
     safe_schema_key: true,
     "customer@email.com": { value: 1 },
@@ -42,7 +55,9 @@ test("redacts data-like object keys before shape serialization", () => {
     "dynamic-token-value": { value: 3 },
   };
 
-  const serialized = JSON.stringify(describeJsonShape(payload));
+  const serialized = JSON.stringify(
+    describeJsonShape(payload, { allowedObjectKeys: ["safe_schema_key"] }),
+  );
 
   assert.equal(serialized.includes("customer@email.com"), false);
   assert.equal(serialized.includes("SKU-PRIVATE-123"), false);
@@ -63,6 +78,7 @@ test("redacts identifier-shaped external keys because syntax does not prove meta
   assert.equal(serialized.includes("sk_live_ABC123SECRET"), false);
   assert.equal(serialized.includes("Customer123456789"), false);
   assert.equal(serialized.includes("eyJhbGciOiJIUzI1NiJ9"), false);
+  assert.equal(serialized.includes('"<dynamic-key>"'), true);
 });
 
 test("caps inspected object fields and marks the object shape truncated", () => {
@@ -72,7 +88,10 @@ test("caps inspected object fields and marks the object shape truncated", () => 
       beta: 2,
       gamma: 3,
     },
-    { maxObjectFields: 2 },
+    {
+      maxObjectFields: 2,
+      allowedObjectKeys: ["alpha", "beta", "gamma"],
+    },
   );
 
   assert.deepEqual(shape, {
@@ -94,7 +113,10 @@ test("deduplicates repeated array item shapes and caps distinct shapes", () => {
     { id: null, value: false },
   ];
 
-  const shape = describeJsonShape(payload, { maxDistinctArrayShapes: 2 });
+  const shape = describeJsonShape(payload, {
+    maxDistinctArrayShapes: 2,
+    allowedObjectKeys: ["id", "value"],
+  });
 
   assert.deepEqual(shape, {
     type: "array",
@@ -119,10 +141,13 @@ test("deduplicates repeated array item shapes and caps distinct shapes", () => {
 });
 
 test("canonicalizes bounded object fields before array shape fingerprinting", () => {
-  const shape = describeJsonShape([
-    { alpha: 1, beta: 2 },
-    { beta: 3, alpha: 4 },
-  ]);
+  const shape = describeJsonShape(
+    [
+      { alpha: 1, beta: 2 },
+      { beta: 3, alpha: 4 },
+    ],
+    { allowedObjectKeys: ["alpha", "beta"] },
+  );
 
   assert.deepEqual(shape, {
     type: "array",
@@ -142,7 +167,10 @@ test("canonicalizes bounded object fields before array shape fingerprinting", ()
 test("stops at the configured nesting depth instead of expanding indefinitely", () => {
   const shape = describeJsonShape(
     { level1: { level2: { secret: "must-not-appear" } } },
-    { maxDepth: 2 },
+    {
+      maxDepth: 2,
+      allowedObjectKeys: ["level1", "level2"],
+    },
   );
 
   assert.deepEqual(shape, {
