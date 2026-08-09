@@ -179,10 +179,7 @@ test.after(async () => {
 
 test("rejects fractional and PostgreSQL INTEGER overflow quantities without persistence", async () => {
   const now = new Date("2026-08-09T12:00:00.000Z");
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.deepEqual(
@@ -200,10 +197,7 @@ test("set quantity holds the anonymous ownership boundary until the mutation com
   const now = new Date("2026-08-09T12:00:00.000Z");
   await createAccountUser(now);
 
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
   await installPauseTrigger();
 
@@ -248,10 +242,7 @@ test("remove holds the anonymous ownership boundary until the mutation commits",
   const now = new Date("2026-08-09T12:00:00.000Z");
   await createAccountUser(now);
 
-  const cart = await carts.create({
-    now,
-    expiresAt: new Date("2026-08-16T12:00:00.000Z"),
-  });
+  const cart = await carts.create({ now });
   createdCartIds.add(cart.id);
 
   assert.deepEqual(
