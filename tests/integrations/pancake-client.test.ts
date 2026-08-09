@@ -56,7 +56,15 @@ test("aborts a stalled Pancake request and reports a sanitized network failure",
         return;
       }
 
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      const keepAlive = setTimeout(() => reject(new Error("Pancake timeout signal did not abort")), 250);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(keepAlive);
+          reject(signal.reason);
+        },
+        { once: true },
+      );
     });
 
   const client = new PancakeClient({ apiKey: API_KEY, fetcher, timeoutMs: 10 });
