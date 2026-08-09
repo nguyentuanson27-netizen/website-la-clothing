@@ -1,0 +1,65 @@
+name: Refresh Prisma lock
+
+on:
+  push:
+    branches:
+      - build/prisma-catalog-persistence
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+        with:
+          ref: build/prisma-catalog-persistence
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Refresh lockfile without lifecycle scripts
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Install from refreshed lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate Prisma schema
+        run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Generate initial catalog mirror migration
+        run: |
+          mkdir -p prisma/migrations/00000000000000_init_catalog_mirror
+          pnpm exec prisma migrate diff \
+            --from-empty \
+            --to-schema prisma/schema.prisma \
+            --script \
+            > prisma/migrations/00000000000000_init_catalog_mirror/migration.sql
+
+      - name: Commit generated lockfile and migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml prisma/migrations/00000000000000_init_catalog_mirror/migration.sql
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "build: generate Prisma lockfile and initial migration"
+          git push origin HEAD:build/prisma-catalog-persistence
