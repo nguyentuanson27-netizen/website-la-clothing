@@ -1,5 +1,6 @@
 const PANCAKE_API_BASE_URL = "https://pos.pages.fm/api/v1";
 const PANCAKE_API_BASE = new URL(`${PANCAKE_API_BASE_URL}/`);
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
@@ -29,14 +30,27 @@ export class PancakeNetworkError extends Error {
 export class PancakeClient {
   private readonly apiKey: string;
   private readonly fetcher: Fetcher;
+  private readonly timeoutMs: number;
 
-  constructor({ apiKey, fetcher = fetch }: { apiKey: string; fetcher?: Fetcher }) {
+  constructor({
+    apiKey,
+    fetcher = fetch,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  }: {
+    apiKey: string;
+    fetcher?: Fetcher;
+    timeoutMs?: number;
+  }) {
     if (!apiKey.trim()) {
       throw new TypeError("Pancake API key is required");
+    }
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new TypeError("Pancake request timeout must be a positive integer");
     }
 
     this.apiKey = apiKey;
     this.fetcher = fetcher;
+    this.timeoutMs = timeoutMs;
   }
 
   async getJson(endpoint: string, query: Readonly<Record<string, QueryValue>> = {}): Promise<unknown> {
@@ -46,6 +60,7 @@ export class PancakeClient {
       response = await this.fetcher(url, {
         method: "GET",
         headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
       throw new PancakeNetworkError(endpoint);
