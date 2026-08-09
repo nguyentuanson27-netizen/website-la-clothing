@@ -42,6 +42,13 @@ test("bounds Pancake requests with an abort signal", async () => {
   assert.equal(requestSignal.aborted, false);
 });
 
+test("rejects invalid Pancake request timeout configuration", () => {
+  assert.throws(
+    () => new PancakeClient({ apiKey: API_KEY, timeoutMs: 0 }),
+    /Pancake request timeout must be a positive integer/,
+  );
+});
+
 test("throws a sanitized error that does not reveal the API key", async () => {
   const fetcher: typeof fetch = async () =>
     new Response(JSON.stringify({ message: "unauthorized" }), {
