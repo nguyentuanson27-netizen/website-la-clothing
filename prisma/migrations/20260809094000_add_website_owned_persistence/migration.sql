@@ -53,6 +53,7 @@ CREATE TABLE "CartItem" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
+    CONSTRAINT "CartItem_quantity_positive" CHECK ("quantity" > 0),
     CONSTRAINT "CartItem_pkey" PRIMARY KEY ("id")
 );
 
@@ -117,4 +118,3 @@ ALTER TABLE "CartItem" ADD CONSTRAINT "CartItem_variantId_fkey" FOREIGN KEY ("va
 
 -- AddForeignKey
 ALTER TABLE "OrderMirror" ADD CONSTRAINT "OrderMirror_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
