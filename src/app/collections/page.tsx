@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function CollectionsPage() {
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Archive / Collections</p>
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         COLLECTIONS
@@ -22,6 +22,6 @@ export default function CollectionsPage() {
           <h2 className="mt-6 max-w-md font-serif text-4xl leading-none md:text-6xl">EVERYDAY UNIFORM</h2>
         </article>
       </div>
-    </main>
+    </div>
   );
 }
