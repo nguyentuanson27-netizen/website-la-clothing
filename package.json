@@ -17,7 +17,8 @@
     "test:db": "node --experimental-strip-types --test tests/database/*.test.ts",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
-    "prisma:migrate:deploy": "prisma migrate deploy"
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "pancake:probe:shape": "node --experimental-strip-types scripts/pancake-contract-shape.ts"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "1.6.25",
