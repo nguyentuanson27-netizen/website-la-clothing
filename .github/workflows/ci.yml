@@ -14,6 +14,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -30,6 +32,12 @@ jobs:
 
       - name: Install from lockfile without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate Prisma schema
+        run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
 
       - name: Lint
         run: pnpm lint
