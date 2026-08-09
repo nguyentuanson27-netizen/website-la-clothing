@@ -100,7 +100,7 @@ function describe(value: unknown, options: ResolvedOptions, depth: number): Json
   if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
     const fieldEntries: Array<[string, JsonShape]> = [];
     const emittedKeys = new Set<string>();
-    const keys = Object.keys(value).sort();
+    const keys = Object.keys(value);
     const sampledKeys = keys.slice(0, options.maxObjectFields);
     let truncated = keys.length > sampledKeys.length;
 
