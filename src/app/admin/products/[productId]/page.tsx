@@ -55,14 +55,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     notFound();
   }
 
-  const editorPath = `/admin/products/${product.id}`;
+  const persistedProductId = product.id;
+  const editorPath = `/admin/products/${persistedProductId}`;
 
   async function saveProductContent(formData: FormData) {
     "use server";
 
     const adminSession = await requireCurrentAdmin();
     const result = await adminService.update(adminSession, {
-      productId: product.id,
+      productId: persistedProductId,
       editorialDescription: formText(formData, "editorialDescription"),
       careInstructions: formText(formData, "careInstructions"),
       sizeGuide: formText(formData, "sizeGuide"),
