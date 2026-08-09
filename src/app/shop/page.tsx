@@ -1,0 +1,26 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Shop",
+  description: "Explore LA Clothing menswear.",
+};
+
+export default function ShopPage() {
+  return (
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <p className="eyebrow">LA Clothing / Store</p>
+      <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
+        SHOP
+      </h1>
+      <div className="mt-12 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
+        <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
+          Relaxed proportions, clean construction and an everyday neutral palette.
+        </p>
+        <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
+          New pieces will appear here as each drop goes live. Explore the current season through collections and
+          editorial stories in the meantime.
+        </p>
+      </div>
+    </div>
+  );
+}
