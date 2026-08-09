@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { prisma } from "../src/db/prisma.ts";
@@ -12,6 +14,8 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const PROBE_PATH = "/__cart-action-http-smoke";
 const probeDirectory = new URL("../src/app/__cart-action-http-smoke/", import.meta.url);
 const probePage = new URL("page.tsx", probeDirectory);
+const require = createRequire(import.meta.url);
+const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
 
 const runId = `${Date.now()}-${process.pid}`;
 const productExternalId = `cart-action-http-smoke-product-${runId}`;
@@ -45,15 +49,22 @@ async function waitForProbePage(): Promise<string> {
   throw new Error(`Timed out waiting for Next.js Server Action probe route\n${serverOutput}`);
 }
 
+async function waitForServerExit(timeoutMs: number): Promise<boolean> {
+  if (!server || server.exitCode !== null) return true;
+
+  const exited = once(server, "exit").then(() => true);
+  const timedOut = delay(timeoutMs).then(() => false);
+  return Promise.race([exited, timedOut]);
+}
+
 async function stopServer() {
   if (!server || server.exitCode !== null) return;
 
   server.kill("SIGTERM");
-  await Promise.race([once(server, "exit"), delay(5_000)]);
-  if (server.exitCode === null) {
-    server.kill("SIGKILL");
-    await once(server, "exit");
-  }
+  if (await waitForServerExit(5_000)) return;
+
+  server.kill("SIGKILL");
+  await waitForServerExit(5_000);
 }
 
 async function cleanupDatabase() {
@@ -99,7 +110,7 @@ try {
     "utf-8",
   );
 
-  server = spawn("pnpm", ["exec", "next", "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)], {
     env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
