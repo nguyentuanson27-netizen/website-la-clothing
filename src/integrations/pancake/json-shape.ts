@@ -20,34 +20,78 @@ type JsonShapeOptions = {
   maxDistinctArrayShapes?: number;
   maxArrayItems?: number;
   maxObjectFields?: number;
+  allowedObjectKeys?: readonly string[];
 };
 
-type ResolvedOptions = Required<JsonShapeOptions>;
+type ResolvedOptions = {
+  maxDepth: number;
+  maxDistinctArrayShapes: number;
+  maxArrayItems: number;
+  maxObjectFields: number;
+  allowedObjectKeys: ReadonlySet<string>;
+};
 
-const DEFAULT_OPTIONS: ResolvedOptions = {
+const DEFAULT_OPTIONS = {
   maxDepth: 8,
   maxDistinctArrayShapes: 5,
   maxArrayItems: 50,
   maxObjectFields: 50,
-};
+} as const;
 
-const SCHEMA_IDENTIFIER_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const DYNAMIC_KEY_MARKER = "<dynamic-key>";
 
 function resolveOptions(options: JsonShapeOptions): ResolvedOptions {
-  const resolved = { ...DEFAULT_OPTIONS, ...options };
+  const {
+    allowedObjectKeys = [],
+    maxDepth = DEFAULT_OPTIONS.maxDepth,
+    maxDistinctArrayShapes = DEFAULT_OPTIONS.maxDistinctArrayShapes,
+    maxArrayItems = DEFAULT_OPTIONS.maxArrayItems,
+    maxObjectFields = DEFAULT_OPTIONS.maxObjectFields,
+  } = options;
 
-  for (const [name, value] of Object.entries(resolved)) {
+  const numericOptions = {
+    maxDepth,
+    maxDistinctArrayShapes,
+    maxArrayItems,
+    maxObjectFields,
+  };
+
+  for (const [name, value] of Object.entries(numericOptions)) {
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new TypeError(`${name} must be a positive integer`);
     }
   }
 
-  return resolved;
+  if (!Array.isArray(allowedObjectKeys)) {
+    throw new TypeError("allowedObjectKeys must be an array of trusted field names");
+  }
+
+  for (const key of allowedObjectKeys) {
+    if (typeof key !== "string" || key.length === 0) {
+      throw new TypeError("allowedObjectKeys must contain non-empty strings");
+    }
+  }
+
+  return {
+    ...numericOptions,
+    allowedObjectKeys: new Set(allowedObjectKeys),
+  };
 }
 
-function safeObjectKey(key: string): string {
-  return SCHEMA_IDENTIFIER_KEY.test(key) ? key : DYNAMIC_KEY_MARKER;
+function compareStrings(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+
+  if (left > right) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function safeObjectKey(key: string, options: ResolvedOptions): string {
+  return options.allowedObjectKeys.has(key) ? key : DYNAMIC_KEY_MARKER;
 }
 
 function describe(value: unknown, options: ResolvedOptions, depth: number): JsonShape {
@@ -98,25 +142,37 @@ function describe(value: unknown, options: ResolvedOptions, depth: number): Json
   }
 
   if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-    const fieldEntries: Array<[string, JsonShape]> = [];
-    const emittedKeys = new Set<string>();
     const keys = Object.keys(value);
     const sampledKeys = keys.slice(0, options.maxObjectFields);
     let truncated = keys.length > sampledKeys.length;
 
-    for (const key of sampledKeys) {
-      const outputKey = safeObjectKey(key);
+    const boundedFields = sampledKeys.map((key) => {
+      const shape = describe((value as Record<string, unknown>)[key], options, depth + 1);
 
-      if (emittedKeys.has(outputKey)) {
+      return {
+        outputKey: safeObjectKey(key, options),
+        shape,
+        shapeFingerprint: JSON.stringify(shape),
+      };
+    });
+
+    boundedFields.sort(
+      (left, right) =>
+        compareStrings(left.outputKey, right.outputKey) ||
+        compareStrings(left.shapeFingerprint, right.shapeFingerprint),
+    );
+
+    const fieldEntries: Array<[string, JsonShape]> = [];
+    const emittedKeys = new Set<string>();
+
+    for (const field of boundedFields) {
+      if (emittedKeys.has(field.outputKey)) {
         truncated = true;
         continue;
       }
 
-      emittedKeys.add(outputKey);
-      fieldEntries.push([
-        outputKey,
-        describe((value as Record<string, unknown>)[key], options, depth + 1),
-      ]);
+      emittedKeys.add(field.outputKey);
+      fieldEntries.push([field.outputKey, field.shape]);
     }
 
     const result: Extract<JsonShape, { type: "object" }> = {
