@@ -58,5 +58,9 @@ export async function fetchAllPancakeCatalogVariations({
     variations.push(...page.variations);
   }
 
+  if (variations.length !== first.totalEntries) {
+    throw new Error("Pancake catalog entry count does not match the completed traversal");
+  }
+
   return variations;
 }
