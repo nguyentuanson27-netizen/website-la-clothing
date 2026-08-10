@@ -186,3 +186,16 @@ test("catalog mirror rejects inconsistent duplicate variation identity before da
   );
   assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
 });
+
+test("catalog mirror rejects shop ids outside the PostgreSQL INTEGER range before writes", async () => {
+  await assert.rejects(
+    () =>
+      repository.syncSnapshot({
+        shopId: 2_147_483_648,
+        variations: [],
+        syncedAt: new Date("2026-08-11T00:00:00.000Z"),
+      }),
+    /shop id/i,
+  );
+  assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+});
