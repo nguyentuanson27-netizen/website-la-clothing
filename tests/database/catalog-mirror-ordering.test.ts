@@ -65,3 +65,20 @@ test("catalog mirror rejects an older snapshot after a newer snapshot has commit
   assert.equal(product.name, "Newest Product");
   assert.deepEqual(product.syncedAt, new Date("2026-08-11T02:00:00.000Z"));
 });
+
+test("catalog mirror preserves the watermark for an empty first snapshot", async () => {
+  const newerEmptyAt = new Date("2026-08-11T02:00:00.000Z");
+  await repository.syncSnapshot({ shopId, variations: [], syncedAt: newerEmptyAt });
+
+  await assert.rejects(
+    () =>
+      repository.syncSnapshot({
+        shopId,
+        variations: snapshot("Stale Product"),
+        syncedAt: new Date("2026-08-11T01:00:00.000Z"),
+      }),
+    /older than the committed mirror/i,
+  );
+
+  assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+});
