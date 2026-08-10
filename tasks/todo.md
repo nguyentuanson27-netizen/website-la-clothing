@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 blocked on trusted live Pancake discovery; progress independent T12 work without guessing POS contracts
+## Current execution path: C3 trusted-local discovery reproduced legacy truncation; complete path/type tooling fix is in PR #37 and rerun/review remains required
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -39,7 +39,8 @@ Intended repository path: `tasks/todo.md`
   - [ ] exact product/variation/warehouse fields, types and paths reviewed into fixtures/allowlists
   - [x] explicit online warehouse configuration parser; no default/first/all-warehouse assumption
   - [ ] actual LA Clothing online warehouse IDs configured
-  - [ ] safe trusted live discovery using server-only local credentials
+  - [~] safe trusted live discovery attempted with server-only local credentials — warehouses resolved completely; legacy product-variation renderer returned root array truncation and deep max-depth markers, so that output is not contract evidence
+  - [~] PR #37 replaces sampled trusted-local rendering with complete normalized path/type traversal that fails closed on explicit safety budgets; merge + local rerun still required
   - [x] self-review of the configuration slice; 0 Critical / 0 Required
 - [ ] C4 Catalog mirror sync/read model — STOPPED until C3 exact contract is complete
   - [ ] schema only for verified external fields

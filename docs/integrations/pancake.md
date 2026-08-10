@@ -41,7 +41,7 @@ Object **field names can themselves contain data**. Therefore unknown raw field 
 
 Exact unknown field-name discovery and persistent CI logging are intentionally separate operations.
 
-### 1. Trusted local discovery — exact field names + value types
+### 1. Trusted local discovery — complete normalized paths + observed JSON types
 
 Copy the server-only Pancake placeholders from `.env.example` into ignored `.env.local`, then use only a trusted local/non-persisted inspection environment:
 
@@ -54,11 +54,22 @@ The discovery command:
 - loads `.env.local` through the Node 22 CLI without requiring the API key in shell history;
 - refuses execution when `CI` or `GITHUB_ACTIONS` is enabled;
 - reads the two live read-only endpoints currently needed for the catalog spike;
-- preserves exact object field names so the response structure can actually be reviewed;
-- replaces scalar values with their JSON types, so product IDs, prices, tokens and other scalar values are not printed;
-- still caps nesting, object fields, sampled array items and distinct array shapes.
+- traverses every JSON node rather than sampling only the first array items;
+- normalizes array indexes as `[]`, so the same structural field across different items is represented by one path such as `$.data[].variations_warehouses[].warehouse_id`;
+- preserves exact object field names in those trusted-local paths;
+- records the union of observed JSON types for each normalized path;
+- never retains or prints external scalar values;
+- returns `format: "normalized-path-types-v1"` and `complete: true` only after the complete payload has been traversed successfully.
 
-A `truncated: true` or `max-depth` marker means the inspection is incomplete and must **not** be treated as exact contract evidence. Increase/rework the trusted inspection deliberately before populating reviewed keys rather than guessing missing structure.
+Trusted discovery is still bounded for operator safety, but the bounds now **fail closed** rather than returning `truncated` / `max-depth` evidence:
+
+- at most `1,000,000` visited JSON nodes;
+- at most `64` structural levels;
+- at most `50,000` distinct normalized paths.
+
+If a bound is exceeded, the command exits non-zero with a safe budget message and does not emit a partial contract block. Increase/rework that trusted-local budget deliberately before contract review instead of guessing missing structure.
+
+The older sampled discovery format could emit `truncated: true` or `max-depth`; any such output is incomplete legacy evidence and must **not** be used to populate reviewed keys, validators or mappers. Rerun discovery with the complete path/type format.
 
 Because a field name can itself be PII/token-like data, treat this terminal output as sensitive inspection material. Do **not** redirect it to a committed file, upload it as an artifact, paste the complete output into a public/shared log, or run this command in CI.
 

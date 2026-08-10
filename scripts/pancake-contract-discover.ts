@@ -2,9 +2,18 @@ import { pathToFileURL } from "node:url";
 
 import { PancakeClient } from "../src/integrations/pancake/client.ts";
 import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
-import { describeTrustedJsonShape } from "../src/integrations/pancake/json-shape.ts";
+import { describeTrustedJsonContract } from "../src/integrations/pancake/trusted-json-contract.ts";
 
 const CI_REFUSAL_MESSAGE = "Trusted Pancake contract discovery refuses CI execution";
+const INSPECTION_BUDGET_MESSAGE = "Trusted JSON discovery exceeded the inspection budget";
+const DEPTH_BUDGET_MESSAGE = "Trusted JSON discovery exceeded the depth budget";
+const GENERIC_FAILURE_MESSAGE =
+  "Trusted Pancake contract discovery failed without logging external scalar values";
+const SAFE_FAILURE_MESSAGES = new Set([
+  CI_REFUSAL_MESSAGE,
+  INSPECTION_BUDGET_MESSAGE,
+  DEPTH_BUDGET_MESSAGE,
+]);
 
 function environmentFlagIsEnabled(value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
@@ -22,6 +31,13 @@ export function assertTrustedDiscoveryEnvironment(
   }
 }
 
+export function trustedDiscoveryFailureMessage(error: unknown): string {
+  if (error instanceof Error && SAFE_FAILURE_MESSAGES.has(error.message)) {
+    return error.message;
+  }
+  return GENERIC_FAILURE_MESSAGE;
+}
+
 async function discoverContracts(): Promise<void> {
   assertTrustedDiscoveryEnvironment();
 
@@ -33,13 +49,13 @@ async function discoverContracts(): Promise<void> {
     client.getJson(`/shops/${config.shopId}/warehouses`),
   ]);
 
-  const contractShapes = {
-    productVariations: describeTrustedJsonShape(productVariations),
-    warehouses: describeTrustedJsonShape(warehouses),
+  const contracts = {
+    productVariations: describeTrustedJsonContract(productVariations),
+    warehouses: describeTrustedJsonContract(warehouses),
   };
 
   console.log("PANCAKE_TRUSTED_CONTRACT_DISCOVERY_BEGIN");
-  console.log(JSON.stringify(contractShapes, null, 2));
+  console.log(JSON.stringify(contracts, null, 2));
   console.log("PANCAKE_TRUSTED_CONTRACT_DISCOVERY_END");
 }
 
@@ -52,12 +68,7 @@ if (isDirectExecution()) {
   try {
     await discoverContracts();
   } catch (error) {
-    if (error instanceof Error && error.message === CI_REFUSAL_MESSAGE) {
-      console.error(CI_REFUSAL_MESSAGE);
-    } else {
-      console.error("Trusted Pancake contract discovery failed without logging external scalar values");
-    }
-
+    console.error(trustedDiscoveryFailureMessage(error));
     process.exitCode = 1;
   }
 }
