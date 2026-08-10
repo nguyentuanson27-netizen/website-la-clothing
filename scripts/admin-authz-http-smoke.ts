@@ -39,6 +39,34 @@ function cookieHeaderFrom(headers: Headers): string {
     .join("; ");
 }
 
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, decimal: string) => String.fromCodePoint(Number.parseInt(decimal, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function serverActionEntries(html: string): Array<[string, string]> {
+  const entries: Array<[string, string]> = [];
+
+  for (const inputTag of html.match(/<input\b[^>]*>/g) ?? []) {
+    const rawName = inputTag.match(/\bname="([^"]*)"/)?.[1];
+    if (!rawName) continue;
+
+    const name = decodeHtmlAttribute(rawName);
+    if (!name.startsWith("$ACTION_")) continue;
+
+    const rawValue = inputTag.match(/\bvalue="([^"]*)"/)?.[1] ?? "";
+    entries.push([name, decodeHtmlAttribute(rawValue)]);
+  }
+
+  return entries;
+}
+
 async function signUpCookie(email: string, name: string, clientIp: string): Promise<string> {
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
@@ -164,8 +192,11 @@ try {
     "ADMIN editor must render the editorial form",
   );
 
-  const actionField = editorHtml.match(/name="(\$ACTION_[^"]+)"/)?.[1];
-  assert.ok(actionField, "ADMIN editor form must include a progressive-enhancement Server Action field");
+  const actionEntries = serverActionEntries(editorHtml);
+  assert.ok(
+    actionEntries.length > 0,
+    "ADMIN editor form must include progressive-enhancement Server Action metadata",
+  );
 
   const editorialDescription = "Authenticated HTTP admin persistence proof.";
   const careInstructions = "Cold wash. Dry in shade.";
@@ -174,7 +205,9 @@ try {
   const seoDescription = "Verified through a real authenticated Next.js Server Action request.";
 
   const form = new FormData();
-  form.set(actionField, "");
+  for (const [name, value] of actionEntries) {
+    form.append(name, value);
+  }
   form.set("editorialDescription", editorialDescription);
   form.set("careInstructions", careInstructions);
   form.set("sizeGuide", sizeGuide);
@@ -191,10 +224,14 @@ try {
     body: form,
     redirect: "manual",
   });
-  assert.ok(
-    saveResponse.status >= 300 && saveResponse.status < 400,
-    `ADMIN Server Action must redirect after save, received ${saveResponse.status}`,
-  );
+  if (!(saveResponse.status >= 300 && saveResponse.status < 400)) {
+    const responseBody = (await saveResponse.text()).slice(0, 4_000);
+    assert.fail(
+      `ADMIN Server Action must redirect after save, received ${saveResponse.status}\n` +
+        `Response body:\n${responseBody}\nServer output:\n${serverOutput}`,
+    );
+  }
+
   const saveLocation = saveResponse.headers.get("location");
   assert.ok(saveLocation, "ADMIN Server Action redirect must include Location");
   const savedUrl = new URL(saveLocation, BASE_URL);
