@@ -135,6 +135,14 @@ Verification has three defenses:
 
 The full-tree allowlist validator uses a `250000`-node budget per endpoint and fails closed if the budget is exceeded.
 
+On failure, the verifier prints only a fixed safe diagnostic code such as:
+
+```text
+Pancake reviewed-contract verification failed [stage=product-key-contract reason=inspection-budget] without logging external values or unknown field names
+```
+
+The stage distinguishes configuration, endpoint fetch, full-key validation, and mapped-contract validation for product variations vs warehouses. The reason distinguishes transport, unreviewed-field, inspection-budget, non-JSON, mapped-contract, or unexpected failure. It never echoes the API key, raw scalar values, raw payloads, or the name of an unreviewed external field.
+
 **C3 does not become complete until this verifier passes against the current live shop payload and the resulting PR receives a clean human review.**
 
 ## Later integration contracts still unverified
