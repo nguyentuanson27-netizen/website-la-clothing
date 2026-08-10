@@ -12,6 +12,8 @@ export type TrustedJsonContractPath = {
 };
 
 export type TrustedJsonContract = {
+  format: "normalized-path-types-v1";
+  complete: true;
   paths: TrustedJsonContractPath[];
 };
 
@@ -78,6 +80,12 @@ function jsonType(value: unknown): TrustedJsonValueType {
 
 function objectChildPath(parent: string, key: string): string {
   return SAFE_PATH_KEY.test(key) ? `${parent}.${key}` : `${parent}[${JSON.stringify(key)}]`;
+}
+
+function compareStrings(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function addObservedType(
@@ -169,8 +177,13 @@ export function describeTrustedJsonContract(
   }
 
   return {
+    format: "normalized-path-types-v1",
+    complete: true,
     paths: [...pathTypes.entries()]
-      .map(([path, types]) => ({ path, types: [...types].sort() }))
-      .sort((left, right) => left.path.localeCompare(right.path)),
+      .map(([path, types]) => ({
+        path,
+        types: [...types].sort(compareStrings),
+      }))
+      .sort((left, right) => compareStrings(left.path, right.path)),
   };
 }
