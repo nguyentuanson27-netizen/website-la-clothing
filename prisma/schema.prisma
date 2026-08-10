@@ -118,15 +118,19 @@ model Address {
 
 model ProductMirror {
   id               String          @id @default(cuid())
+  pancakeShopId    Int             @default(0)
   pancakeProductId String          @unique
   slug             String          @unique
   name             String
+  isPresent        Boolean         @default(true)
   isActive         Boolean         @default(true)
   syncedAt         DateTime
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   variants         VariantMirror[]
   content          ProductContent?
+
+  @@index([pancakeShopId, isPresent])
 }
 
 model ProductContent {
@@ -143,29 +147,39 @@ model ProductContent {
 }
 
 model VariantMirror {
-  id                 String           @id @default(cuid())
-  pancakeVariationId String           @unique
-  productId          String
-  sku                String?
-  color              String?
-  size               String?
-  isActive           Boolean          @default(true)
-  syncedAt           DateTime
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  product            ProductMirror    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouseStocks    WarehouseStock[]
-  cartItems           CartItem[]
+  id                              String           @id @default(cuid())
+  pancakeVariationId              String           @unique
+  productId                       String
+  pancakeDisplayId                String?
+  pancakeBarcode                  String?
+  pancakeFields                   Json?
+  pancakeImageUrls                Json?
+  pancakeIsHidden                 Boolean?
+  pancakeIsLocked                 Boolean?
+  pancakeRetailPrice              Float?
+  pancakeRetailPriceAfterDiscount Float?
+  sku                             String?
+  color                           String?
+  size                            String?
+  isPresent                       Boolean          @default(true)
+  isActive                        Boolean          @default(true)
+  syncedAt                        DateTime
+  createdAt                       DateTime         @default(now())
+  updatedAt                       DateTime         @updatedAt
+  product                         ProductMirror    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseStocks                 WarehouseStock[]
+  cartItems                       CartItem[]
 
   @@index([productId])
   @@index([sku])
+  @@index([isPresent])
 }
 
 model WarehouseStock {
   id                 String        @id @default(cuid())
   variantId          String
   pancakeWarehouseId String
-  quantity           Int
+  quantity           Float
   syncedAt           DateTime
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
