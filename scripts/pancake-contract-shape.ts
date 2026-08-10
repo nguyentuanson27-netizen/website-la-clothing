@@ -1,3 +1,7 @@
+import {
+  parsePancakeCatalogVariations,
+  parsePancakeWarehouses,
+} from "../src/integrations/pancake/catalog-contract.ts";
 import { PancakeClient } from "../src/integrations/pancake/client.ts";
 import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
 import { describeReviewedJsonShape } from "../src/integrations/pancake/json-shape.ts";
@@ -37,6 +41,12 @@ async function main() {
       verificationOptions(REVIEWED_PANCAKE_CONTRACT_KEYS.warehouses),
     ),
   };
+
+  // The allowlist validates every returned object key. These parsers separately validate
+  // the exact path/type subset that C4 is allowed to consume, including pagination and
+  // all-warehouse remain_quantity aggregation. Parsed values are deliberately discarded.
+  parsePancakeCatalogVariations(productVariations);
+  parsePancakeWarehouses(warehouses);
 
   console.log("PANCAKE_REVIEWED_CONTRACT_VERIFICATION_BEGIN");
   console.log(JSON.stringify(contractShapes, null, 2));
