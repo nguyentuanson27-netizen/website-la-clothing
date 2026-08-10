@@ -4,6 +4,8 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
 
 const MAX_READ_PRODUCTS = 100;
+const MAX_POSTGRES_INTEGER = 2_147_483_647;
+const SYNC_LOCK_NAMESPACE = 1_277_934_572;
 const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 
 type CatalogProductSnapshot = {
@@ -12,8 +14,8 @@ type CatalogProductSnapshot = {
 };
 
 function requireShopId(shopId: number): number {
-  if (!Number.isSafeInteger(shopId) || shopId <= 0) {
-    throw new TypeError("Catalog mirror shop id must be a positive safe integer");
+  if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
+    throw new TypeError("Catalog mirror shop id must fit a positive PostgreSQL INTEGER");
   }
   return shopId;
 }
@@ -118,6 +120,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
 
     return client.$transaction(
       async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
+
         const internalProductIds = new Map<string, string>();
 
         for (const product of productByExternalId.values()) {
