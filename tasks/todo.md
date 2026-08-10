@@ -4,11 +4,11 @@ Status: build in progress
 Intended repository path: `tasks/todo.md`
 
 - [x] T0 Establish repository baseline and save approved spec
-- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — endpoint/base URL, trusted product/warehouse structural discovery, and reservation-aware stock semantics verified; write-path contracts remain
+- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — catalog read contract + reservation-aware stock semantics verified; order/write/webhook contracts remain
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client/discovery foundation and stock probe implemented; reviewed product fields plus order/status contracts remain
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
 - [ ] T6 Implement idempotent catalog synchronization/mirror
 - [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, read-only request identity and bounded Server Functions are implemented; catalog-backed UI remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 structural discovery + stock semantics are verified; reviewed catalog contract fixtures/allowlists remain before C4
+## Current execution path: C3 code/fixture review is complete; final trusted live verifier + human review gate remain before C4
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -34,20 +34,29 @@ Intended repository path: `tasks/todo.md`
   - [x] PostgreSQL + injected cookie-store runtime verification
   - [x] actual Next HTTP Server Action `Set-Cookie` round-trip verified in CI
   - [x] post-fix verdict: APPROVE — 0 Critical / 0 Required; merged to `main`
-- [~] C3 Pancake product/warehouse exact contract — structural discovery and website stock semantics verified; reviewed mapping contract remains
+- [~] C3 Pancake product/warehouse exact contract — reviewed implementation complete; live reviewed-contract + human review gates remain
   - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
-  - [x] trusted-local discovery rerun after PR #37 returned `format: normalized-path-types-v1` + `complete: true` for both `productVariations` and `warehouses`
-  - [~] exact product/variation/warehouse fields and observed types are available from trusted discovery; reviewed fixtures/allowlists still need to be committed from the approved subset
+  - [x] trusted-local discovery after PR #37 returned `format: normalized-path-types-v1` + `complete: true` for both `productVariations` and `warehouses`
+  - [x] exact observed product/variation/warehouse object keys reviewed into checked-in allowlists
+  - [x] sanitized product-variation + warehouse fixtures committed; no live API key/customer data/operational inventory persisted
+  - [x] typed catalog parser validates pagination, variation/product identity, mapped attributes/images/raw flags/raw prices and per-warehouse `remain_quantity`
+  - [x] parser rejects malformed mapped types, inconsistent product identity and duplicate warehouse rows instead of coercing/guessing
+  - [x] pagination metadata retained so C4 can perform bounded full-catalog traversal rather than silently syncing one page
   - [x] product owner decision: website sellable inventory aggregates **all Pancake warehouses** for each variation; no warehouse-ID subset is required
-  - [~] legacy explicit `PANCAKE_ONLINE_WAREHOUSE_IDS` parser is superseded by the all-warehouse business rule and must not govern C4 aggregation
+  - [x] obsolete `PANCAKE_ONLINE_WAREHOUSE_IDS` configuration/parser/tests removed
   - [x] PR #38 read-only trusted-local stock probe exercised against the live shop using controlled before/order/cancel snapshots
-  - [x] controlled quantity-1 order evidence: only `remain_quantity` changed A→B→C (`-1`, then `+1`); `actual_remain_quantity`, `total_quantity`, `pending_quantity`, `waiting_quantity`, and `returning_quantity` had zero delta
+  - [x] controlled quantity-1 evidence: only `remain_quantity` changed A→B→C (`-1`, then `+1`); the other five observed quantity fields had zero delta
   - [x] verified website inventory rule for the tested reservation lifecycle: `sellable stock = SUM(variations_warehouses[].remain_quantity)` across all distinct warehouses
-  - [x] probe CLI usage corrected for pnpm 11 argument forwarding: `pnpm pancake:stock:probe <selector>`; no extra `--`
-  - [ ] commit reviewed catalog field subset into allowlists + sanitized fixtures, then run final C3 review
-- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 reviewed catalog contract is complete
+  - [x] probe CLI usage corrected for pnpm argument forwarding: `pnpm pancake:stock:probe <selector>`; no extra `--`
+  - [x] reviewed verifier performs full key allowlist validation and now also invokes the production mapped parser/type contract before emitting sanitized shape output
+  - [ ] run `pnpm pancake:contract:verify` against current live `.env.local` and confirm success without exposing raw response/secrets
+  - [~] final self-review: correctness → security → architecture → simplicity → performance; automated final-head CI still required after current verification/docs delta
+  - [ ] human review of PR #38 with 0 Critical / 0 Required before marking C3 complete
+- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 final live verifier + human review pass
+  - [ ] fetch/traverse verified Pancake pagination deliberately
   - [ ] schema only for verified external fields
   - [ ] aggregate `remain_quantity` across all distinct `variations_warehouses[]`
+  - [ ] make visibility/Color×Size/final storefront price policies explicit rather than inferring unverified semantics silently
   - [ ] idempotent PostgreSQL sync tests
   - [ ] self-review
 - [ ] C5 PLP/PDP Color × Size storefront
@@ -100,8 +109,9 @@ Intended repository path: `tasks/todo.md`
 - Do not guess shipping fee, unverified Pancake field semantics/types, create-order idempotency/reference semantics, or webhook authentication/replay behavior.
 - Do not reintroduce warehouse subset filtering unless the product owner changes the approved all-warehouse inventory policy.
 - Do not treat mirrored stock as a reservation; revalidate authoritative `remain_quantity` immediately before order creation.
+- Do not let raw external image URLs create a server-side fetch boundary without an explicit trusted-origin policy.
 - Do not move past a slice with a Required/Critical self-review finding or failing CI.
-- Do not claim browser runtime verification without an actual browser/runtime check.
+- Do not claim browser/runtime/live Pancake verification without actual evidence.
 
 ## Human gates
 - [x] Intent approved
