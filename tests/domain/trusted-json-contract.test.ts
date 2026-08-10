@@ -1,34 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import * as jsonShapeModule from "../../src/integrations/pancake/json-shape.ts";
+import { describeTrustedJsonContract } from "../../src/integrations/pancake/trusted-json-contract.ts";
 
 type ContractPath = {
   path: string;
-  types: string[];
+  types: readonly string[];
 };
 
-type TrustedContractDescriptor = (
-  value: unknown,
-  options?: { maxNodes?: number; maxDepth?: number; maxDistinctPaths?: number },
-) => { paths: ContractPath[] };
-
-function trustedContractDescriptor(): TrustedContractDescriptor {
-  const candidate = Reflect.get(jsonShapeModule, "describeTrustedJsonContract");
-  assert.equal(
-    typeof candidate,
-    "function",
-    "trusted local discovery needs a full-tree path/type descriptor instead of sampled shapes",
-  );
-  return candidate as TrustedContractDescriptor;
-}
-
-function pathMap(paths: ContractPath[]): Map<string, string[]> {
+function pathMap(paths: readonly ContractPath[]): Map<string, readonly string[]> {
   return new Map(paths.map(({ path, types }) => [path, types]));
 }
 
 test("trusted contract discovery reaches fields after item 50 and below the old depth limit", () => {
-  const describeTrustedJsonContract = trustedContractDescriptor();
   const deepValue = {
     level1: {
       level2: {
@@ -90,7 +74,6 @@ test("trusted contract discovery reaches fields after item 50 and below the old 
 });
 
 test("trusted contract discovery fails closed instead of returning partial evidence when its budget is exceeded", () => {
-  const describeTrustedJsonContract = trustedContractDescriptor();
   const secretKey = "must_not_be_echoed_from_budget_failure";
   const secretValue = "must-not-be-echoed-value";
 
@@ -105,6 +88,24 @@ test("trusted contract discovery fails closed instead of returning partial evide
       assert.match(error.message, /inspection|budget/i);
       assert.equal(error.message.includes(secretKey), false);
       assert.equal(error.message.includes(secretValue), false);
+      return true;
+    },
+  );
+});
+
+test("trusted contract discovery fails closed instead of emitting max-depth markers", () => {
+  const secretKey = "must_not_be_echoed_from_depth_failure";
+
+  assert.throws(
+    () =>
+      describeTrustedJsonContract(
+        { level1: { level2: { [secretKey]: "deep-value" } } },
+        { maxDepth: 1 },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /depth|budget/i);
+      assert.equal(error.message.includes(secretKey), false);
       return true;
     },
   );
