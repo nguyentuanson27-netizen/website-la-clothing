@@ -19,7 +19,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "pancake:contract:discover": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-contract-discover.ts",
-    "pancake:contract:verify": "node --experimental-strip-types scripts/pancake-contract-shape.ts"
+    "pancake:contract:verify": "node --experimental-strip-types scripts/pancake-contract-shape.ts",
+    "pancake:stock:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-stock-probe.ts"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "1.6.25",
