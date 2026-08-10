@@ -86,14 +86,14 @@ function safeFailureMessage(error: unknown): string {
 }
 
 async function main() {
+  let config: ReturnType<typeof readPancakeConfig>;
   try {
     assertReviewedPancakeContractKeysConfigured();
-    readPancakeConfig();
+    config = readPancakeConfig();
   } catch {
     throw new PancakeContractVerificationStageError("configuration", "configuration");
   }
 
-  const config = readPancakeConfig();
   const client = new PancakeClient({ apiKey: config.apiKey });
 
   let productVariations: unknown;
@@ -110,7 +110,7 @@ async function main() {
     throw new PancakeContractVerificationStageError("warehouse-fetch", "transport");
   }
 
-  let productVariationShape;
+  let productVariationShape: ReturnType<typeof describeReviewedJsonShape>;
   try {
     productVariationShape = describeReviewedJsonShape(
       productVariations,
@@ -123,7 +123,7 @@ async function main() {
     );
   }
 
-  let warehouseShape;
+  let warehouseShape: ReturnType<typeof describeReviewedJsonShape>;
   try {
     warehouseShape = describeReviewedJsonShape(
       warehouses,
