@@ -162,6 +162,28 @@ test("stock probe fails closed if one warehouse_id appears more than once", () =
   );
 });
 
+test("trusted-local stock probe usage matches pnpm run argument forwarding", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/pancake-stock-probe.ts"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: "false",
+        GITHUB_ACTIONS: "false",
+        PANCAKE_API_KEY: "",
+        PANCAKE_SHOP_ID: "",
+      },
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Usage: pnpm pancake:stock:probe <variation id \| display_id \| barcode>/);
+  assert.equal(result.stderr.includes("probe -- <variation"), false);
+});
+
 test("trusted-local stock probe refuses CI before reading Pancake credentials", () => {
   const apiKey = "must-not-be-printed";
   const result = spawnSync(
