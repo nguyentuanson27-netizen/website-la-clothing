@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "page_number": 1,
+  "page_size": 100,
+  "total_entries": 1,
+  "total_pages": 1,
+  "data": [
+    {
+      "id": "variation-fixture-1",
+      "product_id": "product-fixture-1",
+      "display_id": "DISPLAY-FIXTURE-1",
+      "barcode": "BAR-FIXTURE-1",
+      "fields": [
+        {
+          "id": "field-color",
+          "keyValue": "color",
+          "name": "Color",
+          "value": "Black"
+        },
+        {
+          "id": "field-size",
+          "keyValue": "size",
+          "name": "Size",
+          "value": "M"
+        }
+      ],
+      "images": ["https://example.test/catalog/product-fixture-1.jpg"],
+      "is_hidden": false,
+      "is_locked": false,
+      "retail_price": 500000,
+      "retail_price_after_discount": 450000,
+      "product": {
+        "id": "product-fixture-1",
+        "name": "Sanitized Test Shirt"
+      },
+      "variations_warehouses": [
+        {
+          "warehouse_id": "warehouse-fixture-a",
+          "remain_quantity": 3
+        },
+        {
+          "warehouse_id": "warehouse-fixture-b",
+          "remain_quantity": 4
+        }
+      ]
+    }
+  ]
+}

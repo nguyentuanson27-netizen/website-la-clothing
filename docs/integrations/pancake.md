@@ -1,124 +1,161 @@
-# Pancake POS integration contract spike
+# Pancake POS integration contract
 
-Status: In progress — authoritative contract discovery before product/order adapter expansion.
+Status: **C3 catalog contract implementation complete; final trusted live reviewed-contract verification and human review remain before C4.**
 
-## Verified from official Pancake POS documentation
+## Authoritative boundaries
 
-- Production base URL: `https://pos.pages.fm/api/v1`.
-- Authentication uses an API key created in Pancake POS settings. The official examples send it as the `api_key` request parameter.
-- Shop discovery is available via `GET /shops`.
-  - The documented success payload contains `success: true` and a `shops` array.
-  - Each documented shop contains a numeric `id` and string `name` plus additional POS metadata.
-  - The website adapter intentionally maps only `{ id, name }` until more fields are required.
-- Product/variation inventory can be read via `GET /shops/{SHOP_ID}/products/variations`.
-- Product detail is available via `GET /shops/{SHOP_ID}/products/{PRODUCT_SKU}`.
-- Warehouses are available via `GET /shops/{SHOP_ID}/warehouses`.
-- Orders support list/create/get/update via:
-  - `GET /shops/{SHOP_ID}/orders`
-  - `POST /shops/{SHOP_ID}/orders`
-  - `GET /shops/{SHOP_ID}/orders/{ORDER_ID}`
-  - `PUT /shops/{SHOP_ID}/orders/{ORDER_ID}`
-- Address vocabulary is exposed through province, district and commune endpoints.
-- The Open API reference exposes a webhook configuration operation at `PUT /shops/{SHOP_ID}`.
-- Pancake publishes a dedicated “Order status & processing flow” reference for `status` / `status_name` semantics.
+- Production API base: `https://pos.pages.fm/api/v1`.
+- `PANCAKE_API_KEY` and `PANCAKE_SHOP_ID` are server-only configuration.
+- Browser code must never receive the Pancake API key or call privileged Pancake operations directly.
+- External Pancake payloads are untrusted data and must be validated before crossing the adapter boundary.
+- Raw Pancake field names stay under `src/integrations/pancake/`; storefront code consumes internal types only.
 
-## Implemented boundary
+Catalog endpoints used by C3:
 
-- `src/integrations/pancake/client.ts` owns the API credential and GET transport.
-- The client validates the canonicalized Pancake origin/API prefix before attaching `api_key`.
-- `src/integrations/pancake/shops.ts` calls `/shops`, treats the payload as untrusted, validates the documented envelope, and maps only the minimal internal shop contract.
-- Malformed/unsuccessful shop payloads fail closed with `PancakePayloadError`.
+- `GET /shops/{SHOP_ID}/products/variations`
+- `GET /shops/{SHOP_ID}/warehouses`
 
-## Security boundary
+Later order/write-path work remains separate and must not be inferred from this catalog contract.
 
-The website backend is the only caller allowed to possess the Pancake API key. Browser code must never receive the key or call privileged Pancake operations directly.
+## Trusted structural discovery
 
-External Pancake payloads are untrusted data. The adapter must validate them before mapping to internal commerce types.
-
-Object **field names can themselves contain data**. Therefore unknown raw field names must not be persisted into GitHub Actions logs. Lexical identifier syntax is not treated as proof that a key is schema metadata.
-
-## Contract discovery vs verification
-
-Exact unknown field-name discovery and persistent CI logging are intentionally separate operations.
-
-### 1. Trusted local discovery — complete normalized paths + observed JSON types
-
-Copy the server-only Pancake placeholders from `.env.example` into ignored `.env.local`, then use only a trusted local/non-persisted inspection environment:
+Trusted discovery runs only on a local machine with ignored `.env.local` credentials:
 
 ```bash
 pnpm pancake:contract:discover
 ```
 
-The discovery command:
+The command refuses CI/GitHub Actions, never retains external scalar values, normalizes array indexes to `[]`, and records observed path/type unions. It fails closed on explicit traversal budgets instead of returning partial evidence.
 
-- loads `.env.local` through the Node 22 CLI without requiring the API key in shell history;
-- refuses execution when `CI` or `GITHUB_ACTIONS` is enabled;
-- reads the two live read-only endpoints currently needed for the catalog spike;
-- traverses every JSON node rather than sampling only the first array items;
-- normalizes array indexes as `[]`, so the same structural field across different items is represented by one path such as `$.data[].variations_warehouses[].warehouse_id`;
-- preserves exact object field names in those trusted-local paths;
-- records the union of observed JSON types for each normalized path;
-- never retains or prints external scalar values;
-- returns `format: "normalized-path-types-v1"` and `complete: true` only after the complete payload has been traversed successfully.
+The product-owner rerun after PR #37 returned:
 
-Trusted discovery is still bounded for operator safety, but the bounds now **fail closed** rather than returning `truncated` / `max-depth` evidence:
+```text
+format: normalized-path-types-v1
+complete: true
+```
 
-- at most `1,000,000` visited JSON nodes;
-- at most `64` structural levels;
-- at most `50,000` distinct normalized paths.
+for both `productVariations` and `warehouses`, with no legacy `truncated` or `max-depth` markers.
 
-If a bound is exceeded, the command exits non-zero with a safe budget message and does not emit a partial contract block. Increase/rework that trusted-local budget deliberately before contract review instead of guessing missing structure.
+Exact field names from trusted discovery are treated as sensitive inspection material. Do not persist raw discovery output or API responses in GitHub artifacts, public logs, issues, or commits.
 
-The older sampled discovery format could emit `truncated: true` or `max-depth`; any such output is incomplete legacy evidence and must **not** be used to populate reviewed keys, validators or mappers. Rerun discovery with the complete path/type format.
+## Reviewed catalog contract
 
-Because a field name can itself be PII/token-like data, treat this terminal output as sensitive inspection material. Do **not** redirect it to a committed file, upload it as an artifact, paste the complete output into a public/shared log, or run this command in CI.
+`src/integrations/pancake/reviewed-contract-keys.ts` contains the checked-in object-key allowlists reviewed from the trusted discovery output.
 
-After inspection, review which names are genuine stable schema fields. Add only those reviewed names to `src/integrations/pancake/reviewed-contract-keys.ts`, then implement fixtures/validators from the reviewed contract.
+`src/integrations/pancake/catalog-contract.ts` validates and maps only the C4-facing subset currently required:
 
-### 2. GitHub Actions verification — reviewed names only
+### Product/variation page
 
-`.github/workflows/pancake-contract-probe.yml` is a **verification workflow**, not a discovery mechanism.
+- pagination: `page_number`, `page_size`, `total_entries`, `total_pages`;
+- variation identity: `id`, `product_id`, `display_id`, `barcode`;
+- attributes: `fields[].id`, `fields[].keyValue`, `fields[].name`, `fields[].value`;
+- images: `images[]` as raw URL strings only;
+- raw flags: `is_hidden`, `is_locked`;
+- raw price fields: `retail_price`, `retail_price_after_discount`;
+- parent identity/presentation: `product.id`, `product.name`;
+- per-warehouse inventory: `variations_warehouses[].warehouse_id`, `variations_warehouses[].remain_quantity`.
 
-It runs:
+The parser:
+
+- requires a successful response;
+- validates pagination as non-negative safe integers so later sync can traverse pages deliberately;
+- requires `product_id === product.id` instead of accepting inconsistent identities;
+- validates the mapped field types without coercion;
+- rejects duplicate `warehouse_id` rows rather than guessing whether they represent independent stock buckets;
+- ignores unconsumed external fields at the internal mapped-output boundary.
+
+`tests/fixtures/pancake/product-variations.json` and `tests/fixtures/pancake/warehouses.json` are synthetic/sanitized fixtures. They contain no live API key, real customer data, real operational inventory, or live shop identifiers.
+
+### Semantics deliberately not invented by C3
+
+The adapter preserves `is_hidden`, `is_locked`, `retail_price`, `retail_price_after_discount`, and attribute field values as reviewed raw contract data. C3 does **not** claim additional business semantics for those fields beyond what has been separately verified. Visibility policy, Color/Size interpretation, and final storefront price selection must be made explicitly in the slice that consumes them rather than being inferred silently from names.
+
+Image strings are also data only. C3 does not fetch remote images. Any later server-side image fetch/render integration must apply an explicit trusted-origin policy before introducing an SSRF-capable fetch boundary.
+
+## Verified all-warehouse stock semantics
+
+The product owner decided:
+
+> Website sellable inventory aggregates all Pancake warehouses for each variation.
+
+No `PANCAKE_ONLINE_WAREHOUSE_IDS` subset is used. The former explicit-subset parser/config was removed because it no longer represents the approved business rule.
+
+Trusted discovery observed these per-warehouse quantity fields as numbers:
+
+- `actual_remain_quantity`
+- `remain_quantity`
+- `total_quantity`
+- `pending_quantity`
+- `waiting_quantity`
+- `returning_quantity`
+
+Field names alone were not used to choose sellable stock. PR #38 added a read-only local probe:
+
+```bash
+pnpm pancake:stock:probe <variation id | display_id | barcode>
+```
+
+The command refuses CI, reads only the product/variation endpoint, validates all six quantity fields, and never creates/updates/cancels an order.
+
+The product owner then ran a controlled quantity-1 order lifecycle against the live shop:
+
+| Field | A → B after saving order | B → C after cancellation |
+| --- | ---: | ---: |
+| `actual_remain_quantity` | 0 | 0 |
+| `remain_quantity` | **-1** | **+1** |
+| `total_quantity` | 0 | 0 |
+| `pending_quantity` | 0 | 0 |
+| `waiting_quantity` | 0 | 0 |
+| `returning_quantity` | 0 | 0 |
+
+Therefore the approved MVP rule for the tested reservation lifecycle is:
+
+```text
+website sellable stock for a variation
+= SUM(variations_warehouses[].remain_quantity across all distinct warehouses)
+```
+
+Mirrored stock is not a reservation. Checkout must re-read/revalidate authoritative Pancake availability immediately before order creation.
+
+## Final reviewed-contract verification
+
+The local verifier can now load the same ignored `.env.local` configuration:
 
 ```bash
 pnpm pancake:contract:verify
 ```
 
-The verifier uses two separate phases:
+The manual GitHub workflow `.github/workflows/pancake-contract-probe.yml` runs the same verifier with repository secrets when explicitly dispatched.
 
-1. **Full allowlist validation** traverses every JSON value in the live payload, independent of render sampling/depth limits. Any unreviewed object field causes a generic failure that does not echo the field name.
-2. **Bounded shape rendering** runs only after full validation succeeds. Its `maxArrayItems`, `maxDepth`, distinct-shape and object-field caps keep the persisted Actions output small; those rendering caps cannot hide an unknown field from validation.
+Verification has three defenses:
 
-Full validation uses an explicit global node budget of `250000` nodes for each endpoint payload. If traversing the entire payload would exceed that budget, verification fails closed with a generic inspection-budget error instead of accepting a partially inspected contract.
+1. **Full allowlist validation** traverses every returned JSON node and rejects any object key not in the checked-in reviewed allowlist without echoing the unknown key.
+2. **Mapped contract validation** runs the production catalog/warehouse parsers against the same live payload, validating the exact path/type subset C4 is allowed to consume, including pagination and all-warehouse `remain_quantity` aggregation.
+3. **Bounded sanitized rendering** emits only reviewed field names/type shapes after validation; rendering limits cannot hide an unknown key because full validation runs first.
 
-The verifier also:
+The full-tree allowlist validator uses a `250000`-node budget per endpoint and fails closed if the budget is exceeded.
 
-- requires non-empty checked-in reviewed key allowlists before making a Pancake request;
-- exposes only field names already present in those allowlists;
-- remains manual-only with `contents: read`, immutable action SHAs and Pancake secrets scoped to the verification step.
+On failure, the verifier prints only a fixed safe diagnostic code such as:
 
-Until trusted discovery has been reviewed and `REVIEWED_PANCAKE_CONTRACT_KEYS` is populated, this Actions workflow is expected to fail closed instead of producing a misleading “discovery” shape.
+```text
+Pancake reviewed-contract verification failed [stage=product-key-contract reason=inspection-budget] without logging external values or unknown field names
+```
 
-The historical Actions run executed on `main@2d33d0eb...` used the pre-hardening sanitizer and is invalid as contract evidence. Do not use that output to implement validators or mappers.
+The stage distinguishes configuration, endpoint fetch, full-key validation, and mapped-contract validation for product variations vs warehouses. The reason distinguishes transport, unreviewed-field, inspection-budget, non-JSON, mapped-contract, or unexpected failure. It never echoes the API key, raw scalar values, raw payloads, or the name of an unreviewed external field.
 
-## Still unverified — blocks catalog/write-path completion
+**C3 does not become complete until this verifier passes against the current live shop payload and the resulting PR receives a clean human review.**
 
-The indexed official docs available in this build session do not expose enough detail to safely implement the following yet:
+## Later integration contracts still unverified
 
-1. Exact `products/variations` response schema, including per-warehouse quantity fields and active/hidden flags.
-2. Exact warehouse response schema needed to select online sellable warehouse IDs.
-3. Exact create-order request/response schema and the correct field for a website-origin reference.
-4. Exact order status codes and all valid transitions.
-5. Webhook event names, payload shape, authentication/signature and replay-protection mechanism.
-6. Native create-order idempotency behavior or a unique client-reference constraint.
-7. Which shop warehouse IDs should count toward online sellable inventory.
+These items are outside the catalog C3 contract and continue to block their later slices:
 
-Do not guess these fields. Do not implement automatic retries for uncertain order writes until idempotency/reconciliation behavior is proven.
+1. Exact create-order request/response schema and the correct website-origin reference field.
+2. Native create-order idempotency behavior or unique client-reference constraint.
+3. Exact order status codes/transitions used by reconciliation.
+4. Webhook event names, payload shape, authentication/signature and replay protection.
+5. Shipping-fee business rule for checkout.
 
-## Intended adapter boundary
-
-Raw Pancake data will be isolated under `src/integrations/pancake/` and mapped to internal types used by storefront modules. No page/component should depend on raw Pancake field names.
+Do not guess these contracts. In particular, do not add blind retries for uncertain Pancake order writes.
 
 ## Official sources checked
 
@@ -126,3 +163,4 @@ Raw Pancake data will be isolated under `src/integrations/pancake/` and mapped t
 - Pancake POS Open API overview: https://docs.pancake.biz/pos/st-f13/st-p1?lang=en
 - API key/authentication: https://docs.pancake.biz/pos/st-f13/st-p2?lang=en
 - Order status & processing flow: https://docs.pancake.biz/pos/st-f13/st-p3?lang=en
+- pnpm run argument forwarding: https://pnpm.io/cli/run

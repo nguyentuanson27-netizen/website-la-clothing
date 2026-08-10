@@ -1,0 +1,208 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import test from "node:test";
+
+import {
+  buildPancakeStockProbe,
+  PancakeStockProbeError,
+} from "../../src/integrations/pancake/stock-probe.ts";
+
+const payload = {
+  data: [
+    {
+      id: "variation-1",
+      display_id: "DISPLAY-1",
+      barcode: "BAR-1",
+      variations_warehouses: [
+        {
+          warehouse_id: "warehouse-a",
+          actual_remain_quantity: 4,
+          remain_quantity: 3,
+          total_quantity: 6,
+          pending_quantity: 1,
+          waiting_quantity: 2,
+          returning_quantity: 0,
+        },
+        {
+          warehouse_id: "warehouse-b",
+          actual_remain_quantity: 5,
+          remain_quantity: 5,
+          total_quantity: 5,
+          pending_quantity: 0,
+          waiting_quantity: 0,
+          returning_quantity: 1,
+        },
+      ],
+    },
+    {
+      id: "variation-2",
+      display_id: "DISPLAY-2",
+      barcode: "BAR-2",
+      variations_warehouses: [],
+    },
+  ],
+};
+
+test("stock probe resolves one variation by id/display_id/barcode and totals all warehouses", () => {
+  for (const selector of ["variation-1", "DISPLAY-1", "BAR-1"]) {
+    const result = buildPancakeStockProbe(payload, selector);
+
+    assert.equal(result.variation.id, "variation-1");
+    assert.equal(result.warehouses.length, 2);
+    assert.deepEqual(result.totals, {
+      actual_remain_quantity: 9,
+      remain_quantity: 8,
+      total_quantity: 11,
+      pending_quantity: 1,
+      waiting_quantity: 2,
+      returning_quantity: 1,
+    });
+  }
+});
+
+test("stock probe fails closed instead of treating null quantity as zero", () => {
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
+        {
+          data: [
+            {
+              id: "variation-null",
+              variations_warehouses: [
+                {
+                  warehouse_id: "warehouse-a",
+                  actual_remain_quantity: null,
+                  remain_quantity: 3,
+                  total_quantity: 3,
+                  pending_quantity: 0,
+                  waiting_quantity: 0,
+                  returning_quantity: 0,
+                },
+              ],
+            },
+          ],
+        },
+        "variation-null",
+      ),
+    PancakeStockProbeError,
+  );
+});
+
+test("stock probe fails closed for malformed external quantity data", () => {
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
+        {
+          data: [
+            {
+              id: "variation-bad",
+              variations_warehouses: [
+                {
+                  warehouse_id: "warehouse-a",
+                  actual_remain_quantity: "4",
+                  remain_quantity: 4,
+                  total_quantity: 4,
+                  pending_quantity: 0,
+                  waiting_quantity: 0,
+                  returning_quantity: 0,
+                },
+              ],
+            },
+          ],
+        },
+        "variation-bad",
+      ),
+    PancakeStockProbeError,
+  );
+});
+
+test("stock probe requires exactly one matching variation", () => {
+  assert.throws(() => buildPancakeStockProbe(payload, "missing"), /exactly one/i);
+
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
+        {
+          data: [
+            { id: "same", variations_warehouses: [] },
+            { display_id: "same", variations_warehouses: [] },
+          ],
+        },
+        "same",
+      ),
+    /exactly one/i,
+  );
+});
+
+test("stock probe fails closed if one warehouse_id appears more than once", () => {
+  const row = {
+    warehouse_id: "warehouse-a",
+    actual_remain_quantity: 4,
+    remain_quantity: 4,
+    total_quantity: 4,
+    pending_quantity: 0,
+    waiting_quantity: 0,
+    returning_quantity: 0,
+  };
+
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
+        {
+          data: [
+            {
+              id: "variation-duplicate-warehouse",
+              variations_warehouses: [row, { ...row, remain_quantity: 3 }],
+            },
+          ],
+        },
+        "variation-duplicate-warehouse",
+      ),
+    /duplicate warehouse/i,
+  );
+});
+
+test("trusted-local stock probe usage matches pnpm run argument forwarding", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/pancake-stock-probe.ts"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: "false",
+        GITHUB_ACTIONS: "false",
+        PANCAKE_API_KEY: "",
+        PANCAKE_SHOP_ID: "",
+      },
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Usage: pnpm pancake:stock:probe <variation id \| display_id \| barcode>/);
+  assert.equal(result.stderr.includes("probe -- <variation"), false);
+});
+
+test("trusted-local stock probe refuses CI before reading Pancake credentials", () => {
+  const apiKey = "must-not-be-printed";
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/pancake-stock-probe.ts", "variation-1"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: "true",
+        GITHUB_ACTIONS: "true",
+        PANCAKE_API_KEY: apiKey,
+        PANCAKE_SHOP_ID: "1",
+      },
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /stock probe refuses CI execution/i);
+  assert.equal(result.stderr.includes(apiKey), false);
+});

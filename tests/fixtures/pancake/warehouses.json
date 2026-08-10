@@ -1,0 +1,25 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "warehouse-fixture-a",
+      "name": "Sanitized Warehouse A",
+      "allow_create_order": true,
+      "address": null,
+      "affiliate_shop_id": null,
+      "batch_config": null,
+      "commune_id": null,
+      "country_code": 84,
+      "custom_batch_config": null,
+      "custom_id": null,
+      "custom_shelf_config": null,
+      "district_id": null,
+      "full_address": "Sanitized address",
+      "hide_config_batch_shelf": null,
+      "phone_number": "0000000000",
+      "postcode": null,
+      "province_id": "sanitized-province",
+      "shelf_config": null
+    }
+  ]
+}
