@@ -123,7 +123,7 @@ jobs:
 
       - name: Install pinned accessibility runtime tooling
         working-directory: tests/a11y-runtime
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Install Playwright Chromium
         working-directory: tests/a11y-runtime
