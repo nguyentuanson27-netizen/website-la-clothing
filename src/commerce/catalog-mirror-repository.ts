@@ -122,6 +122,15 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
 
+        const latestCommitted = await tx.productMirror.findFirst({
+          where: { pancakeShopId: safeShopId },
+          orderBy: { syncedAt: "desc" },
+          select: { syncedAt: true },
+        });
+        if (latestCommitted && latestCommitted.syncedAt.getTime() > safeSyncedAt.getTime()) {
+          throw new Error("Catalog mirror snapshot is older than the committed mirror");
+        }
+
         const internalProductIds = new Map<string, string>();
 
         for (const product of productByExternalId.values()) {
