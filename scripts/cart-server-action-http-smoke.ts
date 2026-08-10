@@ -166,7 +166,16 @@ try {
     [{ variantId, quantity: 1 }],
   );
 
-  console.log("Server Action HTTP smoke passed: response emitted the HttpOnly anonymous-cart cookie.");
+  const adminResponse = await fetch(`${BASE_URL}/admin`, { redirect: "manual" });
+  assert.ok(
+    adminResponse.status >= 300 && adminResponse.status < 400,
+    `unauthenticated admin request must redirect, received ${adminResponse.status}`,
+  );
+  const adminLocation = adminResponse.headers.get("location");
+  assert.ok(adminLocation, "unauthenticated admin redirect must include Location");
+  assert.equal(new URL(adminLocation, BASE_URL).pathname, "/account");
+
+  console.log("Next HTTP security smoke passed: cart cookie emitted and unauthenticated admin access redirected.");
 } finally {
   await stopServer();
   await rm(probeDirectory, { recursive: true, force: true });

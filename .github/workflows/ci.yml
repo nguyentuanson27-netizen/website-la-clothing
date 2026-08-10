@@ -62,7 +62,7 @@ jobs:
       - name: Database smoke tests
         run: pnpm test:db
 
-      - name: Server Action HTTP cookie smoke
+      - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
 
       - name: Lint
