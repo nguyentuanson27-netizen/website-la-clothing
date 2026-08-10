@@ -9,7 +9,7 @@ Intended repository path: `tasks/todo.md`
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
-- [ ] T6 Implement idempotent catalog synchronization/mirror
+- [~] T6 Implement idempotent catalog synchronization/mirror — C4 implementation complete on PR #39; human review remains
 - [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, read-only request identity and bounded Server Functions are implemented; catalog-backed UI remains
 - [ ] T9 Deliver guest COD checkout → exactly one Pancake order
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 implementation + trusted-live verifier are complete; human review is the final gate before C4
+## Current execution path: C3 is merged and green on `main`; C4 implementation/self-review are complete and PR #39 is preparing for human review
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -34,7 +34,7 @@ Intended repository path: `tasks/todo.md`
   - [x] PostgreSQL + injected cookie-store runtime verification
   - [x] actual Next HTTP Server Action `Set-Cookie` round-trip verified in CI
   - [x] post-fix verdict: APPROVE — 0 Critical / 0 Required; merged to `main`
-- [~] C3 Pancake product/warehouse exact contract — reviewed implementation + trusted-live verifier complete; human review remains
+- [x] C3 Pancake product/warehouse exact contract — approved and merged in PR #38
   - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
   - [x] trusted-local discovery after PR #37 returned `format: normalized-path-types-v1` + `complete: true` for both `productVariations` and `warehouses`
   - [x] exact observed product/variation/warehouse object keys reviewed into checked-in allowlists
@@ -48,24 +48,26 @@ Intended repository path: `tasks/todo.md`
   - [x] PR #38 read-only trusted-local stock probe exercised against the live shop using controlled before/order/cancel snapshots
   - [x] controlled quantity-1 evidence: only `remain_quantity` changed A→B→C (`-1`, then `+1`); the other five observed quantity fields had zero delta
   - [x] verified website inventory rule for the tested reservation lifecycle: `sellable stock = SUM(variations_warehouses[].remain_quantity)` across all distinct warehouses
-  - [x] probe CLI usage corrected for pnpm argument forwarding: `pnpm pancake:stock:probe <selector>`; no extra `--`
   - [x] reviewed verifier performs full key allowlist validation and invokes the production mapped parser/type contract before emitting sanitized shape output
-  - [x] first trusted-live `pnpm pancake:contract:verify` attempt reached the verifier but exited 1 with the legacy generic failure message and no BEGIN/END block; no secrets/raw payload/unknown field name were shared
-  - [x] diagnostic TDD RED: CI #275 failed only the new safe-localization expectation because the verifier still collapsed every cause to the generic message
-  - [x] diagnostic GREEN: verifier now emits only fixed safe `stage`/`reason` codes for configuration, fetch, key-contract and mapped-contract failures without echoing exception text, API keys, raw scalar values or unknown field names
-  - [x] live diagnostic progression safely localized the mapped-contract mismatch to nested `product.id`; regression CI #285 reproduced the over-constraint before the root-cause fix
-  - [x] root-cause fix uses top-level `product_id` as canonical identity and ignores nested `product.id`; CI #286 passed DB/runtime, HTTP security/authz, lint, typecheck, domain/integration, production build and macOS Chromium/Axe/VoiceOver runtime
   - [x] trusted-local `pnpm pancake:contract:verify` rerun on the fixed branch returned PASS
-  - [x] pre-review CI #288 passed Linux DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver runtime after the live-gate tracker update
-  - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required before human review
-  - [ ] human review of PR #38 with 0 Critical / 0 Required before marking C3 complete
-- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 human review passes
-  - [ ] fetch/traverse verified Pancake pagination deliberately
-  - [ ] schema only for verified external fields
-  - [ ] aggregate `remain_quantity` across all distinct `variations_warehouses[]`
-  - [ ] make visibility/Color×Size/final storefront price policies explicit rather than inferring unverified semantics silently
-  - [ ] idempotent PostgreSQL sync tests
-  - [ ] self-review
+  - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required
+  - [x] automated fresh review: APPROVE — 0 Critical / 0 Required / 0 Consider
+  - [x] merged to `main`; post-merge CI #291 passed
+- [~] C4 Catalog mirror sync/read model — implementation + self-review complete; human review remains on PR #39
+  - [x] fetch/traverse reviewed Pancake pagination deliberately with stable page/entry consistency checks
+  - [x] cap remote traversal at 500 pages / 50,000 entries and fail closed on incomplete traversal
+  - [x] schema persists only verified external fields plus explicit website-owned policy state
+  - [x] aggregate `remain_quantity` across all distinct `variations_warehouses[]`
+  - [x] preserve website-owned `isActive`/SKU/Color/Size instead of inferring them from raw Pancake fields
+  - [x] new mirrored products/variants default unpublished and stale rows become not-present/inactive
+  - [x] idempotent PostgreSQL sync + stale row reconciliation in one transaction
+  - [x] same-shop sync serialization + stale-snapshot rejection
+  - [x] server-owned sync runtime keeps Pancake credentials and database writes off the browser boundary
+  - [x] raw image strings are stored only; no remote image fetch boundary introduced
+  - [x] CI #311 passed current implementation head before this tracker-only delta
+  - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required
+  - [ ] final tracker-head CI
+  - [ ] human review of PR #39 with 0 Critical / 0 Required before marking C4 complete
 - [ ] C5 PLP/PDP Color × Size storefront
   - [ ] server-authoritative price/availability
   - [ ] automated tests/build
