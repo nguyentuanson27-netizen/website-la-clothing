@@ -5,7 +5,15 @@ import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
 import { describeTrustedJsonContract } from "../src/integrations/pancake/trusted-json-contract.ts";
 
 const CI_REFUSAL_MESSAGE = "Trusted Pancake contract discovery refuses CI execution";
-const SAFE_DISCOVERY_BUDGET_PREFIX = "Trusted JSON discovery exceeded";
+const INSPECTION_BUDGET_MESSAGE = "Trusted JSON discovery exceeded the inspection budget";
+const DEPTH_BUDGET_MESSAGE = "Trusted JSON discovery exceeded the depth budget";
+const GENERIC_FAILURE_MESSAGE =
+  "Trusted Pancake contract discovery failed without logging external scalar values";
+const SAFE_FAILURE_MESSAGES = new Set([
+  CI_REFUSAL_MESSAGE,
+  INSPECTION_BUDGET_MESSAGE,
+  DEPTH_BUDGET_MESSAGE,
+]);
 
 function environmentFlagIsEnabled(value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
@@ -21,6 +29,13 @@ export function assertTrustedDiscoveryEnvironment(
   if (environmentFlagIsEnabled(env.CI) || environmentFlagIsEnabled(env.GITHUB_ACTIONS)) {
     throw new Error(CI_REFUSAL_MESSAGE);
   }
+}
+
+export function trustedDiscoveryFailureMessage(error: unknown): string {
+  if (error instanceof Error && SAFE_FAILURE_MESSAGES.has(error.message)) {
+    return error.message;
+  }
+  return GENERIC_FAILURE_MESSAGE;
 }
 
 async function discoverContracts(): Promise<void> {
@@ -53,14 +68,7 @@ if (isDirectExecution()) {
   try {
     await discoverContracts();
   } catch (error) {
-    if (error instanceof Error && error.message === CI_REFUSAL_MESSAGE) {
-      console.error(CI_REFUSAL_MESSAGE);
-    } else if (error instanceof Error && error.message.startsWith(SAFE_DISCOVERY_BUDGET_PREFIX)) {
-      console.error(error.message);
-    } else {
-      console.error("Trusted Pancake contract discovery failed without logging external scalar values");
-    }
-
+    console.error(trustedDiscoveryFailureMessage(error));
     process.exitCode = 1;
   }
 }
