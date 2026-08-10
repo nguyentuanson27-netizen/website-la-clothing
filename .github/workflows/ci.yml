@@ -80,42 +80,6 @@ jobs:
       - name: Build
         run: pnpm build
 
-  refresh-a11y-lockfile:
-    if: github.repository == 'nguyentuanson27-netizen/website-la-clothing' && github.head_ref == 'test/admin-authz-http-smoke'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Check out PR head
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
-        with:
-          ref: test/admin-authz-http-smoke
-
-      - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 22
-
-      - name: Regenerate lockfile without lifecycle scripts
-        working-directory: tests/a11y-runtime
-        run: |
-          rm -f package-lock.json
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Commit exact generated lockfile
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests/a11y-runtime/package-lock.json
-          if git diff --cached --quiet; then
-            echo "Lockfile already matches generated tree."
-            exit 0
-          fi
-          git commit -m "ci: refresh accessibility runtime lockfile"
-          git push origin HEAD:test/admin-authz-http-smoke
-
   admin-a11y-runtime:
     runs-on: macos-14
     timeout-minutes: 30
