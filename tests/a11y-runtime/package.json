@@ -1,0 +1,11 @@
+{
+  "name": "la-clothing-a11y-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@guidepup/guidepup": "0.29.2",
+    "@guidepup/playwright": "0.18.0",
+    "@playwright/test": "1.62.0"
+  }
+}
