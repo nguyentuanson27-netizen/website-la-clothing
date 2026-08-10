@@ -146,10 +146,19 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   voiceOver,
 }) => {
   const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
+    if (message.type() === "error") {
+      const location = message.location();
+      browserErrors.push(`console: ${message.text()} @ ${location.url || "unknown"}`);
+    }
   });
   page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failedResponses.push(`${response.status()} ${response.url()}`);
+    }
+  });
 
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(productId)}`;
@@ -234,5 +243,9 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
     "Không thể lưu",
     "VoiceOver must announce the server validation error after redirect",
   );
-  expect(browserErrors).toEqual([]);
+  expect(
+    browserErrors,
+    `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,
+  ).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });
