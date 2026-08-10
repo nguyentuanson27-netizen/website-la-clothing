@@ -2,7 +2,7 @@ import type { PancakeCatalogVariation } from "./catalog-contract.ts";
 import { parsePancakeCatalogVariations } from "./catalog-contract.ts";
 
 const CATALOG_PAGE_SIZE = 100;
-const MAX_CATALOG_PAGES = 10_000;
+const MAX_CATALOG_PAGES = 500;
 const MAX_CATALOG_ENTRIES = 50_000;
 
 type QueryValue = string | number | boolean;
