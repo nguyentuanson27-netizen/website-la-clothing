@@ -9,6 +9,7 @@ import {
   PRODUCT_CONTENT_LIMITS,
 } from "@/commerce/product-content-admin";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
+import { AdminFormStatus } from "@/components/admin/admin-form-status";
 import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
@@ -81,6 +82,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
   const invalid = queryValue(query.error) === "invalid";
+  const formStatus = invalid ? "error" : saved ? "success" : null;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -106,16 +108,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         </div>
       </div>
 
-      <div className="mt-8 min-h-6" aria-live="polite" aria-atomic="true">
-        {saved ? (
-          <p className="border-l-2 border-black pl-4 text-sm font-semibold">Đã lưu nội dung biên tập.</p>
-        ) : null}
-        {invalid ? (
-          <p className="border-l-2 border-black pl-4 text-sm font-semibold">
-            Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.
-          </p>
-        ) : null}
-      </div>
+      <AdminFormStatus kind={formStatus} />
 
       <form action={saveProductContent} className="mt-8 grid gap-12 lg:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-10">
