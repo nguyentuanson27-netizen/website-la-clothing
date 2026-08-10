@@ -57,6 +57,7 @@ function variation({
 
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: shopId } });
+  await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: shopId } });
 }
 
 test.beforeEach(cleanup);
