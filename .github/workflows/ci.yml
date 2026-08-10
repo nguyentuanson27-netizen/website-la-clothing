@@ -125,14 +125,6 @@ jobs:
         working-directory: tests/a11y-runtime
         run: npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Capture generated accessibility lockfile
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: a11y-package-lock
-          path: tests/a11y-runtime/package-lock.json
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Install Playwright Chromium
         working-directory: tests/a11y-runtime
         run: npx playwright install chromium
