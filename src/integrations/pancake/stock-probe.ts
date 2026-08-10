@@ -145,8 +145,16 @@ export function buildPancakeStockProbe(payload: unknown, selectorInput: string):
 
   const warehouses = match.record.variations_warehouses.map(parseWarehouseStock);
   const totals = zeroTotals();
+  const seenWarehouseIds = new Set<string>();
 
   for (const warehouse of warehouses) {
+    if (seenWarehouseIds.has(warehouse.warehouse_id)) {
+      throw new PancakeStockProbeError(
+        "Pancake stock probe cannot aggregate duplicate warehouse_id rows safely",
+      );
+    }
+    seenWarehouseIds.add(warehouse.warehouse_id);
+
     for (const field of STOCK_QUANTITY_FIELDS) {
       totals[field] = addFinite(totals[field], warehouse[field]);
     }
