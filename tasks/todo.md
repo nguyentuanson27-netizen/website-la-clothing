@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 code/fixture review is complete; live verifier is being debugged safely before human review and C4
+## Current execution path: C3 implementation + trusted-live verifier are complete; human review is the final gate before C4
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -34,13 +34,14 @@ Intended repository path: `tasks/todo.md`
   - [x] PostgreSQL + injected cookie-store runtime verification
   - [x] actual Next HTTP Server Action `Set-Cookie` round-trip verified in CI
   - [x] post-fix verdict: APPROVE — 0 Critical / 0 Required; merged to `main`
-- [~] C3 Pancake product/warehouse exact contract — reviewed implementation complete; live reviewed-contract + human review gates remain
+- [~] C3 Pancake product/warehouse exact contract — reviewed implementation + trusted-live verifier complete; human review remains
   - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
   - [x] trusted-local discovery after PR #37 returned `format: normalized-path-types-v1` + `complete: true` for both `productVariations` and `warehouses`
   - [x] exact observed product/variation/warehouse object keys reviewed into checked-in allowlists
   - [x] sanitized product-variation + warehouse fixtures committed; no live API key/customer data/operational inventory persisted
-  - [x] typed catalog parser validates pagination, variation/product identity, mapped attributes/images/raw flags/raw prices and per-warehouse `remain_quantity`
-  - [x] parser rejects malformed mapped types, inconsistent product identity and duplicate warehouse rows instead of coercing/guessing
+  - [x] typed catalog parser validates pagination, variation identity, canonical top-level `product_id`, nested `product.name`, mapped attributes/images/raw flags/raw prices and per-warehouse `remain_quantity`
+  - [x] nested `product.id` is deliberately not consumed after trusted-live verification proved that extra assumption too strict; canonical product identity comes from top-level variation `product_id`
+  - [x] parser rejects malformed mapped types, malformed nested product shape/name and duplicate warehouse rows instead of coercing/guessing
   - [x] pagination metadata retained so C4 can perform bounded full-catalog traversal rather than silently syncing one page
   - [x] product owner decision: website sellable inventory aggregates **all Pancake warehouses** for each variation; no warehouse-ID subset is required
   - [x] obsolete `PANCAKE_ONLINE_WAREHOUSE_IDS` configuration/parser/tests removed
@@ -52,12 +53,12 @@ Intended repository path: `tasks/todo.md`
   - [x] first trusted-live `pnpm pancake:contract:verify` attempt reached the verifier but exited 1 with the legacy generic failure message and no BEGIN/END block; no secrets/raw payload/unknown field name were shared
   - [x] diagnostic TDD RED: CI #275 failed only the new safe-localization expectation because the verifier still collapsed every cause to the generic message
   - [x] diagnostic GREEN: verifier now emits only fixed safe `stage`/`reason` codes for configuration, fetch, key-contract and mapped-contract failures without echoing exception text, API keys, raw scalar values or unknown field names
-  - [x] unrelated DB smoke flake on CI #276 was reproduced as non-regression by rerunning only the failed verify job; rerun passed the same DB test plus all later gates, so cart code was not changed outside scope
-  - [x] post-refactor CI #277 passed DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver runtime
-  - [ ] rerun `pnpm pancake:contract:verify` on the current branch and capture only `PASS` or the fixed `[stage=... reason=...]` diagnostic
-  - [~] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required in the verifier diagnostic patch; final-head CI still required after the current docs/tracker delta
+  - [x] live diagnostic progression safely localized the mapped-contract mismatch to nested `product.id`; regression CI #285 reproduced the over-constraint before the root-cause fix
+  - [x] root-cause fix uses top-level `product_id` as canonical identity and ignores nested `product.id`; CI #286 passed DB/runtime, HTTP security/authz, lint, typecheck, domain/integration, production build and macOS Chromium/Axe/VoiceOver runtime
+  - [x] trusted-local `pnpm pancake:contract:verify` rerun on the fixed branch returned PASS
+  - [~] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required in the implementation delta; final-head CI required after this tracker update
   - [ ] human review of PR #38 with 0 Critical / 0 Required before marking C3 complete
-- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 final live verifier + human review pass
+- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 human review passes
   - [ ] fetch/traverse verified Pancake pagination deliberately
   - [ ] schema only for verified external fields
   - [ ] aggregate `remain_quantity` across all distinct `variations_warehouses[]`
