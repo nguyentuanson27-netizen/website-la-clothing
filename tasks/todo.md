@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 code/fixture review is complete; final trusted live verifier + human review gate remain before C4
+## Current execution path: C3 code/fixture review is complete; live verifier is being debugged safely before human review and C4
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -48,9 +48,14 @@ Intended repository path: `tasks/todo.md`
   - [x] controlled quantity-1 evidence: only `remain_quantity` changed A→B→C (`-1`, then `+1`); the other five observed quantity fields had zero delta
   - [x] verified website inventory rule for the tested reservation lifecycle: `sellable stock = SUM(variations_warehouses[].remain_quantity)` across all distinct warehouses
   - [x] probe CLI usage corrected for pnpm argument forwarding: `pnpm pancake:stock:probe <selector>`; no extra `--`
-  - [x] reviewed verifier performs full key allowlist validation and now also invokes the production mapped parser/type contract before emitting sanitized shape output
-  - [ ] run `pnpm pancake:contract:verify` against current live `.env.local` and confirm success without exposing raw response/secrets
-  - [~] final self-review: correctness → security → architecture → simplicity → performance; automated final-head CI still required after current verification/docs delta
+  - [x] reviewed verifier performs full key allowlist validation and invokes the production mapped parser/type contract before emitting sanitized shape output
+  - [x] first trusted-live `pnpm pancake:contract:verify` attempt reached the verifier but exited 1 with the legacy generic failure message and no BEGIN/END block; no secrets/raw payload/unknown field name were shared
+  - [x] diagnostic TDD RED: CI #275 failed only the new safe-localization expectation because the verifier still collapsed every cause to the generic message
+  - [x] diagnostic GREEN: verifier now emits only fixed safe `stage`/`reason` codes for configuration, fetch, key-contract and mapped-contract failures without echoing exception text, API keys, raw scalar values or unknown field names
+  - [x] unrelated DB smoke flake on CI #276 was reproduced as non-regression by rerunning only the failed verify job; rerun passed the same DB test plus all later gates, so cart code was not changed outside scope
+  - [x] post-refactor CI #277 passed DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver runtime
+  - [ ] rerun `pnpm pancake:contract:verify` on the current branch and capture only `PASS` or the fixed `[stage=... reason=...]` diagnostic
+  - [~] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required in the verifier diagnostic patch; final-head CI still required after the current docs/tracker delta
   - [ ] human review of PR #38 with 0 Critical / 0 Required before marking C3 complete
 - [ ] C4 Catalog mirror sync/read model — STOPPED until C3 final live verifier + human review pass
   - [ ] fetch/traverse verified Pancake pagination deliberately
