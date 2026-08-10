@@ -31,6 +31,14 @@ export type PancakeCatalogVariation = {
   sellableStock: number;
 };
 
+export type PancakeCatalogPage = {
+  pageNumber: number;
+  pageSize: number;
+  totalEntries: number;
+  totalPages: number;
+  variations: PancakeCatalogVariation[];
+};
+
 export type PancakeWarehouse = {
   id: string;
   name: string;
@@ -82,6 +90,14 @@ function requireBoolean(record: JsonRecord, key: string, message: string): boole
 function requireFiniteNumber(record: JsonRecord, key: string, message: string): number {
   const value = record[key];
   if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PancakeCatalogContractError(message);
+  }
+  return value;
+}
+
+function requireNonNegativeSafeInteger(record: JsonRecord, key: string, message: string): number {
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new PancakeCatalogContractError(message);
   }
   return value;
@@ -201,14 +217,24 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
   };
 }
 
-export function parsePancakeCatalogVariations(payload: unknown): PancakeCatalogVariation[] {
+export function parsePancakeCatalogVariations(payload: unknown): PancakeCatalogPage {
   const root = requireRecord(payload, "Pancake product-variation payload is malformed");
   if (root.success !== true) {
     throw new PancakeCatalogContractError("Pancake product-variation response is unsuccessful");
   }
-  return requireArray(root, "data", "Pancake product-variation payload is missing data array").map(
-    parseVariation,
-  );
+
+  const paginationError = "Pancake catalog pagination payload is malformed";
+  return {
+    pageNumber: requireNonNegativeSafeInteger(root, "page_number", paginationError),
+    pageSize: requireNonNegativeSafeInteger(root, "page_size", paginationError),
+    totalEntries: requireNonNegativeSafeInteger(root, "total_entries", paginationError),
+    totalPages: requireNonNegativeSafeInteger(root, "total_pages", paginationError),
+    variations: requireArray(
+      root,
+      "data",
+      "Pancake product-variation payload is missing data array",
+    ).map(parseVariation),
+  };
 }
 
 export function parsePancakeWarehouses(payload: unknown): PancakeWarehouse[] {
