@@ -9,7 +9,7 @@ import {
 
 const CI_REFUSAL_MESSAGE = "Trusted Pancake stock probe refuses CI execution";
 const USAGE_MESSAGE =
-  "Usage: pnpm pancake:stock:probe -- <variation id | display_id | barcode>";
+  "Usage: pnpm pancake:stock:probe <variation id | display_id | barcode>";
 
 function environmentFlagIsEnabled(value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
