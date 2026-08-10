@@ -65,6 +65,9 @@ jobs:
       - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
 
+      - name: Authenticated admin HTTP authorization smoke
+        run: node --experimental-strip-types scripts/admin-authz-http-smoke.ts
+
       - name: Lint
         run: pnpm lint
 
