@@ -4,11 +4,11 @@ Status: build in progress
 Intended repository path: `tasks/todo.md`
 
 - [x] T0 Establish repository baseline and save approved spec
-- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — endpoint/base URL sources verified; exact response/write schemas still require reviewed live discovery
+- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — endpoint/base URL and trusted product/warehouse structural discovery verified; stock semantics and write-path contracts remain
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client/discovery foundation merged; exact product/order/status contracts still require reviewed fields
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client/discovery foundation merged; reviewed product fields/stock semantics and order/status contracts remain
 - [ ] T6 Implement idempotent catalog synchronization/mirror
 - [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, read-only request identity and bounded Server Functions are implemented; catalog-backed UI remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 trusted-local discovery reproduced legacy truncation; complete path/type tooling fix is in PR #37 and rerun/review remains required
+## Current execution path: C3 trusted-local product/warehouse shape discovery is complete; stock quantity semantics must be proven before C4
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -34,16 +34,18 @@ Intended repository path: `tasks/todo.md`
   - [x] PostgreSQL + injected cookie-store runtime verification
   - [x] actual Next HTTP Server Action `Set-Cookie` round-trip verified in CI
   - [x] post-fix verdict: APPROVE — 0 Critical / 0 Required; merged to `main`
-- [~] C3 Pancake product/warehouse exact contract — BLOCKED at trusted live discovery/review boundary
+- [~] C3 Pancake product/warehouse exact contract — structural discovery complete; stock semantics/review gate remains
   - [x] official OpenAPI reference review confirms production base URL and required product-variation/warehouse endpoints
-  - [ ] exact product/variation/warehouse fields, types and paths reviewed into fixtures/allowlists
-  - [x] explicit online warehouse configuration parser; no default/first/all-warehouse assumption
-  - [ ] actual LA Clothing online warehouse IDs configured
-  - [~] safe trusted live discovery attempted with server-only local credentials — warehouses resolved completely; legacy product-variation renderer returned root array truncation and deep max-depth markers, so that output is not contract evidence
-  - [~] PR #37 replaces sampled trusted-local rendering with complete normalized path/type traversal that fails closed on explicit safety budgets; merge + local rerun still required
-  - [x] self-review of the configuration slice; 0 Critical / 0 Required
-- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 exact contract is complete
+  - [x] trusted-local discovery rerun after PR #37 returned `format: normalized-path-types-v1` + `complete: true` for both `productVariations` and `warehouses`
+  - [~] exact product/variation/warehouse fields and observed types are available from trusted discovery; reviewed fixtures/allowlists still need to be committed from the approved subset
+  - [x] product owner decision: website sellable inventory aggregates **all Pancake warehouses** for each variation; no warehouse-ID subset is required
+  - [~] legacy explicit `PANCAKE_ONLINE_WAREHOUSE_IDS` parser is superseded by the all-warehouse business rule and must not govern C4 aggregation
+  - [~] PR #38 adds a read-only trusted-local stock probe for `actual_remain_quantity`, `remain_quantity`, `total_quantity`, `pending_quantity`, `waiting_quantity`, and `returning_quantity`; controlled before/order/cancel evidence still required
+  - [ ] identify the verified sellable-quantity field from controlled behavior evidence; do not infer semantics from field names alone
+  - [x] self-review of the configuration/discovery slices; 0 Critical / 0 Required
+- [ ] C4 Catalog mirror sync/read model — STOPPED until C3 exact contract + stock semantics are complete
   - [ ] schema only for verified external fields
+  - [ ] aggregate the verified sellable quantity across all `variations_warehouses[]`
   - [ ] idempotent PostgreSQL sync tests
   - [ ] self-review
 - [ ] C5 PLP/PDP Color × Size storefront
@@ -93,7 +95,8 @@ Intended repository path: `tasks/todo.md`
   - [ ] editorial homepage/lookbook composition
 
 ## Stop conditions
-- Do not guess warehouse selection, shipping fee, Pancake field names/types, create-order idempotency/reference semantics, or webhook authentication/replay behavior.
+- Do not guess shipping fee, Pancake field semantics/types, create-order idempotency/reference semantics, or webhook authentication/replay behavior.
+- Do not reintroduce warehouse subset filtering unless the product owner changes the approved all-warehouse inventory policy.
 - Do not move past a slice with a Required/Critical self-review finding or failing CI.
 - Do not claim browser runtime verification without an actual browser/runtime check.
 
