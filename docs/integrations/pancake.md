@@ -90,11 +90,13 @@ Trusted discovery observed these per-warehouse quantity fields as numbers:
 - `waiting_quantity`
 - `returning_quantity`
 
-Their names are not sufficient evidence of which field is the sellable quantity. Use the trusted-local read-only probe to collect before/after evidence:
+Their names were not treated as sufficient evidence of which field is the website-sellable quantity. The trusted-local read-only probe is available for behavioral evidence:
 
 ```bash
-pnpm pancake:stock:probe -- <variation id | display_id | barcode>
+pnpm pancake:stock:probe <variation id | display_id | barcode>
 ```
+
+With pnpm 11, arguments after the script name are forwarded to the executed script, so do not insert an extra `--` token for this command.
 
 The command:
 
@@ -104,6 +106,7 @@ The command:
 - validates `warehouse_id` and all six quantity fields before printing anything;
 - prints only the selected variation identity, the six quantity values per warehouse, and their totals across **all** warehouses;
 - fails closed if any expected quantity is not a finite number;
+- fails closed if the same `warehouse_id` appears more than once, instead of guessing whether multiple rows represent batches/shelves or should be summed;
 - never creates, updates or cancels an order.
 
 Controlled test protocol:
@@ -114,9 +117,31 @@ Controlled test protocol:
 4. Run the same probe again as snapshot **B**.
 5. Cancel/revert the controlled order in Pancake.
 6. Run the same probe a third time as snapshot **C**.
-7. Compare A → B → C per warehouse and in the aggregated totals. Do not infer semantics until the observed deltas are reviewed.
+7. Compare A → B → C per warehouse and in the aggregated totals.
 
-A field that changes at reservation/order-save time and restores on cancellation is evidence for reservation/sellable-stock behavior; a field that changes only on later fulfillment is evidence for a different inventory concept. These are hypotheses to test, not definitions derived from the field names.
+#### Verified stock behavior for the website reservation flow
+
+The product owner completed the controlled A → B → C test against the live shop with a quantity-1 order. To avoid persisting current inventory levels, only deltas are recorded here:
+
+| Field | A → B after saving order | B → C after cancellation |
+| --- | ---: | ---: |
+| `actual_remain_quantity` | 0 | 0 |
+| `remain_quantity` | **-1** | **+1** |
+| `total_quantity` | 0 | 0 |
+| `pending_quantity` | 0 | 0 |
+| `waiting_quantity` | 0 | 0 |
+| `returning_quantity` | 0 | 0 |
+
+This verifies that, for the tested Pancake order-save/cancel reservation lifecycle, `remain_quantity` is the quantity field that reflects immediately sellable availability: it decreases when one unit is reserved by a saved order and restores when that order is cancelled. The other observed fields did not move during this lifecycle, so this evidence does not assign broader semantics to them.
+
+For the current website MVP, the inventory rule is therefore:
+
+```text
+website sellable stock for a variation
+= SUM(variations_warehouses[].remain_quantity across all distinct warehouses)
+```
+
+The website must still re-read/revalidate authoritative stock immediately before creating an order; the mirrored catalog quantity is not a reservation mechanism by itself.
 
 ### 3. GitHub Actions verification — reviewed names only
 
@@ -147,12 +172,11 @@ The historical Actions run executed on `main@2d33d0eb...` used the pre-hardening
 
 ## Still unverified — blocks catalog/write-path completion
 
-1. Which of the observed per-warehouse quantity fields represents website-sellable stock; controlled A/B/C evidence is required before C4 aggregation logic.
-2. The reviewed subset of exact product/variation/warehouse fields still needs to be committed into fixtures/allowlists before production mapping.
-3. Exact create-order request/response schema and the correct field for a website-origin reference.
-4. Exact order status codes and all valid transitions.
-5. Webhook event names, payload shape, authentication/signature and replay-protection mechanism.
-6. Native create-order idempotency behavior or a unique client-reference constraint.
+1. The reviewed subset of exact product/variation/warehouse fields still needs to be committed into fixtures/allowlists before production mapping.
+2. Exact create-order request/response schema and the correct field for a website-origin reference.
+3. Exact order status codes and all valid transitions.
+4. Webhook event names, payload shape, authentication/signature and replay-protection mechanism.
+5. Native create-order idempotency behavior or a unique client-reference constraint.
 
 Do not guess these fields or semantics. Do not implement automatic retries for uncertain order writes until idempotency/reconciliation behavior is proven.
 
@@ -166,3 +190,4 @@ Raw Pancake data will be isolated under `src/integrations/pancake/` and mapped t
 - Pancake POS Open API overview: https://docs.pancake.biz/pos/st-f13/st-p1?lang=en
 - API key/authentication: https://docs.pancake.biz/pos/st-f13/st-p2?lang=en
 - Order status & processing flow: https://docs.pancake.biz/pos/st-f13/st-p3?lang=en
+- pnpm 11/12 `run` argument forwarding: https://pnpm.io/cli/run
