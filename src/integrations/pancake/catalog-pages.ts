@@ -51,7 +51,7 @@ export async function fetchAllPancakeCatalogVariations({
     if (page.pageNumber !== pageNumber) {
       throw new Error(`Pancake catalog response does not match requested page ${pageNumber}`);
     }
-    if (page.totalPages !== first.totalPages) {
+    if (page.totalPages !== first.totalPages || page.totalEntries !== first.totalEntries) {
       throw new Error("Pancake catalog pagination changed during traversal");
     }
 
