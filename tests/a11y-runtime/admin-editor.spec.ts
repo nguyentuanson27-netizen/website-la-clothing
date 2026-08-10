@@ -86,6 +86,14 @@ async function cleanupDatabase() {
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
 }
 
+function assertVoiceOverIncludes(phrases: string[], expected: string, label: string) {
+  const spoken = phrases.join(" ");
+  expect(
+    spoken.includes(expected),
+    `${label}; VoiceOver phrases: ${JSON.stringify(phrases)}`,
+  ).toBe(true);
+}
+
 // Runtime-only test: it intentionally drives a real browser and macOS VoiceOver.
 test.beforeAll(async () => {
   await cleanupDatabase();
@@ -174,11 +182,17 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   await voiceOver.clearSpokenPhraseLog();
   await page.getByRole("button", { name: "Lưu nội dung" }).click();
   await page.waitForURL((url) => url.pathname === editorPath && url.searchParams.get("saved") === "1");
-  await expect(page.getByText("Đã lưu nội dung biên tập.")).toBeVisible();
+  const successStatus = page.getByRole("status");
+  await expect(successStatus).toContainText("Đã lưu nội dung biên tập.");
+  await expect(successStatus).toBeFocused();
   await page.waitForTimeout(1_000);
 
   const successSpeech = await voiceOver.spokenPhraseLog();
-  expect(successSpeech.some((phrase) => phrase.includes("Đã lưu nội dung biên tập"))).toBe(true);
+  assertVoiceOverIncludes(
+    successSpeech,
+    "Đã lưu nội dung biên tập",
+    "VoiceOver must announce the persisted success status after redirect",
+  );
 
   const persisted = await prisma.productContent.findUnique({
     where: { productId },
@@ -200,12 +214,18 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   await voiceOver.clearSpokenPhraseLog();
   await page.getByRole("button", { name: "Lưu nội dung" }).click();
   await page.waitForURL((url) => url.pathname === editorPath && url.searchParams.get("error") === "invalid");
-  await expect(
-    page.getByText("Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại."),
-  ).toBeVisible();
+  const errorStatus = page.getByRole("alert");
+  await expect(errorStatus).toContainText(
+    "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
+  );
+  await expect(errorStatus).toBeFocused();
   await page.waitForTimeout(1_000);
 
   const errorSpeech = await voiceOver.spokenPhraseLog();
-  expect(errorSpeech.some((phrase) => phrase.includes("Không thể lưu"))).toBe(true);
+  assertVoiceOverIncludes(
+    errorSpeech,
+    "Không thể lưu",
+    "VoiceOver must announce the server validation error after redirect",
+  );
   expect(browserErrors).toEqual([]);
 });
