@@ -14,11 +14,13 @@ function readFixture(name: string): unknown {
 }
 
 test("sanitized Pancake product-variation fixture remains compatible with the reviewed parser", () => {
-  const variations = parsePancakeCatalogVariations(readFixture("product-variations.json"));
+  const page = parsePancakeCatalogVariations(readFixture("product-variations.json"));
 
-  assert.equal(variations.length, 1);
-  assert.equal(variations[0]?.sellableStock, 7);
-  assert.equal(variations[0]?.product.name, "Sanitized Test Shirt");
+  assert.equal(page.pageNumber, 1);
+  assert.equal(page.totalEntries, 1);
+  assert.equal(page.variations.length, 1);
+  assert.equal(page.variations[0]?.sellableStock, 7);
+  assert.equal(page.variations[0]?.product.name, "Sanitized Test Shirt");
 });
 
 test("sanitized Pancake warehouse fixture remains compatible with the reviewed parser", () => {
