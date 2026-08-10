@@ -86,10 +86,6 @@ async function cleanupDatabase() {
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
 }
 
-async function spokenIncludes(voiceOver: Parameters<Parameters<typeof test>[0]>[0] extends never ? never : never, text: string) {
-  return text;
-}
-
 // Runtime-only test: it intentionally drives a real browser and macOS VoiceOver.
 test.beforeAll(async () => {
   await cleanupDatabase();
