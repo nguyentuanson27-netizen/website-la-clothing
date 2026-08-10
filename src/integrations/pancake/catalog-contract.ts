@@ -8,7 +8,10 @@ export type PancakeCatalogContractReason =
   | "variation-images"
   | "variation-flags"
   | "variation-prices"
-  | "variation-product"
+  | "variation-product-shape"
+  | "variation-product-id"
+  | "variation-product-name"
+  | "variation-product-identity"
   | "variation-warehouse"
   | "warehouse-envelope"
   | "warehouse-item";
@@ -223,24 +226,29 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
     "Pancake variation product_id is malformed",
   );
 
-  const productReason = "variation-product" as const;
   const productRecord = requireRecord(
     record.product,
-    productReason,
+    "variation-product-shape",
     "Pancake variation product payload is malformed",
   );
   const nestedProductId = requireNonEmptyString(
     productRecord,
     "id",
-    productReason,
+    "variation-product-id",
     "Pancake product id is malformed",
   );
   if (nestedProductId !== productId) {
     throw new PancakeCatalogContractError(
-      productReason,
+      "variation-product-identity",
       "Pancake variation product identity is inconsistent",
     );
   }
+  const productName = requireString(
+    productRecord,
+    "name",
+    "variation-product-name",
+    "Pancake product name is malformed",
+  );
 
   const warehouseReason = "variation-warehouse" as const;
   const warehouseStocks = requireArray(
@@ -321,12 +329,7 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
     ),
     product: {
       id: nestedProductId,
-      name: requireString(
-        productRecord,
-        "name",
-        productReason,
-        "Pancake product name is malformed",
-      ),
+      name: productName,
     },
     warehouseStocks,
     sellableStock,
