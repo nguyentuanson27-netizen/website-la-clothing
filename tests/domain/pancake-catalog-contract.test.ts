@@ -57,33 +57,46 @@ const warehousesPayload = {
   ],
 };
 
-test("catalog contract maps only reviewed storefront fields and aggregates remain_quantity across all warehouses", () => {
+test("catalog contract maps reviewed storefront fields, pagination, and all-warehouse sellable stock", () => {
   const result = parsePancakeCatalogVariations(productVariationsPayload);
 
-  assert.deepEqual(result, [
-    {
-      id: "variation-1",
-      productId: "product-1",
-      displayId: "DISPLAY-1",
-      barcode: "BAR-1",
-      fields: [
-        { id: "field-color", keyValue: "color", name: "Color", value: "Black" },
-        { id: "field-size", keyValue: "size", name: "Size", value: "M" },
-      ],
-      imageUrls: ["https://example.test/product-1.jpg"],
-      isHidden: false,
-      isLocked: false,
-      retailPrice: 500_000,
-      retailPriceAfterDiscount: 450_000,
-      product: { id: "product-1", name: "Test Shirt" },
-      warehouseStocks: [
-        { warehouseId: "warehouse-a", remainQuantity: 3 },
-        { warehouseId: "warehouse-b", remainQuantity: 4 },
-      ],
-      sellableStock: 7,
-    },
-  ]);
+  assert.deepEqual(result, {
+    pageNumber: 1,
+    pageSize: 100,
+    totalEntries: 1,
+    totalPages: 1,
+    variations: [
+      {
+        id: "variation-1",
+        productId: "product-1",
+        displayId: "DISPLAY-1",
+        barcode: "BAR-1",
+        fields: [
+          { id: "field-color", keyValue: "color", name: "Color", value: "Black" },
+          { id: "field-size", keyValue: "size", name: "Size", value: "M" },
+        ],
+        imageUrls: ["https://example.test/product-1.jpg"],
+        isHidden: false,
+        isLocked: false,
+        retailPrice: 500_000,
+        retailPriceAfterDiscount: 450_000,
+        product: { id: "product-1", name: "Test Shirt" },
+        warehouseStocks: [
+          { warehouseId: "warehouse-a", remainQuantity: 3 },
+          { warehouseId: "warehouse-b", remainQuantity: 4 },
+        ],
+        sellableStock: 7,
+      },
+    ],
+  });
   assert.equal(JSON.stringify(result).includes("ignored_external_field"), false);
+});
+
+test("catalog contract rejects malformed pagination needed for bounded full-catalog sync", () => {
+  const malformed = structuredClone(productVariationsPayload);
+  malformed.total_pages = Number.NaN;
+
+  assert.throws(() => parsePancakeCatalogVariations(malformed), /pagination/i);
 });
 
 test("catalog contract fails closed on malformed sellable quantity instead of coercing it", () => {
@@ -115,6 +128,10 @@ test("reviewed Pancake allowlists are configured with the live-discovered catalo
   for (const requiredKey of [
     "data",
     "success",
+    "page_number",
+    "page_size",
+    "total_entries",
+    "total_pages",
     "id",
     "product_id",
     "display_id",
