@@ -73,9 +73,52 @@ The older sampled discovery format could emit `truncated: true` or `max-depth`; 
 
 Because a field name can itself be PII/token-like data, treat this terminal output as sensitive inspection material. Do **not** redirect it to a committed file, upload it as an artifact, paste the complete output into a public/shared log, or run this command in CI.
 
+The product-owner rerun after PR #37 produced `format: "normalized-path-types-v1"` and `complete: true` for both `productVariations` and `warehouses`. That establishes complete observed path/type evidence for the current shop payload, but it does **not** by itself define business semantics for similarly named stock fields.
+
 After inspection, review which names are genuine stable schema fields. Add only those reviewed names to `src/integrations/pancake/reviewed-contract-keys.ts`, then implement fixtures/validators from the reviewed contract.
 
-### 2. GitHub Actions verification — reviewed names only
+### 2. Controlled stock-semantics probe — read-only API + manual Pancake UI mutation
+
+The product owner decided that website inventory will aggregate **all Pancake warehouses** for each variation. No warehouse subset should be selected unless that business decision changes later.
+
+Trusted discovery observed these per-warehouse quantity fields as numbers:
+
+- `actual_remain_quantity`
+- `remain_quantity`
+- `total_quantity`
+- `pending_quantity`
+- `waiting_quantity`
+- `returning_quantity`
+
+Their names are not sufficient evidence of which field is the sellable quantity. Use the trusted-local read-only probe to collect before/after evidence:
+
+```bash
+pnpm pancake:stock:probe -- <variation id | display_id | barcode>
+```
+
+The command:
+
+- loads `.env.local` locally and refuses CI/GitHub Actions execution;
+- reads only `GET /shops/{SHOP_ID}/products/variations`;
+- resolves exactly one variation by `id`, `display_id`, or `barcode`;
+- validates `warehouse_id` and all six quantity fields before printing anything;
+- prints only the selected variation identity, the six quantity values per warehouse, and their totals across **all** warehouses;
+- fails closed if any expected quantity is not a finite number;
+- never creates, updates or cancels an order.
+
+Controlled test protocol:
+
+1. Choose a low-risk/test variation that currently has stock and note its variation `id`, `display_id`, or barcode.
+2. Run the probe and keep the terminal output as snapshot **A**.
+3. In the Pancake UI, create a controlled order for quantity `1` of that exact variation and save it at the state being tested; do not use an unrelated real customer order.
+4. Run the same probe again as snapshot **B**.
+5. Cancel/revert the controlled order in Pancake.
+6. Run the same probe a third time as snapshot **C**.
+7. Compare A → B → C per warehouse and in the aggregated totals. Do not infer semantics until the observed deltas are reviewed.
+
+A field that changes at reservation/order-save time and restores on cancellation is evidence for reservation/sellable-stock behavior; a field that changes only on later fulfillment is evidence for a different inventory concept. These are hypotheses to test, not definitions derived from the field names.
+
+### 3. GitHub Actions verification — reviewed names only
 
 `.github/workflows/pancake-contract-probe.yml` is a **verification workflow**, not a discovery mechanism.
 
@@ -104,17 +147,14 @@ The historical Actions run executed on `main@2d33d0eb...` used the pre-hardening
 
 ## Still unverified — blocks catalog/write-path completion
 
-The indexed official docs available in this build session do not expose enough detail to safely implement the following yet:
-
-1. Exact `products/variations` response schema, including per-warehouse quantity fields and active/hidden flags.
-2. Exact warehouse response schema needed to select online sellable warehouse IDs.
+1. Which of the observed per-warehouse quantity fields represents website-sellable stock; controlled A/B/C evidence is required before C4 aggregation logic.
+2. The reviewed subset of exact product/variation/warehouse fields still needs to be committed into fixtures/allowlists before production mapping.
 3. Exact create-order request/response schema and the correct field for a website-origin reference.
 4. Exact order status codes and all valid transitions.
 5. Webhook event names, payload shape, authentication/signature and replay-protection mechanism.
 6. Native create-order idempotency behavior or a unique client-reference constraint.
-7. Which shop warehouse IDs should count toward online sellable inventory.
 
-Do not guess these fields. Do not implement automatic retries for uncertain order writes until idempotency/reconciliation behavior is proven.
+Do not guess these fields or semantics. Do not implement automatic retries for uncertain order writes until idempotency/reconciliation behavior is proven.
 
 ## Intended adapter boundary
 
