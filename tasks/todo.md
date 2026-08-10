@@ -88,7 +88,7 @@ Intended repository path: `tasks/todo.md`
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after hardening malformed `FormData` handling
   - [x] human review of PR #35: APPROVE — 0 Critical / 0 Required / 2 Consider; merged to `main`
   - [x] Consider #1 follow-up: authenticated HTTP proof verifies CUSTOMER cannot read `/admin`, ADMIN renders the editor, and the real ADMIN Server Action persists `ProductContent`
-  - [ ] Consider #2 follow-up: browser/mobile/a11y + representative screen-reader runtime verification, including redirect success/error announcements in `aria-live`, when a browser-capable tool is available
+  - [x] Consider #2 follow-up: CI `31359367828` verifies a real 390×844 Chromium UI, keyboard focus, zero selected Axe WCAG A/AA violations, clean console/network, and real macOS VoiceOver announcements for both persisted success and server-validation error after redirect
   - [ ] editorial homepage/lookbook composition
 
 ## Stop conditions
