@@ -57,6 +57,14 @@ const warehousesPayload = {
   ],
 };
 
+function assertContractReason(run: () => unknown, expectedReason: string) {
+  assert.throws(run, (error: unknown) => {
+    assert.ok(error instanceof PancakeCatalogContractError);
+    assert.equal(Reflect.get(error, "reason"), expectedReason);
+    return true;
+  });
+}
+
 test("catalog contract maps reviewed storefront fields, pagination, and all-warehouse sellable stock", () => {
   const result = parsePancakeCatalogVariations(productVariationsPayload);
 
@@ -114,6 +122,40 @@ test("catalog contract rejects duplicate warehouse rows before aggregation", () 
   });
 
   assert.throws(() => parsePancakeCatalogVariations(duplicate), /duplicate warehouse/i);
+});
+
+test("catalog contract exposes only fixed safe reason codes for product validation boundaries", () => {
+  const malformedPagination = structuredClone(productVariationsPayload);
+  malformedPagination.total_pages = Number.NaN;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedPagination), "pagination");
+
+  const malformedIdentity = structuredClone(productVariationsPayload);
+  malformedIdentity.data[0]!.barcode = 123 as unknown as string;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedIdentity), "variation-identity");
+
+  const malformedFields = structuredClone(productVariationsPayload);
+  malformedFields.data[0]!.fields[0]!.value = null as unknown as string;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedFields), "variation-fields");
+
+  const malformedImages = structuredClone(productVariationsPayload);
+  malformedImages.data[0]!.images[0] = 123 as unknown as string;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedImages), "variation-images");
+
+  const malformedFlags = structuredClone(productVariationsPayload);
+  malformedFlags.data[0]!.is_hidden = null as unknown as boolean;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedFlags), "variation-flags");
+
+  const malformedPrices = structuredClone(productVariationsPayload);
+  malformedPrices.data[0]!.retail_price_after_discount = null as unknown as number;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedPrices), "variation-prices");
+
+  const malformedProduct = structuredClone(productVariationsPayload);
+  malformedProduct.data[0]!.product.name = null as unknown as string;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedProduct), "variation-product");
+
+  const malformedWarehouse = structuredClone(productVariationsPayload);
+  malformedWarehouse.data[0]!.variations_warehouses[0]!.remain_quantity = null as unknown as number;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedWarehouse), "variation-warehouse");
 });
 
 test("catalog contract validates the minimal warehouse identity surface", () => {
