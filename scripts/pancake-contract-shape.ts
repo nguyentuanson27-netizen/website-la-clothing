@@ -1,6 +1,8 @@
 import {
+  PancakeCatalogContractError,
   parsePancakeCatalogVariations,
   parsePancakeWarehouses,
+  type PancakeCatalogContractReason,
 } from "../src/integrations/pancake/catalog-contract.ts";
 import { PancakeClient } from "../src/integrations/pancake/client.ts";
 import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
@@ -33,7 +35,8 @@ type VerificationReason =
   | "inspection-budget"
   | "non-json"
   | "mapped-contract"
-  | "unexpected";
+  | "unexpected"
+  | PancakeCatalogContractReason;
 
 class PancakeContractVerificationStageError extends Error {
   readonly stage: VerificationStage;
@@ -71,6 +74,14 @@ function classifyReviewedJsonFailure(error: unknown): VerificationReason {
   }
 
   return "unexpected";
+}
+
+function classifyMappedContractFailure(error: unknown): VerificationReason {
+  if (error instanceof PancakeCatalogContractError) {
+    return error.reason;
+  }
+
+  return "mapped-contract";
 }
 
 function safeFailureMessage(error: unknown): string {
@@ -141,19 +152,19 @@ async function main() {
   // all-warehouse remain_quantity aggregation. Parsed values are deliberately discarded.
   try {
     parsePancakeCatalogVariations(productVariations);
-  } catch {
+  } catch (error) {
     throw new PancakeContractVerificationStageError(
       "product-mapped-contract",
-      "mapped-contract",
+      classifyMappedContractFailure(error),
     );
   }
 
   try {
     parsePancakeWarehouses(warehouses);
-  } catch {
+  } catch (error) {
     throw new PancakeContractVerificationStageError(
       "warehouse-mapped-contract",
-      "mapped-contract",
+      classifyMappedContractFailure(error),
     );
   }
 
