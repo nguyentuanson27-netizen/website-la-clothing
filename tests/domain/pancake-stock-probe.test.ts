@@ -59,32 +59,32 @@ test("stock probe resolves one variation by id/display_id/barcode and totals all
   }
 });
 
-test("stock probe preserves null instead of silently treating unknown quantity as zero", () => {
-  const result = buildPancakeStockProbe(
-    {
-      data: [
+test("stock probe fails closed instead of treating null quantity as zero", () => {
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
         {
-          id: "variation-null",
-          variations_warehouses: [
+          data: [
             {
-              warehouse_id: "warehouse-a",
-              actual_remain_quantity: null,
-              remain_quantity: 3,
-              total_quantity: 3,
-              pending_quantity: null,
-              waiting_quantity: 0,
-              returning_quantity: 0,
+              id: "variation-null",
+              variations_warehouses: [
+                {
+                  warehouse_id: "warehouse-a",
+                  actual_remain_quantity: null,
+                  remain_quantity: 3,
+                  total_quantity: 3,
+                  pending_quantity: 0,
+                  waiting_quantity: 0,
+                  returning_quantity: 0,
+                },
+              ],
             },
           ],
         },
-      ],
-    },
-    "variation-null",
+        "variation-null",
+      ),
+    PancakeStockProbeError,
   );
-
-  assert.equal(result.warehouses[0]?.actual_remain_quantity, null);
-  assert.equal(result.totals.actual_remain_quantity, null);
-  assert.equal(result.totals.pending_quantity, null);
 });
 
 test("stock probe fails closed for malformed external quantity data", () => {
