@@ -3,6 +3,7 @@ import { parsePancakeCatalogVariations } from "./catalog-contract.ts";
 
 const CATALOG_PAGE_SIZE = 100;
 const MAX_CATALOG_PAGES = 10_000;
+const MAX_CATALOG_ENTRIES = 50_000;
 
 type QueryValue = string | number | boolean;
 type CatalogClient = {
@@ -35,6 +36,9 @@ export async function fetchAllPancakeCatalogVariations({
   }
   if (first.totalPages > MAX_CATALOG_PAGES) {
     throw new Error("Pancake catalog page limit exceeded");
+  }
+  if (first.totalEntries > MAX_CATALOG_ENTRIES) {
+    throw new Error("Pancake catalog entry limit exceeded");
   }
 
   variations.push(...first.variations);
