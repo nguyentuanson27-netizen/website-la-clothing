@@ -1,0 +1,241 @@
+import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+import { auth } from "../src/auth/server.ts";
+import { prisma } from "../src/db/prisma.ts";
+
+const HOST = "127.0.0.1";
+const PORT = 3211;
+const BASE_URL = `http://${HOST}:${PORT}`;
+const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
+const require = createRequire(import.meta.url);
+const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
+
+const runId = `${Date.now()}-${process.pid}`;
+const customerEmail = `admin-http-customer-${runId}@example.invalid`;
+const adminEmail = `admin-http-admin-${runId}@example.invalid`;
+const password = "admin-http-smoke-password-123";
+const productExternalId = `admin-http-product-${runId}`;
+const productSlug = `admin-http-product-${runId}`;
+const productName = `Admin HTTP Editorial ${runId}`;
+
+let server: ChildProcess | undefined;
+let serverOutput = "";
+
+function captureServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString()}`.slice(-16_000);
+}
+
+function cookieHeaderFrom(headers: Headers): string {
+  return headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";", 1)[0])
+    .filter(Boolean)
+    .join("; ");
+}
+
+async function signUpCookie(email: string, name: string, clientIp: string): Promise<string> {
+  const { headers } = await auth.api.signUpEmail({
+    returnHeaders: true,
+    headers: new Headers({ "x-ci-client-ip": clientIp }),
+    body: { name, email, password },
+  });
+
+  const cookie = cookieHeaderFrom(headers);
+  assert.notEqual(cookie, "", `Better Auth must return a session cookie for ${email}`);
+  return cookie;
+}
+
+async function waitForServer(): Promise<void> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Next.js authz smoke server exited early with code ${server.exitCode}\n${serverOutput}`);
+    }
+
+    try {
+      const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // The development server may still be starting or compiling the route.
+    }
+
+    await delay(500);
+  }
+
+  throw new Error(`Timed out waiting for Next.js authz smoke server\n${serverOutput}`);
+}
+
+async function waitForServerExit(timeoutMs: number): Promise<boolean> {
+  if (!server || server.exitCode !== null) return true;
+
+  const exited = once(server, "exit").then(() => true);
+  const timedOut = delay(timeoutMs).then(() => false);
+  return Promise.race([exited, timedOut]);
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+
+  server.kill("SIGTERM");
+  if (await waitForServerExit(5_000)) return;
+
+  server.kill("SIGKILL");
+  await waitForServerExit(5_000);
+}
+
+async function cleanupDatabase() {
+  await prisma.user.deleteMany({
+    where: { email: { in: [customerEmail, adminEmail] } },
+  });
+  await prisma.productMirror.deleteMany({
+    where: { pancakeProductId: productExternalId },
+  });
+}
+
+try {
+  await cleanupDatabase();
+
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: productExternalId,
+      slug: productSlug,
+      name: productName,
+      syncedAt: new Date(),
+    },
+  });
+
+  const customerCookie = await signUpCookie(
+    customerEmail,
+    "Admin HTTP Customer",
+    "203.0.113.11",
+  );
+  const adminCookie = await signUpCookie(adminEmail, "Admin HTTP Admin", "203.0.113.12");
+
+  await prisma.user.update({
+    where: { email: adminEmail },
+    data: { role: "ADMIN" },
+  });
+
+  const spawnedServer = spawn(
+    process.execPath,
+    [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)],
+    {
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  server = spawnedServer;
+  spawnedServer.stdout?.on("data", captureServerOutput);
+  spawnedServer.stderr?.on("data", captureServerOutput);
+
+  await waitForServer();
+
+  const customerResponse = await fetch(`${BASE_URL}/admin`, {
+    headers: { cookie: customerCookie },
+    redirect: "manual",
+  });
+  assert.equal(
+    customerResponse.status,
+    404,
+    `CUSTOMER must not read /admin, received ${customerResponse.status}`,
+  );
+  const customerHtml = await customerResponse.text();
+  assert.equal(
+    customerHtml.includes(productName),
+    false,
+    "CUSTOMER response must not disclose the protected product list",
+  );
+
+  const editorPath = `/admin/products/${encodeURIComponent(product.id)}`;
+  const editorResponse = await fetch(`${BASE_URL}${editorPath}`, {
+    headers: { cookie: adminCookie },
+    redirect: "manual",
+  });
+  assert.equal(editorResponse.status, 200, `ADMIN editor must render, received ${editorResponse.status}`);
+  const editorHtml = await editorResponse.text();
+  assert.ok(editorHtml.includes(productName), "ADMIN editor must render the protected product identity");
+  assert.ok(
+    editorHtml.includes('name="editorialDescription"'),
+    "ADMIN editor must render the editorial form",
+  );
+
+  const actionField = editorHtml.match(/name="(\$ACTION_[^"]+)"/)?.[1];
+  assert.ok(actionField, "ADMIN editor form must include a progressive-enhancement Server Action field");
+
+  const editorialDescription = "Authenticated HTTP admin persistence proof.";
+  const careInstructions = "Cold wash. Dry in shade.";
+  const sizeGuide = "Relaxed fit. Choose your normal size.";
+  const seoTitle = "Authenticated admin HTTP smoke";
+  const seoDescription = "Verified through a real authenticated Next.js Server Action request.";
+
+  const form = new FormData();
+  form.set(actionField, "");
+  form.set("editorialDescription", editorialDescription);
+  form.set("careInstructions", careInstructions);
+  form.set("sizeGuide", sizeGuide);
+  form.set("seoTitle", seoTitle);
+  form.set("seoDescription", seoDescription);
+
+  const saveResponse = await fetch(`${BASE_URL}${editorPath}`, {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      cookie: adminCookie,
+      origin: BASE_URL,
+    },
+    body: form,
+    redirect: "manual",
+  });
+  assert.ok(
+    saveResponse.status >= 300 && saveResponse.status < 400,
+    `ADMIN Server Action must redirect after save, received ${saveResponse.status}`,
+  );
+  const saveLocation = saveResponse.headers.get("location");
+  assert.ok(saveLocation, "ADMIN Server Action redirect must include Location");
+  const savedUrl = new URL(saveLocation, BASE_URL);
+  assert.equal(savedUrl.pathname, editorPath);
+  assert.equal(savedUrl.searchParams.get("saved"), "1");
+
+  const persisted = await prisma.productContent.findUnique({
+    where: { productId: product.id },
+    select: {
+      editorialDescription: true,
+      careInstructions: true,
+      sizeGuide: true,
+      seoTitle: true,
+      seoDescription: true,
+    },
+  });
+  assert.deepEqual(persisted, {
+    editorialDescription,
+    careInstructions,
+    sizeGuide,
+    seoTitle,
+    seoDescription,
+  });
+
+  const savedPageResponse = await fetch(savedUrl, {
+    headers: { cookie: adminCookie },
+    redirect: "manual",
+  });
+  assert.equal(savedPageResponse.status, 200);
+  const savedPageHtml = await savedPageResponse.text();
+  assert.ok(
+    savedPageHtml.includes("Đã lưu nội dung biên tập."),
+    "redirect target must render the persisted success status",
+  );
+
+  console.log(
+    "Authenticated admin HTTP smoke passed: CUSTOMER denied, ADMIN editor rendered, and ADMIN Server Action persisted ProductContent.",
+  );
+} finally {
+  await stopServer();
+  await rm(nextDevDirectory, { recursive: true, force: true });
+  await cleanupDatabase();
+  await prisma.$disconnect();
+}
