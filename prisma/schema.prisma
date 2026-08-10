@@ -189,6 +189,12 @@ model WarehouseStock {
   @@index([pancakeWarehouseId])
 }
 
+model CatalogSyncState {
+  pancakeShopId Int      @id
+  syncedAt      DateTime
+  updatedAt     DateTime @updatedAt
+}
+
 model Cart {
   id        String     @id @default(uuid())
   userId    String?
