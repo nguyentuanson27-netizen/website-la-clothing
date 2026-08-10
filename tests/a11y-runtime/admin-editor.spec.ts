@@ -160,6 +160,7 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   await expect(page.getByRole("button", { name: "Lưu nội dung" })).toBeVisible();
   await expect(page.getByLabel("Mô tả biên tập")).toBeVisible();
   await expect(page.getByLabel("SEO title")).toBeVisible();
+  await voiceOver.navigateToWebContent({ capture: false });
 
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
