@@ -61,12 +61,14 @@ Intended repository path: `tasks/todo.md`
   - [x] preserve website-owned `isActive`/SKU/Color/Size instead of inferring them from raw Pancake fields
   - [x] new mirrored products/variants default unpublished and stale rows become not-present/inactive
   - [x] idempotent PostgreSQL sync + stale row reconciliation in one transaction
-  - [x] same-shop sync serialization + stale-snapshot rejection
+  - [x] same-shop sync serialization + durable per-shop stale-snapshot watermark
+  - [x] empty-first-snapshot ordering RED: CI #313 failed exactly the new missing-rejection case
+  - [x] GREEN: `CatalogSyncState` persists the watermark even when a committed snapshot contains zero products
   - [x] server-owned sync runtime keeps Pancake credentials and database writes off the browser boundary
   - [x] raw image strings are stored only; no remote image fetch boundary introduced
-  - [x] CI #311 passed current implementation head before this tracker-only delta
-  - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required
-  - [ ] final tracker-head CI
+  - [x] CI #318 passed migrations, DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver on the watermark-hardened implementation head
+  - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after the watermark fix
+  - [ ] final tracker-only head CI
   - [ ] human review of PR #39 with 0 Critical / 0 Required before marking C4 complete
 - [ ] C5 PLP/PDP Color × Size storefront
   - [ ] server-authoritative price/availability
