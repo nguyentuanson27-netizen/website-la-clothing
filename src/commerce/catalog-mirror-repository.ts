@@ -122,12 +122,11 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
 
-        const latestCommitted = await tx.productMirror.findFirst({
+        const syncState = await tx.catalogSyncState.findUnique({
           where: { pancakeShopId: safeShopId },
-          orderBy: { syncedAt: "desc" },
           select: { syncedAt: true },
         });
-        if (latestCommitted && latestCommitted.syncedAt.getTime() > safeSyncedAt.getTime()) {
+        if (syncState && syncState.syncedAt.getTime() > safeSyncedAt.getTime()) {
           throw new Error("Catalog mirror snapshot is older than the committed mirror");
         }
 
@@ -268,6 +267,12 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
             data: { isPresent: false, isActive: false, syncedAt: safeSyncedAt },
           });
         }
+
+        await tx.catalogSyncState.upsert({
+          where: { pancakeShopId: safeShopId },
+          create: { pancakeShopId: safeShopId, syncedAt: safeSyncedAt },
+          update: { syncedAt: safeSyncedAt },
+        });
 
         return {
           products: productIds.length,
