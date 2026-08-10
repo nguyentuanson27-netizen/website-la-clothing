@@ -56,7 +56,7 @@ Intended repository path: `tasks/todo.md`
   - [x] live diagnostic progression safely localized the mapped-contract mismatch to nested `product.id`; regression CI #285 reproduced the over-constraint before the root-cause fix
   - [x] root-cause fix uses top-level `product_id` as canonical identity and ignores nested `product.id`; CI #286 passed DB/runtime, HTTP security/authz, lint, typecheck, domain/integration, production build and macOS Chromium/Axe/VoiceOver runtime
   - [x] trusted-local `pnpm pancake:contract:verify` rerun on the fixed branch returned PASS
-  - [x] final-head CI #288 passed Linux DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver runtime after tracker updates
+  - [x] pre-review CI #288 passed Linux DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver runtime after the live-gate tracker update
   - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required before human review
   - [ ] human review of PR #38 with 0 Critical / 0 Required before marking C3 complete
 - [ ] C4 Catalog mirror sync/read model — STOPPED until C3 human review passes
