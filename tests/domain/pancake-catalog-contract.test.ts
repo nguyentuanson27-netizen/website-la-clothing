@@ -154,25 +154,30 @@ test("catalog contract exposes only fixed safe reason codes for product validati
   assertContractReason(() => parsePancakeCatalogVariations(malformedWarehouse), "variation-warehouse");
 });
 
-test("catalog contract safely localizes nested product validation failures", () => {
+test("catalog contract consumes top-level product_id as canonical identity and ignores nested product.id", () => {
+  const nestedIdIsNotAString = structuredClone(productVariationsPayload);
+  nestedIdIsNotAString.data[0]!.product.id = null as unknown as string;
+
+  const parsed = parsePancakeCatalogVariations(nestedIdIsNotAString);
+  assert.equal(parsed.variations[0]!.productId, "product-1");
+  assert.deepEqual(parsed.variations[0]!.product, {
+    id: "product-1",
+    name: "Test Shirt",
+  });
+
+  const nestedIdDisagrees = structuredClone(productVariationsPayload);
+  nestedIdDisagrees.data[0]!.product.id = "different-product";
+  assert.equal(parsePancakeCatalogVariations(nestedIdDisagrees).variations[0]!.productId, "product-1");
+});
+
+test("catalog contract safely localizes nested product shape and name failures", () => {
   const malformedShape = structuredClone(productVariationsPayload);
   malformedShape.data[0]!.product = null as unknown as typeof productVariationsPayload.data[0]["product"];
   assertContractReason(() => parsePancakeCatalogVariations(malformedShape), "variation-product-shape");
 
-  const malformedId = structuredClone(productVariationsPayload);
-  malformedId.data[0]!.product.id = null as unknown as string;
-  assertContractReason(() => parsePancakeCatalogVariations(malformedId), "variation-product-id");
-
   const malformedName = structuredClone(productVariationsPayload);
   malformedName.data[0]!.product.name = null as unknown as string;
   assertContractReason(() => parsePancakeCatalogVariations(malformedName), "variation-product-name");
-
-  const inconsistentIdentity = structuredClone(productVariationsPayload);
-  inconsistentIdentity.data[0]!.product.id = "different-product";
-  assertContractReason(
-    () => parsePancakeCatalogVariations(inconsistentIdentity),
-    "variation-product-identity",
-  );
 });
 
 test("catalog contract validates the minimal warehouse identity surface", () => {
