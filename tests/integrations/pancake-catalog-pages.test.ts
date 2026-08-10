@@ -5,12 +5,12 @@ import { fetchAllPancakeCatalogVariations } from "../../src/integrations/pancake
 
 type Query = Readonly<Record<string, string | number | boolean>>;
 
-function catalogPage(pageNumber: number, totalPages: number) {
+function catalogPage(pageNumber: number, totalPages: number, totalEntries = totalPages) {
   return {
     success: true,
     page_number: pageNumber,
     page_size: 100,
-    total_entries: totalPages,
+    total_entries: totalEntries,
     total_pages: totalPages,
     data: [],
   };
@@ -43,6 +43,20 @@ test("catalog pagination fails closed if Pancake changes total_pages mid-travers
     async getJson(_endpoint: string, query: Query) {
       const page = Number(query.page_number);
       return catalogPage(page, page === 1 ? 2 : 3);
+    },
+  };
+
+  await assert.rejects(
+    () => fetchAllPancakeCatalogVariations({ client, shopId: 123 }),
+    /pagination changed during traversal/i,
+  );
+});
+
+test("catalog pagination fails closed if Pancake changes total_entries mid-traversal", async () => {
+  const client = {
+    async getJson(_endpoint: string, query: Query) {
+      const page = Number(query.page_number);
+      return catalogPage(page, 2, page === 1 ? 200 : 199);
     },
   };
 
