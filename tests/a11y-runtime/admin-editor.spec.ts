@@ -216,16 +216,15 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   });
 
   await voiceOver.navigateToWebContent({ capture: false });
+  const errorText = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.";
   const errorCapture = await voiceOver.capture(
     async () => {
       await page.getByRole("button", { name: "Lưu nội dung" }).click();
       await page.waitForURL(
         (url) => url.pathname === editorPath && url.searchParams.get("error") === "invalid",
       );
-      const errorStatus = page.getByRole("alert");
-      await expect(errorStatus).toContainText(
-        "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
-      );
+      const errorStatus = page.getByRole("alert").filter({ hasText: errorText });
+      await expect(errorStatus).toContainText(errorText);
       await expect(errorStatus).toBeFocused();
     },
     { capture: true },
