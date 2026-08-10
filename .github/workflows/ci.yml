@@ -65,6 +65,9 @@ jobs:
       - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
 
+      - name: Authenticated admin HTTP authorization smoke
+        run: node --experimental-strip-types scripts/admin-authz-http-smoke.ts
+
       - name: Lint
         run: pnpm lint
 
@@ -76,3 +79,64 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  admin-a11y-runtime:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3212
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Prepare PostgreSQL 16
+        shell: bash
+        run: |
+          brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
+          PG_BIN="$(brew --prefix postgresql@16)/bin"
+          echo "$PG_BIN" >> "$GITHUB_PATH"
+          "$PG_BIN/initdb" -D "$RUNNER_TEMP/pgdata"
+          "$PG_BIN/pg_ctl" -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/postgres.log" -o "-p 5432" start
+          "$PG_BIN/createdb" -p 5432 la_clothing
+          echo "DATABASE_URL=postgresql://$(whoami)@127.0.0.1:5432/la_clothing" >> "$GITHUB_ENV"
+
+      - name: Install application from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Install pinned accessibility runtime tooling
+        working-directory: tests/a11y-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: tests/a11y-runtime
+        run: npx playwright install chromium
+
+      - name: Configure macOS for VoiceOver automation
+        working-directory: tests/a11y-runtime
+        run: ./node_modules/.bin/guidepup setup
+
+      - name: Install Guidepup project assets
+        working-directory: tests/a11y-runtime
+        run: ./node_modules/.bin/guidepup install
+
+      - name: Run admin browser accessibility and VoiceOver runtime
+        working-directory: tests/a11y-runtime
+        run: npx playwright test --config playwright.config.ts
