@@ -134,6 +134,34 @@ test("stock probe requires exactly one matching variation", () => {
   );
 });
 
+test("stock probe fails closed if one warehouse_id appears more than once", () => {
+  const row = {
+    warehouse_id: "warehouse-a",
+    actual_remain_quantity: 4,
+    remain_quantity: 4,
+    total_quantity: 4,
+    pending_quantity: 0,
+    waiting_quantity: 0,
+    returning_quantity: 0,
+  };
+
+  assert.throws(
+    () =>
+      buildPancakeStockProbe(
+        {
+          data: [
+            {
+              id: "variation-duplicate-warehouse",
+              variations_warehouses: [row, { ...row, remain_quantity: 3 }],
+            },
+          ],
+        },
+        "variation-duplicate-warehouse",
+      ),
+    /duplicate warehouse/i,
+  );
+});
+
 test("trusted-local stock probe refuses CI before reading Pancake credentials", () => {
   const apiKey = "must-not-be-printed";
   const result = spawnSync(
