@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -131,4 +132,27 @@ test("stock probe requires exactly one matching variation", () => {
       ),
     /exactly one/i,
   );
+});
+
+test("trusted-local stock probe refuses CI before reading Pancake credentials", () => {
+  const apiKey = "must-not-be-printed";
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/pancake-stock-probe.ts", "variation-1"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: "true",
+        GITHUB_ACTIONS: "true",
+        PANCAKE_API_KEY: apiKey,
+        PANCAKE_SHOP_ID: "1",
+      },
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /stock probe refuses CI execution/i);
+  assert.equal(result.stderr.includes(apiKey), false);
 });
