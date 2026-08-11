@@ -214,3 +214,76 @@ test("rejects external refs and malformed schema nodes instead of following or c
       error instanceof PancakeOrderOpenApiError && error.code === "MALFORMED_OPENAPI_DOCUMENT",
   );
 });
+
+test("resolves chained local refs before inspecting structural schema", () => {
+  const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CreateOrderAlias" },
+              },
+            },
+          },
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        CreateOrderAlias: { $ref: "#/components/schemas/CreateOrderRequest" },
+        CreateOrderRequest: {
+          type: "object",
+          required: ["items"],
+          properties: {
+            items: { type: "array", items: { type: "object" } },
+          },
+        },
+      },
+    },
+  };
+
+  const result = inspectPancakeCreateOrderOpenApi(document);
+  assert.deepEqual(result.requestBody?.content["application/json"], {
+    type: "object",
+    required: ["items"],
+    properties: {
+      items: { type: "array", items: { type: "object" } },
+    },
+  });
+});
+
+test("fails closed for circular local refs instead of returning an empty schema", () => {
+  const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/A" },
+              },
+            },
+          },
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        A: { $ref: "#/components/schemas/B" },
+        B: { $ref: "#/components/schemas/A" },
+      },
+    },
+  };
+
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi(document),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError && error.code === "CIRCULAR_LOCAL_REF",
+  );
+});
