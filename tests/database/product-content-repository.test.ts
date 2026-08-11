@@ -15,6 +15,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 const repository = createProductContentRepository(prisma);
+const testShopId = 920_004;
 const externalId = "product-content-repository-product";
 
 async function cleanup() {
@@ -30,6 +31,7 @@ test.after(async () => {
 test("product content repository reads mirrored products and upserts one editorial snapshot", async () => {
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: externalId,
       slug: externalId,
       name: "Editorial Repository Product",
