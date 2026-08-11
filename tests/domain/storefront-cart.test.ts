@@ -93,6 +93,26 @@ test("cart lines expose current storefront price and availability without exact 
   assert.equal("retailPriceAfterDiscount" in lines[0]!, false);
 });
 
+test("cart line fails closed when its requested quantity exceeds current sellable stock", () => {
+  const [line] = buildStorefrontCartLines({
+    items: [{ variantId: "available", quantity: 4 }],
+    products: [availableProduct],
+  });
+
+  assert.deepEqual(line, {
+    variantId: "available",
+    productSlug: "relaxed-shirt",
+    productName: "Relaxed Shirt",
+    color: "Black",
+    size: "M",
+    quantity: 4,
+    price: 590_000,
+    available: false,
+    unavailableReason: "INSUFFICIENT_STOCK",
+  });
+  assert.equal("sellableStock" in line!, false);
+});
+
 test("cart lines fail closed when the product or variant cannot be resolved for the storefront", () => {
   const lines = buildStorefrontCartLines({
     items: [
