@@ -112,11 +112,16 @@ Intended repository path: `tasks/todo.md`
   - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
   - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs are fully resolved
   - [x] OpenAPI 3.1 Schema Object `$ref` structural siblings are preserved conjunctively instead of being silently discarded
+  - [x] one shared 10,000-work-unit budget now covers externally controlled paths, parameters, response entries, media types, schemas, `$ref` hops and JSON-pointer segments
+  - [x] operation-level parameters override matching path-level parameters by `(name, in)`; duplicates within one level and path parameters without `required: true` fail closed
   - [x] examples/defaults/descriptions/external scalar sample values are excluded from inspection output
   - [x] initial TDD RED CI #421 failed at the missing inspector module; implementation reached full green after a Node strip-only syntax compatibility fix in CI #423
   - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN CI #425 passed the corrected bounded ref resolution
   - [x] OpenAPI 3.1 `$ref`-sibling RED CI #428 kept 46/46 DB + security/authz + lint + typecheck green and failed exactly the new sibling-loss case at 147/148 domain/integration tests
-  - [x] exact GREEN code head `732518f` passed CI #429: 46/46 DB, security/authz, lint, typecheck, 148/148 domain/integration, production build and admin-a11y runtime
+  - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; both findings reproduced before production changes
+  - [x] review-fix RED head `f70067a`: CI #432 kept 46/46 DB + HTTP security/authz + lint + typecheck green and failed exactly 3/151 new regressions for non-schema budget, parameter override and malformed parameter semantics
+  - [x] review-fix GREEN code head `0bbf5fa`: CI #433 passed 46/46 DB, security/authz, lint, typecheck, 151/151 domain/integration, production build and admin-a11y runtime
+  - [x] docs exact head `020f1a9`: CI #434 passed `verify` and `admin-a11y-runtime`
   - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
   - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
   - [ ] correct website-origin reference field verified
@@ -125,7 +130,7 @@ Intended repository path: `tasks/todo.md`
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [~] self-review: narrow inspector 0 Critical / 0 Required / 0 Consider; C8 write remains blocked on external contract evidence; human review still required
+  - [~] self-review: narrow inspector 0 Critical / 0 Required / 0 Consider after review fixes; C8 write remains blocked on external contract evidence; human re-review still required
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
