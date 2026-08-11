@@ -122,6 +122,14 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
 
+        // ProductMirror rows created before C4 had no shop scope. The C4 migration
+        // uses shop 0 as the legacy sentinel, and the runtime currently has one
+        // configured Pancake shop, so adopt those rows before stale reconciliation.
+        await tx.productMirror.updateMany({
+          where: { pancakeShopId: 0 },
+          data: { pancakeShopId: safeShopId },
+        });
+
         const syncState = await tx.catalogSyncState.findUnique({
           where: { pancakeShopId: safeShopId },
           select: { syncedAt: true },
