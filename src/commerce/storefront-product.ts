@@ -54,15 +54,16 @@ export function resolveStorefrontPrice({
 export function getStorefrontResolvedPriceRange(
   options: readonly StorefrontVariantOption[],
 ): { minimum: number; maximum: number } | null {
-  const prices = options
-    .map((option) => option.price)
-    .filter((price): price is number => price !== null);
+  let minimum: number | null = null;
+  let maximum: number | null = null;
 
-  if (prices.length === 0) return null;
-  return {
-    minimum: Math.min(...prices),
-    maximum: Math.max(...prices),
-  };
+  for (const option of options) {
+    if (option.price === null) continue;
+    minimum = minimum === null ? option.price : Math.min(minimum, option.price);
+    maximum = maximum === null ? option.price : Math.max(maximum, option.price);
+  }
+
+  return minimum === null || maximum === null ? null : { minimum, maximum };
 }
 
 export function buildStorefrontVariantOptions(
