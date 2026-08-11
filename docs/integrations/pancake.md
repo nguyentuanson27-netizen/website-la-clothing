@@ -147,10 +147,11 @@ The stage distinguishes configuration, endpoint fetch, full-key validation, and 
 
 ## C8 create-order contract verification
 
-The official Pancake POS Open API reference currently establishes these structural facts:
+The current official Pancake POS Open API reference at `https://api-docs.pancake.biz/` establishes these structural facts:
 
-- the API document is OpenAPI 3.1.0;
-- the production server is `https://pos.pages.fm/api/v1`;
+- reference version `v1.0.0`;
+- OpenAPI 3.1.0;
+- production server `https://pos.pages.fm/api/v1`;
 - Order Operations contains `POST /shops/{SHOP_ID}/orders`.
 
 Endpoint existence is **not** treated as evidence for the create-order request/response schema, a website-origin reference field, or native idempotency behavior.
@@ -159,11 +160,14 @@ PR #43 adds `src/integrations/pancake/order-openapi-contract.ts`, a pure local i
 
 - locates exactly one `POST /shops/{...}/orders` operation without guessing the path-parameter name;
 - resolves bounded local `#/...` references, including chained references;
+- preserves the supported structural siblings of OpenAPI 3.1 Schema Object `$ref` values conjunctively rather than silently discarding them;
 - rejects external references, unresolved references, circular references, malformed documents and inspection-budget overflow;
 - emits only structural contract metadata needed for review: parameter names/locations/required flags, schema types/formats/required property names/property structure, media types and response status structure;
 - deliberately omits examples, defaults, descriptions and other external scalar sample values from its output.
 
-The public documentation workspace currently exposes a “Download OpenAPI Document” control, but the raw downloadable document has not yet been captured into trusted local evidence in this project. Do not commit a guessed order payload based only on endpoint existence or generated client examples.
+This inspector is a **discovery/review aid, not write authorization**. It intentionally captures only the structural subset needed to inspect the operation safely; it does not claim to preserve every JSON Schema/OpenAPI validation keyword.
+
+The official reference exposes a “Download OpenAPI Document” control, but the raw downloadable document has not yet been captured into trusted local evidence in this project. The rendered/searchable official reference verifies the endpoint-level facts above, but current extraction does not expose the expanded `POST /shops/{SHOP_ID}/orders` request/response schema. Searches for candidate order field names are therefore not treated as contract evidence. Do not commit a guessed order payload based only on endpoint existence, UI examples, or generated client assumptions.
 
 Before any Pancake order write is implemented, trusted evidence still needs to establish at minimum:
 
@@ -190,8 +194,10 @@ Do not guess the remaining integration contracts. In particular, do not add blin
 
 ## Official sources checked
 
-- Pancake POS Open API reference: https://docs.pancake.biz/pos/api/en/
+- Pancake POS full Open API reference: https://api-docs.pancake.biz/
+- Pancake POS Open API reference entry: https://docs.pancake.biz/pos/api/en/
 - Pancake POS Open API overview: https://docs.pancake.biz/pos/st-f13/st-p1?lang=en
 - API key/authentication: https://docs.pancake.biz/pos/st-f13/st-p2?lang=en
 - Order status & processing flow: https://docs.pancake.biz/pos/st-f13/st-p3?lang=en
+- OpenAPI 3.1.0 specification: https://spec.openapis.org/oas/v3.1.0
 - pnpm run argument forwarding: https://pnpm.io/cli/run
