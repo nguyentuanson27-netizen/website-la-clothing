@@ -136,9 +136,9 @@ test("checkout snapshot persists server-authoritative lines and the default 30,0
   if (!result.ok) return;
   assert.equal(result.order.publicCode, publicCode);
   assert.equal(result.order.state, "DRAFT");
-  assert.equal(result.order.merchandiseSubtotalVnd, 1_000_000n);
-  assert.equal(result.order.shippingFeeVnd, 30_000n);
-  assert.equal(result.order.totalVnd, 1_030_000n);
+  assert.equal(result.order.merchandiseSubtotalVnd, BigInt(1_000_000));
+  assert.equal(result.order.shippingFeeVnd, BigInt(30_000));
+  assert.equal(result.order.totalVnd, BigInt(1_030_000));
 
   const persisted = await prisma.orderMirror.findUniqueOrThrow({
     where: { publicCode },
@@ -153,9 +153,9 @@ test("checkout snapshot persists server-authoritative lines and the default 30,0
   assert.equal(persisted.communeRef, "commune-0001");
   assert.equal(persisted.addressDetail, "12 Đường A");
   assert.equal(persisted.note, "Gọi trước khi giao");
-  assert.equal(persisted.merchandiseSubtotalVnd, 1_000_000n);
-  assert.equal(persisted.shippingFeeVnd, 30_000n);
-  assert.equal(persisted.totalVnd, 1_030_000n);
+  assert.equal(persisted.merchandiseSubtotalVnd, BigInt(1_000_000));
+  assert.equal(persisted.shippingFeeVnd, BigInt(30_000));
+  assert.equal(persisted.totalVnd, BigInt(1_030_000));
   assert.deepEqual(
     persisted.lines.map((line) => ({
       variantId: line.variantId,
@@ -175,8 +175,8 @@ test("checkout snapshot persists server-authoritative lines and the default 30,0
         color: "Black",
         size: "M",
         quantity: 2,
-        unitPriceVnd: 500_000n,
-        lineTotalVnd: 1_000_000n,
+        unitPriceVnd: BigInt(500_000),
+        lineTotalVnd: BigInt(1_000_000),
       },
     ],
   );
@@ -200,7 +200,7 @@ test("checkout snapshot persists server-authoritative lines and the default 30,0
   });
   assert.equal(unchanged.lines[0]?.productName, `Checkout Product ${key}`);
   assert.equal(unchanged.lines[0]?.color, "Black");
-  assert.equal(unchanged.lines[0]?.unitPriceVnd, 500_000n);
+  assert.equal(unchanged.lines[0]?.unitPriceVnd, BigInt(500_000));
 
   await cleanup(key);
 });
@@ -227,9 +227,9 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
 
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.equal(result.order.merchandiseSubtotalVnd, 600_000n);
-    assert.equal(result.order.shippingFeeVnd, 0n);
-    assert.equal(result.order.totalVnd, 600_000n);
+    assert.equal(result.order.merchandiseSubtotalVnd, BigInt(600_000));
+    assert.equal(result.order.shippingFeeVnd, BigInt(0));
+    assert.equal(result.order.totalVnd, BigInt(600_000));
   }
 
   await cleanup(key);
