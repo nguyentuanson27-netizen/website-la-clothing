@@ -44,9 +44,9 @@ async function createDraft(key: string) {
       communeRef: "commune-0001",
       addressDetail: "Sensitive Address",
       note: "Sensitive Note",
-      merchandiseSubtotalVnd: 500_000n,
-      shippingFeeVnd: 30_000n,
-      totalVnd: 530_000n,
+      merchandiseSubtotalVnd: BigInt(500_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(530_000),
       lines: {
         create: {
           variantId: `observable-local-${key}`,
@@ -55,8 +55,8 @@ async function createDraft(key: string) {
           color: "Black",
           size: "M",
           quantity: 1,
-          unitPriceVnd: 500_000n,
-          lineTotalVnd: 500_000n,
+          unitPriceVnd: BigInt(500_000),
+          lineTotalVnd: BigInt(500_000),
         },
       },
     },
