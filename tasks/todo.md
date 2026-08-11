@@ -9,9 +9,9 @@ Intended repository path: `tasks/todo.md`
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
-- [~] T6 Implement idempotent catalog synchronization/mirror — C4 implementation complete on PR #39; human approval checkpoint was recorded, formal self-approval is unavailable on GitHub
-- [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation + automated verification complete; storefront browser/mobile/a11y verification remains
-- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, catalog-backed Color × Size/Add-to-Bag UI and bounded Server Functions are implemented; full cart page remains
+- [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
+- [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
+- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented; cart browser/mobile/a11y + human review remain
 - [ ] T9 Deliver guest COD checkout → exactly one Pancake order
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 is merged and green on `main`; C4 has a recorded human approval checkpoint on PR #39; C5 is implemented on stacked draft PR #40 with review feedback fixed and storefront browser/mobile/a11y verification still pending
+## Current execution path: C4 and C5 are merged and green on `main`; C6 Cart UI is implemented on draft PR #41 with automated verification/self-review complete and cart-specific browser/mobile/a11y + human review pending
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -53,7 +53,7 @@ Intended repository path: `tasks/todo.md`
   - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required
   - [x] automated fresh review: APPROVE — 0 Critical / 0 Required / 0 Consider
   - [x] merged to `main`; post-merge CI #291 passed
-- [~] C4 Catalog mirror sync/read model — implementation + self-review complete; human approval checkpoint recorded on PR #39
+- [x] C4 Catalog mirror sync/read model — approved and merged in PR #39
   - [x] fetch/traverse reviewed Pancake pagination deliberately with stable page/entry consistency checks
   - [x] cap remote traversal at 500 pages / 50,000 entries and fail closed on incomplete traversal
   - [x] schema persists only verified external fields plus explicit website-owned policy state
@@ -69,21 +69,27 @@ Intended repository path: `tasks/todo.md`
   - [x] CI #318 passed migrations, DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver on the watermark-hardened implementation head
   - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after the watermark fix
   - [x] legacy-row review fix verified on exact head `e6a7eaa` by CI #322
-  - [x] human approval checkpoint recorded in PR comment `5248570624`; GitHub formal self-approval is not permitted for the PR author
-- [~] C5 PLP/PDP Color × Size storefront
+  - [x] human approval checkpoint recorded in PR comment `5248570624`; GitHub formal self-approval was not permitted for the PR author
+  - [x] merged to `main` before C5 retarget/merge
+- [~] C5 PLP/PDP Color × Size storefront — code-level approved and merged in PR #40; storefront browser/mobile/a11y remains pending
   - [x] server-authoritative price/availability and Add-to-Bag reauthorization
   - [x] URL-backed bounded pagination keeps products beyond the first 24 browseable
   - [x] review Comment `5248837169` Required fixed with a 25-product database regression
   - [x] Consider #1 fixed: storefront shop scope no longer requires `PANCAKE_API_KEY`; live Pancake config still does
   - [x] Consider #2 fixed: storefront public purchase action owns a fixed browser response shape and strips downstream fields
-  - [x] automated tests/build — exact code head `b64778d` passed CI #371; final documentation head `8b56444` passed CI #373
+  - [x] review Comment `5249082862`: APPROVE — 0 Critical / 0 Required / 1 non-blocking Consider
+  - [x] retargeted/reconciled head `7471229` passed CI #375 before merge
+  - [x] squash-merged to `main` as `4ac818c0`; post-merge CI #376 passed
   - [ ] browser/mobile/a11y verification when tool available
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after review fixes
-- [ ] C6 Cart UI
-  - [ ] current price/availability, update/remove
-  - [ ] automated tests/build
+- [~] C6 Cart UI — implementation + automated verification + self-review complete on draft PR #41; browser/human review remain
+  - [x] current configured-shop price/availability, stale-line visibility, current subtotal, update/remove
+  - [x] update only existing line and re-authorize requested quantity server-side without exposing exact stock/cart identity
+  - [x] quantity above current stock fails closed as `INSUFFICIENT_STOCK`; shopper can lower quantity to recover
+  - [x] automated tests/build — exact code head `7f92a02` passed CI #396: 40/40 DB, security/authz, lint, typecheck, 133/133 domain/integration, production build
   - [ ] browser/mobile/a11y verification when tool available
-  - [ ] self-review
+  - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required / 1 performance Consider
+  - [ ] human review of PR #41
 - [ ] C7 Guest COD checkout persistence + server revalidation
   - [ ] approved shipping rule available
   - [ ] migration/runtime tests

@@ -35,6 +35,19 @@ type SetItemResult =
     }
   | ExpectedMutationFailure;
 
+type UpdateExistingItemResult =
+  | {
+      ok: true;
+      item: {
+        variantId: string;
+        quantity: number;
+      };
+    }
+  | { ok: false; reason: "INVALID_QUANTITY" }
+  | { ok: false; reason: "CART_UNAVAILABLE" }
+  | { ok: false; reason: "VARIANT_UNAVAILABLE" }
+  | { ok: false; reason: "CART_ITEM_UNAVAILABLE" };
+
 type CreateWithItemResult =
   | {
       ok: true;
@@ -230,6 +243,59 @@ export function createAnonymousCartService(client: PrismaClient) {
     });
   }
 
+  async function updateExistingItemQuantity({
+    cartId,
+    variantId,
+    quantity,
+    now,
+  }: {
+    cartId: string;
+    variantId: string;
+    quantity: number;
+    now: Date;
+  }): Promise<UpdateExistingItemResult> {
+    if (!isPositiveDatabaseInteger(quantity)) {
+      return { ok: false, reason: "INVALID_QUANTITY" };
+    }
+
+    return client.$transaction(async (tx): Promise<UpdateExistingItemResult> => {
+      if (!(await lockLiveAnonymousCart(tx, cartId, now))) {
+        return { ok: false, reason: "CART_UNAVAILABLE" };
+      }
+
+      const existingItem = await tx.cartItem.findUnique({
+        where: { cartId_variantId: { cartId, variantId } },
+        select: { id: true },
+      });
+
+      if (!existingItem) {
+        return { ok: false, reason: "CART_ITEM_UNAVAILABLE" };
+      }
+
+      const variant = await tx.variantMirror.findUnique({
+        where: { id: variantId },
+        select: {
+          isActive: true,
+          product: {
+            select: { isActive: true },
+          },
+        },
+      });
+
+      if (!variant?.isActive || !variant.product.isActive) {
+        return { ok: false, reason: "VARIANT_UNAVAILABLE" };
+      }
+
+      const item = await tx.cartItem.update({
+        where: { cartId_variantId: { cartId, variantId } },
+        data: { quantity },
+        select: { variantId: true, quantity: true },
+      });
+
+      return { ok: true, item };
+    });
+  }
+
   async function removeItem({
     cartId,
     variantId,
@@ -260,6 +326,7 @@ export function createAnonymousCartService(client: PrismaClient) {
     createWithItem,
     get,
     setItemQuantity,
+    updateExistingItemQuantity,
     removeItem,
   };
 }
