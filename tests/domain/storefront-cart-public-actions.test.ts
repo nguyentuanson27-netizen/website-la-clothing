@@ -18,7 +18,7 @@ test("cart update requires an existing line and reauthorizes the requested quant
     },
     async canSetQuantity(input) {
       authorizations.push(input);
-      return input.quantity <= 3;
+      return input.variantId !== "unavailable" && input.quantity <= 3;
     },
     async setQuantity(input) {
       calls.push(input);
