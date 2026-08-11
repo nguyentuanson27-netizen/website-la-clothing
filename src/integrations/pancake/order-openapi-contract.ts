@@ -70,8 +70,11 @@ function decodeJsonPointerSegment(value: string): string {
 
 class OpenApiStructureInspector {
   private inspectedNodes = 0;
+  private readonly document: JsonRecord;
 
-  constructor(private readonly document: JsonRecord) {}
+  constructor(document: JsonRecord) {
+    this.document = document;
+  }
 
   private countNode(depth: number): void {
     this.inspectedNodes += 1;
