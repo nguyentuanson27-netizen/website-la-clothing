@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-catalog-runtime";
-import { buildStorefrontVariantOptions } from "@/commerce/storefront-product";
+import {
+  buildStorefrontVariantOptions,
+  toStorefrontSelectableOptions,
+} from "@/commerce/storefront-product";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 
 type ProductPageProps = {
@@ -24,7 +27,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product) notFound();
 
-  const options = buildStorefrontVariantOptions(product.variants);
+  const options = toStorefrontSelectableOptions(buildStorefrontVariantOptions(product.variants));
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
@@ -85,7 +88,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <p className="mt-8 max-w-xl text-xs leading-5 text-black/50">
-            Tình trạng mua được được kiểm tra lại phía máy chủ khi Add to Bag. Dữ liệu tồn kho hiển thị dựa trên tổng tồn khả dụng đã xác minh từ các kho Pancake.
+            Tình trạng mua được được kiểm tra lại phía máy chủ khi Add to Bag. Dữ liệu tồn kho được dùng để quyết định khả dụng nhưng không gửi số lượng tồn chính xác xuống client.
           </p>
         </article>
       </div>
