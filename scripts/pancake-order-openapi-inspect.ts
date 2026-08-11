@@ -65,9 +65,19 @@ type SafeFileHandle = {
   close(): Promise<void>;
 };
 type OpenEvidenceFile = (filePath: string, flags: "r") => Promise<SafeFileHandle>;
+type EvidenceDependencies = { openFile?: OpenEvidenceFile };
 
-type EvidenceDependencies = {
-  openFile?: OpenEvidenceFile;
+type ItemsEvidence = {
+  type?: string | string[];
+  itemRequired: string[];
+  variation_id?: string | string[];
+  quantity?: string | string[];
+  "variation_info.retail_price"?: string | string[];
+};
+
+type ShippingEvidence = {
+  required: string[];
+  properties: Record<string, string | string[]>;
 };
 
 type PancakeOrderEvidenceEnvelope = {
@@ -98,17 +108,8 @@ type PancakeOrderEvidenceEnvelope = {
       contentType?: string;
       topLevelRequired: string[];
       selectedProperties: Record<string, string | string[]>;
-      items?: {
-        type?: string | string[];
-        itemRequired: string[];
-        variation_id?: string | string[];
-        quantity?: string | string[];
-        "variation_info.retail_price"?: string | string[];
-      };
-      shippingAddress?: {
-        required: string[];
-        properties: Record<string, string | string[]>;
-      };
+      items?: ItemsEvidence;
+      shippingAddress?: ShippingEvidence;
     };
     response: {
       statuses: string[];
@@ -128,7 +129,7 @@ function malformed(): never {
   throw new PancakeOrderOpenApiError("MALFORMED_OPENAPI_DOCUMENT");
 }
 
-function isSafeLocalFailure(error: unknown): boolean {
+function isSafeLocalFailure(error: unknown): error is Error {
   return error instanceof Error && SAFE_LOCAL_FAILURES.has(error.message);
 }
 
@@ -306,26 +307,15 @@ function selectContentSchema(
 
 function inspectItemsEvidence(
   properties: Record<string, OpenApiSchemaStructure> | undefined,
-): PancakeOrderEvidenceEnvelope["operation"]["requestBody"] extends infer T
-  ? T extends { items?: infer I }
-    ? I
-    : never
-  : never {
+): ItemsEvidence | undefined {
   const items = properties?.items;
   if (items === undefined) {
     return undefined;
   }
   const itemSchema = items.items;
   const itemProperties = itemSchema?.properties;
-  const variationInfo = itemProperties?.variation_info;
-  const retailPrice = variationInfo?.properties?.retail_price;
-  const result: {
-    type?: string | string[];
-    itemRequired: string[];
-    variation_id?: string | string[];
-    quantity?: string | string[];
-    "variation_info.retail_price"?: string | string[];
-  } = {
+  const retailPrice = itemProperties?.variation_info?.properties?.retail_price;
+  const result: ItemsEvidence = {
     itemRequired: itemSchema?.required ?? [],
   };
   const itemsType = schemaType(items);
@@ -341,11 +331,7 @@ function inspectItemsEvidence(
 
 function inspectShippingEvidence(
   properties: Record<string, OpenApiSchemaStructure> | undefined,
-): PancakeOrderEvidenceEnvelope["operation"]["requestBody"] extends infer T
-  ? T extends { shippingAddress?: infer I }
-    ? I
-    : never
-  : never {
+): ShippingEvidence | undefined {
   const shipping = properties?.shipping_address;
   if (shipping === undefined) {
     return undefined;
@@ -361,26 +347,29 @@ function inspectOperationEvidence(
 ): PancakeOrderEvidenceEnvelope["operation"] {
   const pathParameters = inspection.parameters
     .filter((parameter) => parameter.in === "path" && parameter.required)
-    .map((parameter) => ({
-      name: parameter.name,
-      in: "path" as const,
-      required: true as const,
-      ...(schemaType(parameter.schema) === undefined ? {} : { type: schemaType(parameter.schema) }),
-    }));
+    .map((parameter) => {
+      const type = schemaType(parameter.schema);
+      return {
+        name: parameter.name,
+        in: "path" as const,
+        required: true as const,
+        ...(type === undefined ? {} : { type }),
+      };
+    });
 
   let requestBody: PancakeOrderEvidenceEnvelope["operation"]["requestBody"];
   if (inspection.requestBody !== undefined) {
     const selected = selectContentSchema(inspection.requestBody.content);
     const properties = selected.schema?.properties;
+    const items = inspectItemsEvidence(properties);
+    const shippingAddress = inspectShippingEvidence(properties);
     requestBody = {
       required: inspection.requestBody.required,
       ...(selected.contentType === undefined ? {} : { contentType: selected.contentType }),
       topLevelRequired: selected.schema?.required ?? [],
       selectedProperties: selectedPropertyTypes(properties, SELECTED_REQUEST_PROPERTIES),
-      ...(inspectItemsEvidence(properties) === undefined ? {} : { items: inspectItemsEvidence(properties) }),
-      ...(inspectShippingEvidence(properties) === undefined
-        ? {}
-        : { shippingAddress: inspectShippingEvidence(properties) }),
+      ...(items === undefined ? {} : { items }),
+      ...(shippingAddress === undefined ? {} : { shippingAddress }),
     };
   }
 
