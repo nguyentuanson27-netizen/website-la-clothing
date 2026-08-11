@@ -39,7 +39,7 @@ export function deriveStorefrontSelection(
   const colors: StorefrontChoiceState[] = uniqueMappedValues(options, "color").map((value) => ({
     value,
     disabled: !options.some((option) =>
-      supportsSelection(option, { color: value, size: selection.size }),
+      supportsSelection(option, { color: value, size: null }),
     ),
   }));
 
