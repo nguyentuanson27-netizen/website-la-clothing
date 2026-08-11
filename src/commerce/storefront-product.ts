@@ -21,6 +21,11 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
   unavailableReason: StorefrontVariantUnavailableReason | null;
 };
 
+export type StorefrontSelectableOption = Pick<
+  StorefrontVariantOption,
+  "id" | "color" | "size" | "price" | "purchasable" | "unavailableReason"
+>;
+
 type StorefrontPriceFacts = Pick<
   StorefrontVariantFacts,
   "retailPrice" | "retailPriceAfterDiscount"
@@ -52,7 +57,7 @@ export function resolveStorefrontPrice({
 }
 
 export function getStorefrontResolvedPriceRange(
-  options: readonly StorefrontVariantOption[],
+  options: readonly Pick<StorefrontVariantOption, "price">[],
 ): { minimum: number; maximum: number } | null {
   let minimum: number | null = null;
   let maximum: number | null = null;
@@ -64,6 +69,19 @@ export function getStorefrontResolvedPriceRange(
   }
 
   return minimum === null || maximum === null ? null : { minimum, maximum };
+}
+
+export function toStorefrontSelectableOptions(
+  options: readonly StorefrontVariantOption[],
+): StorefrontSelectableOption[] {
+  return options.map(({ id, color, size, price, purchasable, unavailableReason }) => ({
+    id,
+    color,
+    size,
+    price,
+    purchasable,
+    unavailableReason,
+  }));
 }
 
 export function buildStorefrontVariantOptions(
