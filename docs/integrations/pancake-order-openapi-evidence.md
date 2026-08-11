@@ -1,14 +1,57 @@
 # Pancake create-order OpenAPI evidence workflow
 
-Status: **local evidence tooling is implemented; the exact create-order request/response, client-reference and idempotency contract is still unverified until a raw official Pancake OpenAPI JSON document is obtained and inspected.**
+Status: **a raw Pancake POS OpenAPI document has now been supplied and inspected. The create-order request/response structure is verified for the fingerprinted document; native idempotency / unique client-reference semantics remain unverified.**
 
-## Why this exists
+## Verified source evidence
 
-The official Pancake POS Open API reference verifies OpenAPI 3.1.0, the production base `https://pos.pages.fm/api/v1`, and endpoint existence for `POST /shops/{SHOP_ID}/orders`. The currently searchable/rendered reference does not expose the expanded create-order request/response schema to this project, so endpoint existence must not be converted into guessed payload fields.
+The supplied JSON has:
 
-PR #43 merged the bounded structural inspector in `src/integrations/pancake/order-openapi-contract.ts`. This follow-up adds a local-only bridge from a developer-selected raw OpenAPI JSON file into that inspector.
+- SHA-256 `44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f`;
+- size `2,774,602` bytes;
+- OpenAPI `3.1.0`;
+- title `Pancake POS Open API`;
+- version `1.0.0`;
+- production server `https://pos.pages.fm/api/v1`.
 
-## Usage
+Those metadata values match the current official Pancake API reference. The project does not commit the raw 2.7 MB external document. Instead, the sanitized structural evidence needed by C8 is stored in `docs/integrations/pancake-order-create-contract-observed.json`.
+
+The fingerprint proves which supplied bytes were inspected; it does not by itself cryptographically prove where the file was downloaded from.
+
+## Verified create-order structure
+
+Operation:
+
+- `POST /shops/{SHOP_ID}/orders`;
+- required path parameter `SHOP_ID` is an integer;
+- API authentication is `api_key` in the query string;
+- request body is required and uses `application/json`;
+- the request schema contains a broad order model, but its only top-level required field is `shop_id`;
+- `items[]` entries require `variation_id` and `quantity`;
+- `variation_info.retail_price` is an integer and is documented as recommended when the caller needs the line price to be explicit;
+- `shipping_address` resolves to `ShippingAddress`; that schema has no `required` array, while exposing string fields including `full_name`, `phone_number`, `address`, `full_address`, `province_id`, `district_id`, `commune_id`, and `country_code`;
+- the documented success response is HTTP `200` with `application/json`;
+- the response schema includes Pancake order `id` as an integer.
+
+For LA Clothing, this broad external request schema must **not** become a browser-controlled pass-through. The eventual mapper should send a strict server-owned allowlist built from the local checkout snapshot and freshly revalidated Pancake facts.
+
+## Idempotency / reference finding
+
+The create-order operation does expose:
+
+- `custom_id: string` described only as `Custom ID`;
+- `account: integer` described as `Order source ID`;
+- `account_name: string` described as `Order source name`.
+
+The operation contains no documented native idempotency key, uniqueness guarantee, `request_id`, client-reference guarantee, or safe retry contract. Therefore:
+
+- do not treat `custom_id` as an idempotency key merely because its name is convenient;
+- do not perform a blind second POST after timeout/network ambiguity;
+- a durable pre-write state plus **one POST attempt only** is still compatible with the approved C8 state machine: definitive success -> `CONFIRMED`; definitive rejection -> `REJECTED`; ambiguous network outcome -> `SYNC_UNKNOWN`;
+- automatic retry or automatic duplicate-safe reconciliation remains blocked until Pancake documents a trustworthy unique reference/idempotency mechanism or another safe reconciliation key is verified.
+
+This means the exact request/response schema is no longer the blocker for implementing the one-shot create-order adapter/orchestration. The remaining safety rule is to preserve the no-blind-retry state machine and avoid inventing idempotency semantics.
+
+## Usage for future evidence refresh
 
 1. In the official Pancake POS Open API reference, use **Download OpenAPI Document** and save the raw JSON file locally. Do not commit the raw external document unless it has been separately reviewed as safe to persist.
 2. Run:
@@ -17,9 +60,9 @@ PR #43 merged the bounded structural inspector in `src/integrations/pancake/orde
 pnpm pancake:order:inspect-openapi /absolute/or/relative/path/to/pancake-openapi.json
 ```
 
-3. Review the emitted structural JSON. The command prints only the create-order structure returned by the reviewed inspector; examples, defaults, descriptions and external scalar sample values are not emitted.
+3. Compare the emitted structural JSON and source fingerprint against the checked-in sanitized evidence before changing the production mapper/parser.
 
-## Safety boundary
+## Safety boundary of the local inspector
 
 The command:
 
@@ -32,18 +75,4 @@ The command:
 - forwards only fixed inspector error codes for malformed/unresolved/external/circular/budget failures;
 - relies on the inspector's shared 10,000-work-unit traversal budget after parsing.
 
-The command is an **evidence inspection aid, not write authorization**.
-
-## What successful inspection can and cannot prove
-
-A successful run can expose the structural create-order operation represented in the supplied official document: path parameter contract, request media types and structural schema subset, plus response status/media-type structural schemas.
-
-It does **not** by itself prove:
-
-- that the supplied file is current unless its official provenance/version is checked;
-- business semantics that are not represented by the emitted structural subset;
-- which field, if any, Pancake intends as the website-origin/client reference;
-- native idempotency or uniqueness guarantees unless those semantics are separately documented and reviewed;
-- a safe retry rule after an ambiguous timeout.
-
-Actual C8 order-write work remains blocked until those items are verified. In particular, no payload field should be guessed from names, examples, UI behavior or third-party/generated clients, and uncertain writes must never be blindly retried.
+The command and checked-in evidence are **inspection aids, not write authorization**.
