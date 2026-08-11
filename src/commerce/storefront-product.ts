@@ -51,6 +51,20 @@ export function resolveStorefrontPrice({
   return retailPrice === retailPriceAfterDiscount ? retailPrice : null;
 }
 
+export function getStorefrontResolvedPriceRange(
+  options: readonly StorefrontVariantOption[],
+): { minimum: number; maximum: number } | null {
+  const prices = options
+    .map((option) => option.price)
+    .filter((price): price is number => price !== null);
+
+  if (prices.length === 0) return null;
+  return {
+    minimum: Math.min(...prices),
+    maximum: Math.max(...prices),
+  };
+}
+
 export function buildStorefrontVariantOptions(
   variants: readonly StorefrontVariantFacts[],
 ): StorefrontVariantOption[] {
