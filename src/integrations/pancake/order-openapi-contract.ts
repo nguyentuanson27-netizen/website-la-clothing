@@ -54,7 +54,7 @@ export type PancakeCreateOrderOpenApiInspection = {
   >;
 };
 
-const CREATE_ORDER_PATH = /^\/shops\/\{[^/{}]+\}\/orders\/?$/;
+const CREATE_ORDER_PATH = /^\/shops\/\{([^/{}]+)\}\/orders\/?$/;
 const MAX_INSPECTION_DEPTH = 32;
 const MAX_INSPECTION_WORK_UNITS = 10_000;
 const PARAMETER_LOCATIONS = new Set(["query", "header", "path", "cookie"]);
@@ -424,6 +424,27 @@ function structuralParameters(
   return [...effective.values()];
 }
 
+function validateCreateOrderPathParameters(
+  templateName: string,
+  parameters: PancakeCreateOrderOpenApiInspection["parameters"],
+): void {
+  let matchingPathParameterCount = 0;
+
+  for (const parameter of parameters) {
+    if (parameter.in !== "path") {
+      continue;
+    }
+    if (parameter.name !== templateName) {
+      malformed();
+    }
+    matchingPathParameterCount += 1;
+  }
+
+  if (matchingPathParameterCount !== 1) {
+    malformed();
+  }
+}
+
 export function inspectPancakeCreateOrderOpenApi(
   document: unknown,
 ): PancakeCreateOrderOpenApiInspection {
@@ -433,6 +454,7 @@ export function inspectPancakeCreateOrderOpenApi(
 
   const inspector = new OpenApiStructureInspector(document);
   let matchedPath: string | undefined;
+  let matchedPathParameterName: string | undefined;
   let matchedPathItem: JsonRecord | undefined;
 
   for (const path in document.paths) {
@@ -441,18 +463,28 @@ export function inspectPancakeCreateOrderOpenApi(
       continue;
     }
 
-    const pathItem = document.paths[path];
-    if (!CREATE_ORDER_PATH.test(path) || !isRecord(pathItem) || !isRecord(pathItem.post)) {
+    const pathMatch = CREATE_ORDER_PATH.exec(path);
+    if (pathMatch === null) {
+      continue;
+    }
+
+    const pathItem = inspector.object(document.paths[path]);
+    if (!isRecord(pathItem.post)) {
       continue;
     }
     if (matchedPath !== undefined) {
       throw new PancakeOrderOpenApiError("CREATE_ORDER_OPERATION_AMBIGUOUS");
     }
     matchedPath = path;
+    matchedPathParameterName = pathMatch[1];
     matchedPathItem = pathItem;
   }
 
-  if (matchedPath === undefined || matchedPathItem === undefined) {
+  if (
+    matchedPath === undefined ||
+    matchedPathParameterName === undefined ||
+    matchedPathItem === undefined
+  ) {
     throw new PancakeOrderOpenApiError("CREATE_ORDER_OPERATION_NOT_FOUND");
   }
   if (!isRecord(matchedPathItem.post)) {
@@ -460,10 +492,13 @@ export function inspectPancakeCreateOrderOpenApi(
   }
 
   const operation = matchedPathItem.post;
+  const parameters = structuralParameters(inspector, matchedPathItem, operation);
+  validateCreateOrderPathParameters(matchedPathParameterName, parameters);
+
   const result: PancakeCreateOrderOpenApiInspection = {
     path: matchedPath,
     method: "POST",
-    parameters: structuralParameters(inspector, matchedPathItem, operation),
+    parameters,
     responses: {},
   };
 
