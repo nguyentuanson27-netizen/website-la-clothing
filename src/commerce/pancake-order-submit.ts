@@ -24,6 +24,52 @@ export type PancakeOrderSubmissionReason =
   | "CREATE_OUTCOME_UNKNOWN"
   | "ORDER_REJECTED";
 
+type PancakeOrderValidationRejectionReason = Extract<
+  PancakeOrderSubmissionReason,
+  | "LOCAL_ORDER_INVALID"
+  | "VARIATION_UNAVAILABLE"
+  | "PRICE_CHANGED"
+  | "PRICE_UNAVAILABLE"
+  | "STOCK_UNAVAILABLE"
+>;
+
+export type PancakeOrderSubmissionEvent =
+  | {
+      name: "pancake_order.validation_started";
+      correlationId: string;
+      state: "VALIDATING";
+    }
+  | {
+      name: "pancake_order.validation_rejected";
+      correlationId: string;
+      state: "REJECTED";
+      reason: PancakeOrderValidationRejectionReason;
+    }
+  | {
+      name: "pancake_order.validation_unavailable";
+      correlationId: string;
+      state: "DRAFT";
+      reason: "VALIDATION_UNAVAILABLE";
+    }
+  | {
+      name: "pancake_order.create_started";
+      correlationId: string;
+      state: "POS_SUBMITTING";
+      dependency: "pancake";
+      operation: "create_order";
+    }
+  | {
+      name: "pancake_order.create_unknown";
+      correlationId: string;
+      state: "SYNC_UNKNOWN";
+      reason: "CREATE_OUTCOME_UNKNOWN";
+    }
+  | {
+      name: "pancake_order.confirmed";
+      correlationId: string;
+      state: "CONFIRMED";
+    };
+
 export type PancakeOrderSubmissionResult =
   | { ok: true; state: "CONFIRMED"; pancakeOrderId: string }
   | {
@@ -36,6 +82,22 @@ export type PancakeOrderSubmissionGateway = {
   fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
 };
+
+export type PancakeOrderSubmissionOptions = {
+  onEvent?: (event: PancakeOrderSubmissionEvent) => void;
+};
+
+function emitSafely(
+  observer: PancakeOrderSubmissionOptions["onEvent"],
+  event: PancakeOrderSubmissionEvent,
+): void {
+  if (!observer) return;
+  try {
+    observer(event);
+  } catch {
+    // Observability must never change order submission semantics.
+  }
+}
 
 function requirePublicCode(value: string): string {
   if (
@@ -120,6 +182,7 @@ function existingResult(order: {
 export function createPancakeOrderSubmissionService(
   client: PrismaClient,
   gateway: PancakeOrderSubmissionGateway,
+  options: PancakeOrderSubmissionOptions = {},
 ) {
   async function submit({
     publicCode,
@@ -148,17 +211,25 @@ export function createPancakeOrderSubmissionService(
       where: { publicCode: safePublicCode },
       include: { lines: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
     });
+    const correlationId = order.id;
+    emitSafely(options.onEvent, {
+      name: "pancake_order.validation_started",
+      correlationId,
+      state: "VALIDATING",
+    });
 
-    async function reject(reason: Extract<PancakeOrderSubmissionReason,
-      | "LOCAL_ORDER_INVALID"
-      | "VARIATION_UNAVAILABLE"
-      | "PRICE_CHANGED"
-      | "PRICE_UNAVAILABLE"
-      | "STOCK_UNAVAILABLE"
-    >): Promise<PancakeOrderSubmissionResult> {
+    async function reject(
+      reason: PancakeOrderValidationRejectionReason,
+    ): Promise<PancakeOrderSubmissionResult> {
       await client.orderMirror.updateMany({
         where: { id: order.id, state: "VALIDATING" },
         data: { state: "REJECTED", syncErrorCode: reason },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.validation_rejected",
+        correlationId,
+        state: "REJECTED",
+        reason,
       });
       return { ok: false, state: "REJECTED", reason };
     }
@@ -167,6 +238,12 @@ export function createPancakeOrderSubmissionService(
       await client.orderMirror.updateMany({
         where: { id: order.id, state: "VALIDATING" },
         data: { state: "DRAFT", syncErrorCode: "VALIDATION_UNAVAILABLE" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.validation_unavailable",
+        correlationId,
+        state: "DRAFT",
+        reason: "VALIDATION_UNAVAILABLE",
       });
       return { ok: false, state: "DRAFT", reason: "VALIDATION_UNAVAILABLE" };
     }
@@ -302,6 +379,14 @@ export function createPancakeOrderSubmissionService(
       return existingResult(current);
     }
 
+    emitSafely(options.onEvent, {
+      name: "pancake_order.create_started",
+      correlationId,
+      state: "POS_SUBMITTING",
+      dependency: "pancake",
+      operation: "create_order",
+    });
+
     let pancakeOrderId: string;
     try {
       const response = await gateway.createOrder(request);
@@ -310,6 +395,12 @@ export function createPancakeOrderSubmissionService(
       await client.orderMirror.updateMany({
         where: { id: order.id, state: "POS_SUBMITTING" },
         data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.create_unknown",
+        correlationId,
+        state: "SYNC_UNKNOWN",
+        reason: "CREATE_OUTCOME_UNKNOWN",
       });
       return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
     }
@@ -335,9 +426,20 @@ export function createPancakeOrderSubmissionService(
         where: { id: order.id, state: "POS_SUBMITTING" },
         data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
       });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.create_unknown",
+        correlationId,
+        state: "SYNC_UNKNOWN",
+        reason: "CREATE_OUTCOME_UNKNOWN",
+      });
       return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
     }
 
+    emitSafely(options.onEvent, {
+      name: "pancake_order.confirmed",
+      correlationId,
+      state: "CONFIRMED",
+    });
     return { ok: true, state: "CONFIRMED", pancakeOrderId };
   }
 
