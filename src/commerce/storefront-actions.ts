@@ -1,7 +1,6 @@
 "use server";
 
 import { setAnonymousCartItemQuantity } from "./anonymous-cart-actions.ts";
-import { createCatalogMirrorRepository } from "./catalog-mirror-repository.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import { createStorefrontPurchasePublicActions } from "./storefront-purchase-public-actions.ts";
 import { createStorefrontPurchaseService } from "./storefront-purchase.ts";
@@ -29,5 +28,3 @@ const publicActions = createStorefrontPurchasePublicActions({
 export async function addStorefrontItemToBag(input: unknown) {
   return publicActions.add(input);
 }
-
-void createCatalogMirrorRepository;
