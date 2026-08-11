@@ -287,3 +287,68 @@ test("fails closed for circular local refs instead of returning an empty schema"
       error instanceof PancakeOrderOpenApiError && error.code === "CIRCULAR_LOCAL_REF",
   );
 });
+
+test("preserves OpenAPI 3.1 structural schema siblings next to a local ref", () => {
+  const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ExtendedOrder" },
+              },
+            },
+          },
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        BaseOrder: {
+          type: "object",
+          required: ["items"],
+          properties: {
+            items: { type: "array", items: { type: "object" } },
+          },
+        },
+        ExtendedOrder: {
+          $ref: "#/components/schemas/BaseOrder",
+          required: ["customer"],
+          properties: {
+            customer: {
+              type: "object",
+              required: ["name"],
+              properties: { name: { type: "string" } },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const result = inspectPancakeCreateOrderOpenApi(document);
+  assert.deepEqual(result.requestBody?.content["application/json"], {
+    allOf: [
+      {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: { type: "array", items: { type: "object" } },
+        },
+      },
+      {
+        required: ["customer"],
+        properties: {
+          customer: {
+            type: "object",
+            required: ["name"],
+            properties: { name: { type: "string" } },
+          },
+        },
+      },
+    ],
+  });
+});
