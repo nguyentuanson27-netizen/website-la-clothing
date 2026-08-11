@@ -95,3 +95,34 @@ test("storefront selection fails closed for stale or unavailable selections", ()
   assert.equal(unknown.selectedVariantId, null);
   assert.equal(unknown.canAdd, false);
 });
+
+test("storefront selection keeps another purchasable color reachable when the current size is incompatible", () => {
+  const disjointOptions = buildStorefrontVariantOptions([
+    {
+      id: "black-small",
+      color: "Black",
+      size: "S",
+      sellableStock: 1,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "stone-large",
+      color: "Stone",
+      size: "L",
+      sellableStock: 1,
+      retailPrice: 620_000,
+      retailPriceAfterDiscount: 620_000,
+    },
+  ]);
+
+  const state = deriveStorefrontSelection(disjointOptions, { color: "Black", size: "S" });
+  assert.deepEqual(state.colors, [
+    { value: "Black", disabled: false },
+    { value: "Stone", disabled: false },
+  ]);
+  assert.deepEqual(state.sizes, [
+    { value: "S", disabled: false },
+    { value: "L", disabled: true },
+  ]);
+});
