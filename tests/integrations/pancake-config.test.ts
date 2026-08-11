@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PancakeConfigError,
   readPancakeConfig,
+  readPancakeShopId,
 } from "../../src/integrations/pancake/config.ts";
 
 test("reads explicit Pancake API key and shop ID from server environment", () => {
@@ -16,6 +17,12 @@ test("reads explicit Pancake API key and shop ID from server environment", () =>
     apiKey: "secret-key",
     shopId: 6036602,
   });
+});
+
+test("reads storefront shop scope without requiring the Pancake API credential", () => {
+  assert.equal(readPancakeShopId({ PANCAKE_SHOP_ID: "6036602" }), 6036602);
+  assert.throws(() => readPancakeShopId({}), PancakeConfigError);
+  assert.throws(() => readPancakeShopId({ PANCAKE_SHOP_ID: "invalid" }), PancakeConfigError);
 });
 
 test("fails closed when required Pancake configuration is missing or invalid", async (t) => {
