@@ -6,7 +6,7 @@ import {
   parsePancakeCreateOrderResponse,
 } from "../../src/integrations/pancake/order-create.ts";
 
-test("create-order mapper emits only the reviewed server-owned allowlist", () => {
+test("create-order mapper emits only the reviewed server-owned COD allowlist", () => {
   const request = buildPancakeCreateOrderRequest({
     shopId: 920_007,
     guestName: "Nguyễn Văn A",
@@ -33,6 +33,7 @@ test("create-order mapper emits only the reviewed server-owned allowlist", () =>
     shipping_fee: 30_000,
     is_free_shipping: false,
     received_at_shop: false,
+    cod: 1_030_000,
     shipping_address: {
       full_name: "Nguyễn Văn A",
       phone_number: "0901234567",
@@ -52,12 +53,11 @@ test("create-order mapper emits only the reviewed server-owned allowlist", () =>
   });
 
   assert.equal("custom_id" in request, false);
-  assert.equal("cod" in request, false);
   assert.equal("cash" in request, false);
   assert.equal("status" in request, false);
 });
 
-test("create-order mapper omits blank optional note and rejects malformed commerce facts", () => {
+test("create-order mapper omits blank optional note and derives zero COD from a zero-total order", () => {
   const request = buildPancakeCreateOrderRequest({
     shopId: 1,
     guestName: "A",
@@ -72,6 +72,7 @@ test("create-order mapper omits blank optional note and rejects malformed commer
   });
   assert.equal("note" in request, false);
   assert.equal(request.is_free_shipping, true);
+  assert.equal((request as unknown as Record<string, unknown>).cod, 0);
 
   assert.throws(
     () =>
@@ -101,8 +102,33 @@ test("create-order mapper omits blank optional note and rejects malformed commer
         communeRef: "c",
         addressDetail: "x",
         note: null,
-        shippingFeeVnd: Number.MAX_SAFE_INTEGER,
+        shippingFeeVnd: 0,
         lines: [{ pancakeVariationId: "v", quantity: 2, unitPriceVnd: Number.MAX_SAFE_INTEGER }],
+      }),
+    /Pancake create-order input is invalid/,
+  );
+});
+
+test("create-order mapper rejects COD total overflow even when each line total is individually safe", () => {
+  assert.throws(
+    () =>
+      buildPancakeCreateOrderRequest({
+        shopId: 1,
+        guestName: "A",
+        guestPhone: "0900000000",
+        provinceRef: "p",
+        districtRef: "d",
+        communeRef: "c",
+        addressDetail: "x",
+        note: null,
+        shippingFeeVnd: 1,
+        lines: [
+          {
+            pancakeVariationId: "v",
+            quantity: 1,
+            unitPriceVnd: Number.MAX_SAFE_INTEGER,
+          },
+        ],
       }),
     /Pancake create-order input is invalid/,
   );
