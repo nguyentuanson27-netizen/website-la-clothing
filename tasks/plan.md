@@ -15,7 +15,7 @@ Build the next buyer-journey slices from the merged anonymous-cart foundation th
 9. Pancake order status reconciliation
 10. Guest order tracking lookup
 
-Tasks 3–10 depend on the Pancake API contract. Tasks 7–10 also depend on a concrete shipping-fee rule. Webhook-driven sync is optional until Pancake webhook authentication/replay semantics are verified; polling/manual reconciliation remains the safe fallback.
+Tasks 3–10 depend on the Pancake API contract. The guest shipping-fee rule for Task 7 was approved on 2026-08-11: 30,000 VND by default; free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3, with the first qualifying freeship condition applied. Webhook-driven sync is optional until Pancake webhook authentication/replay semantics are verified; polling/manual reconciliation remains the safe fallback.
 
 ## Slice checkpoints
 After every slice:
@@ -103,11 +103,13 @@ After every slice:
 **Acceptance criteria:**
 - browser cannot choose authoritative price/stock/discount;
 - invalid/stale cart cannot enter POS submission;
-- shipping fee follows an explicitly approved rule, not a guessed default.
+- shipping fee is 30,000 VND by default;
+- shipping is free when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3;
+- exactly 1,000,000 VND does not qualify for subtotal-based freeship unless the quantity rule also qualifies.
 
 **Verification:** migration-from-empty, PostgreSQL runtime tests, validation tests and security review.
 
-**Dependencies:** Tasks 4 and 6; blocked on shipping-fee rule if still undefined.
+**Dependencies:** Tasks 4 and 6. Shipping-fee policy is approved and no longer blocks this task.
 
 ## Task 8 — Submit exactly one Pancake order safely
 **Description:** Implement create-order only from verified official/live Pancake contract. Persist local state transition `VALIDATING → POS_SUBMITTING`; on confirmed response save Pancake order ID and mark `CONFIRMED`. On timeout/ambiguous write, use `SYNC_UNKNOWN` unless native idempotency/reference semantics are verified.
@@ -147,7 +149,7 @@ After every slice:
 
 ## Known gates / product decisions
 - Actual online Pancake warehouse IDs: configuration required before availability can be production-authoritative.
-- Shipping fee rule: must be approved before checkout submission is complete.
+- Guest shipping fee: approved — 30,000 VND default; free above 1,000,000 VND merchandise subtotal or from total quantity 3.
 - Pancake create-order idempotency/reference behavior: do not assume; determines safe uncertain-write recovery.
 - Pancake webhook auth/signature/replay: do not expose webhook endpoint until verified.
 
