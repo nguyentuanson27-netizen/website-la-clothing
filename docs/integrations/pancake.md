@@ -153,9 +153,10 @@ These items are outside the catalog C3 contract and continue to block their late
 2. Native create-order idempotency behavior or unique client-reference constraint.
 3. Exact order status codes/transitions used by reconciliation.
 4. Webhook event names, payload shape, authentication/signature and replay protection.
-5. Shipping-fee business rule for checkout.
 
-Do not guess these contracts. In particular, do not add blind retries for uncertain Pancake order writes.
+The guest shipping-fee policy is website-owned and was approved separately by the product owner on 2026-08-11: 30,000 VND by default, with free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3. It is not an unverified Pancake API contract.
+
+Do not guess the remaining integration contracts. In particular, do not add blind retries for uncertain Pancake order writes.
 
 ## Official sources checked
 
