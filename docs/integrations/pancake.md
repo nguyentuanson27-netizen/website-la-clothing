@@ -1,6 +1,6 @@
 # Pancake POS integration contract
 
-Status: **C3 catalog contract implementation complete; final trusted live reviewed-contract verification and human review remain before C4.**
+Status: **catalog read contract is implemented and verified; C8 create-order contract verification is in progress and the actual Pancake order write remains blocked on exact request/response plus idempotency/reference evidence.**
 
 ## Authoritative boundaries
 
@@ -145,11 +145,41 @@ The stage distinguishes configuration, endpoint fetch, full-key validation, and 
 
 **C3 does not become complete until this verifier passes against the current live shop payload and the resulting PR receives a clean human review.**
 
+## C8 create-order contract verification
+
+The official Pancake POS Open API reference currently establishes these structural facts:
+
+- the API document is OpenAPI 3.1.0;
+- the production server is `https://pos.pages.fm/api/v1`;
+- Order Operations contains `POST /shops/{SHOP_ID}/orders`.
+
+Endpoint existence is **not** treated as evidence for the create-order request/response schema, a website-origin reference field, or native idempotency behavior.
+
+PR #43 adds `src/integrations/pancake/order-openapi-contract.ts`, a pure local inspector for the create-order operation. It does not make network requests and does not need Pancake credentials. The inspector:
+
+- locates exactly one `POST /shops/{...}/orders` operation without guessing the path-parameter name;
+- resolves bounded local `#/...` references, including chained references;
+- rejects external references, unresolved references, circular references, malformed documents and inspection-budget overflow;
+- emits only structural contract metadata needed for review: parameter names/locations/required flags, schema types/formats/required property names/property structure, media types and response status structure;
+- deliberately omits examples, defaults, descriptions and other external scalar sample values from its output.
+
+The public documentation workspace currently exposes a “Download OpenAPI Document” control, but the raw downloadable document has not yet been captured into trusted local evidence in this project. Do not commit a guessed order payload based only on endpoint existence or generated client examples.
+
+Before any Pancake order write is implemented, trusted evidence still needs to establish at minimum:
+
+1. exact create-order request body fields/types/requiredness used by this shop/API version;
+2. exact success/rejection response shape and Pancake order identity field;
+3. the correct website-origin/client-reference field, if one exists;
+4. native idempotency semantics or a documented unique client-reference constraint, if any;
+5. how to resolve an ambiguous timeout before deciding whether another write is safe.
+
+No destructive create-order probe is authorized by this verification slice.
+
 ## Later integration contracts still unverified
 
-These items are outside the catalog C3 contract and continue to block their later slices:
+These items remain outside the verified catalog contract and continue to block their later slices:
 
-1. Exact create-order request/response schema and the correct website-origin reference field.
+1. Exact create-order request/response schema and the correct website-origin reference field; only the endpoint itself is verified so far.
 2. Native create-order idempotency behavior or unique client-reference constraint.
 3. Exact order status codes/transitions used by reconciliation.
 4. Webhook event names, payload shape, authentication/signature and replay protection.
