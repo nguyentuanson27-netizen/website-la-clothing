@@ -1,0 +1,91 @@
+{
+  "source": {
+    "sha256": "44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f",
+    "bytes": 2774602,
+    "openapi": "3.1.0",
+    "title": "Pancake POS Open API",
+    "version": "1.0.0",
+    "server": "https://pos.pages.fm/api/v1"
+  },
+  "auth": {
+    "type": "apiKey",
+    "in": "query",
+    "name": "api_key"
+  },
+  "operation": {
+    "path": "/shops/{SHOP_ID}/orders",
+    "method": "POST",
+    "pathParameters": [
+      {
+        "name": "SHOP_ID",
+        "in": "path",
+        "required": true,
+        "type": "integer"
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "contentType": "application/json",
+      "topLevelRequired": ["shop_id"],
+      "selectedProperties": {
+        "shop_id": "integer",
+        "bill_full_name": "string",
+        "bill_phone_number": "string",
+        "shipping_fee": "integer",
+        "is_free_shipping": "boolean",
+        "received_at_shop": "boolean",
+        "note": "string",
+        "note_print": "string",
+        "warehouse_id": "string",
+        "custom_id": "string",
+        "account": "integer",
+        "account_name": "string",
+        "cod": "integer",
+        "cash": "integer",
+        "total_discount": "integer"
+      },
+      "items": {
+        "type": "array",
+        "itemRequired": ["variation_id", "quantity"],
+        "variation_id": "string",
+        "quantity": "integer",
+        "variation_info.retail_price": "integer"
+      },
+      "shippingAddress": {
+        "required": [],
+        "properties": {
+          "full_name": "string",
+          "phone_number": "string",
+          "address": "string",
+          "full_address": "string",
+          "province_id": "string",
+          "district_id": "string",
+          "commune_id": "string",
+          "country_code": "string"
+        }
+      }
+    },
+    "response": {
+      "statuses": ["200"],
+      "contentType": "application/json",
+      "required": [],
+      "identity": {
+        "id": "integer"
+      },
+      "selectedProperties": {
+        "id": "integer",
+        "shop_id": "integer",
+        "status": "integer",
+        "custom_id": "string",
+        "bill_full_name": "string",
+        "bill_phone_number": "string"
+      }
+    },
+    "idempotencyEvidence": {
+      "nativeIdempotencyTermPresentInCreateOperation": false,
+      "customIdDescription": "Custom ID",
+      "accountDescription": "Order source ID",
+      "accountNameDescription": "Order source name"
+    }
+  }
+}
