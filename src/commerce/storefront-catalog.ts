@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
+const MAX_STOREFRONT_OFFSET = 50_000;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_STOREFRONT_SLUG_LENGTH = 160;
 
@@ -18,6 +19,18 @@ function parseListLimit(limit: number): number {
     );
   }
   return limit;
+}
+
+function parsePageOffset(page: number, pageSize: number): number {
+  if (!Number.isSafeInteger(page) || page < 1) {
+    throw new RangeError("Storefront product page must be a positive integer");
+  }
+
+  const offset = (page - 1) * pageSize;
+  if (!Number.isSafeInteger(offset) || offset > MAX_STOREFRONT_OFFSET) {
+    throw new RangeError("Storefront product page is outside the supported catalog window");
+  }
+  return offset;
 }
 
 function parseSlug(slug: string): string {
@@ -101,14 +114,18 @@ function toStorefrontProduct(product: SelectedProduct) {
   };
 }
 
+function visibleProductWhere(shopId: number) {
+  return {
+    pancakeShopId: parseShopId(shopId),
+    isPresent: true,
+    isActive: true,
+  } satisfies Prisma.ProductMirrorWhereInput;
+}
+
 export function createStorefrontCatalogRepository(client: PrismaClient) {
   async function listProducts({ shopId, limit }: { shopId: number; limit: number }) {
     const products = await client.productMirror.findMany({
-      where: {
-        pancakeShopId: parseShopId(shopId),
-        isPresent: true,
-        isActive: true,
-      },
+      where: visibleProductWhere(shopId),
       take: parseListLimit(limit),
       orderBy: [{ name: "asc" }, { id: "asc" }],
       select: productSelection,
@@ -117,13 +134,43 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     return products.map((product) => toStorefrontProduct(product));
   }
 
+  async function listProductPage({
+    shopId,
+    page,
+    pageSize,
+  }: {
+    shopId: number;
+    page: number;
+    pageSize: number;
+  }) {
+    const safePageSize = parseListLimit(pageSize);
+    const offset = parsePageOffset(page, safePageSize);
+    const where = visibleProductWhere(shopId);
+    const [totalProducts, products] = await Promise.all([
+      client.productMirror.count({ where }),
+      client.productMirror.findMany({
+        where,
+        skip: offset,
+        take: safePageSize,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: productSelection,
+      }),
+    ]);
+
+    return {
+      products: products.map((product) => toStorefrontProduct(product)),
+      page,
+      pageSize: safePageSize,
+      totalProducts,
+      totalPages: Math.ceil(totalProducts / safePageSize),
+    };
+  }
+
   async function getProductBySlug({ shopId, slug }: { shopId: number; slug: string }) {
     const product = await client.productMirror.findFirst({
       where: {
-        pancakeShopId: parseShopId(shopId),
+        ...visibleProductWhere(shopId),
         slug: parseSlug(slug),
-        isPresent: true,
-        isActive: true,
       },
       select: productSelection,
     });
@@ -131,5 +178,5 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     return product ? toStorefrontProduct(product) : null;
   }
 
-  return { listProducts, getProductBySlug };
+  return { listProducts, listProductPage, getProductBySlug };
 }
