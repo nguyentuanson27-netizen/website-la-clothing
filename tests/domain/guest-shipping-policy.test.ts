@@ -35,6 +35,8 @@ test("guest shipping rejects malformed authoritative totals", () => {
   for (const input of [
     { subtotalVnd: -1, totalQuantity: 1 },
     { subtotalVnd: Number.NaN, totalQuantity: 1 },
+    { subtotalVnd: 300_000.5, totalQuantity: 1 },
+    { subtotalVnd: Number.MAX_SAFE_INTEGER + 1, totalQuantity: 1 },
     { subtotalVnd: 300_000, totalQuantity: 0 },
     { subtotalVnd: 300_000, totalQuantity: 1.5 },
   ]) {
