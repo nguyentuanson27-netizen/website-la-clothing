@@ -4,7 +4,10 @@ import { useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { deriveStorefrontSelection } from "@/commerce/storefront-selection";
-import type { StorefrontVariantOption } from "@/commerce/storefront-product";
+import {
+  getStorefrontResolvedPriceRange,
+  type StorefrontVariantOption,
+} from "@/commerce/storefront-product";
 
 const currency = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -18,13 +21,11 @@ type ProductPurchasePanelProps = {
 };
 
 function defaultPriceLabel(options: readonly StorefrontVariantOption[]): string {
-  const prices = options
-    .map((option) => option.price)
-    .filter((price): price is number => price !== null);
-  if (prices.length === 0) return "Giá đang cập nhật";
-  const minimum = Math.min(...prices);
-  const maximum = Math.max(...prices);
-  return minimum === maximum ? currency.format(minimum) : `Từ ${currency.format(minimum)}`;
+  const range = getStorefrontResolvedPriceRange(options);
+  if (!range) return "Giá đang cập nhật";
+  return range.minimum === range.maximum
+    ? currency.format(range.minimum)
+    : `Từ ${currency.format(range.minimum)}`;
 }
 
 export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProps) {
@@ -61,18 +62,17 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
 
     const variantId = selection.selectedVariantId;
     setMessage("");
-    startTransition(() => {
-      void addStorefrontItemToBag({ slug, variantId })
-        .then((result) => {
-          if (result.ok) {
-            setMessage("Đã thêm sản phẩm vào túi.");
-            return;
-          }
-          setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");
-        })
-        .catch(() => {
-          setMessage("Không thể thêm vào túi lúc này. Vui lòng thử lại.");
-        });
+    startTransition(async () => {
+      try {
+        const result = await addStorefrontItemToBag({ slug, variantId });
+        if (result.ok) {
+          setMessage("Đã thêm sản phẩm vào túi.");
+          return;
+        }
+        setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");
+      } catch {
+        setMessage("Không thể thêm vào túi lúc này. Vui lòng thử lại.");
+      }
     });
   }
 
