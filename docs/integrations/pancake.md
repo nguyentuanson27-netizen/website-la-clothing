@@ -162,8 +162,12 @@ PR #43 adds `src/integrations/pancake/order-openapi-contract.ts`, a pure local i
 - resolves bounded local `#/...` references, including chained references;
 - preserves the supported structural siblings of OpenAPI 3.1 Schema Object `$ref` values conjunctively rather than silently discarding them;
 - rejects external references, unresolved references, circular references, malformed documents and inspection-budget overflow;
+- uses one shared `10,000`-work-unit budget across externally controlled path entries, parameters, response entries, media types, schema nodes/arrays/properties, `$ref` hops and JSON-pointer segments so non-schema traversal cannot bypass the inspection ceiling;
+- computes the effective OpenAPI parameter set by `(name, in)`, with operation-level parameters overriding matching path-level parameters; duplicate parameters within one level and path parameters without `required: true` fail closed;
 - emits only structural contract metadata needed for review: parameter names/locations/required flags, schema types/formats/required property names/property structure, media types and response status structure;
 - deliberately omits examples, defaults, descriptions and other external scalar sample values from its output.
+
+The shared budget and effective-parameter rules were added after review comment `5251949190`. RED CI #432 kept 46/46 DB tests, HTTP security/authz, lint and typecheck green and failed exactly three new regressions: non-schema traversal budget, operation-over-path parameter override, and malformed duplicate/non-required path parameters. GREEN commit `0bbf5fa` passed CI #433 with 46/46 DB tests, HTTP security/authz, lint, typecheck, 151/151 domain/integration tests, production build and `admin-a11y-runtime`.
 
 This inspector is a **discovery/review aid, not write authorization**. It intentionally captures only the structural subset needed to inspect the operation safely; it does not claim to preserve every JSON Schema/OpenAPI validation keyword.
 
