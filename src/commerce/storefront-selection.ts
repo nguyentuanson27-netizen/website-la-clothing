@@ -1,4 +1,4 @@
-import type { StorefrontVariantOption } from "./storefront-product.ts";
+import type { StorefrontSelectableOption } from "./storefront-product.ts";
 
 type StorefrontSelection = {
   color: string | null;
@@ -11,7 +11,7 @@ type StorefrontChoiceState = {
 };
 
 function uniqueMappedValues(
-  options: readonly StorefrontVariantOption[],
+  options: readonly StorefrontSelectableOption[],
   key: "color" | "size",
 ): string[] {
   const values = new Set<string>();
@@ -23,7 +23,7 @@ function uniqueMappedValues(
 }
 
 function supportsSelection(
-  option: StorefrontVariantOption,
+  option: StorefrontSelectableOption,
   selection: StorefrontSelection,
 ): boolean {
   if (!option.purchasable) return false;
@@ -33,7 +33,7 @@ function supportsSelection(
 }
 
 export function deriveStorefrontSelection(
-  options: readonly StorefrontVariantOption[],
+  options: readonly StorefrontSelectableOption[],
   selection: StorefrontSelection,
 ) {
   const colors: StorefrontChoiceState[] = uniqueMappedValues(options, "color").map((value) => ({
