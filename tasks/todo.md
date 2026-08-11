@@ -9,9 +9,9 @@ Intended repository path: `tasks/todo.md`
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
-- [~] T6 Implement idempotent catalog synchronization/mirror — C4 implementation complete on PR #39; human review remains
-- [ ] T7 Deliver Pancake-backed PLP/PDP vertical slice
-- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, read-only request identity and bounded Server Functions are implemented; catalog-backed UI remains
+- [~] T6 Implement idempotent catalog synchronization/mirror — C4 implementation complete on PR #39; human approval checkpoint was recorded, formal self-approval is unavailable on GitHub
+- [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation + automated verification complete; storefront browser/mobile/a11y verification remains
+- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, catalog-backed Color × Size/Add-to-Bag UI and bounded Server Functions are implemented; full cart page remains
 - [ ] T9 Deliver guest COD checkout → exactly one Pancake order
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C3 is merged and green on `main`; C4 implementation/self-review are complete and PR #39 is preparing for human review
+## Current execution path: C3 is merged and green on `main`; C4 has a recorded human approval checkpoint on PR #39; C5 is implemented on stacked draft PR #40 with review feedback fixed and storefront browser/mobile/a11y verification still pending
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -53,7 +53,7 @@ Intended repository path: `tasks/todo.md`
   - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required
   - [x] automated fresh review: APPROVE — 0 Critical / 0 Required / 0 Consider
   - [x] merged to `main`; post-merge CI #291 passed
-- [~] C4 Catalog mirror sync/read model — implementation + self-review complete; human review remains on PR #39
+- [~] C4 Catalog mirror sync/read model — implementation + self-review complete; human approval checkpoint recorded on PR #39
   - [x] fetch/traverse reviewed Pancake pagination deliberately with stable page/entry consistency checks
   - [x] cap remote traversal at 500 pages / 50,000 entries and fail closed on incomplete traversal
   - [x] schema persists only verified external fields plus explicit website-owned policy state
@@ -68,13 +68,17 @@ Intended repository path: `tasks/todo.md`
   - [x] raw image strings are stored only; no remote image fetch boundary introduced
   - [x] CI #318 passed migrations, DB/runtime, HTTP security/authz, lint, typecheck, domain/integration tests, production build and macOS Chromium/Axe/VoiceOver on the watermark-hardened implementation head
   - [x] final self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after the watermark fix
-  - [ ] final tracker-only head CI
-  - [ ] human review of PR #39 with 0 Critical / 0 Required before marking C4 complete
-- [ ] C5 PLP/PDP Color × Size storefront
-  - [ ] server-authoritative price/availability
-  - [ ] automated tests/build
+  - [x] legacy-row review fix verified on exact head `e6a7eaa` by CI #322
+  - [x] human approval checkpoint recorded in PR comment `5248570624`; GitHub formal self-approval is not permitted for the PR author
+- [~] C5 PLP/PDP Color × Size storefront
+  - [x] server-authoritative price/availability and Add-to-Bag reauthorization
+  - [x] URL-backed bounded pagination keeps products beyond the first 24 browseable
+  - [x] review Comment `5248837169` Required fixed with a 25-product database regression
+  - [x] Consider #1 fixed: storefront shop scope no longer requires `PANCAKE_API_KEY`; live Pancake config still does
+  - [x] Consider #2 fixed: storefront public purchase action owns a fixed browser response shape and strips downstream fields
+  - [x] automated tests/build — exact code head `b64778d` passed CI #371; final documentation head `8b56444` passed CI #373
   - [ ] browser/mobile/a11y verification when tool available
-  - [ ] self-review
+  - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after review fixes
 - [ ] C6 Cart UI
   - [ ] current price/availability, update/remove
   - [ ] automated tests/build

@@ -15,6 +15,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
+const testShopId = 920_005;
 const userId = "website-owned-persistence-user";
 const userEmail = "website-owned-persistence@example.invalid";
 const productExternalId = "website-owned-persistence-product";
@@ -69,6 +70,7 @@ test("saved addresses belong to a customer account and are removed with it", asy
 test("anonymous cart stores variant identity and enforces one positive row per variant", async () => {
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: productExternalId,
       slug: productExternalId,
       name: "Persistence Product",
@@ -133,6 +135,7 @@ test("anonymous cart stores variant identity and enforces one positive row per v
 test("product editorial content is one-to-one with the Pancake-backed mirror", async () => {
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: productExternalId,
       slug: productExternalId,
       name: "Persistence Product",

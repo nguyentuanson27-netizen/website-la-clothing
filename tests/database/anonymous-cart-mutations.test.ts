@@ -19,6 +19,7 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const carts = createAnonymousCartService(prisma);
+const testShopId = 920_001;
 const productExternalId = "anonymous-cart-mutation-product";
 const variantExternalPrefix = "anonymous-cart-mutation-variant";
 const accountUserId = "anonymous-cart-mutation-user";
@@ -58,6 +59,7 @@ test.beforeEach(async () => {
   await cleanup();
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: productExternalId,
       slug: productExternalId,
       name: "Anonymous Cart Mutation Product",
@@ -109,10 +111,13 @@ test("first successful mutation creates one cart and emits its DB-owned cookie",
 });
 
 test("invalid first mutation creates no cart and emits no cookie", async () => {
-  const now = new Date("2026-08-10T00:00:00.000Z");
+  const now = new Date("2037-03-17T12:34:56.000Z");
+  const wouldExpireAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const cookies = mutableCookieStore();
   const mutations = createAnonymousCartMutationService(prisma, cookies.store);
-  const before = await prisma.cart.count();
+  const scopedCartCount = () =>
+    prisma.cart.count({ where: { userId: null, expiresAt: wouldExpireAt } });
+  const before = await scopedCartCount();
 
   assert.deepEqual(
     await mutations.setItemQuantity({ variantId: variantIds[0], quantity: 0, now }),
@@ -122,7 +127,7 @@ test("invalid first mutation creates no cart and emits no cookie", async () => {
     await mutations.setItemQuantity({ variantId: "missing-variant", quantity: 1, now }),
     { ok: false, reason: "VARIANT_UNAVAILABLE" },
   );
-  assert.equal(await prisma.cart.count(), before);
+  assert.equal(await scopedCartCount(), before);
   assert.equal(cookies.writes.length, 0);
 });
 
