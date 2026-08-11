@@ -10,6 +10,7 @@ type CartMutationResult = { ok: true; [key: string]: unknown } | { ok: false; [k
 
 type StorefrontCartPublicActionDependencies = {
   getLines(): Promise<readonly StorefrontCartLineStatus[]>;
+  canSetQuantity(input: { variantId: string; quantity: number }): Promise<boolean>;
   setQuantity(input: { variantId: string; quantity: number }): Promise<CartMutationResult>;
   remove(input: { variantId: string }): Promise<CartMutationResult>;
 };
@@ -51,6 +52,7 @@ function parseRemoveInput(input: unknown): { variantId: string } | null {
 
 export function createStorefrontCartPublicActions({
   getLines,
+  canSetQuantity,
   setQuantity,
   remove,
 }: StorefrontCartPublicActionDependencies) {
@@ -59,7 +61,11 @@ export function createStorefrontCartPublicActions({
     if (!parsed) return { ok: false, reason: "INVALID_INPUT" } as const;
 
     const line = (await getLines()).find(({ variantId }) => variantId === parsed.variantId);
-    if (!line?.available) {
+    if (!line) {
+      return { ok: false, reason: "LINE_UNAVAILABLE" } as const;
+    }
+
+    if (!(await canSetQuantity(parsed))) {
       return { ok: false, reason: "LINE_UNAVAILABLE" } as const;
     }
 
