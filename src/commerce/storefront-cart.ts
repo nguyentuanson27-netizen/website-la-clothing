@@ -29,6 +29,7 @@ type StorefrontCartProduct = {
 
 export type StorefrontCartUnavailableReason =
   | StorefrontVariantUnavailableReason
+  | "INSUFFICIENT_STOCK"
   | "PRODUCT_UNAVAILABLE"
   | "VARIANT_UNAVAILABLE";
 
@@ -140,6 +141,15 @@ export function buildStorefrontCartLines({
         price: null,
         available: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
+      };
+    }
+
+    if (option.purchasable && option.sellableStock < item.quantity) {
+      return {
+        ...base,
+        price: option.price,
+        available: false,
+        unavailableReason: "INSUFFICIENT_STOCK",
       };
     }
 
