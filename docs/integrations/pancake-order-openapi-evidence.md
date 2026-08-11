@@ -30,6 +30,19 @@ Fingerprint and metadata:
 
 Those metadata values match the current official Pancake API reference. The fingerprint identifies exactly which supplied bytes were inspected; it does not by itself cryptographically prove where those bytes were downloaded from. The raw external document is not committed.
 
+## Effective deployment metadata boundary
+
+OpenAPI permits create-order deployment metadata to override document-root defaults. The evidence sanitizer intentionally supports only the reviewed root-default shape rather than silently reporting a root value when the matched operation could have a different effective value.
+
+Before emitting root `servers` or root `security` as create-order evidence, the command therefore fails closed when the matched create-order surface contains any deployment override it does not derive:
+
+- a matched Path Item `$ref`;
+- Path Item `servers`;
+- Operation `security`;
+- Operation `servers`.
+
+These cases return the existing fixed `MALFORMED_OPENAPI_DOCUMENT` diagnostic and emit no evidence JSON. This means a future OpenAPI document cannot silently change the effective create-order server or authentication while the sanitizer continues reporting root-level facts. The fingerprinted Pancake document used for the checked evidence has no such matched Path Item/Operation override, so its checked server/auth evidence remains applicable.
+
 ## Machine-derived create-order structure
 
 The reproducible envelope records:
