@@ -35,6 +35,13 @@ async function createActionRuntime() {
       if (!cart || cart.items.length === 0) return [];
       return repository.getLines({ shopId, items: cart.items });
     },
+    async canSetQuantity({ variantId, quantity }) {
+      const [line] = await repository.getLines({
+        shopId,
+        items: [{ variantId, quantity }],
+      });
+      return line?.available === true;
+    },
     async setQuantity({ variantId, quantity }) {
       return mutations.setItemQuantity({ variantId, quantity, now });
     },
