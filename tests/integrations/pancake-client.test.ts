@@ -162,3 +162,78 @@ test("sanitizes transport failures that may include the credentialed URL", async
     },
   );
 });
+
+test("posts JSON with the same bounded credentialed transport boundary", async () => {
+  let requestedUrl = "";
+  let requestedInit: RequestInit | undefined;
+  const body = {
+    shop_id: 4_741_464,
+    note: "sensitive-order-note",
+    items: [{ variation_id: "variation-001", quantity: 1 }],
+  };
+  const fetcher: typeof fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return new Response(JSON.stringify({ id: 700_001 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher, timeoutMs: 2_500 });
+  const result = await client.postJson("/shops/4741464/orders", body);
+
+  const url = new URL(requestedUrl);
+  assert.equal(url.origin + url.pathname, "https://pos.pages.fm/api/v1/shops/4741464/orders");
+  assert.equal(url.searchParams.get("api_key"), API_KEY);
+  assert.equal(requestedInit?.method, "POST");
+  assert.deepEqual(requestedInit?.headers, {
+    accept: "application/json",
+    "content-type": "application/json",
+  });
+  assert.equal(requestedInit?.body, JSON.stringify(body));
+  assert.ok(requestedInit?.signal instanceof AbortSignal);
+  assert.equal(requestedInit.signal.aborted, false);
+  assert.deepEqual(result, { id: 700_001 });
+});
+
+test("POST HTTP rejection is sanitized and never exposes request JSON or API key", async () => {
+  const sensitiveValue = "sensitive-order-note";
+  const fetcher: typeof fetch = async () =>
+    new Response(JSON.stringify({ detail: `${API_KEY}:${sensitiveValue}` }), {
+      status: 422,
+      headers: { "content-type": "application/json" },
+    });
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher });
+
+  await assert.rejects(
+    () => client.postJson("/shops/4741464/orders", { note: sensitiveValue }),
+    (error: unknown) => {
+      assert.ok(error instanceof PancakeHttpError);
+      assert.equal(error.status, 422);
+      assert.equal(error.endpoint, "/shops/4741464/orders");
+      assert.equal(error.message.includes(API_KEY), false);
+      assert.equal(error.message.includes(sensitiveValue), false);
+      return true;
+    },
+  );
+});
+
+test("POST transport failures are sanitized and do not echo request JSON", async () => {
+  const sensitiveValue = "sensitive-order-note";
+  const fetcher: typeof fetch = async () => {
+    throw new Error(`${API_KEY}:${sensitiveValue}`);
+  };
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher });
+
+  await assert.rejects(
+    () => client.postJson("/shops/4741464/orders", { note: sensitiveValue }),
+    (error: unknown) => {
+      assert.ok(error instanceof PancakeNetworkError);
+      assert.equal(error.endpoint, "/shops/4741464/orders");
+      assert.equal(error.message.includes(API_KEY), false);
+      assert.equal(error.message.includes(sensitiveValue), false);
+      return true;
+    },
+  );
+});
