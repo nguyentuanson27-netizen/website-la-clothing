@@ -1,6 +1,6 @@
 # Pancake POS integration contract
 
-Status: **C3 catalog contract implementation complete; final trusted live reviewed-contract verification and human review remain before C4.**
+Status: **catalog read contract is implemented and verified; C8 create-order contract verification is in progress and the actual Pancake order write remains blocked on exact request/response plus idempotency/reference evidence.**
 
 ## Authoritative boundaries
 
@@ -145,11 +145,49 @@ The stage distinguishes configuration, endpoint fetch, full-key validation, and 
 
 **C3 does not become complete until this verifier passes against the current live shop payload and the resulting PR receives a clean human review.**
 
+## C8 create-order contract verification
+
+The current official Pancake POS Open API reference at `https://api-docs.pancake.biz/` establishes these structural facts:
+
+- reference version `v1.0.0`;
+- OpenAPI 3.1.0;
+- production server `https://pos.pages.fm/api/v1`;
+- Order Operations contains `POST /shops/{SHOP_ID}/orders`.
+
+Endpoint existence is **not** treated as evidence for the create-order request/response schema, a website-origin reference field, or native idempotency behavior.
+
+PR #43 adds `src/integrations/pancake/order-openapi-contract.ts`, a pure local inspector for the create-order operation. It does not make network requests and does not need Pancake credentials. The inspector:
+
+- locates exactly one `POST /shops/{...}/orders` operation without guessing the path-parameter name;
+- resolves bounded local `#/...` references, including chained references;
+- preserves the supported structural siblings of OpenAPI 3.1 Schema Object `$ref` values conjunctively rather than silently discarding them;
+- rejects external references, unresolved references, circular references, malformed documents and inspection-budget overflow;
+- uses one shared `10,000`-work-unit budget across externally controlled path entries, parameters, response entries, media types, schema nodes/arrays/properties, `$ref` hops and JSON-pointer segments so non-schema traversal cannot bypass the inspection ceiling;
+- computes the effective OpenAPI parameter set by `(name, in)`, with operation-level parameters overriding matching path-level parameters; duplicate parameters within one level and path parameters without `required: true` fail closed;
+- emits only structural contract metadata needed for review: parameter names/locations/required flags, schema types/formats/required property names/property structure, media types and response status structure;
+- deliberately omits examples, defaults, descriptions and other external scalar sample values from its output.
+
+The shared budget and effective-parameter rules were added after review comment `5251949190`. RED CI #432 kept 46/46 DB tests, HTTP security/authz, lint and typecheck green and failed exactly three new regressions: non-schema traversal budget, operation-over-path parameter override, and malformed duplicate/non-required path parameters. GREEN commit `0bbf5fa` passed CI #433 with 46/46 DB tests, HTTP security/authz, lint, typecheck, 151/151 domain/integration tests, production build and `admin-a11y-runtime`.
+
+This inspector is a **discovery/review aid, not write authorization**. It intentionally captures only the structural subset needed to inspect the operation safely; it does not claim to preserve every JSON Schema/OpenAPI validation keyword.
+
+The official reference exposes a “Download OpenAPI Document” control, but the raw downloadable document has not yet been captured into trusted local evidence in this project. The rendered/searchable official reference verifies the endpoint-level facts above, but current extraction does not expose the expanded `POST /shops/{SHOP_ID}/orders` request/response schema. Searches for candidate order field names are therefore not treated as contract evidence. Do not commit a guessed order payload based only on endpoint existence, UI examples, or generated client assumptions.
+
+Before any Pancake order write is implemented, trusted evidence still needs to establish at minimum:
+
+1. exact create-order request body fields/types/requiredness used by this shop/API version;
+2. exact success/rejection response shape and Pancake order identity field;
+3. the correct website-origin/client-reference field, if one exists;
+4. native idempotency semantics or a documented unique client-reference constraint, if any;
+5. how to resolve an ambiguous timeout before deciding whether another write is safe.
+
+No destructive create-order probe is authorized by this verification slice.
+
 ## Later integration contracts still unverified
 
-These items are outside the catalog C3 contract and continue to block their later slices:
+These items remain outside the verified catalog contract and continue to block their later slices:
 
-1. Exact create-order request/response schema and the correct website-origin reference field.
+1. Exact create-order request/response schema and the correct website-origin reference field; only the endpoint itself is verified so far.
 2. Native create-order idempotency behavior or unique client-reference constraint.
 3. Exact order status codes/transitions used by reconciliation.
 4. Webhook event names, payload shape, authentication/signature and replay protection.
@@ -160,8 +198,10 @@ Do not guess the remaining integration contracts. In particular, do not add blin
 
 ## Official sources checked
 
-- Pancake POS Open API reference: https://docs.pancake.biz/pos/api/en/
+- Pancake POS full Open API reference: https://api-docs.pancake.biz/
+- Pancake POS Open API reference entry: https://docs.pancake.biz/pos/api/en/
 - Pancake POS Open API overview: https://docs.pancake.biz/pos/st-f13/st-p1?lang=en
 - API key/authentication: https://docs.pancake.biz/pos/st-f13/st-p2?lang=en
 - Order status & processing flow: https://docs.pancake.biz/pos/st-f13/st-p3?lang=en
+- OpenAPI 3.1.0 specification: https://spec.openapis.org/oas/v3.1.0
 - pnpm run argument forwarding: https://pnpm.io/cli/run
