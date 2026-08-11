@@ -11,8 +11,8 @@ Intended repository path: `tasks/todo.md`
 - [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
 - [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
 - [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
-- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented; cart browser/mobile/a11y + human review remain
-- [ ] T9 Deliver guest COD checkout → exactly one Pancake order
+- [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented and merged; cart browser/mobile/a11y verification remains
+- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation is in draft PR #42; Pancake create-order remains blocked on exact write contract
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
 - [~] T12 Add editorial homepage/lookbook and restricted content admin — restricted product editorial admin foundation implemented; homepage/lookbook composition remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4 and C5 are merged and green on `main`; C6 Cart UI is implemented on draft PR #41 with automated verification/self-review complete and cart-specific browser/mobile/a11y + human review pending
+## Current execution path: C4/C5/C6 are merged and green on `main`; C7 Guest COD checkout persistence/validation is in draft PR #42, with shipping policy approved and secure local snapshot persistence implemented while Pancake order writes remain blocked on exact contract verification
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -73,7 +73,7 @@ Intended repository path: `tasks/todo.md`
   - [x] merged to `main` before C5 retarget/merge
 - [~] C5 PLP/PDP Color × Size storefront — code-level approved and merged in PR #40; storefront browser/mobile/a11y remains pending
   - [x] server-authoritative price/availability and Add-to-Bag reauthorization
-  - [x] URL-backed bounded pagination keeps products beyond the first 24 browseable
+  - [x] URL-backed bounded pagination keeps products after the first 24 browseable
   - [x] review Comment `5248837169` Required fixed with a 25-product database regression
   - [x] Consider #1 fixed: storefront shop scope no longer requires `PANCAKE_API_KEY`; live Pancake config still does
   - [x] Consider #2 fixed: storefront public purchase action owns a fixed browser response shape and strips downstream fields
@@ -82,20 +82,29 @@ Intended repository path: `tasks/todo.md`
   - [x] squash-merged to `main` as `4ac818c0`; post-merge CI #376 passed
   - [ ] browser/mobile/a11y verification when tool available
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after review fixes
-- [~] C6 Cart UI — implementation + automated verification + self-review complete on draft PR #41; browser/human review remain
+- [~] C6 Cart UI — approved and merged in PR #41; cart-specific browser/mobile/a11y remains pending
   - [x] current configured-shop price/availability, stale-line visibility, current subtotal, update/remove
   - [x] update only existing line and re-authorize requested quantity server-side without exposing exact stock/cart identity
   - [x] quantity above current stock fails closed as `INSUFFICIENT_STOCK`; shopper can lower quantity to recover
-  - [x] automated tests/build — exact code head `7f92a02` passed CI #396: 40/40 DB, security/authz, lint, typecheck, 133/133 domain/integration, production build
-  - [ ] browser/mobile/a11y verification when tool available
+  - [x] Required TOCTOU review finding fixed with update-existing cart primitive + DB concurrency regressions
+  - [x] exact final PR head `bfec9b4` passed CI #401: 42/42 DB, security/authz, lint, typecheck, 133/133 domain/integration, production build
+  - [x] human review Comment `5250518944`: APPROVE — 0 Critical / 0 Required / 1 Consider
+  - [x] squash-merged to `main` as `21d656ce`; post-merge CI #402 passed
+  - [ ] browser/mobile/a11y verification when tool available; user explicitly overrode this pending checkpoint for merge
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required / 1 performance Consider
-  - [ ] human review of PR #41
-- [ ] C7 Guest COD checkout persistence + server revalidation
-  - [ ] approved shipping rule available
-  - [ ] migration/runtime tests
-  - [ ] security review
+- [~] C7 Guest COD checkout persistence + server revalidation — draft PR #42
+  - [x] guest checkout input boundary accepts only approved contact/address/note fields and strips browser-supplied commerce authority fields
+  - [x] approved shipping rule: 30,000 VND default; free when authoritative merchandise subtotal > 1,000,000 VND or total product quantity >= 3; first qualifying freeship condition wins
+  - [x] exact 1,000,000 VND remains 30,000 VND shipping unless the quantity rule qualifies
+  - [x] immutable website-owned order + order-line snapshot schema with additive migration and DB integrity constraints
+  - [x] snapshot transaction locks the live anonymous cart, scopes catalog facts to the configured shop, reuses current Color×Size/price/stock semantics, rejects stale/unavailable lines, and ignores browser price/stock/discount/shipping/Pancake IDs
+  - [x] PII is bounded/normalized and no PII logging path was introduced
+  - [x] migration/runtime TDD evidence: shipping RED CI #405 → GREEN #406; schema RED #407 → GREEN #409; behavior RED #410 → runtime GREEN with 46/46 DB tests; target-compatibility fix verified by full CI #412
+  - [ ] final C7 self-review / human review
+  - [ ] browser checkout surface + actual POS submission intentionally not exposed until C8 write contract is verified; do not create fake half-checkout behavior
+  - [ ] authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
 - [ ] C8 Pancake create-order orchestration
-  - [ ] exact create-order contract verified
+  - [ ] exact create-order request/response + website reference/idempotency contract verified
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] self-review
@@ -127,9 +136,10 @@ Intended repository path: `tasks/todo.md`
   - [ ] editorial homepage/lookbook composition
 
 ## Stop conditions
-- Do not guess shipping fee, unverified Pancake field semantics/types, create-order idempotency/reference semantics, or webhook authentication/replay behavior.
+- Do not change the approved shipping-fee rule without a new product-owner decision.
+- Do not guess unverified Pancake field semantics/types, create-order idempotency/reference semantics, order status mapping, or webhook authentication/replay behavior.
 - Do not reintroduce warehouse subset filtering unless the product owner changes the approved all-warehouse inventory policy.
-- Do not treat mirrored stock as a reservation; revalidate authoritative `remain_quantity` immediately before order creation.
+- Do not treat mirrored stock or a local checkout snapshot as a reservation; revalidate authoritative `remain_quantity` and price immediately before Pancake order creation.
 - Do not let raw external image URLs create a server-side fetch boundary without an explicit trusted-origin policy.
 - Do not move past a slice with a Required/Critical self-review finding or failing CI.
 - Do not claim browser/runtime/live Pancake verification without actual evidence.
