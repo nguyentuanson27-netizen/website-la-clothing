@@ -13,13 +13,13 @@ const MAX_POSTGRES_INTEGER = 2_147_483_647;
 type CartLineControlsProps = {
   variantId: string;
   initialQuantity: number;
-  available: boolean;
+  canUpdate: boolean;
 };
 
 export function CartLineControls({
   variantId,
   initialQuantity,
-  available,
+  canUpdate,
 }: CartLineControlsProps) {
   const inputId = useId();
   const router = useRouter();
@@ -34,7 +34,7 @@ export function CartLineControls({
     parsedQuantity <= MAX_POSTGRES_INTEGER;
 
   function updateLine() {
-    if (!available || !quantityValid || isPending) return;
+    if (!canUpdate || !quantityValid || isPending) return;
     setMessage("");
 
     startTransition(async () => {
@@ -50,7 +50,7 @@ export function CartLineControls({
         }
         setMessage(
           result.reason === "LINE_UNAVAILABLE"
-            ? "Sản phẩm vừa thay đổi và không còn cập nhật được."
+            ? "Số lượng này hiện không khả dụng. Hãy thử số lượng thấp hơn."
             : "Không thể cập nhật số lượng lúc này.",
         );
         router.refresh();
@@ -95,7 +95,7 @@ export function CartLineControls({
             step={1}
             inputMode="numeric"
             value={quantity}
-            disabled={!available || isPending}
+            disabled={!canUpdate || isPending}
             onChange={(event) => {
               setQuantity(event.target.value);
               setMessage("");
@@ -105,7 +105,7 @@ export function CartLineControls({
         <button
           className="min-h-11 border border-black bg-black px-5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
           type="button"
-          disabled={!available || !quantityValid || isPending}
+          disabled={!canUpdate || !quantityValid || isPending}
           onClick={updateLine}
         >
           {isPending ? "Đang xử lý…" : "Cập nhật"}
