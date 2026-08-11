@@ -5,6 +5,11 @@ import { createPancakeOrderGateway } from "../../src/integrations/pancake/order-
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
 
+type TestGatewayClient = {
+  getJson(endpoint: string, query?: Readonly<Record<string, string | number | boolean>>): Promise<unknown>;
+  postJson(endpoint: string, body: unknown): Promise<unknown>;
+};
+
 const request: PancakeCreateOrderRequest = {
   shop_id: 4_741_464,
   bill_full_name: "Nguyễn Văn A",
@@ -46,7 +51,7 @@ const variation: PancakeCatalogVariation = {
 };
 
 test("order gateway delegates live validation to the reviewed complete catalog traversal", async () => {
-  const client = {
+  const client: TestGatewayClient = {
     async getJson() {
       throw new Error("gateway must not invent its own catalog request");
     },
@@ -57,11 +62,14 @@ test("order gateway delegates live validation to the reviewed complete catalog t
   let observedClient: unknown;
   let observedShopId: number | undefined;
 
-  const gateway = createPancakeOrderGateway(client, async ({ client: inputClient, shopId }) => {
-    observedClient = inputClient;
-    observedShopId = shopId;
-    return [variation];
-  });
+  const gateway = createPancakeOrderGateway(
+    client,
+    async ({ client: inputClient, shopId }: { client: TestGatewayClient; shopId: number }) => {
+      observedClient = inputClient;
+      observedShopId = shopId;
+      return [variation];
+    },
+  );
 
   assert.deepEqual(await gateway.fetchCompleteCatalog(4_741_464), [variation]);
   assert.equal(observedClient, client);
@@ -71,7 +79,7 @@ test("order gateway delegates live validation to the reviewed complete catalog t
 test("order gateway posts the strict request to the matching trusted shop order endpoint", async () => {
   let endpoint = "";
   let postedBody: unknown;
-  const client = {
+  const client: TestGatewayClient = {
     async getJson() {
       throw new Error("not used");
     },
