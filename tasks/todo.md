@@ -100,7 +100,9 @@ Intended repository path: `tasks/todo.md`
   - [x] snapshot transaction locks the live anonymous cart, scopes catalog facts to the configured shop, reuses current Color×Size/price/stock semantics, rejects stale/unavailable lines, and ignores browser price/stock/discount/shipping/Pancake IDs
   - [x] PII is bounded/normalized and no PII logging path was introduced
   - [x] migration/runtime TDD evidence: shipping RED CI #405 → GREEN #406; schema RED #407 → GREEN #409; behavior RED #410 → runtime GREEN with 46/46 DB tests; target-compatibility fix verified by full CI #412
-  - [ ] final C7 self-review / human review
+  - [x] money-boundary hardening: RED CI #417 rejected the new expectation because fractional/unsafe subtotal was accepted by the policy helper; GREEN head `ddb6ae1` passed full CI #418 with safe-integer VND validation
+  - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required / 1 performance Consider
+  - [ ] human review of PR #42
   - [ ] browser checkout surface + actual POS submission intentionally not exposed until C8 write contract is verified; do not create fake half-checkout behavior
   - [ ] authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
 - [ ] C8 Pancake create-order orchestration
