@@ -4,15 +4,15 @@ Status: build in progress
 Intended repository path: `tasks/todo.md`
 
 - [x] T0 Establish repository baseline and save approved spec
-- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — catalog read contract + reservation-aware stock semantics verified; create-order endpoint verified but exact write schema/idempotency/reference and webhook contracts remain
+- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — catalog read contract + reservation-aware stock semantics and create-order request/response structure verified; create-order idempotency/reference and webhook contracts remain
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order contract inspector is in draft PR #43 while actual order/status adapters remain blocked on exact contract evidence
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order structural inspector merged in PR #43 and trusted-local raw OpenAPI evidence bridge + sanitized observed contract are in draft PR #44 while actual order/status adapters remain
 - [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
 - [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented and merged; cart browser/mobile/a11y verification remains
-- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation merged in PR #42; C8 create-order contract verification is in draft PR #43 and the actual Pancake write remains blocked on exact request/response plus idempotency/reference evidence
+- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation merged in PR #42; C8 exact create-order structure is now captured from fingerprinted raw OpenAPI evidence in draft PR #44, so the next write slice is live price/stock revalidation + one-shot POST orchestration with no blind retry
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
 - [~] T12 Add editorial homepage/lookbook and restricted content admin — restricted product editorial admin foundation implemented; homepage/lookbook composition remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4/C5/C6/C7 are merged and green on `main`; C8 Pancake create-order contract verification is in draft PR #43, with a safe local OpenAPI inspector fully verified while the actual write remains blocked on exact payload/reference/idempotency evidence
+## Current execution path: C4/C5/C6/C7 and the C8 structural OpenAPI inspector are merged and green on `main`; draft PR #44 adds the trusted-local evidence bridge and fingerprinted sanitized create-order contract. Exact request/response structure is no longer the write blocker; native idempotency/client-reference semantics remain unverified, so no second POST/retry is authorized
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -107,30 +107,40 @@ Intended repository path: `tasks/todo.md`
   - [x] squash-merged to `main` as `053fcbd`; post-merge CI #420 passed both `verify` and `admin-a11y-runtime`
   - [x] C7 deliberately stops at a local DRAFT snapshot; browser checkout submission and actual POS order write remain C8 work rather than a fake half-checkout flow
   - [x] architecture records that authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
-- [~] C8 Pancake create-order orchestration — contract-verification foundation in draft PR #43
+- [~] C8 Pancake create-order orchestration — structural contract inspector approved/merged in PR #43; trusted-local raw OpenAPI evidence bridge + sanitized observed contract are in draft PR #44
   - [x] current official full reference at `api-docs.pancake.biz` verifies reference v1.0.0, OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
   - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
-  - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs are fully resolved
+  - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs and local Path Item refs are resolved with the same bounded guards
   - [x] OpenAPI 3.1 Schema Object `$ref` structural siblings are preserved conjunctively instead of being silently discarded
   - [x] one shared 10,000-work-unit budget now covers externally controlled paths, parameters, response entries, media types, schemas, `$ref` hops and JSON-pointer segments
   - [x] operation-level parameters override matching path-level parameters by `(name, in)`; duplicates within one level and path parameters without `required: true` fail closed
+  - [x] matched create-order path template is validated against the effective required `in: path` parameter after override resolution; missing or mismatched path parameters fail closed
   - [x] examples/defaults/descriptions/external scalar sample values are excluded from inspection output
   - [x] initial TDD RED CI #421 failed at the missing inspector module; implementation reached full green after a Node strip-only syntax compatibility fix in CI #423
   - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN CI #425 passed the corrected bounded ref resolution
   - [x] OpenAPI 3.1 `$ref`-sibling RED CI #428 kept 46/46 DB + security/authz + lint + typecheck green and failed exactly the new sibling-loss case at 147/148 domain/integration tests
-  - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; both findings reproduced before production changes
-  - [x] review-fix RED head `f70067a`: CI #432 kept 46/46 DB + HTTP security/authz + lint + typecheck green and failed exactly 3/151 new regressions for non-schema budget, parameter override and malformed parameter semantics
-  - [x] review-fix GREEN code head `0bbf5fa`: CI #433 passed 46/46 DB, security/authz, lint, typecheck, 151/151 domain/integration, production build and admin-a11y runtime
-  - [x] review-fix docs/tracker synchronized without self-referencing branch SHA; exact current-head CI evidence is recorded in the PR handoff/comment
-  - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
-  - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
-  - [ ] correct website-origin reference field verified
-  - [ ] native idempotency / unique client-reference behavior verified
+  - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; shared work-budget and effective-parameter findings were reproduced and fixed with RED CI #432 → GREEN CI #433
+  - [x] review Comment `5252462956`: REQUEST CHANGES — 1 Required / 1 Consider; path-template validation and local Path Item `$ref` findings were reproduced in RED CI #441 and fixed in GREEN CI #442 with 153/153 domain/integration tests
+  - [x] exact PR #43 head `3bc5859e` received human APPROVE — 0 Critical / 0 Required / 0 Consider in comment `5252973648`
+  - [x] PR #43 squash-merged to `main` as `351315c4`; post-merge CI #443 passed both `verify` and `admin-a11y-runtime`
+  - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by available extraction, so candidate field names were deliberately not treated as evidence
+  - [x] PR #44 RED CI #444 kept the existing suite green and failed exactly the three new trusted-local CLI regressions because the evidence command did not yet exist
+  - [x] PR #44 GREEN code CI #447 passed 46/46 DB, HTTP security/authz, lint, typecheck, 156/156 domain/integration, production build and `admin-a11y-runtime`
+  - [x] trusted-local `pnpm pancake:order:inspect-openapi <file.json>` bridge is bounded to one local JSON file, rejects files over 16 MiB before parsing, emits fixed safe failures and performs no Pancake network/credential/write operation
+  - [x] fingerprinted raw OpenAPI JSON was supplied and independently inspected; SHA-256 `44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f`, size 2,774,602 bytes, with OpenAPI 3.1.0 / Pancake POS Open API v1.0.0 / production-server metadata matching the official reference
+  - [x] exact create-order request/response structure captured into sanitized checked-in evidence without persisting raw examples/PII: request body required with top-level `shop_id`; `items[].variation_id` + `quantity`; optional explicit `variation_info.retail_price`; structured shipping fields; documented HTTP 200 response with integer Pancake order `id`
+  - [x] review Comment `5253708369`: REQUEST CHANGES — 2 Required; reproduced with RED CI #453 at 155/157 for the file-size TOCTOU and non-reproducible checked-evidence mapping findings
+  - [x] file evidence now uses one opened FileHandle for metadata + bounded content reads, consumes at most 16 MiB + one sentinel byte, rejects post-stat growth, and closes the handle on all paths
+  - [x] CLI now emits a deterministic machine-derived envelope containing source hash/bytes, allowlisted metadata/auth, and the reviewed structural subset; checked JSON is kept free of manually interpreted idempotency descriptions
+  - [x] docs explicitly separate machine-derived evidence from manual semantic review; `custom_id`/order-source descriptions and the no-safe-retry conclusion are not represented as CLI-generated facts
+  - [x] review-fix code GREEN CI #455 passed 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration and production build; later exact branch states passed the same full CI gate, including `admin-a11y-runtime`
+  - [ ] correct website-origin reference field verified — `custom_id` is documented only as `Custom ID`, so it is not treated as a verified idempotency/client-reference key
+  - [ ] native idempotency / unique client-reference behavior verified — absent from supplied create-order documentation; this blocks automatic retry/duplicate-safe recovery, not the approved one-shot write pattern
   - [ ] authoritative live price/stock revalidation immediately before write
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [~] self-review: narrow inspector 0 Critical / 0 Required / 0 Consider after review fixes; C8 write remains blocked on external contract evidence; human re-review still required
+  - [~] self-review: latest review findings are fixed at code/docs level with 0 Critical / 0 Required / 0 Consider; human re-review remains required. Actual C8 write is no longer blocked on request/response shape, but no retry is authorized by current reference/idempotency evidence
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
