@@ -76,7 +76,7 @@ Intended repository path: `tasks/todo.md`
   - [x] review Comment `5248837169` Required fixed with a 25-product database regression
   - [x] Consider #1 fixed: storefront shop scope no longer requires `PANCAKE_API_KEY`; live Pancake config still does
   - [x] Consider #2 fixed: storefront public purchase action owns a fixed browser response shape and strips downstream fields
-  - [x] automated tests/build — exact code head `b64778d` passed CI #371; tracker-only final head `86dfc8d` passed CI #372
+  - [x] automated tests/build — exact code head `b64778d` passed CI #371; final documentation head `8b56444` passed CI #373
   - [ ] browser/mobile/a11y verification when tool available
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required after review fixes
 - [ ] C6 Cart UI
