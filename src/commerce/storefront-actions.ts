@@ -5,11 +5,11 @@ import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import { createStorefrontPurchasePublicActions } from "./storefront-purchase-public-actions.ts";
 import { createStorefrontPurchaseService } from "./storefront-purchase.ts";
 import { prisma } from "../db/prisma.ts";
-import { readPancakeConfig } from "../integrations/pancake/config.ts";
+import { readPancakeShopId } from "../integrations/pancake/config.ts";
 
 const publicActions = createStorefrontPurchasePublicActions({
   async purchase({ slug, variantId }) {
-    const { shopId } = readPancakeConfig();
+    const shopId = readPancakeShopId();
     const catalog = createStorefrontCatalogRepository(prisma);
     const purchase = createStorefrontPurchaseService({
       catalog,
