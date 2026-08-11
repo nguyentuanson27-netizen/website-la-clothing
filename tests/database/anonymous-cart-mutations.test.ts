@@ -19,6 +19,7 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const carts = createAnonymousCartService(prisma);
+const testShopId = 920_001;
 const productExternalId = "anonymous-cart-mutation-product";
 const variantExternalPrefix = "anonymous-cart-mutation-variant";
 const accountUserId = "anonymous-cart-mutation-user";
@@ -58,6 +59,7 @@ test.beforeEach(async () => {
   await cleanup();
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: productExternalId,
       slug: productExternalId,
       name: "Anonymous Cart Mutation Product",
