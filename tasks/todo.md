@@ -8,11 +8,11 @@ Intended repository path: `tasks/todo.md`
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order contract inspector is in draft PR #43 while actual order/status adapters remain blocked on exact contract evidence
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order structural inspector merged in PR #43 and trusted-local raw OpenAPI evidence bridge is in draft PR #44 while actual order/status adapters remain blocked on exact contract evidence
 - [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
 - [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented and merged; cart browser/mobile/a11y verification remains
-- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation merged in PR #42; C8 create-order contract verification is in draft PR #43 and the actual Pancake write remains blocked on exact request/response plus idempotency/reference evidence
+- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation merged in PR #42; C8 structural contract inspector merged in PR #43 and local evidence bridge is in draft PR #44, while the actual Pancake write remains blocked on exact request/response plus idempotency/reference evidence
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
 - [~] T12 Add editorial homepage/lookbook and restricted content admin — restricted product editorial admin foundation implemented; homepage/lookbook composition remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4/C5/C6/C7 are merged and green on `main`; C8 Pancake create-order contract verification is in draft PR #43, with a safe local OpenAPI inspector fully verified while the actual write remains blocked on exact payload/reference/idempotency evidence
+## Current execution path: C4/C5/C6/C7 and the C8 structural OpenAPI inspector are merged and green on `main`; draft PR #44 adds a trusted-local raw OpenAPI evidence bridge while the actual create-order write remains blocked on exact payload/reference/idempotency evidence
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -107,22 +107,27 @@ Intended repository path: `tasks/todo.md`
   - [x] squash-merged to `main` as `053fcbd`; post-merge CI #420 passed both `verify` and `admin-a11y-runtime`
   - [x] C7 deliberately stops at a local DRAFT snapshot; browser checkout submission and actual POS order write remain C8 work rather than a fake half-checkout flow
   - [x] architecture records that authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
-- [~] C8 Pancake create-order orchestration — contract-verification foundation in draft PR #43
+- [~] C8 Pancake create-order orchestration — structural contract inspector approved/merged in PR #43; trusted-local raw OpenAPI evidence bridge is in draft PR #44
   - [x] current official full reference at `api-docs.pancake.biz` verifies reference v1.0.0, OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
   - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
-  - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs are fully resolved
+  - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs and local Path Item refs are resolved with the same bounded guards
   - [x] OpenAPI 3.1 Schema Object `$ref` structural siblings are preserved conjunctively instead of being silently discarded
   - [x] one shared 10,000-work-unit budget now covers externally controlled paths, parameters, response entries, media types, schemas, `$ref` hops and JSON-pointer segments
   - [x] operation-level parameters override matching path-level parameters by `(name, in)`; duplicates within one level and path parameters without `required: true` fail closed
+  - [x] matched create-order path template is validated against the effective required `in: path` parameter after override resolution; missing or mismatched path parameters fail closed
   - [x] examples/defaults/descriptions/external scalar sample values are excluded from inspection output
   - [x] initial TDD RED CI #421 failed at the missing inspector module; implementation reached full green after a Node strip-only syntax compatibility fix in CI #423
   - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN CI #425 passed the corrected bounded ref resolution
   - [x] OpenAPI 3.1 `$ref`-sibling RED CI #428 kept 46/46 DB + security/authz + lint + typecheck green and failed exactly the new sibling-loss case at 147/148 domain/integration tests
-  - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; both findings reproduced before production changes
-  - [x] review-fix RED head `f70067a`: CI #432 kept 46/46 DB + HTTP security/authz + lint + typecheck green and failed exactly 3/151 new regressions for non-schema budget, parameter override and malformed parameter semantics
-  - [x] review-fix GREEN code head `0bbf5fa`: CI #433 passed 46/46 DB, security/authz, lint, typecheck, 151/151 domain/integration, production build and admin-a11y runtime
-  - [x] review-fix docs/tracker synchronized without self-referencing branch SHA; exact current-head CI evidence is recorded in the PR handoff/comment
-  - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
+  - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; shared work-budget and effective-parameter findings were reproduced and fixed with RED CI #432 → GREEN CI #433
+  - [x] review Comment `5252462956`: REQUEST CHANGES — 1 Required / 1 Consider; path-template validation and local Path Item `$ref` findings were reproduced in RED CI #441 and fixed in GREEN CI #442 with 153/153 domain/integration tests
+  - [x] exact PR #43 head `3bc5859e` received human APPROVE — 0 Critical / 0 Required / 0 Consider in comment `5252973648`
+  - [x] PR #43 squash-merged to `main` as `351315c4`; post-merge CI #443 passed both `verify` and `admin-a11y-runtime`
+  - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response is still not exposed by available extraction, so candidate field names are deliberately not treated as evidence
+  - [x] PR #44 RED CI #444 kept the existing suite green and failed exactly the three new trusted-local CLI regressions because the evidence command did not yet exist
+  - [x] PR #44 GREEN code CI #447 passed 46/46 DB, HTTP security/authz, lint, typecheck, 156/156 domain/integration, production build and `admin-a11y-runtime`
+  - [x] trusted-local `pnpm pancake:order:inspect-openapi <file.json>` bridge is bounded to one local JSON file, rejects files over 16 MiB before parsing, emits fixed safe failures and performs no Pancake network/credential/write operation
+  - [ ] raw official OpenAPI document downloaded from Pancake and inspected through the trusted-local bridge
   - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
   - [ ] correct website-origin reference field verified
   - [ ] native idempotency / unique client-reference behavior verified
@@ -130,7 +135,7 @@ Intended repository path: `tasks/todo.md`
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [~] self-review: narrow inspector 0 Critical / 0 Required / 0 Consider after review fixes; C8 write remains blocked on external contract evidence; human re-review still required
+  - [~] self-review: structural inspector and local evidence bridge have 0 Critical / 0 Required / 0 Consider at code level; PR #44 exact docs head and human review remain required, and C8 write stays blocked on external contract evidence
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
