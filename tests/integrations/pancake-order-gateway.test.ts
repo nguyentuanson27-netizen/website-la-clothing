@@ -17,6 +17,7 @@ const request: PancakeCreateOrderRequest = {
   shipping_fee: 30_000,
   is_free_shipping: false,
   received_at_shop: false,
+  cod: 530_000,
   shipping_address: {
     full_name: "Nguyễn Văn A",
     phone_number: "0901234567",
@@ -76,7 +77,7 @@ test("order gateway delegates live validation to the reviewed complete catalog t
   assert.equal(observedShopId, 4_741_464);
 });
 
-test("order gateway posts the strict request to the matching trusted shop order endpoint", async () => {
+test("order gateway posts the strict COD request to the matching trusted shop order endpoint", async () => {
   let endpoint = "";
   let postedBody: unknown;
   const client: TestGatewayClient = {
