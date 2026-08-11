@@ -43,7 +43,7 @@ async function createActionRuntime() {
       return line?.available === true;
     },
     async setQuantity({ variantId, quantity }) {
-      return mutations.setItemQuantity({ variantId, quantity, now });
+      return mutations.updateExistingItemQuantity({ variantId, quantity, now });
     },
     async remove({ variantId }) {
       return mutations.removeItem({ variantId, now });
