@@ -158,6 +158,51 @@ test("trusted-local OpenAPI evidence read cannot outgrow the cap after initial m
   assert.equal(position, MAX_EVIDENCE_FILE_BYTES + 1);
 });
 
+test("trusted-local OpenAPI evidence CLI fails closed for operation-level security overrides", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "operation-security-override.json");
+    const fixture = openApiFixture();
+    const post = fixture.paths["/shops/{SHOP_ID}/orders"].post as unknown as Record<string, unknown>;
+    post.security = [];
+    await writeFile(filePath, JSON.stringify(fixture), "utf8");
+
+    const result = runInspector(filePath);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr.trim(), "MALFORMED_OPENAPI_DOCUMENT");
+  });
+});
+
+test("trusted-local OpenAPI evidence CLI fails closed for path-level server overrides", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "path-server-override.json");
+    const fixture = openApiFixture();
+    const pathItem = fixture.paths["/shops/{SHOP_ID}/orders"] as unknown as Record<string, unknown>;
+    pathItem.servers = [{ url: "https://path-override.example.test" }];
+    await writeFile(filePath, JSON.stringify(fixture), "utf8");
+
+    const result = runInspector(filePath);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr.trim(), "MALFORMED_OPENAPI_DOCUMENT");
+  });
+});
+
+test("trusted-local OpenAPI evidence CLI fails closed for operation-level server overrides", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "operation-server-override.json");
+    const fixture = openApiFixture();
+    const post = fixture.paths["/shops/{SHOP_ID}/orders"].post as unknown as Record<string, unknown>;
+    post.servers = [{ url: "https://operation-override.example.test" }];
+    await writeFile(filePath, JSON.stringify(fixture), "utf8");
+
+    const result = runInspector(filePath);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr.trim(), "MALFORMED_OPENAPI_DOCUMENT");
+  });
+});
+
 test("trusted-local OpenAPI evidence CLI fails closed for malformed JSON without parser detail leakage", async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, "malformed.json");
