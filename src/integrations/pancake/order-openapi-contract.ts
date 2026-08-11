@@ -55,6 +55,17 @@ export type PancakeCreateOrderOpenApiInspection = {
 const CREATE_ORDER_PATH = /^\/shops\/\{[^/{}]+\}\/orders\/?$/;
 const MAX_INSPECTION_DEPTH = 32;
 const MAX_INSPECTED_NODES = 10_000;
+const STRUCTURAL_SCHEMA_KEYS = [
+  "type",
+  "format",
+  "required",
+  "properties",
+  "items",
+  "oneOf",
+  "anyOf",
+  "allOf",
+  "additionalProperties",
+];
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,6 +77,16 @@ function malformed(): never {
 
 function decodeJsonPointerSegment(value: string): string {
   return value.replaceAll("~1", "/").replaceAll("~0", "~");
+}
+
+function pickStructuralSchemaSiblings(source: JsonRecord): JsonRecord {
+  const result: JsonRecord = {};
+  for (const key of STRUCTURAL_SCHEMA_KEYS) {
+    if (Object.hasOwn(source, key)) {
+      result[key] = source[key];
+    }
+  }
+  return result;
 }
 
 class OpenApiStructureInspector {
@@ -129,14 +150,11 @@ class OpenApiStructureInspector {
     return { value: current, refStack: nextStack };
   }
 
-  schema(value: unknown, depth = 0, refStack: ReadonlySet<string> = new Set()): OpenApiSchemaStructure {
-    this.countNode(depth);
-    const resolved = this.dereference(value, refStack);
-    if (!isRecord(resolved.value)) {
-      malformed();
-    }
-
-    const source = resolved.value;
+  private inspectSchemaObject(
+    source: JsonRecord,
+    depth: number,
+    refStack: ReadonlySet<string>,
+  ): OpenApiSchemaStructure {
     const result: OpenApiSchemaStructure = {};
 
     if (typeof source.type === "string") {
@@ -165,13 +183,13 @@ class OpenApiStructureInspector {
       }
       const properties: Record<string, OpenApiSchemaStructure> = {};
       for (const [name, property] of Object.entries(source.properties)) {
-        properties[name] = this.schema(property, depth + 1, resolved.refStack);
+        properties[name] = this.schema(property, depth + 1, refStack);
       }
       result.properties = properties;
     }
 
     if (source.items !== undefined) {
-      result.items = this.schema(source.items, depth + 1, resolved.refStack);
+      result.items = this.schema(source.items, depth + 1, refStack);
     }
 
     for (const key of ["oneOf", "anyOf", "allOf"] as const) {
@@ -183,7 +201,7 @@ class OpenApiStructureInspector {
         malformed();
       }
       result[key] = alternatives.map((alternative) =>
-        this.schema(alternative, depth + 1, resolved.refStack),
+        this.schema(alternative, depth + 1, refStack),
       );
     }
 
@@ -194,12 +212,46 @@ class OpenApiStructureInspector {
         result.additionalProperties = this.schema(
           source.additionalProperties,
           depth + 1,
-          resolved.refStack,
+          refStack,
         );
       }
     }
 
     return result;
+  }
+
+  schema(value: unknown, depth = 0, refStack: ReadonlySet<string> = new Set()): OpenApiSchemaStructure {
+    this.countNode(depth);
+    if (!isRecord(value)) {
+      malformed();
+    }
+
+    if (Object.hasOwn(value, "$ref")) {
+      if (typeof value.$ref !== "string") {
+        malformed();
+      }
+
+      const ref = value.$ref;
+      this.countRefHop(refStack.size + 1);
+      const target = this.resolveLocalRef(ref, refStack);
+      const nextStack = new Set(refStack);
+      nextStack.add(ref);
+      const referencedStructure = this.schema(target, depth, nextStack);
+      const structuralSiblings = pickStructuralSchemaSiblings(value);
+
+      if (Object.keys(structuralSiblings).length === 0) {
+        return referencedStructure;
+      }
+
+      return {
+        allOf: [
+          referencedStructure,
+          this.inspectSchemaObject(structuralSiblings, depth, nextStack),
+        ],
+      };
+    }
+
+    return this.inspectSchemaObject(value, depth, refStack);
   }
 
   object(value: unknown, refStack: ReadonlySet<string> = new Set()): JsonRecord {
