@@ -17,6 +17,7 @@ const prisma = new PrismaClient({
 });
 
 const carts = createAnonymousCartService(prisma);
+const testShopId = 920_002;
 const productExternalId = "anonymous-cart-concurrency-product";
 const variationExternalId = "anonymous-cart-concurrency-variant";
 const accountUserId = "anonymous-cart-concurrency-user";
@@ -151,6 +152,7 @@ test.beforeEach(async () => {
 
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId: productExternalId,
       slug: productExternalId,
       name: "Anonymous Cart Concurrency Product",
