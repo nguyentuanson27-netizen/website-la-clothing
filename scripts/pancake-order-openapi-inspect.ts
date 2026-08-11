@@ -218,6 +218,35 @@ function requireString(record: JsonRecord, key: string): string {
   return value;
 }
 
+function assertCreateOrderUsesRootDeploymentDefaults(
+  document: JsonRecord,
+  inspection: PancakeCreateOrderOpenApiInspection,
+): void {
+  const paths = document.paths;
+  if (!isRecord(paths)) {
+    malformed();
+  }
+  const pathItem = paths[inspection.path];
+  if (!isRecord(pathItem)) {
+    malformed();
+  }
+
+  // The structural inspector can resolve local Path Item refs, but this evidence
+  // sanitizer does not derive deployment metadata through them. Fail closed so a
+  // ref cannot hide an operation/path-level security or server override.
+  if (Object.hasOwn(pathItem, "$ref") || Object.hasOwn(pathItem, "servers")) {
+    malformed();
+  }
+
+  const operation = pathItem.post;
+  if (!isRecord(operation)) {
+    malformed();
+  }
+  if (Object.hasOwn(operation, "security") || Object.hasOwn(operation, "servers")) {
+    malformed();
+  }
+}
+
 function inspectSourceMetadata(document: JsonRecord, source: Buffer) {
   const info = document.info;
   const servers = document.servers;
@@ -399,6 +428,7 @@ function buildEvidenceEnvelope(source: Buffer, document: unknown): PancakeOrderE
     malformed();
   }
   const inspection = inspectPancakeCreateOrderOpenApi(document);
+  assertCreateOrderUsesRootDeploymentDefaults(document, inspection);
   return {
     source: inspectSourceMetadata(document, source),
     auth: inspectApiKeyAuth(document),
