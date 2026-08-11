@@ -133,14 +133,15 @@ Intended repository path: `tasks/todo.md`
   - [x] file evidence now uses one opened FileHandle for metadata + bounded content reads, consumes at most 16 MiB + one sentinel byte, rejects post-stat growth, and closes the handle on all paths
   - [x] CLI now emits a deterministic machine-derived envelope containing source hash/bytes, allowlisted metadata/auth, and the reviewed structural subset; checked JSON is kept free of manually interpreted idempotency descriptions
   - [x] docs explicitly separate machine-derived evidence from manual semantic review; `custom_id`/order-source descriptions and the no-safe-retry conclusion are not represented as CLI-generated facts
-  - [x] review-fix code GREEN CI #455 passed 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration and production build; final docs/evidence head was re-verified by CI #457 before the final no-copy buffer cleanup
+  - [x] review-fix code GREEN CI #455 passed 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration and production build; docs/evidence CI #457 and no-copy cleanup CI #458 also passed both jobs
+  - [x] final review-fix exact head `02a195b4` passed CI #459: 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration, production build, and `admin-a11y-runtime`
   - [ ] correct website-origin reference field verified — `custom_id` is documented only as `Custom ID`, so it is not treated as a verified idempotency/client-reference key
   - [ ] native idempotency / unique client-reference behavior verified — absent from supplied create-order documentation; this blocks automatic retry/duplicate-safe recovery, not the approved one-shot write pattern
   - [ ] authoritative live price/stock revalidation immediately before write
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [~] self-review: latest review findings are fixed at code/docs level with 0 Critical / 0 Required / 0 Consider; exact current-head CI and human re-review remain required. Actual C8 write is no longer blocked on request/response shape, but no retry is authorized by current reference/idempotency evidence
+  - [~] self-review: latest review findings are fixed at code/docs level with 0 Critical / 0 Required / 0 Consider; human re-review remains required. Actual C8 write is no longer blocked on request/response shape, but no retry is authorized by current reference/idempotency evidence
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
