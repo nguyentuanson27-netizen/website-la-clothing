@@ -4,15 +4,15 @@ Status: build in progress
 Intended repository path: `tasks/todo.md`
 
 - [x] T0 Establish repository baseline and save approved spec
-- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — catalog read contract + reservation-aware stock semantics verified; order/write/webhook contracts remain
+- [~] T1 Verify Pancake product/variant/warehouse/order/webhook/idempotency contracts — catalog read contract + reservation-aware stock semantics verified; create-order endpoint verified but exact write schema/idempotency/reference and webhook contracts remain
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; order/status adapters remain
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order contract inspector is in draft PR #43 while actual order/status adapters remain blocked on exact contract evidence
 - [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
 - [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented and merged; cart browser/mobile/a11y verification remains
-- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation is in draft PR #42; Pancake create-order remains blocked on exact write contract
+- [~] T9 Deliver guest COD checkout → exactly one Pancake order — secure input/shipping/snapshot persistence foundation merged in PR #42; C8 create-order contract verification is in draft PR #43 and the actual Pancake write remains blocked on exact request/response plus idempotency/reference evidence
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
 - [~] T12 Add editorial homepage/lookbook and restricted content admin — restricted product editorial admin foundation implemented; homepage/lookbook composition remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4/C5/C6 are merged and green on `main`; C7 Guest COD checkout persistence/validation is in draft PR #42, with shipping policy approved and secure local snapshot persistence implemented while Pancake order writes remain blocked on exact contract verification
+## Current execution path: C4/C5/C6/C7 are merged and green on `main`; C8 Pancake create-order contract verification is in draft PR #43, with a safe local OpenAPI inspector implemented while the actual write remains blocked on exact payload/reference/idempotency evidence
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -92,7 +92,7 @@ Intended repository path: `tasks/todo.md`
   - [x] squash-merged to `main` as `21d656ce`; post-merge CI #402 passed
   - [ ] browser/mobile/a11y verification when tool available; user explicitly overrode this pending checkpoint for merge
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required / 1 performance Consider
-- [~] C7 Guest COD checkout persistence + server revalidation — draft PR #42
+- [x] C7 Guest COD checkout persistence + server revalidation — approved and merged in PR #42
   - [x] guest checkout input boundary accepts only approved contact/address/note fields and strips browser-supplied commerce authority fields
   - [x] approved shipping rule: 30,000 VND default; free when authoritative merchandise subtotal > 1,000,000 VND or total product quantity >= 3; first qualifying freeship condition wins
   - [x] exact 1,000,000 VND remains 30,000 VND shipping unless the quantity rule qualifies
@@ -102,14 +102,26 @@ Intended repository path: `tasks/todo.md`
   - [x] migration/runtime TDD evidence: shipping RED CI #405 → GREEN #406; schema RED #407 → GREEN #409; behavior RED #410 → runtime GREEN with 46/46 DB tests; target-compatibility fix verified by full CI #412
   - [x] money-boundary hardening: RED CI #417 rejected the new expectation because fractional/unsafe subtotal was accepted by the policy helper; GREEN head `ddb6ae1` passed full CI #418 with safe-integer VND validation
   - [x] self-review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required / 1 performance Consider
-  - [ ] human review of PR #42
-  - [ ] browser checkout surface + actual POS submission intentionally not exposed until C8 write contract is verified; do not create fake half-checkout behavior
-  - [ ] authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
-- [ ] C8 Pancake create-order orchestration
-  - [ ] exact create-order request/response + website reference/idempotency contract verified
+  - [x] REQUEST CHANGES documentation finding `5250959347` addressed by bringing the PR description in sync with the implemented PII/money/snapshot trust boundary
+  - [x] exact final head `70e145c` received human APPROVE — 0 Critical / 0 Required / 1 Consider and CI #419 passed
+  - [x] squash-merged to `main` as `053fcbd`; post-merge CI #420 passed both `verify` and `admin-a11y-runtime`
+  - [x] C7 deliberately stops at a local DRAFT snapshot; browser checkout submission and actual POS order write remain C8 work rather than a fake half-checkout flow
+  - [x] architecture records that authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
+- [~] C8 Pancake create-order orchestration — contract-verification foundation in draft PR #43
+  - [x] official Pancake OpenAPI reference verifies OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
+  - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
+  - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs are fully resolved
+  - [x] examples/defaults/descriptions/external scalar sample values are excluded from inspection output
+  - [x] initial TDD RED CI #421 failed at the missing inspector module; implementation reached full green after a Node strip-only syntax compatibility fix in CI #423
+  - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN implementation is under CI verification on #425
+  - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
+  - [ ] correct website-origin reference field verified
+  - [ ] native idempotency / unique client-reference behavior verified
+  - [ ] authoritative live price/stock revalidation immediately before write
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
-  - [ ] self-review
+  - [ ] actual Pancake create-order adapter/write
+  - [ ] self-review + human review
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
