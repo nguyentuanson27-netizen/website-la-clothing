@@ -83,6 +83,13 @@ class OpenApiStructureInspector {
     }
   }
 
+  private countRefHop(refDepth: number): void {
+    this.inspectedNodes += 1;
+    if (refDepth > MAX_INSPECTION_DEPTH || this.inspectedNodes > MAX_INSPECTED_NODES) {
+      throw new PancakeOrderOpenApiError("OPENAPI_INSPECTION_LIMIT_EXCEEDED");
+    }
+  }
+
   resolveLocalRef(ref: string, refStack: ReadonlySet<string>): unknown {
     if (!ref.startsWith("#/")) {
       throw new PancakeOrderOpenApiError("UNSUPPORTED_EXTERNAL_REF");
@@ -109,16 +116,17 @@ class OpenApiStructureInspector {
     value: unknown;
     refStack: ReadonlySet<string>;
   } {
-    if (!isRecord(value) || typeof value.$ref !== "string") {
-      return { value, refStack };
+    let current = value;
+    const nextStack = new Set(refStack);
+
+    while (isRecord(current) && typeof current.$ref === "string") {
+      const ref = current.$ref;
+      this.countRefHop(nextStack.size + 1);
+      current = this.resolveLocalRef(ref, nextStack);
+      nextStack.add(ref);
     }
 
-    const nextStack = new Set(refStack);
-    nextStack.add(value.$ref);
-    return {
-      value: this.resolveLocalRef(value.$ref, refStack),
-      refStack: nextStack,
-    };
+    return { value: current, refStack: nextStack };
   }
 
   schema(value: unknown, depth = 0, refStack: ReadonlySet<string> = new Set()): OpenApiSchemaStructure {
