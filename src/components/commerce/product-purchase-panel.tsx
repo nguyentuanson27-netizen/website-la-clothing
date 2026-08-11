@@ -6,7 +6,7 @@ import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { deriveStorefrontSelection } from "@/commerce/storefront-selection";
 import {
   getStorefrontResolvedPriceRange,
-  type StorefrontVariantOption,
+  type StorefrontSelectableOption,
 } from "@/commerce/storefront-product";
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -17,10 +17,10 @@ const currency = new Intl.NumberFormat("vi-VN", {
 
 type ProductPurchasePanelProps = {
   slug: string;
-  options: StorefrontVariantOption[];
+  options: StorefrontSelectableOption[];
 };
 
-function defaultPriceLabel(options: readonly StorefrontVariantOption[]): string {
+function defaultPriceLabel(options: readonly StorefrontSelectableOption[]): string {
   const range = getStorefrontResolvedPriceRange(options);
   if (!range) return "Giá đang cập nhật";
   return range.minimum === range.maximum
