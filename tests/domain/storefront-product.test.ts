@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildStorefrontVariantOptions,
+  getStorefrontResolvedPriceRange,
   resolveStorefrontPrice,
 } from "../../src/commerce/storefront-product.ts";
 
@@ -85,4 +86,39 @@ test("storefront variants fail closed on mapping, stock, price, and duplicate Co
   assert.equal(byId.get("missing-size")?.unavailableReason, "MAPPING_REQUIRED");
   assert.equal(byId.get("duplicate-a")?.unavailableReason, "AMBIGUOUS_OPTION");
   assert.equal(byId.get("duplicate-b")?.unavailableReason, "AMBIGUOUS_OPTION");
+});
+
+test("storefront price range keeps resolved sold-out prices separate from purchase availability", () => {
+  const options = buildStorefrontVariantOptions([
+    {
+      id: "sold-out-low",
+      color: "Black",
+      size: "S",
+      sellableStock: 0,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "available-high",
+      color: "Stone",
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 620_000,
+      retailPriceAfterDiscount: 620_000,
+    },
+    {
+      id: "unresolved",
+      color: "Olive",
+      size: "L",
+      sellableStock: 2,
+      retailPrice: 650_000,
+      retailPriceAfterDiscount: 600_000,
+    },
+  ]);
+
+  assert.deepEqual(getStorefrontResolvedPriceRange(options), {
+    minimum: 590_000,
+    maximum: 620_000,
+  });
+  assert.equal(options.some((option) => option.purchasable), true);
 });
