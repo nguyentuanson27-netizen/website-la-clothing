@@ -195,7 +195,7 @@ async function readBoundedEvidenceFile(
     if (totalBytes > MAX_EVIDENCE_FILE_BYTES) {
       throw new Error(FILE_TOO_LARGE);
     }
-    return Buffer.from(buffer.subarray(0, totalBytes));
+    return buffer.subarray(0, totalBytes);
   } catch (error) {
     failure = error;
     throw error;
