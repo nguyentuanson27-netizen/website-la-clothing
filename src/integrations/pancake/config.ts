@@ -12,12 +12,7 @@ export class PancakeConfigError extends Error {
   }
 }
 
-export function readPancakeConfig(env: ServerEnvironment = process.env): PancakeConfig {
-  const apiKey = env.PANCAKE_API_KEY?.trim();
-  if (!apiKey) {
-    throw new PancakeConfigError("PANCAKE_API_KEY must be configured on the server");
-  }
-
+export function readPancakeShopId(env: ServerEnvironment = process.env): number {
   const shopIdInput = env.PANCAKE_SHOP_ID?.trim();
   if (!shopIdInput || !/^\d+$/.test(shopIdInput)) {
     throw new PancakeConfigError("PANCAKE_SHOP_ID must be a positive integer");
@@ -28,5 +23,14 @@ export function readPancakeConfig(env: ServerEnvironment = process.env): Pancake
     throw new PancakeConfigError("PANCAKE_SHOP_ID must be a positive integer");
   }
 
-  return { apiKey, shopId };
+  return shopId;
+}
+
+export function readPancakeConfig(env: ServerEnvironment = process.env): PancakeConfig {
+  const apiKey = env.PANCAKE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new PancakeConfigError("PANCAKE_API_KEY must be configured on the server");
+  }
+
+  return { apiKey, shopId: readPancakeShopId(env) };
 }
