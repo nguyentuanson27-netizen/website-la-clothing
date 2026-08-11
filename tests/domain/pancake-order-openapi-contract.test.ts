@@ -352,3 +352,107 @@ test("preserves OpenAPI 3.1 structural schema siblings next to a local ref", () 
     ],
   });
 });
+
+test("bounds non-schema traversal through irrelevant OpenAPI paths", () => {
+  const paths: Record<string, unknown> = {};
+  for (let index = 0; index < 10_001; index += 1) {
+    paths[`/irrelevant/${index}`] = { get: { responses: {} } };
+  }
+  paths["/shops/{SHOP_ID}/orders"] = {
+    post: { responses: { "201": { description: "created" } } },
+  };
+
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi({ openapi: "3.1.0", paths }),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError &&
+      error.code === "OPENAPI_INSPECTION_LIMIT_EXCEEDED",
+  );
+});
+
+test("operation parameters override matching path-level parameters by name and location", () => {
+  const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        parameters: [
+          {
+            name: "trace",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+          },
+        ],
+        post: {
+          parameters: [
+            {
+              name: "trace",
+              in: "query",
+              required: true,
+              schema: { type: "integer" },
+            },
+          ],
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+  };
+
+  const result = inspectPancakeCreateOrderOpenApi(document);
+  assert.deepEqual(result.parameters, [
+    {
+      name: "trace",
+      in: "query",
+      required: true,
+      schema: { type: "integer" },
+    },
+  ]);
+});
+
+test("fails closed for duplicate parameters within one level and non-required path parameters", () => {
+  const duplicateOperationParameter = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          parameters: [
+            { name: "trace", in: "query", schema: { type: "string" } },
+            { name: "trace", in: "query", schema: { type: "integer" } },
+          ],
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi(duplicateOperationParameter),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError && error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
+
+  const invalidPathParameter = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          parameters: [
+            {
+              name: "SHOP_ID",
+              in: "path",
+              required: false,
+              schema: { type: "integer" },
+            },
+          ],
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi(invalidPathParameter),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError && error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
+});
