@@ -9,8 +9,8 @@ export function calculateGuestShippingFeeVnd({
   subtotalVnd: number;
   totalQuantity: number;
 }): number {
-  if (!Number.isFinite(subtotalVnd) || subtotalVnd < 0) {
-    throw new RangeError("Guest checkout subtotal must be a finite non-negative VND amount");
+  if (!Number.isSafeInteger(subtotalVnd) || subtotalVnd < 0) {
+    throw new RangeError("Guest checkout subtotal must be a safe non-negative integer VND amount");
   }
   if (!Number.isSafeInteger(totalQuantity) || totalQuantity <= 0) {
     throw new RangeError("Guest checkout total quantity must be a positive safe integer");
