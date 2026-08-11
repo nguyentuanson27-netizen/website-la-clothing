@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -61,7 +61,7 @@ const productSelection = {
   },
   variants: {
     where: { isPresent: true, isActive: true },
-    orderBy: [{ pancakeVariationId: "asc" as const }],
+    orderBy: [{ pancakeVariationId: "asc" }],
     select: {
       id: true,
       pancakeVariationId: true,
@@ -70,34 +70,14 @@ const productSelection = {
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
       warehouseStocks: {
-        orderBy: [{ pancakeWarehouseId: "asc" as const }],
+        orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
       },
     },
   },
-} as const;
+} satisfies Prisma.ProductMirrorSelect;
 
-type SelectedProduct = {
-  id: string;
-  slug: string;
-  name: string;
-  content: {
-    editorialDescription: string | null;
-    careInstructions: string | null;
-    sizeGuide: string | null;
-    seoTitle: string | null;
-    seoDescription: string | null;
-  } | null;
-  variants: Array<{
-    id: string;
-    pancakeVariationId: string;
-    color: string | null;
-    size: string | null;
-    pancakeRetailPrice: number | null;
-    pancakeRetailPriceAfterDiscount: number | null;
-    warehouseStocks: Array<{ quantity: number }>;
-  }>;
-};
+type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 
 function toStorefrontProduct(product: SelectedProduct) {
   return {
