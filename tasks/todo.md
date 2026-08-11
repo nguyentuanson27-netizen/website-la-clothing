@@ -121,7 +121,7 @@ Intended repository path: `tasks/todo.md`
   - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; both findings reproduced before production changes
   - [x] review-fix RED head `f70067a`: CI #432 kept 46/46 DB + HTTP security/authz + lint + typecheck green and failed exactly 3/151 new regressions for non-schema budget, parameter override and malformed parameter semantics
   - [x] review-fix GREEN code head `0bbf5fa`: CI #433 passed 46/46 DB, security/authz, lint, typecheck, 151/151 domain/integration, production build and admin-a11y runtime
-  - [x] exact final docs/tracker head `f417001c80852dba1a7dc124e9abcc8e250f8173` passed CI #436: `verify` and `admin-a11y-runtime` both success
+  - [x] review-fix docs/tracker evidence synchronized; the current branch head must pass the full exact-head CI gate before human re-review
   - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
   - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
   - [ ] correct website-origin reference field verified
