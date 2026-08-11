@@ -26,6 +26,20 @@ type SetMutationResult =
       reason: "INVALID_QUANTITY" | "VARIANT_UNAVAILABLE" | "CART_LINE_LIMIT";
     };
 
+type UpdateExistingMutationResult =
+  | {
+      ok: true;
+      item: { variantId: string; quantity: number };
+    }
+  | {
+      ok: false;
+      reason:
+        | "INVALID_QUANTITY"
+        | "CART_UNAVAILABLE"
+        | "VARIANT_UNAVAILABLE"
+        | "CART_ITEM_UNAVAILABLE";
+    };
+
 type RemoveMutationResult = { ok: true } | { ok: false; reason: "CART_UNAVAILABLE" };
 
 export function createAnonymousCartMutationService(
@@ -80,6 +94,34 @@ export function createAnonymousCartMutationService(
     };
   }
 
+  async function updateExistingItemQuantity({
+    variantId,
+    quantity,
+    now,
+  }: {
+    variantId: string;
+    quantity: number;
+    now: Date;
+  }): Promise<UpdateExistingMutationResult> {
+    const cartId = cookie.read();
+    if (!cartId) {
+      return { ok: false, reason: "CART_UNAVAILABLE" };
+    }
+
+    const result = await carts.updateExistingItemQuantity({
+      cartId,
+      variantId,
+      quantity,
+      now,
+    });
+
+    if (!result.ok && result.reason === "CART_UNAVAILABLE") {
+      cookie.clear();
+    }
+
+    return result;
+  }
+
   async function removeItem({
     variantId,
     now,
@@ -99,5 +141,5 @@ export function createAnonymousCartMutationService(
     return result;
   }
 
-  return { setItemQuantity, removeItem };
+  return { setItemQuantity, updateExistingItemQuantity, removeItem };
 }
