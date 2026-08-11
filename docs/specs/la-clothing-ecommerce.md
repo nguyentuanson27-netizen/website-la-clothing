@@ -1,6 +1,6 @@
 # Spec v0.1 — LA Clothing E-commerce
 
-Status: Approved by product owner on 2026-08-09. Guest-cart lifetime policy approved on 2026-08-10.
+Status: Approved by product owner on 2026-08-09. Guest-cart lifetime policy approved on 2026-08-10. Guest shipping-fee policy approved on 2026-08-11.
 
 ## Objective
 Build the official B2C e-commerce website for a men's fashion brand targeting men roughly 18–30, with a minimal/editorial/modern menswear visual language and mobile-first shopping UX.
@@ -21,6 +21,7 @@ Build the official B2C e-commerce website for a men's fashion brand targeting me
 - Anonymous guest carts expire 30 days after creation using an absolute TTL. Cart activity does not extend expiry, expired carts are not revived, and a later cart creation receives a new opaque cart ID.
 - Guest-cart persistence is not a stock or price reservation. Current variant availability, price, and stock remain server-authoritative and must be revalidated before checkout submission.
 - Guest COD checkout: name, phone, province/city, district, ward/commune, address detail, optional note.
+- Guest shipping fee is 30,000 VND by default. Shipping becomes free as soon as either condition qualifies: authoritative merchandise subtotal is **over** 1,000,000 VND, or total product quantity is at least 3. Exactly 1,000,000 VND is not subtotal-based freeship unless the quantity condition also qualifies.
 - Guest order tracking with order code + phone, rate-limited with minimal disclosure.
 - Optional customer account: login, profile, saved addresses, order history.
 
@@ -67,7 +68,6 @@ Online payment, marketplace/multi-seller, native apps, custom POS/ERP, loyalty, 
 
 ## Open implementation questions
 - Which Pancake warehouse(s) count as online stock.
-- Shipping fee rule.
 - Exact Pancake order status mapping.
 - Pancake webhook event/auth/replay contract.
 - Pancake create-order idempotency/reference capability.
