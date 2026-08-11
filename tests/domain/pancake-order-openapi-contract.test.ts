@@ -6,6 +6,15 @@ import {
   PancakeOrderOpenApiError,
 } from "../../src/integrations/pancake/order-openapi-contract.ts";
 
+function requiredShopPathParameter(name: string) {
+  return {
+    name,
+    in: "path",
+    required: true,
+    schema: { type: "integer" },
+  };
+}
+
 const syntheticOpenApi = {
   openapi: "3.0.3",
   paths: {
@@ -156,8 +165,34 @@ test("inspects only structural create-order request/response contract and resolv
   assert.equal(rendered.includes("contains external text"), false);
 });
 
-test("matches the create-order route without guessing the path parameter name", () => {
+test("matches the create-order route without guessing the actual path parameter name", () => {
   const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          parameters: [requiredShopPathParameter("SHOP_ID")],
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+  };
+
+  const result = inspectPancakeCreateOrderOpenApi(document);
+  assert.equal(result.path, "/shops/{SHOP_ID}/orders");
+  assert.deepEqual(result.parameters, [
+    {
+      name: "SHOP_ID",
+      in: "path",
+      required: true,
+      schema: { type: "integer" },
+    },
+  ]);
+  assert.deepEqual(result.responses, { "201": {} });
+});
+
+test("fails closed when the create-order path parameter is missing or mismatched", () => {
+  const missingPathParameter = {
     openapi: "3.1.0",
     paths: {
       "/shops/{SHOP_ID}/orders": {
@@ -168,8 +203,61 @@ test("matches the create-order route without guessing the path parameter name", 
     },
   };
 
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi(missingPathParameter),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError && error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
+
+  const mismatchedPathParameter = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        post: {
+          parameters: [requiredShopPathParameter("shop_id")],
+          responses: { "201": { description: "created" } },
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => inspectPancakeCreateOrderOpenApi(mismatchedPathParameter),
+    (error: unknown) =>
+      error instanceof PancakeOrderOpenApiError && error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
+});
+
+test("resolves a bounded local ref on the create-order Path Item", () => {
+  const document = {
+    openapi: "3.1.0",
+    paths: {
+      "/shops/{SHOP_ID}/orders": {
+        $ref: "#/components/pathItems/CreateOrder",
+      },
+    },
+    components: {
+      pathItems: {
+        CreateOrder: {
+          parameters: [requiredShopPathParameter("SHOP_ID")],
+          post: {
+            responses: { "201": { description: "created" } },
+          },
+        },
+      },
+    },
+  };
+
   const result = inspectPancakeCreateOrderOpenApi(document);
   assert.equal(result.path, "/shops/{SHOP_ID}/orders");
+  assert.deepEqual(result.parameters, [
+    {
+      name: "SHOP_ID",
+      in: "path",
+      required: true,
+      schema: { type: "integer" },
+    },
+  ]);
   assert.deepEqual(result.responses, { "201": {} });
 });
 
@@ -221,6 +309,7 @@ test("resolves chained local refs before inspecting structural schema", () => {
     paths: {
       "/shops/{SHOP_ID}/orders": {
         post: {
+          parameters: [requiredShopPathParameter("SHOP_ID")],
           requestBody: {
             content: {
               "application/json": {
@@ -262,6 +351,7 @@ test("fails closed for circular local refs instead of returning an empty schema"
     paths: {
       "/shops/{SHOP_ID}/orders": {
         post: {
+          parameters: [requiredShopPathParameter("SHOP_ID")],
           requestBody: {
             content: {
               "application/json": {
@@ -294,6 +384,7 @@ test("preserves OpenAPI 3.1 structural schema siblings next to a local ref", () 
     paths: {
       "/shops/{SHOP_ID}/orders": {
         post: {
+          parameters: [requiredShopPathParameter("SHOP_ID")],
           requestBody: {
             content: {
               "application/json": {
@@ -376,6 +467,7 @@ test("operation parameters override matching path-level parameters by name and l
     paths: {
       "/shops/{SHOP_ID}/orders": {
         parameters: [
+          requiredShopPathParameter("SHOP_ID"),
           {
             name: "trace",
             in: "query",
@@ -400,6 +492,12 @@ test("operation parameters override matching path-level parameters by name and l
 
   const result = inspectPancakeCreateOrderOpenApi(document);
   assert.deepEqual(result.parameters, [
+    {
+      name: "SHOP_ID",
+      in: "path",
+      required: true,
+      schema: { type: "integer" },
+    },
     {
       name: "trace",
       in: "query",
