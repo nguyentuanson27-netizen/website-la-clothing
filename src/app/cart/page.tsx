@@ -21,6 +21,8 @@ function unavailableLabel(line: StorefrontCartLine): string {
   switch (line.unavailableReason) {
     case "OUT_OF_STOCK":
       return "Tạm hết hàng";
+    case "INSUFFICIENT_STOCK":
+      return "Không đủ tồn kho cho số lượng này";
     case "PRICE_UNRESOLVED":
       return "Giá đang cập nhật";
     case "MAPPING_REQUIRED":
@@ -88,6 +90,8 @@ export default async function CartPage() {
           {lines.map((line, index) => {
             const tone = index % 2 === 0 ? "stone" : "sand";
             const productName = line.productName ?? "Sản phẩm không còn trong catalog";
+            const canUpdate =
+              line.available || line.unavailableReason === "INSUFFICIENT_STOCK";
             const visual = (
               <div className={`product-visual product-visual--${tone}`} aria-hidden="true">
                 <span className="garment-silhouette" />
@@ -150,7 +154,7 @@ export default async function CartPage() {
                   <CartLineControls
                     variantId={line.variantId}
                     initialQuantity={line.quantity}
-                    available={line.available}
+                    canUpdate={canUpdate}
                   />
                 </div>
               </article>
@@ -170,7 +174,7 @@ export default async function CartPage() {
           </div>
           {hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/60">
-              Sản phẩm không khả dụng không được tính vào tạm tính. Bạn vẫn có thể xóa các dòng này khỏi túi.
+              Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi túi.
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/60">
