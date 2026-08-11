@@ -134,7 +134,7 @@ Intended repository path: `tasks/todo.md`
   - [x] CLI now emits a deterministic machine-derived envelope containing source hash/bytes, allowlisted metadata/auth, and the reviewed structural subset; checked JSON is kept free of manually interpreted idempotency descriptions
   - [x] docs explicitly separate machine-derived evidence from manual semantic review; `custom_id`/order-source descriptions and the no-safe-retry conclusion are not represented as CLI-generated facts
   - [x] review-fix code GREEN CI #455 passed 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration and production build; docs/evidence CI #457 and no-copy cleanup CI #458 also passed both jobs
-  - [x] final review-fix exact head `02a195b4` passed CI #459: 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration, production build, and `admin-a11y-runtime`
+  - [x] final review-fix exact head passed CI #460: 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration, production build, and `admin-a11y-runtime`
   - [ ] correct website-origin reference field verified — `custom_id` is documented only as `Custom ID`, so it is not treated as a verified idempotency/client-reference key
   - [ ] native idempotency / unique client-reference behavior verified — absent from supplied create-order documentation; this blocks automatic retry/duplicate-safe recovery, not the approved one-shot write pattern
   - [ ] authoritative live price/stock revalidation immediately before write
