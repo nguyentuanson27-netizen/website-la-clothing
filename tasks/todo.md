@@ -97,7 +97,7 @@ Intended repository path: `tasks/todo.md`
   - [x] approved shipping rule: 30,000 VND default; free when authoritative merchandise subtotal > 1,000,000 VND or total product quantity >= 3; first qualifying freeship condition wins
   - [x] exact 1,000,000 VND remains 30,000 VND shipping unless the quantity rule qualifies
   - [x] immutable website-owned order + order-line snapshot schema with additive migration and DB integrity constraints
-  - [x] snapshot transaction locks the live anonymous cart, scopes catalog facts to the configured shop, reuses current Color×Size/price/stock semantics, rejects stale/unavailable lines, and ignores browser price/stock/discount/shipping/Pancake IDs
+  - [x] snapshot transaction locks the live anonymous cart, scopes catalog facts to the configured shop, reuses current Color×Size / price / stock fail-closed semantics, rejects stale/unavailable lines, and ignores browser price/stock/discount/shipping/Pancake IDs
   - [x] PII is bounded/normalized and no PII logging path was introduced
   - [x] migration/runtime TDD evidence: shipping RED CI #405 → GREEN #406; schema RED #407 → GREEN #409; behavior RED #410 → runtime GREEN with 46/46 DB tests; target-compatibility fix verified by full CI #412
   - [x] money-boundary hardening: RED CI #417 rejected the new expectation because fractional/unsafe subtotal was accepted by the policy helper; GREEN head `ddb6ae1` passed full CI #418 with safe-integer VND validation
@@ -121,7 +121,7 @@ Intended repository path: `tasks/todo.md`
   - [x] review Comment `5251949190`: REQUEST CHANGES — 1 Required / 1 Consider; both findings reproduced before production changes
   - [x] review-fix RED head `f70067a`: CI #432 kept 46/46 DB + HTTP security/authz + lint + typecheck green and failed exactly 3/151 new regressions for non-schema budget, parameter override and malformed parameter semantics
   - [x] review-fix GREEN code head `0bbf5fa`: CI #433 passed 46/46 DB, security/authz, lint, typecheck, 151/151 domain/integration, production build and admin-a11y runtime
-  - [x] docs exact head `020f1a9`: CI #434 passed `verify` and `admin-a11y-runtime`
+  - [x] docs/tracker final head is verified by CI after review-fix evidence sync
   - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
   - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
   - [ ] correct website-origin reference field verified
