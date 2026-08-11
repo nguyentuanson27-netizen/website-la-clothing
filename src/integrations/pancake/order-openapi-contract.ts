@@ -1,5 +1,7 @@
 type JsonRecord = Record<string, unknown>;
 
+type InspectedParameter = PancakeCreateOrderOpenApiInspection["parameters"][number];
+
 export type PancakeOrderOpenApiErrorCode =
   | "MALFORMED_OPENAPI_DOCUMENT"
   | "CREATE_ORDER_OPERATION_NOT_FOUND"
@@ -54,7 +56,8 @@ export type PancakeCreateOrderOpenApiInspection = {
 
 const CREATE_ORDER_PATH = /^\/shops\/\{[^/{}]+\}\/orders\/?$/;
 const MAX_INSPECTION_DEPTH = 32;
-const MAX_INSPECTED_NODES = 10_000;
+const MAX_INSPECTION_WORK_UNITS = 10_000;
+const PARAMETER_LOCATIONS = new Set(["query", "header", "path", "cookie"]);
 const STRUCTURAL_SCHEMA_KEYS = [
   "type",
   "format",
@@ -90,25 +93,48 @@ function pickStructuralSchemaSiblings(source: JsonRecord): JsonRecord {
 }
 
 class OpenApiStructureInspector {
-  private inspectedNodes = 0;
+  private inspectionWorkUnits = 0;
   private readonly document: JsonRecord;
 
   constructor(document: JsonRecord) {
     this.document = document;
   }
 
-  private countNode(depth: number): void {
-    this.inspectedNodes += 1;
-    if (depth > MAX_INSPECTION_DEPTH || this.inspectedNodes > MAX_INSPECTED_NODES) {
+  chargeWork(units = 1): void {
+    this.inspectionWorkUnits += units;
+    if (this.inspectionWorkUnits > MAX_INSPECTION_WORK_UNITS) {
       throw new PancakeOrderOpenApiError("OPENAPI_INSPECTION_LIMIT_EXCEEDED");
     }
   }
 
-  private countRefHop(refDepth: number): void {
-    this.inspectedNodes += 1;
-    if (refDepth > MAX_INSPECTION_DEPTH || this.inspectedNodes > MAX_INSPECTED_NODES) {
+  private countNode(depth: number): void {
+    if (depth > MAX_INSPECTION_DEPTH) {
       throw new PancakeOrderOpenApiError("OPENAPI_INSPECTION_LIMIT_EXCEEDED");
     }
+    this.chargeWork();
+  }
+
+  private countRefHop(refDepth: number): void {
+    if (refDepth > MAX_INSPECTION_DEPTH) {
+      throw new PancakeOrderOpenApiError("OPENAPI_INSPECTION_LIMIT_EXCEEDED");
+    }
+    this.chargeWork();
+  }
+
+  private copyStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      malformed();
+    }
+
+    const result: string[] = [];
+    for (const entry of value) {
+      this.chargeWork();
+      if (typeof entry !== "string") {
+        malformed();
+      }
+      result.push(entry);
+    }
+    return result;
   }
 
   resolveLocalRef(ref: string, refStack: ReadonlySet<string>): unknown {
@@ -120,7 +146,17 @@ class OpenApiStructureInspector {
     }
 
     let current: unknown = this.document;
-    for (const encodedSegment of ref.slice(2).split("/")) {
+    const pointer = ref.slice(2);
+    let segmentStart = 0;
+
+    while (true) {
+      this.chargeWork();
+      const nextSeparator = pointer.indexOf("/", segmentStart);
+      const encodedSegment =
+        nextSeparator === -1
+          ? pointer.slice(segmentStart)
+          : pointer.slice(segmentStart, nextSeparator);
+
       if (!isRecord(current)) {
         throw new PancakeOrderOpenApiError("UNRESOLVED_LOCAL_REF");
       }
@@ -129,7 +165,13 @@ class OpenApiStructureInspector {
         throw new PancakeOrderOpenApiError("UNRESOLVED_LOCAL_REF");
       }
       current = current[segment];
+
+      if (nextSeparator === -1) {
+        break;
+      }
+      segmentStart = nextSeparator + 1;
     }
+
     return current;
   }
 
@@ -160,10 +202,15 @@ class OpenApiStructureInspector {
     if (typeof source.type === "string") {
       result.type = source.type;
     } else if (Array.isArray(source.type)) {
-      if (!source.type.every((entry) => typeof entry === "string")) {
-        malformed();
+      const types: string[] = [];
+      for (const entry of source.type) {
+        this.chargeWork();
+        if (typeof entry !== "string") {
+          malformed();
+        }
+        types.push(entry);
       }
-      result.type = [...source.type] as string[];
+      result.type = types;
     }
 
     if (typeof source.format === "string") {
@@ -171,10 +218,7 @@ class OpenApiStructureInspector {
     }
 
     if (source.required !== undefined) {
-      if (!Array.isArray(source.required) || !source.required.every((entry) => typeof entry === "string")) {
-        malformed();
-      }
-      result.required = [...source.required] as string[];
+      result.required = this.copyStringArray(source.required);
     }
 
     if (source.properties !== undefined) {
@@ -182,8 +226,12 @@ class OpenApiStructureInspector {
         malformed();
       }
       const properties: Record<string, OpenApiSchemaStructure> = {};
-      for (const [name, property] of Object.entries(source.properties)) {
-        properties[name] = this.schema(property, depth + 1, refStack);
+      for (const name in source.properties) {
+        this.chargeWork();
+        if (!Object.hasOwn(source.properties, name)) {
+          continue;
+        }
+        properties[name] = this.schema(source.properties[name], depth + 1, refStack);
       }
       result.properties = properties;
     }
@@ -200,9 +248,13 @@ class OpenApiStructureInspector {
       if (!Array.isArray(alternatives)) {
         malformed();
       }
-      result[key] = alternatives.map((alternative) =>
-        this.schema(alternative, depth + 1, refStack),
-      );
+
+      const inspectedAlternatives: OpenApiSchemaStructure[] = [];
+      for (const alternative of alternatives) {
+        this.chargeWork();
+        inspectedAlternatives.push(this.schema(alternative, depth + 1, refStack));
+      }
+      result[key] = inspectedAlternatives;
     }
 
     if (source.additionalProperties !== undefined) {
@@ -255,6 +307,7 @@ class OpenApiStructureInspector {
   }
 
   object(value: unknown, refStack: ReadonlySet<string> = new Set()): JsonRecord {
+    this.chargeWork();
     const resolved = this.dereference(value, refStack);
     if (!isRecord(resolved.value)) {
       malformed();
@@ -275,7 +328,13 @@ function structuralContent(
   }
 
   const content: Record<string, OpenApiSchemaStructure> = {};
-  for (const [mediaType, mediaTypeObject] of Object.entries(value)) {
+  for (const mediaType in value) {
+    inspector.chargeWork();
+    if (!Object.hasOwn(value, mediaType)) {
+      continue;
+    }
+
+    const mediaTypeObject = value[mediaType];
     if (!isRecord(mediaTypeObject)) {
       malformed();
     }
@@ -288,36 +347,81 @@ function structuralContent(
   return content;
 }
 
+function inspectParameter(
+  inspector: OpenApiStructureInspector,
+  parameter: unknown,
+): InspectedParameter {
+  const source = inspector.object(parameter);
+  if (
+    typeof source.name !== "string" ||
+    typeof source.in !== "string" ||
+    !PARAMETER_LOCATIONS.has(source.in)
+  ) {
+    malformed();
+  }
+  if (source.required !== undefined && typeof source.required !== "boolean") {
+    malformed();
+  }
+  if (source.in === "path" && source.required !== true) {
+    malformed();
+  }
+
+  const result: InspectedParameter = {
+    name: source.name,
+    in: source.in,
+    required: source.required === true,
+  };
+  if (source.schema !== undefined) {
+    result.schema = inspector.schema(source.schema);
+  }
+  return result;
+}
+
+function parameterKey(parameter: InspectedParameter): string {
+  return `${parameter.in}\u0000${parameter.name}`;
+}
+
+function inspectParameterLevel(
+  inspector: OpenApiStructureInspector,
+  value: unknown,
+): InspectedParameter[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    malformed();
+  }
+
+  const result: InspectedParameter[] = [];
+  const seen = new Set<string>();
+  for (const parameter of value) {
+    inspector.chargeWork();
+    const inspected = inspectParameter(inspector, parameter);
+    const key = parameterKey(inspected);
+    if (seen.has(key)) {
+      malformed();
+    }
+    seen.add(key);
+    result.push(inspected);
+  }
+  return result;
+}
+
 function structuralParameters(
   inspector: OpenApiStructureInspector,
   pathItem: JsonRecord,
   operation: JsonRecord,
 ): PancakeCreateOrderOpenApiInspection["parameters"] {
-  const rawParameters = [pathItem.parameters, operation.parameters]
-    .filter((value) => value !== undefined)
-    .flatMap((value) => {
-      if (!Array.isArray(value)) {
-        malformed();
-      }
-      return value;
-    });
+  const effective = new Map<string, InspectedParameter>();
 
-  return rawParameters.map((parameter) => {
-    const source = inspector.object(parameter);
-    if (typeof source.name !== "string" || typeof source.in !== "string") {
-      malformed();
-    }
+  for (const parameter of inspectParameterLevel(inspector, pathItem.parameters)) {
+    effective.set(parameterKey(parameter), parameter);
+  }
+  for (const parameter of inspectParameterLevel(inspector, operation.parameters)) {
+    effective.set(parameterKey(parameter), parameter);
+  }
 
-    const result: PancakeCreateOrderOpenApiInspection["parameters"][number] = {
-      name: source.name,
-      in: source.in,
-      required: source.required === true,
-    };
-    if (source.schema !== undefined) {
-      result.schema = inspector.schema(source.schema);
-    }
-    return result;
-  });
+  return [...effective.values()];
 }
 
 export function inspectPancakeCreateOrderOpenApi(
@@ -327,31 +431,39 @@ export function inspectPancakeCreateOrderOpenApi(
     malformed();
   }
 
-  const matches = Object.entries(document.paths).filter(([path, pathItem]) => {
-    if (!CREATE_ORDER_PATH.test(path) || !isRecord(pathItem)) {
-      return false;
-    }
-    return isRecord(pathItem.post);
-  });
+  const inspector = new OpenApiStructureInspector(document);
+  let matchedPath: string | undefined;
+  let matchedPathItem: JsonRecord | undefined;
 
-  if (matches.length === 0) {
+  for (const path in document.paths) {
+    inspector.chargeWork();
+    if (!Object.hasOwn(document.paths, path)) {
+      continue;
+    }
+
+    const pathItem = document.paths[path];
+    if (!CREATE_ORDER_PATH.test(path) || !isRecord(pathItem) || !isRecord(pathItem.post)) {
+      continue;
+    }
+    if (matchedPath !== undefined) {
+      throw new PancakeOrderOpenApiError("CREATE_ORDER_OPERATION_AMBIGUOUS");
+    }
+    matchedPath = path;
+    matchedPathItem = pathItem;
+  }
+
+  if (matchedPath === undefined || matchedPathItem === undefined) {
     throw new PancakeOrderOpenApiError("CREATE_ORDER_OPERATION_NOT_FOUND");
   }
-  if (matches.length !== 1) {
-    throw new PancakeOrderOpenApiError("CREATE_ORDER_OPERATION_AMBIGUOUS");
-  }
-
-  const [path, rawPathItem] = matches[0];
-  if (!isRecord(rawPathItem) || !isRecord(rawPathItem.post)) {
+  if (!isRecord(matchedPathItem.post)) {
     malformed();
   }
 
-  const operation = rawPathItem.post;
-  const inspector = new OpenApiStructureInspector(document);
+  const operation = matchedPathItem.post;
   const result: PancakeCreateOrderOpenApiInspection = {
-    path,
+    path: matchedPath,
     method: "POST",
-    parameters: structuralParameters(inspector, rawPathItem, operation),
+    parameters: structuralParameters(inspector, matchedPathItem, operation),
     responses: {},
   };
 
@@ -367,8 +479,13 @@ export function inspectPancakeCreateOrderOpenApi(
   if (!isRecord(operation.responses)) {
     malformed();
   }
-  for (const [status, rawResponse] of Object.entries(operation.responses)) {
-    const response = inspector.object(rawResponse);
+  for (const status in operation.responses) {
+    inspector.chargeWork();
+    if (!Object.hasOwn(operation.responses, status)) {
+      continue;
+    }
+
+    const response = inspector.object(operation.responses[status]);
     const content = structuralContent(inspector, response.content);
     result.responses[status] = content === undefined ? {} : { content };
   }
