@@ -14,6 +14,7 @@ if (!connectionString) {
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
+const testShopId = 920_006;
 
 test.after(async () => {
   await prisma.$disconnect();
@@ -27,6 +28,7 @@ test("deployed migrations support catalog mirror relations and cascades", async 
 
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: testShopId,
       pancakeProductId,
       slug: "db-smoke-product",
       name: "DB Smoke Product",
