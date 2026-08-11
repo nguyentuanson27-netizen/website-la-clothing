@@ -129,13 +129,18 @@ Intended repository path: `tasks/todo.md`
   - [x] trusted-local `pnpm pancake:order:inspect-openapi <file.json>` bridge is bounded to one local JSON file, rejects files over 16 MiB before parsing, emits fixed safe failures and performs no Pancake network/credential/write operation
   - [x] fingerprinted raw OpenAPI JSON was supplied and independently inspected; SHA-256 `44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f`, size 2,774,602 bytes, with OpenAPI 3.1.0 / Pancake POS Open API v1.0.0 / production-server metadata matching the official reference
   - [x] exact create-order request/response structure captured into sanitized checked-in evidence without persisting raw examples/PII: request body required with top-level `shop_id`; `items[].variation_id` + `quantity`; optional explicit `variation_info.retail_price`; structured shipping fields; documented HTTP 200 response with integer Pancake order `id`
+  - [x] review Comment `5253708369`: REQUEST CHANGES — 2 Required; reproduced with RED CI #453 at 155/157 for the file-size TOCTOU and non-reproducible checked-evidence mapping findings
+  - [x] file evidence now uses one opened FileHandle for metadata + bounded content reads, consumes at most 16 MiB + one sentinel byte, rejects post-stat growth, and closes the handle on all paths
+  - [x] CLI now emits a deterministic machine-derived envelope containing source hash/bytes, allowlisted metadata/auth, and the reviewed structural subset; checked JSON is kept free of manually interpreted idempotency descriptions
+  - [x] docs explicitly separate machine-derived evidence from manual semantic review; `custom_id`/order-source descriptions and the no-safe-retry conclusion are not represented as CLI-generated facts
+  - [x] review-fix code GREEN CI #455 passed 46/46 DB, security/authz, lint, typecheck, 157/157 domain/integration and production build; final docs/evidence head was re-verified by CI #457 before the final no-copy buffer cleanup
   - [ ] correct website-origin reference field verified — `custom_id` is documented only as `Custom ID`, so it is not treated as a verified idempotency/client-reference key
   - [ ] native idempotency / unique client-reference behavior verified — absent from supplied create-order documentation; this blocks automatic retry/duplicate-safe recovery, not the approved one-shot write pattern
   - [ ] authoritative live price/stock revalidation immediately before write
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [~] self-review: structural inspector, local evidence bridge and sanitized contract evidence have 0 Critical / 0 Required / 0 Consider at code/docs level; PR #44 exact-head CI and human review remain required. Actual C8 write is no longer blocked on request/response shape, but no retry is authorized by current reference/idempotency evidence
+  - [~] self-review: latest review findings are fixed at code/docs level with 0 Critical / 0 Required / 0 Consider; exact current-head CI and human re-review remain required. Actual C8 write is no longer blocked on request/response shape, but no retry is authorized by current reference/idempotency evidence
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
