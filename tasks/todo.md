@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4/C5/C6/C7 are merged and green on `main`; C8 Pancake create-order contract verification is in draft PR #43, with a safe local OpenAPI inspector implemented while the actual write remains blocked on exact payload/reference/idempotency evidence
+## Current execution path: C4/C5/C6/C7 are merged and green on `main`; C8 Pancake create-order contract verification is in draft PR #43, with a safe local OpenAPI inspector fully verified while the actual write remains blocked on exact payload/reference/idempotency evidence
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -108,12 +108,16 @@ Intended repository path: `tasks/todo.md`
   - [x] C7 deliberately stops at a local DRAFT snapshot; browser checkout submission and actual POS order write remain C8 work rather than a fake half-checkout flow
   - [x] architecture records that authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
 - [~] C8 Pancake create-order orchestration — contract-verification foundation in draft PR #43
-  - [x] official Pancake OpenAPI reference verifies OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
+  - [x] current official full reference at `api-docs.pancake.biz` verifies reference v1.0.0, OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
   - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
   - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs are fully resolved
+  - [x] OpenAPI 3.1 Schema Object `$ref` structural siblings are preserved conjunctively instead of being silently discarded
   - [x] examples/defaults/descriptions/external scalar sample values are excluded from inspection output
   - [x] initial TDD RED CI #421 failed at the missing inspector module; implementation reached full green after a Node strip-only syntax compatibility fix in CI #423
-  - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN implementation is under CI verification on #425
+  - [x] ref-chain hardening RED CI #424 failed exactly the chained-ref and circular-ref cases; GREEN CI #425 passed the corrected bounded ref resolution
+  - [x] OpenAPI 3.1 `$ref`-sibling RED CI #428 kept 46/46 DB + security/authz + lint + typecheck green and failed exactly the new sibling-loss case at 147/148 domain/integration tests
+  - [x] exact GREEN code head `732518f` passed CI #429: 46/46 DB, security/authz, lint, typecheck, 148/148 domain/integration, production build and admin-a11y runtime
+  - [x] rendered/searchable official docs rechecked without live API writes; exact expanded create-order body/response was not exposed by the available extraction, so candidate field names are deliberately not treated as evidence
   - [ ] exact create-order request/response schema captured from trusted official OpenAPI evidence
   - [ ] correct website-origin reference field verified
   - [ ] native idempotency / unique client-reference behavior verified
@@ -121,7 +125,7 @@ Intended repository path: `tasks/todo.md`
   - [ ] success/reject/timeout/`SYNC_UNKNOWN` tests
   - [ ] no blind retry
   - [ ] actual Pancake create-order adapter/write
-  - [ ] self-review + human review
+  - [~] self-review: narrow inspector 0 Critical / 0 Required / 0 Consider; C8 write remains blocked on external contract evidence; human review still required
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
