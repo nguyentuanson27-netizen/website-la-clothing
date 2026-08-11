@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import {
   buildStorefrontVariantOptions,
+  getStorefrontResolvedPriceRange,
   type StorefrontVariantFacts,
+  type StorefrontVariantOption,
 } from "@/commerce/storefront-product";
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -19,15 +21,23 @@ type StorefrontProductCardProps = {
   tone: "stone" | "olive" | "ink" | "sand";
 };
 
-function describePrice(variants: readonly StorefrontVariantFacts[]): string {
-  const prices = buildStorefrontVariantOptions(variants)
-    .filter((variant) => variant.purchasable && variant.price !== null)
-    .map((variant) => variant.price as number);
+function describePrice(options: readonly StorefrontVariantOption[]): string {
+  const range = getStorefrontResolvedPriceRange(options);
+  if (!range) return "Giá đang cập nhật";
+  return range.minimum === range.maximum
+    ? currency.format(range.minimum)
+    : `Từ ${currency.format(range.minimum)}`;
+}
 
-  if (prices.length === 0) return "Giá đang cập nhật";
-  const minimum = Math.min(...prices);
-  const maximum = Math.max(...prices);
-  return minimum === maximum ? currency.format(minimum) : `Từ ${currency.format(minimum)}`;
+function describeAvailability(options: readonly StorefrontVariantOption[]): string {
+  if (options.some((option) => option.purchasable)) return "Có sẵn";
+  if (
+    options.length > 0 &&
+    options.every((option) => option.unavailableReason === "OUT_OF_STOCK")
+  ) {
+    return "Tạm hết hàng";
+  }
+  return "Chưa thể mua online";
 }
 
 export function StorefrontProductCard({
@@ -37,6 +47,8 @@ export function StorefrontProductCard({
   variants,
   tone,
 }: StorefrontProductCardProps) {
+  const options = buildStorefrontVariantOptions(variants);
+
   return (
     <article>
       <Link
@@ -55,7 +67,12 @@ export function StorefrontProductCard({
             <p className="mt-1 line-clamp-2 max-w-[32ch] text-black/60">{editorialDescription}</p>
           ) : null}
         </div>
-        <p className="shrink-0 text-right">{describePrice(variants)}</p>
+        <div className="shrink-0 text-right">
+          <p>{describePrice(options)}</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/50">
+            {describeAvailability(options)}
+          </p>
+        </div>
       </div>
     </article>
   );
