@@ -6,6 +6,8 @@ import { buildStorefrontCartLines } from "./storefront-cart.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
+const RETRYABLE_DRAFT_ERROR = "VALIDATION_UNAVAILABLE";
+const SUPERSEDED_RETRY_ERROR = "VALIDATION_RETRY_SUPERSEDED";
 const ACTIVE_CHECKOUT_STATES = [
   "DRAFT",
   "VALIDATING",
@@ -38,8 +40,10 @@ type CheckoutSnapshotResult =
   | { ok: false; reason: CheckoutFailureReason };
 
 const snapshotOrderSelection = {
+  id: true,
   publicCode: true,
   state: true,
+  syncErrorCode: true,
   merchandiseSubtotalVnd: true,
   shippingFeeVnd: true,
   totalVnd: true,
@@ -171,6 +175,28 @@ async function findActiveCheckout(tx: TransactionClient, cartId: string) {
   });
 }
 
+async function supersedeRetryableDraft(
+  tx: TransactionClient,
+  order: SelectedSnapshotOrder,
+): Promise<boolean> {
+  if (order.state !== "DRAFT" || order.syncErrorCode !== RETRYABLE_DRAFT_ERROR) {
+    return false;
+  }
+
+  const result = await tx.orderMirror.updateMany({
+    where: {
+      id: order.id,
+      state: "DRAFT",
+      syncErrorCode: RETRYABLE_DRAFT_ERROR,
+    },
+    data: {
+      state: "REJECTED",
+      syncErrorCode: SUPERSEDED_RETRY_ERROR,
+    },
+  });
+  return result.count === 1;
+}
+
 function toStorefrontProduct(product: SelectedProduct) {
   const variants = [];
   for (const variant of product.variants) {
@@ -232,7 +258,10 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
 
         const activeCheckout = await findActiveCheckout(tx, cartId);
         if (activeCheckout) {
-          return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+          const superseded = await supersedeRetryableDraft(tx, activeCheckout);
+          if (!superseded) {
+            return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+          }
         }
 
         const items = await tx.cartItem.findMany({
