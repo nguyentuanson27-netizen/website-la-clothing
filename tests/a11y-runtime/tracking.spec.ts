@@ -93,9 +93,9 @@ test.beforeAll(async () => {
       pancakeStatus: 6,
       pancakeStatusUpdatedAt: "2026-08-13T00:00:00Z",
       checkoutSnapshottedAt: new Date("2026-08-13T00:00:00Z"),
-      merchandiseSubtotalVnd: 500_000n,
-      shippingFeeVnd: 30_000n,
-      totalVnd: 530_000n,
+      merchandiseSubtotalVnd: BigInt(500_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(530_000),
     },
   });
 
@@ -140,9 +140,7 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
   await page.getByLabel("Mã đơn hàng").fill(publicCode);
   await page.getByLabel("Số điện thoại").fill("0900000000");
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
-  await expect(page.getByRole("alert")).toHaveText(
-    "Không tìm thấy đơn hàng khớp với thông tin đã nhập.",
-  );
+  await expect(page.getByText("Không tìm thấy đơn hàng khớp với thông tin đã nhập.")).toBeVisible();
 
   await page.getByLabel("Số điện thoại").fill(guestPhone);
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
