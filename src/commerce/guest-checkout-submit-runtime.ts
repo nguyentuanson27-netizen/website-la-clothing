@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db/prisma.ts";
+import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
+import {
+  loadCheckoutCommunes,
+  loadCheckoutDistricts,
+  loadCheckoutProvinces,
+} from "./checkout-geo.ts";
+import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
 import { createGuestCheckoutSnapshotService } from "./guest-checkout-snapshot.ts";
 import {
@@ -12,6 +19,10 @@ import { createPancakeOrderSubmissionRuntime } from "./pancake-order-submit-runt
 
 type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   readConfig: () => PancakeConfig;
+  validateGeo: (
+    config: PancakeConfig,
+    checkoutInput: unknown,
+  ) => ReturnType<typeof validateCheckoutGeoSelection>;
   createSnapshot: () => GuestCheckoutSubmitDependencies["snapshot"];
   createOrderSubmission: (
     config: PancakeConfig,
@@ -23,10 +34,27 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
 
 type GuestCheckoutSubmitRuntimeOptions = Partial<GuestCheckoutSubmitRuntimeDependencies>;
 
+async function validateCheckoutGeoWithPancake(
+  config: PancakeConfig,
+  checkoutInput: unknown,
+) {
+  const client = new PancakeClient({ apiKey: config.apiKey });
+  return validateCheckoutGeoSelection(
+    {
+      loadProvinces: () => loadCheckoutProvinces(client),
+      loadDistricts: (provinceId) => loadCheckoutDistricts(client, provinceId),
+      loadCommunes: (provinceId, districtId) =>
+        loadCheckoutCommunes(client, provinceId, districtId),
+    },
+    checkoutInput,
+  );
+}
+
 export function createGuestCheckoutSubmitRuntime(
   options: GuestCheckoutSubmitRuntimeOptions = {},
 ) {
   const readConfig = options.readConfig ?? readPancakeConfig;
+  const validateGeo = options.validateGeo ?? validateCheckoutGeoWithPancake;
   const createSnapshot =
     options.createSnapshot ?? (() => createGuestCheckoutSnapshotService(prisma));
   const createOrderSubmission =
@@ -48,6 +76,15 @@ export function createGuestCheckoutSubmitRuntime(
     await recoverStranded({ cartId, now });
 
     const config = readConfig();
+    const geoValidation = await validateGeo(config, checkoutInput);
+    if (!geoValidation.ok) {
+      return {
+        ok: false as const,
+        status: "RETRYABLE" as const,
+        reason: "INVALID_INPUT" as const,
+      };
+    }
+
     const service = createGuestCheckoutSubmitService({
       snapshot: createSnapshot(),
       orderSubmission: createOrderSubmission(config),
@@ -57,7 +94,7 @@ export function createGuestCheckoutSubmitRuntime(
     return service.submit({
       cartId,
       shopId: config.shopId,
-      checkoutInput,
+      checkoutInput: geoValidation.checkoutInput,
       now,
     });
   }
