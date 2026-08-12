@@ -130,8 +130,9 @@ test("sanitized order-status evidence is deterministic, fingerprinted, and exclu
 });
 
 test("order-status inspection fails closed on ambiguous matching GET operations", () => {
-  const document: any = evidenceDocument();
-  document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}/"] = document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}"];
+  const document = evidenceDocument();
+  const paths = document.paths as Record<string, unknown>;
+  paths["/shops/{SHOP_ID}/orders/{ORDER_ID}/"] = paths["/shops/{SHOP_ID}/orders/{ORDER_ID}"];
 
   assert.throws(
     () => inspectPancakeOrderStatusOpenApi(document),
