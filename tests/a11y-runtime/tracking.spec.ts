@@ -142,6 +142,11 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
   await expect(page.getByText("Không tìm thấy đơn hàng khớp với thông tin đã nhập.")).toBeVisible();
 
+  // React form Actions reset uncontrolled fields after a completed Action, including
+  // our safe NOT_FOUND result. A corrected attempt therefore resubmits the full proof.
+  await expect(page.getByLabel("Mã đơn hàng")).toHaveValue("");
+  await expect(page.getByLabel("Số điện thoại")).toHaveValue("");
+  await page.getByLabel("Mã đơn hàng").fill(publicCode);
   await page.getByLabel("Số điện thoại").fill(guestPhone);
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
   const status = page.getByRole("status").filter({ hasText: "Đã tiếp nhận" });
@@ -166,9 +171,11 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
         { id: { startsWith: "order-track-code:" } },
       ],
     },
-    select: { id: true },
+    select: { id: true, count: true },
+    orderBy: { id: "asc" },
   });
   expect(rateLimitRows.length).toBe(2);
+  expect(rateLimitRows.map(({ count }) => count).sort((left, right) => left - right)).toEqual([2, 2]);
   for (const { id } of rateLimitRows) {
     expect(id.includes(publicCode)).toBe(false);
     expect(id.includes(guestPhone)).toBe(false);
