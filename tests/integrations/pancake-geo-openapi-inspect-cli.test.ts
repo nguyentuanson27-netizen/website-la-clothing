@@ -232,6 +232,6 @@ test("trusted-local geo OpenAPI CLI rejects oversized and malformed files with f
     assert.equal(malformedResult.status, 1);
     assert.equal(malformedResult.stdout, "");
     assert.equal(malformedResult.stderr.trim(), "MALFORMED_OPENAPI_DOCUMENT");
-    assert.equal(malformedResult.stderr.includes(filePath), false);
+    assert.equal(malformedResult.stderr.includes(malformed), false);
   });
 });
