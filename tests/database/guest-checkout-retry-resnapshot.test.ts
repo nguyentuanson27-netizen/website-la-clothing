@@ -49,7 +49,7 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: { startsWith: key } } });
 }
 
-async function createProduct(label: "a" | "b", price: number) {
+async function createProduct(label: string, price: number) {
   return prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -83,30 +83,18 @@ async function createProduct(label: "a" | "b", price: number) {
   });
 }
 
-test.after(async () => {
-  await cleanup();
-  await prisma.$disconnect();
-});
-
-test("retryable DRAFT is superseded so retry snapshots current cart and address before Pancake POST", async () => {
-  await cleanup();
-  const productA = await createProduct("a", 400_000);
-  const productB = await createProduct("b", 650_000);
-  const variantA = productA.variants[0]!;
-  const variantB = productB.variants[0]!;
-
+async function makeRetryableDraft({ suffix, variantId }: { suffix: string; variantId: string }) {
   const cart = await prisma.cart.create({
     data: {
       expiresAt: new Date(now.getTime() + 60_000),
-      items: { create: { variantId: variantA.id, quantity: 1 } },
+      items: { create: { variantId, quantity: 1 } },
     },
   });
-
   const snapshot = createGuestCheckoutSnapshotService(prisma);
   const first = await snapshot.create({
     cartId: cart.id,
     shopId,
-    publicCode: `${key}-order`,
+    publicCode: `${key}-${suffix}-order`,
     checkoutInput: {
       name: "Nguyễn Văn A",
       phone: "0901234567",
@@ -119,7 +107,7 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
     now,
   });
   assert.equal(first.ok, true);
-  if (!first.ok) return;
+  if (!first.ok) throw new Error("test setup must create the initial checkout snapshot");
 
   const unavailable = createPancakeOrderSubmissionService(prisma, {
     async fetchCompleteCatalog() {
@@ -134,6 +122,21 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
     state: "DRAFT",
     reason: "VALIDATION_UNAVAILABLE",
   });
+  return { cart, first, snapshot };
+}
+
+test.after(async () => {
+  await cleanup();
+  await prisma.$disconnect();
+});
+
+test("retryable DRAFT is superseded so retry snapshots current cart and address before Pancake POST", async () => {
+  await cleanup();
+  const productA = await createProduct("a", 400_000);
+  const productB = await createProduct("b", 650_000);
+  const variantA = productA.variants[0]!;
+  const variantB = productB.variants[0]!;
+  const { cart, first, snapshot } = await makeRetryableDraft({ suffix: "fresh", variantId: variantA.id });
 
   await prisma.$transaction([
     prisma.cartItem.deleteMany({ where: { cartId: cart.id } }),
@@ -194,4 +197,45 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
   assert.equal(request.shipping_address.commune_id, "commune-y");
   assert.equal(request.note, "Địa chỉ mới");
   assert.deepEqual(request.items.map(({ variation_id }) => variation_id), [variantB.pancakeVariationId]);
+});
+
+test("retry resnapshot fails closed instead of returning stale DRAFT when the proposed public code collides", async () => {
+  await cleanup();
+  const product = await createProduct("collision", 500_000);
+  const variant = product.variants[0]!;
+  const { cart, first, snapshot } = await makeRetryableDraft({ suffix: "collision", variantId: variant.id });
+  const collidingPublicCode = `${key}-occupied`;
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: collidingPublicCode,
+      state: "REJECTED",
+      syncErrorCode: "TEST_COLLISION",
+    },
+  });
+
+  assert.deepEqual(
+    await snapshot.create({
+      cartId: cart.id,
+      shopId,
+      publicCode: collidingPublicCode,
+      checkoutInput: {
+        name: "Nguyễn Văn B",
+        phone: "0987654321",
+        provinceRef: "province-y",
+        districtRef: "district-y",
+        communeRef: "commune-y",
+        detail: "34 Đường Y",
+        note: "Địa chỉ mới",
+      },
+      now: new Date(now.getTime() + 1_000),
+    }),
+    { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" },
+  );
+
+  const original = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: first.order.publicCode },
+  });
+  assert.equal(original.state, "DRAFT");
+  assert.equal(original.syncErrorCode, "VALIDATION_UNAVAILABLE");
 });
