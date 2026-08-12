@@ -398,7 +398,7 @@ export function GuestCheckoutForm() {
         </label>
 
         <label className="block text-sm font-medium" htmlFor="checkout-note">
-          Ghi chú <span className="font-normal text-black/50">(không bắt buộc)</span>
+          Ghi chú <span className="font-normal text-black/60">(không bắt buộc)</span>
           <textarea
             className={`${fieldClassName} min-h-28 resize-y`}
             id="checkout-note"
@@ -432,7 +432,7 @@ export function GuestCheckoutForm() {
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
       </button>
 
-      <p className="text-xs leading-5 text-black/50">
+      <p className="text-xs leading-5 text-black/60">
         Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake.
       </p>
     </form>
