@@ -11,6 +11,8 @@ type Query = Readonly<Record<string, string | number | boolean>>;
 
 type GeoErrorCode = "INVALID_GEO_QUERY" | "MALFORMED_GEO_RESPONSE";
 
+const MAX_GEO_ENTRIES = 1_000;
+
 function hasGeoCode(error: unknown, code: GeoErrorCode): boolean {
   return (
     error instanceof Error &&
@@ -171,7 +173,7 @@ test("geo gateway validates bounded lookup identifiers before any Pancake read",
 
 test("geo gateway rejects oversized result sets before returning third-party data", async () => {
   const client = new FakeReadableClient({
-    data: Array.from({ length: 1001 }, (_, index) => ({
+    data: Array.from({ length: MAX_GEO_ENTRIES + 1 }, (_, index) => ({
       id: String(index + 1),
       name: `Province ${index + 1}`,
     })),
