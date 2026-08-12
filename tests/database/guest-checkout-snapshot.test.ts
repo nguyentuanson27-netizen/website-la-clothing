@@ -122,7 +122,9 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
     stock: 2,
   });
   const publicCode = `checkout-${key}-001`;
-  const service = createGuestCheckoutSnapshotService(prisma);
+  const service = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
 
   const result = await service.create({
     cartId: cart.id,
@@ -216,7 +218,9 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
     stock: 3,
   });
   const publicCode = `checkout-${key}-001`;
-  const service = createGuestCheckoutSnapshotService(prisma);
+  const service = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
 
   const result = await service.create({
     cartId: cart.id,
@@ -237,7 +241,9 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
 });
 
 test("checkout snapshot fails closed for unavailable lines, wrong-shop catalog data, expired carts, and malformed customer input", async () => {
-  const service = createGuestCheckoutSnapshotService(prisma);
+  const service = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
 
   const unavailableKey = "unavailable";
   await cleanup(unavailableKey);
