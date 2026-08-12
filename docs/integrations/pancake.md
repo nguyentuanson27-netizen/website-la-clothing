@@ -59,7 +59,7 @@ The parser:
 
 - requires a successful response;
 - validates pagination as non-negative safe integers so later sync can traverse pages deliberately;
-- requires `product_id === product.id`  instead of accepting inconsistent identities;
+- requires `product_id === product.id` instead of accepting inconsistent identities;
 - validates the mapped field types without coercion;
 - rejects duplicate `warehouse_id` rows rather than guessing whether they represent independent stock buckets;
 - ignores unconsumed external fields at the internal mapped-output boundary.
@@ -108,7 +108,7 @@ The product owner then ran a controlled quantity-1 order lifecycle against the l
 | `waiting_quantity` | 0 | 0 |
 | `returning_quantity` | 0 | 0 |
 
-Therefore the approved MVP `rule for the tested reservation lifecycle is:
+Therefore the approved MVP rule for the tested reservation lifecycle is:
 
 ```text
 website sellable stock for a variation
@@ -167,7 +167,53 @@ PR #43 added `src/integrations/pancake/order-openapi-contract.ts`, a pure local 
 - emits only structural contract metadata needed for review: parameter names/locations/required flags, schema types/formats/required property names/property structure, media types and response status structure;
 - deliberately omits examples, defaults, descriptions and other external scalar sample values from its output.
 
-The shared budget and effective-parameter rules were added after review comment `5251949190`. RED CI #432 kept 46/46 DBˆ\İËÙXİ\š]KØ]]‹[[™\XÚXÚÈÜ™Y[ˆ[™˜Z[Y^XİH™YH™]È™YÜ™\ÜÚ[ÛœÎˆ›Û‹\ØÚ[XH˜]™\œØ[YÙ]Ü\˜][Û‹[İ™\‹\]\˜[Y]\ˆİ™\œšYK[™X[›Ü›YY\XØ]KÛ›Û‹\™\]Z\™Y]\˜[Y]\œËˆÔ‘QSˆÛÛ[Z]˜™Y˜X\ÜÙYÒHÍÌÈÚ]‹Íˆˆ\İËÙXİ\š]KØ]]‹[\XÚXÚËMLKÌMLHÛXZ[‹Ú[YÜ˜][Ûˆ\İË›ÙXİ[ÛˆZ[[™YZ[‹XLL^K\[[YX‚‚•\È[œÜXİÜˆ\ÈH
-Š™\ØÛİ™\KÜ™]šY]ÈZY›İÜš]H]]Üš^˜][ÛŠŠ‹ˆ][[[Û˜[HØ\\™\ÈÛ›HHİXİ\˜[İXœÙ]™YYYÈ[œÜXİHÜ\˜][ÛˆØY™[NÈ]Ù\È›İÛZ[HÈ™\Ù\™H]™\H”ÓÓˆØÚ[XKÓÜ[TH˜[Y][ÛˆÙ^]ÛÜ™‚‚”ˆÍ[ˆØ\\™YHš[™Ù\œš[Y˜]ÈÜ[THØİ[Y[›İYÚH›İ[™YØØ[]šY[˜ÙHÛÜšÙ›İÈØİ[Y[Y[ˆØÜËÚ[YÜ˜][ÛœËÜ[˜ØZÙK[Ü™\‹[Ü[˜\KY]šY[˜ÙK›YˆH]\›Z[š\İXÈÚXÚÙY\Y˜XİØÜËÚ[YÜ˜][ÛœËÜ[˜ØZÙK[Ü™\‹XÜ™X]KXÛÛ˜Xİ[ØœÙ\™YšœÛÛ˜\İX›\Ú\ÈHÜ™X]K[Ü™\ˆİXİ\˜[İXœÙ]\ÙYHÎ[˜ÛY[™Î‚‚‹H™\]Z\™Y\XØ][Û‹ÚœÛÛ˜Ù\]Y\İ›ÙNÂ‹HÜ[]™[™\]Z\™Y›Ü\HÚÜÚYÂ‹H][\Ö×X™\]Z\š[™È˜\šX][Û—ÚY[™]X[]XÂ‹H[YÙ\ˆ˜\šX][Û—Ú[™›Ëœ™]Z[ÜšXÙX[ˆH™]šY]ÙYİXœÙ]Â‹HÙ[XİYÚ\[™ËXY™\ÜÈšY[ÎÂ‹HØİ[Y[YŒ”ÓÓˆ™\ÜÛœÙHÚ][YÙ\ˆYY[]NÂ‹HÛÙ^\İÈİXİ\˜[H\È[ˆ
-Š›Ü[Û˜[[YÙ\ŠŠ‹]H]šY[˜ÙHÙ\È›İ\İX›\ÚÚ]˜[YH]]\İ™\™\Ù[‚‚•\™Y›Ü™HˆÍHÙ\È›İ[™™\ˆÛÙHY\˜Ú[™\ÙHİXİ[
-ÈÚ\[™È™YXÈHİšXİÜ™X]K[Ü™\ˆX\\ˆÛZ]ÈÛÙ[[\İYÙ[X[XÈ]šY[˜ÙH]]Üš^™\ÈH˜[YKˆHÙXœÚ]K[İÛ™YÚ\[™ÈÛXŞHX^Hİ[Ü[]HHÙ\\˜][H™]šY]ÙYÚ\[™×Ù™YXšY[È]ÛXŞH\È›İ]šY[˜ÙH›ÜˆÛÙÙ[X[XÜË‚‚ÍÈ[ÛÈ\œÚ\İÈHÛİ\˜ÙH[˜ØZÙTÚÜYÚ]]™\H™]ÈÚXÚÛİ]Û˜\ÚİˆÎ™\]Z\™\ÈH[[YHÙ\™\ˆÛÛ™šYİ\˜][ÛˆÈX]Ú]\œÚ\İYØÛÜH[™[ˆ\Ù\ÈH\œÚ\İY˜[YH›Üˆ]™H˜[Y][Ûˆ[™Ü™\ˆÜ™X][Û‹ˆHZYÜ˜][Ûˆ[X™\˜][HX]™\È™KY^\İ[™ÈÜ™\œÈÚ][˜ØZÙTÚÜYH•SÈÜÙH›İÜÈ˜Z[ÛÜÙYÚ]ÒÔÔĞÓÔWÕS•‘T’Q’QQ™XØ]\ÙHZ\ˆÜšYÚ[˜[ÚÜØ[››İ™H›İ™[‹ˆ^H\™H™]™\ˆ˜XÚÙš[Yœ›ÛHHİ\œ™[SĞRÑWÔÒÔÒQ‚‚“X[X[™]šY]ÈÙˆHš[™Ù\œš[YØİ[Y[İ[›İ[™›È\İÛÜH˜]]™HY[\İ[˜ŞHÙ^K[š\]Y[™\ÜÈİX\˜[YK™\]Y\İÚYÜˆ™\šYšYYÙXœÚ]K[ÜšYÚ[ˆ™Y™\™[˜ÙHÙ[X[XÜËˆXØÛÜ™[™ÛN‚‚‹HÈ›İ™X]İ\İÛWÚY\È[ˆY[\İ[˜ŞHÙ^NÂ‹HÈ›İ\™›Ü›HH›[™ÙXÛÛ™ÔÕY\ˆ[Y[İ]Û™]ÛÜšÈ[XšYİZ]NÂ‹HH\›İ™YÛ™K\Úİİ]HXXÚ[™H™[XZ[œÎˆ\˜X›HÔ×ÔÕP“RUS‘Ø™Y›Ü™HH™]ÛÜšÈØ[8¡¤ˆ^XİHÛ™HÔÕ][\8¡¤ˆYš[š]]™HİXØÙ\ÜÈÓÓ‘’T“QQØY™[HÛ\ÜÚYšXX›HØØ[™Z™Xİ[Ûˆ‘R‘PÕQ[XšYİ[İ\Èİ]ÛÛYHÖS×ÕS’Ó“ÕÓ˜Â‹H\XØ]K\ØY™H™]KÜ™XÛÛ˜Ú[X][Ûˆ™[XZ[œÈ›ØÚÙY[[H\İÛÜH[š\]YH™Y™\™[˜ÙKÚY[\İ[˜ŞHYXÚ[š\ÛH\ÈÙ\\˜][H™\šYšYY‚‚“›È]]ÛX]YÒH\İ\™›Ü›\ÈH]™H[˜ØZÙHÜ™X]K[Ü™\ˆÜš]KˆHÛÛ›ÛY]™HÜ™X]K[Ü™\ˆ™\šYšXØ][Ûˆ™[XZ[œÈHÙ\\˜]H[X[ˆØ]K‚‚ˆÈÈ]\ˆ[YÜ˜][ÛˆÛÛ˜XİÈİ[[™\šYšYY‚•\ÙH][\È™[XZ[ˆ[[[Û˜[H[™\šYšYYÜˆÙ\\˜][HØ]Y‚‚ŒKˆ\Ú[™\ÜÈÙ[X[XÜÈ›ÜˆÜ[Û˜[ÛÙÈˆÍHÛZ]È]˜]\ˆ[ˆİY\ÜÚ[™Ë‚Œ‹ˆÛÜœ™XİÙXœÚ]K[ÜšYÚ[‹ØÛY[\™Y™\™[˜ÙHšY[[™˜]]™HÜ™X]K[Ü™\ˆY[\İ[˜ŞHÜˆ[š\]YK\™Y™\™[˜ÙH™Z]š[Ü‹‚ŒËˆ^XİÜ™\ˆİ]\ÈÛÙ\Ëİ˜[œÚ][ÛœÈ\ÙYH™XÛÛ˜Ú[X][Û‹‚ˆÙXšÛÚÈ]™[˜[Y\Ë^[ØYÚ\K]][XØ][Û‹ÜÚYÛ˜]\™H[™™\^H›İXİ[Û‹‚Kˆœ›İÜÙ\ˆÚXÚÛİ]İX›Z]Ú\š[™È[™ÛÛ›ÛY]™HÜ™X]K[Ü™\ˆ™\šYšXØ][Û‹‚‚•HİY\İÚ\[™ËY™YHÛXŞH\ÈÙXœÚ]K[İÛ™Y[™Ø\È\›İ™YÙ\\˜][HHH›ÙXİİÛ™\ˆÛˆŒ‹LLLNˆÌ“‘HY˜][Ú]œ™YHÚ\[™ÈÚ[ˆ]]Üš]]]™HY\˜Ú[™\ÙHİXİ[\Èİ™\ˆK“‘Üˆİ[›ÙXİ]X[]H\È]X\İËˆ]\È›İ[ˆ[™\šYšYY[˜ØZÙHTHÛÛ˜Xİ‚‚‘È›İİY\ÜÈH™[XZ[š[™È[YÜ˜][ÛˆÛÛ˜XİËˆ[ˆ\Xİ[\‹È›İY›[™™]šY\È›Üˆ[˜Ù\Z[ˆ[˜ØZÙHÜ™\ˆÜš]\Ë‚‚ˆÈÈÙ™šXÚX[Ûİ\˜Ù\ÈÚXÚÙY‚‹H[˜ØZÙHÔÈ[Ü[ˆTH™Y™\™[˜ÙNˆÎ‹ËØ\KYØÜËœ[˜ØZÙK˜š^‹Â‹H[˜ØZÙHÔÈÜ[ˆTH™Y™\™[˜ÙH[NˆÎ‹ËÙØÜËœ[˜ØZÙK˜š^‹ÜÜËØ\KÙ[‹Â‹H[˜ØZÙHÔÈÜ[ˆTHİ™\šY]ÎˆÎ‹ËÙØÜËœ[˜ØZÙK˜š^‹ÜÜËÜİYŒLËÜİ\OÛ[™ÏY[‚‹HTHÙ^KØ]][XØ][ÛˆÎ‹ËÙØÜËœ[˜ØZÙK˜š^‹ÜÜËÜİYŒLËÜİ\Û[™ÏY[‚‹HÜ™\ˆİ]\È	ˆ›ØÙ\ÜÚ[™È›İÎˆÎ‹ËÙØÜËœ[˜ØZÙK˜š^‹ÜÜËÜİYŒLËÜİ\ÏÛ[™ÏY[‚‹HÜ[THËŒKŒÜXÚYšXØ][ÛˆÎ‹ËÜÜXË›Ü[˜\\Ë›Ü™ËÛØ\ËİŒËŒKŒ‹HœH[ˆ\™İ[Y[›ÜØ\™[™ÎˆÎ‹ËÜœKš[ËØÛKÜ[‚
+The shared budget and effective-parameter rules were added after review comment `5251949190`. RED CI #432 kept 46/46 DB tests, HTTP security/authz, lint and typecheck green and failed exactly three new regressions: non-schema traversal budget, operation-over-path parameter override, and malformed duplicate/non-required path parameters. GREEN commit `0bbf5fa` passed CI #433 with 46/46 DB tests, HTTP security/authz, lint, typecheck, 151/151 domain/integration tests, production build and `admin-a11y-runtime`.
+
+This inspector is a **discovery/review aid, not write authorization**. It intentionally captures only the structural subset needed to inspect the operation safely; it does not claim to preserve every JSON Schema/OpenAPI validation keyword.
+
+PR #44 then captured a fingerprinted raw OpenAPI document through the bounded local evidence workflow documented in `docs/integrations/pancake-order-openapi-evidence.md`. The deterministic checked artifact `docs/integrations/pancake-order-create-contract-observed.json` establishes the create-order structural subset used by C8, including:
+
+- required `application/json` request body;
+- top-level required property `shop_id`;
+- `items[]` requiring `variation_id` and `quantity`;
+- integer `variation_info.retail_price` in the reviewed subset;
+- selected shipping-address fields;
+- documented `200` JSON response with integer `id` identity;
+- `cod` exists structurally as an **optional integer**, but the evidence does not establish what value it must represent.
+
+Therefore PR #45 does not infer `cod = merchandise subtotal + shipping fee`; the strict create-order mapper omits `cod` until trusted semantic evidence authorizes a value. The website-owned shipping policy may still populate the separately reviewed `shipping_fee` field; that policy is not evidence for `cod` semantics.
+
+C7 also persists the source `pancakeShopId` with every new checkout snapshot. C8 requires the runtime server configuration to match that persisted scope and then uses the persisted value for live validation and order creation. The migration deliberately leaves pre-existing orders with `pancakeShopId = NULL`; those rows fail closed with `SHOP_SCOPE_UNVERIFIED` because their original shop cannot be proven. They are never backfilled from the current `PANCAKE_SHOP_ID`.
+
+Manual review of the fingerprinted document still found no trustworthy native idempotency key, uniqueness guarantee, `request_id`, or verified website-origin reference semantics. Accordingly:
+
+- do not treat `custom_id` as an idempotency key;
+- do not perform a blind second POST after timeout/network ambiguity;
+- the approved one-shot state machine remains: durable `POS_SUBMITTING` before the network call â†’ exactly one POST attempt â†’ definitive success `CONFIRMED`, safely classifiable local rejection `REJECTED`, ambiguous outcome `SYNC_UNKNOWN`;
+- duplicate-safe retry/reconciliation remains blocked until a trustworthy unique reference/idempotency mechanism is separately verified.
+
+No automated CI test performs a live Pancake create-order write. A controlled live create-order verification remains a separate human gate.
+
+## Later integration contracts still unverified
+
+These items remain intentionally unverified or separately gated:
+
+1. Business semantics for optional `cod`; PR #45 omits it rather than guessing.
+2. Correct website-origin/client-reference field and native create-order idempotency or unique-reference behavior.
+3. Exact order status codes/transitions used by reconciliation.
+4. Webhook event names, payload shape, authentication/signature and replay protection.
+5. Browser checkout submit wiring and controlled live create-order verification.
+
+The guest shipping-fee policy is website-owned and was approved separately by the product owner on 2026-08-11: 30,000 VND by default, with free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3. It is not an unverified Pancake API contract.
+
+Do not guess the remaining integration contracts. In particular, do not add blind retries for uncertain Pancake order writes.
+
+## Official sources checked
+
+- Pancake POS full Open API reference: https://api-docs.pancake.biz/
+- Pancake POS Open API reference entry: https://docs.pancake.biz/pos/api/en/
+- Pancake POS Open API overview: https://docs.pancake.biz/pos/st-f13/st-p1?lang=en
+- API key/authentication: https://docs.pancake.biz/pos/st-f13/st-p2?lang=en
+- Order status & processing flow: https://docs.pancake.biz/pos/st-f13/st-p3?lang=en
+- OpenAPI 3.1.0 specification: https://spec.openapis.org/oas/v3.1.0
+- pnpm run argument forwarding: https://pnpm.io/cli/run
