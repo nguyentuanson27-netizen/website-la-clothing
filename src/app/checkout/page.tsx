@@ -149,7 +149,7 @@ export default async function CheckoutPage() {
             </div>
           </dl>
 
-          <p className="mt-5 text-xs leading-5 text-black/50">
+          <p className="mt-5 text-xs leading-5 text-black/60">
             Đây là số tiền dự kiến. Máy chủ sẽ kiểm tra lại giá, tồn kho và phí vận chuyển khi bạn đặt hàng.
           </p>
         </aside>
