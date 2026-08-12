@@ -22,6 +22,9 @@ function evidenceDocument() {
       securitySchemes: {
         ApiKeyAuth: { type: "apiKey", in: "query", name: "api_key", description: "do-not-emit" },
       },
+      schemas: {
+        OrderStatusCode: { type: "integer" },
+      },
     },
     paths: {
       "/shops/{SHOP_ID}/orders/{ORDER_ID}": {
@@ -94,6 +97,22 @@ test("order-status structural inspection preserves the primitive status enum but
   assert.deepEqual(schema?.properties?.status?.enum, STATUS_CODES);
   assert.equal(Object.hasOwn(schema?.properties?.status ?? {}, "description"), false);
   assert.equal(Object.hasOwn(schema?.properties?.status ?? {}, "example"), false);
+});
+
+test("order-status inspection fails closed instead of silently dropping a selected Schema $ref enum sibling", () => {
+  const document = evidenceDocument();
+  const statusSchema = document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}"].get.responses["200"].content[
+    "application/json"
+  ].schema.properties.status as Record<string, unknown>;
+  delete statusSchema.type;
+  statusSchema.$ref = "#/components/schemas/OrderStatusCode";
+
+  assert.throws(
+    () => inspectPancakeOrderStatusOpenApi(document),
+    (error: unknown) =>
+      error instanceof PancakeOrderStatusOpenApiError &&
+      error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
 });
 
 test("sanitized order-status evidence is deterministic, fingerprinted, and excludes customer PII", () => {
