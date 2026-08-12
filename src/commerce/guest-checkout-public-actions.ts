@@ -10,8 +10,11 @@ type SubmitCheckout = (input: {
   checkoutInput: unknown;
 }) => Promise<GuestCheckoutSubmitResult>;
 
+type ConsumeAttempt = (cartId: string) => Promise<boolean>;
+
 export type GuestCheckoutPublicActionDependencies = {
   cartSession: GuestCheckoutCartSession;
+  consumeAttempt: ConsumeAttempt;
   submitCheckout: SubmitCheckout;
 };
 
@@ -28,7 +31,7 @@ function checkoutInputFromFormData(formData: FormData) {
 }
 
 export async function submitGuestCheckoutPublicAction(
-  { cartSession, submitCheckout }: GuestCheckoutPublicActionDependencies,
+  { cartSession, consumeAttempt, submitCheckout }: GuestCheckoutPublicActionDependencies,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
   const cartId = cartSession.read();
@@ -37,6 +40,25 @@ export async function submitGuestCheckoutPublicAction(
       ok: false,
       status: "RETRYABLE",
       reason: "CART_UNAVAILABLE",
+    };
+  }
+
+  let attemptAllowed = false;
+  try {
+    attemptAllowed = await consumeAttempt(cartId);
+  } catch {
+    return {
+      ok: false,
+      status: "RETRYABLE",
+      reason: "CHECKOUT_UNAVAILABLE",
+    };
+  }
+
+  if (!attemptAllowed) {
+    return {
+      ok: false,
+      status: "RETRYABLE",
+      reason: "CHECKOUT_UNAVAILABLE",
     };
   }
 
