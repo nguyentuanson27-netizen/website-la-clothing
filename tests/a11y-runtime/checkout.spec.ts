@@ -338,11 +338,15 @@ test("guest checkout cascades both geo datasets, ignores stale children, and sub
   await expect(submit).toBeEnabled();
 
   await submit.click();
+  await page.waitForURL((url) => {
+    return url.pathname === "/checkout/success" && Boolean(url.searchParams.get("order"));
+  });
   await waitForConfirmedOrder();
 
-  const successStatus = page.getByRole("status").filter({ hasText: "Đặt hàng thành công" });
-  await expect(successStatus).toContainText("LA-");
-  await expect(submit).toBeDisabled();
+  await expect(page.getByRole("heading", { level: 1, name: "ĐẶT HÀNG THÀNH CÔNG" })).toBeVisible();
+  const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn bạn đã đặt hàng." });
+  await expect(successStatus).toContainText("Mã đơn LA-");
+  expect((await context.cookies(BASE_URL)).some(({ name }) => name === "la_cart")).toBe(false);
 
   const confirmed = await prisma.orderMirror.findFirstOrThrow({
     where: { sourceCartId: cartId, state: "CONFIRMED" },
