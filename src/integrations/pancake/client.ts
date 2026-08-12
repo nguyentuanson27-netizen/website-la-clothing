@@ -5,6 +5,7 @@ const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
+type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
 
 export class PancakeHttpError extends Error {
   readonly status: number;
@@ -79,7 +80,7 @@ export class PancakeClient {
     return response.json() as Promise<unknown>;
   }
 
-  async postJson(endpoint: string, body: unknown): Promise<unknown> {
+  async postJson(endpoint: string, body: unknown, options: PostJsonOptions = {}): Promise<unknown> {
     const url = this.buildUrl(endpoint, {});
     let serializedBody: string;
     try {
@@ -106,7 +107,7 @@ export class PancakeClient {
       throw new PancakeNetworkError(endpoint);
     }
 
-    if (!response.ok) {
+    if (!response.ok || (options.expectedStatus !== undefined && response.status !== options.expectedStatus)) {
       throw new PancakeHttpError(response.status, endpoint);
     }
 
