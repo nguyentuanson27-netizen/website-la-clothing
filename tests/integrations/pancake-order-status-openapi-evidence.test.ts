@@ -7,8 +7,8 @@ import {
 } from "../../scripts/pancake-order-status-openapi-inspect.ts";
 import {
   inspectPancakeOrderStatusOpenApi,
-  PancakeOrderOpenApiError,
-} from "../../src/integrations/pancake/order-openapi-contract.ts";
+  PancakeOrderStatusOpenApiError,
+} from "../../src/integrations/pancake/order-status-openapi-evidence.ts";
 
 const STATUS_CODES = [0, 17, 11, 12, 13, 20, 1, 8, 9, 2, 3, 16, 4, 15, 5, 6, 7];
 
@@ -130,12 +130,13 @@ test("sanitized order-status evidence is deterministic, fingerprinted, and exclu
 });
 
 test("order-status inspection fails closed on ambiguous matching GET operations", () => {
-  const document = evidenceDocument();
+  const document: any = evidenceDocument();
   document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}/"] = document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}"];
 
   assert.throws(
     () => inspectPancakeOrderStatusOpenApi(document),
     (error: unknown) =>
-      error instanceof PancakeOrderOpenApiError && error.code === "ORDER_STATUS_OPERATION_AMBIGUOUS",
+      error instanceof PancakeOrderStatusOpenApiError &&
+      error.code === "ORDER_STATUS_OPERATION_AMBIGUOUS",
   );
 });
