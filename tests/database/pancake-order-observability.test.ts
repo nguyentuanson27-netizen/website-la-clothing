@@ -35,6 +35,7 @@ async function createDraft(key: string) {
   return prisma.orderMirror.create({
     data: {
       publicCode,
+      pancakeShopId: shopId,
       state: "DRAFT",
       checkoutSnapshottedAt: new Date("2026-08-11T08:40:00.000Z"),
       guestName: "Sensitive Name",

@@ -26,7 +26,6 @@ export type PancakeCreateOrderRequest = {
   shipping_fee: number;
   is_free_shipping: boolean;
   received_at_shop: false;
-  cod: number;
   shipping_address: {
     full_name: string;
     phone_number: string;
@@ -83,12 +82,6 @@ function requireNonNegativeSafeInteger(value: unknown): number {
   return value;
 }
 
-function addVnd(left: number, right: number): number {
-  const total = left + right;
-  if (!Number.isSafeInteger(total) || total < 0) invalidInput();
-  return total;
-}
-
 export function buildPancakeCreateOrderRequest(
   input: PancakeCreateOrderInput,
 ): PancakeCreateOrderRequest {
@@ -105,7 +98,6 @@ export function buildPancakeCreateOrderRequest(
 
   if (!Array.isArray(input.lines) || input.lines.length === 0) invalidInput();
 
-  let merchandiseSubtotalVnd = 0;
   const items = input.lines.map((line) => {
     if (!line || typeof line !== "object") invalidInput();
     const variationId = requireNormalizedNonEmptyString(line.pancakeVariationId);
@@ -113,7 +105,6 @@ export function buildPancakeCreateOrderRequest(
     const unitPriceVnd = requireNonNegativeSafeInteger(line.unitPriceVnd);
     const lineTotal = unitPriceVnd * quantity;
     if (!Number.isSafeInteger(lineTotal) || lineTotal < 0) invalidInput();
-    merchandiseSubtotalVnd = addVnd(merchandiseSubtotalVnd, lineTotal);
 
     return {
       variation_id: variationId,
@@ -121,7 +112,6 @@ export function buildPancakeCreateOrderRequest(
       variation_info: { retail_price: unitPriceVnd },
     };
   });
-  const codVnd = addVnd(merchandiseSubtotalVnd, shippingFeeVnd);
 
   let note: string | undefined;
   if (input.note !== null) {
@@ -135,7 +125,6 @@ export function buildPancakeCreateOrderRequest(
     shipping_fee: shippingFeeVnd,
     is_free_shipping: shippingFeeVnd === 0,
     received_at_shop: false,
-    cod: codVnd,
     shipping_address: {
       full_name: guestName,
       phone_number: guestPhone,

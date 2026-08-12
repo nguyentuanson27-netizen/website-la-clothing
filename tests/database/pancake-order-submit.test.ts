@@ -49,13 +49,15 @@ async function createDraft(
     price = 500_000,
     quantity = 2,
     shippingFee = 30_000,
-  }: { price?: number; quantity?: number; shippingFee?: number } = {},
+    pancakeShopId = shopId,
+  }: { price?: number; quantity?: number; shippingFee?: number; pancakeShopId?: number | null } = {},
 ) {
   await cleanup(key);
   const subtotal = price * quantity;
   return prisma.orderMirror.create({
     data: {
       publicCode: `submit-${key}`,
+      pancakeShopId,
       state: "DRAFT",
       checkoutSnapshottedAt: new Date("2026-08-11T08:40:00.000Z"),
       guestName: "Nguyễn Văn A",
@@ -94,7 +96,8 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   let createCalls = 0;
 
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchCompleteCatalog(requestShopId) {
+      assert.equal(requestShopId, shopId);
       return [liveVariation()];
     },
     async createOrder(request) {
@@ -104,6 +107,7 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
       assert.equal(request.shop_id, shopId);
       assert.equal(request.items[0]?.variation_id, "order-variation-001");
       assert.equal(request.items[0]?.variation_info.retail_price, 500_000);
+      assert.equal("cod" in request, false);
       return { id: 700_001 };
     },
   });
@@ -117,6 +121,39 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   assert.equal(persisted.pancakeOrderId, "700001");
   assert.equal(persisted.syncErrorCode, null);
   await cleanup(key);
+});
+
+test("submission rejects mismatched or unproven Pancake shop scope before any external call", async () => {
+  for (const scenario of [
+    { key: "shop-mismatch", persistedShopId: shopId, runtimeShopId: shopId + 1 },
+    { key: "shop-unproven", persistedShopId: null, runtimeShopId: shopId },
+  ] as const) {
+    const order = await createDraft(scenario.key, { pancakeShopId: scenario.persistedShopId });
+    let fetchCalls = 0;
+    let createCalls = 0;
+    const service = createPancakeOrderSubmissionService(prisma, {
+      async fetchCompleteCatalog() {
+        fetchCalls += 1;
+        return [liveVariation()];
+      },
+      async createOrder() {
+        createCalls += 1;
+        return { id: 1 };
+      },
+    });
+
+    assert.deepEqual(
+      await service.submit({ publicCode: order.publicCode, shopId: scenario.runtimeShopId }),
+      { ok: false, state: "REJECTED", reason: "SHOP_SCOPE_UNVERIFIED" },
+    );
+    assert.equal(fetchCalls, 0);
+    assert.equal(createCalls, 0);
+
+    const persisted = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
+    assert.equal(persisted.state, "REJECTED");
+    assert.equal(persisted.syncErrorCode, "SHOP_SCOPE_UNVERIFIED");
+    await cleanup(scenario.key);
+  }
 });
 
 test("price or stock drift is rejected before Pancake order creation", async () => {

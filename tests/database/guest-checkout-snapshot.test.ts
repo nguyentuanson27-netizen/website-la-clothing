@@ -112,7 +112,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("checkout snapshot persists server-authoritative lines and the default 30,000 VND shipping fee", async () => {
+test("checkout snapshot persists server-authoritative lines, shop scope, and the default 30,000 VND shipping fee", async () => {
   const key = "default-shipping";
   await cleanup(key);
   const { product, variant, cart } = await createCartProduct({
@@ -145,6 +145,7 @@ test("checkout snapshot persists server-authoritative lines and the default 30,0
     include: { lines: true },
   });
 
+  assert.equal(persisted.pancakeShopId, shopId);
   assert.equal(persisted.checkoutSnapshottedAt?.toISOString(), now.toISOString());
   assert.equal(persisted.guestName, "Nguyễn Văn A");
   assert.equal(persisted.guestPhone, "0901234567");

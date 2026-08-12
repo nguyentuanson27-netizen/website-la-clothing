@@ -16,6 +16,7 @@ export type PancakeOrderSubmissionReason =
   | "SUBMISSION_ALREADY_CLAIMED"
   | "SUBMISSION_BUSY"
   | "LOCAL_ORDER_INVALID"
+  | "SHOP_SCOPE_UNVERIFIED"
   | "VARIATION_UNAVAILABLE"
   | "PRICE_CHANGED"
   | "PRICE_UNAVAILABLE"
@@ -27,6 +28,7 @@ export type PancakeOrderSubmissionReason =
 type PancakeOrderValidationRejectionReason = Extract<
   PancakeOrderSubmissionReason,
   | "LOCAL_ORDER_INVALID"
+  | "SHOP_SCOPE_UNVERIFIED"
   | "VARIATION_UNAVAILABLE"
   | "PRICE_CHANGED"
   | "PRICE_UNAVAILABLE"
@@ -158,6 +160,7 @@ function existingResult(order: {
     const reason = order.syncErrorCode;
     if (
       reason === "LOCAL_ORDER_INVALID" ||
+      reason === "SHOP_SCOPE_UNVERIFIED" ||
       reason === "VARIATION_UNAVAILABLE" ||
       reason === "PRICE_CHANGED" ||
       reason === "PRICE_UNAVAILABLE" ||
@@ -248,6 +251,11 @@ export function createPancakeOrderSubmissionService(
       return { ok: false, state: "DRAFT", reason: "VALIDATION_UNAVAILABLE" };
     }
 
+    if (order.pancakeShopId === null || order.pancakeShopId !== safeShopId) {
+      return reject("SHOP_SCOPE_UNVERIFIED");
+    }
+    const persistedShopId = order.pancakeShopId;
+
     if (
       order.checkoutSnapshottedAt === null ||
       !isNormalizedNonEmptyString(order.guestName) ||
@@ -268,7 +276,7 @@ export function createPancakeOrderSubmissionService(
 
     let liveCatalog: readonly PancakeCatalogVariation[];
     try {
-      liveCatalog = await gateway.fetchCompleteCatalog(safeShopId);
+      liveCatalog = await gateway.fetchCompleteCatalog(persistedShopId);
     } catch {
       return resetValidation();
     }
@@ -355,7 +363,7 @@ export function createPancakeOrderSubmissionService(
     }
 
     const request = buildPancakeCreateOrderRequest({
-      shopId: safeShopId,
+      shopId: persistedShopId,
       guestName: order.guestName,
       guestPhone: order.guestPhone,
       provinceRef: order.provinceRef,

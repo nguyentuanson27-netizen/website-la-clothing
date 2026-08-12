@@ -271,6 +271,7 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
           data: {
             publicCode: safePublicCode,
             userId: null,
+            pancakeShopId: safeShopId,
             state: "DRAFT",
             checkoutSnapshottedAt: now,
             guestName: parsedCheckout.value.name,
