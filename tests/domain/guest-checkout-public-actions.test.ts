@@ -19,6 +19,8 @@ function makeFormData() {
   return formData;
 }
 
+const allowAttempt = async () => true;
+
 test("browser checkout uses the HttpOnly cart identity and forwards only allowlisted guest fields", async () => {
   let submittedInput: unknown;
   const cartSession = {
@@ -29,6 +31,7 @@ test("browser checkout uses the HttpOnly cart identity and forwards only allowli
   const result = await submitGuestCheckoutPublicAction(
     {
       cartSession,
+      consumeAttempt: allowAttempt,
       submitCheckout: async (input) => {
         submittedInput = input;
         return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-001" };
@@ -76,6 +79,7 @@ test("confirmed checkout clears the anonymous cart cookie but ambiguous checkout
             clearCalls += 1;
           },
         },
+        consumeAttempt: allowAttempt,
         submitCheckout: async () => entry.outcome,
       },
       makeFormData(),
@@ -86,11 +90,16 @@ test("confirmed checkout clears the anonymous cart cookie but ambiguous checkout
   }
 });
 
-test("missing anonymous cart stops before checkout submission", async () => {
+test("missing anonymous cart stops before checkout submission and rate limiting", async () => {
+  let limiterCalls = 0;
   let submitCalls = 0;
   const result = await submitGuestCheckoutPublicAction(
     {
       cartSession: { read: () => null, clear: () => undefined },
+      consumeAttempt: async () => {
+        limiterCalls += 1;
+        return true;
+      },
       submitCheckout: async () => {
         submitCalls += 1;
         throw new Error("must not submit");
@@ -104,6 +113,7 @@ test("missing anonymous cart stops before checkout submission", async () => {
     status: "RETRYABLE",
     reason: "CART_UNAVAILABLE",
   });
+  assert.equal(limiterCalls, 0);
   assert.equal(submitCalls, 0);
 });
 
@@ -131,5 +141,29 @@ test("rate-limited anonymous cart stops before checkout submission", async () =>
     reason: "CHECKOUT_UNAVAILABLE",
   });
   assert.equal(limiterCalls, 1);
+  assert.equal(submitCalls, 0);
+});
+
+test("rate-limit storage failure fails closed before checkout submission", async () => {
+  let submitCalls = 0;
+  const result = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: { read: () => "server-cart-id", clear: () => undefined },
+      consumeAttempt: async () => {
+        throw new Error("database details must not escape");
+      },
+      submitCheckout: async () => {
+        submitCalls += 1;
+        return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-should-not-run" };
+      },
+    },
+    makeFormData(),
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: "RETRYABLE",
+    reason: "CHECKOUT_UNAVAILABLE",
+  });
   assert.equal(submitCalls, 0);
 });
