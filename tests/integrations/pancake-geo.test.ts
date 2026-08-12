@@ -168,6 +168,15 @@ test("geo gateway validates bounded lookup identifiers before any Pancake read",
     );
   }
 
+  const provincesWithInvalidMode = listPancakeProvinces as unknown as (
+    client: FakeReadableClient,
+    input: { countryCode: string; isNew?: unknown; all?: unknown },
+  ) => Promise<unknown>;
+  await assert.rejects(
+    () => provincesWithInvalidMode(client, { countryCode: "84", isNew: "false" }),
+    (error: unknown) => hasGeoCode(error, "INVALID_GEO_QUERY"),
+  );
+
   assert.equal(client.calls.length, 0);
 });
 
