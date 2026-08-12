@@ -66,6 +66,7 @@ export class PancakeClient {
     try {
       response = await this.fetcher(url, {
         method: "GET",
+        redirect: "error",
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -96,6 +97,7 @@ export class PancakeClient {
     try {
       response = await this.fetcher(url, {
         method: "POST",
+        redirect: "error",
         headers: {
           accept: "application/json",
           "content-type": "application/json",
