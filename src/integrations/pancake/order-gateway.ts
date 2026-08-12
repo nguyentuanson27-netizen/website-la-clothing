@@ -1,6 +1,11 @@
 import type { PancakeCatalogVariation } from "./catalog-contract.ts";
 import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
 import type { PancakeCreateOrderRequest } from "./order-create.ts";
+import {
+  isCanonicalPancakeOrderId,
+  parsePancakeOrderStatusResponse,
+  type PancakeOrderStatus,
+} from "./order-status.ts";
 
 type QueryValue = string | number | boolean;
 type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
@@ -22,6 +27,13 @@ function requireShopId(value: number): number {
   return value;
 }
 
+function requireOrderId(value: string): string {
+  if (!isCanonicalPancakeOrderId(value)) {
+    throw new TypeError("Pancake order id must be a canonical positive safe integer string");
+  }
+  return value;
+}
+
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
   fetchCompleteCatalog: FetchCompleteCatalog = fetchAllPancakeCatalogVariations,
@@ -29,6 +41,16 @@ export function createPancakeOrderGateway(
   return {
     async fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]> {
       return fetchCompleteCatalog({ client, shopId: requireShopId(shopId) });
+    },
+
+    async fetchOrderStatus(shopId: number, orderId: string): Promise<PancakeOrderStatus> {
+      const checkedShopId = requireShopId(shopId);
+      const checkedOrderId = requireOrderId(orderId);
+      const payload = await client.getJson(`/shops/${checkedShopId}/orders/${checkedOrderId}`);
+      return parsePancakeOrderStatusResponse(payload, {
+        shopId: checkedShopId,
+        orderId: checkedOrderId,
+      });
     },
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {
