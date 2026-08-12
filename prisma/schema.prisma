@@ -229,6 +229,9 @@ model OrderMirror {
   sourceCartId           String?
   pancakeShopId          Int?
   pancakeOrderId         String?             @unique
+  pancakeSystemId        String?
+  pancakeStatus          Int?
+  pancakeStatusUpdatedAt String?
   state                  LocalOrderState     @default(DRAFT)
   syncErrorCode          String?
   checkoutSnapshottedAt  DateTime?
