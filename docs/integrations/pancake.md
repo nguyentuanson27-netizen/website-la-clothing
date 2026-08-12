@@ -1,6 +1,6 @@
 # Pancake POS integration contract
 
-Status: **catalog read contract is implemented and verified; fingerprinted raw OpenAPI evidence now establishes the reviewed C8 create-order structure, and PR #45 implements the server-only one-shot create-order core. Native idempotency/client-reference semantics, `cod` business semantics, browser submit wiring, and controlled live create-order verification remain separate gates.**
+Status: **catalog read contract is implemented and verified; fingerprinted OpenAPI evidence establishes the reviewed C8 create-order structure and the T10 order-detail read shape/status enum; the server-only one-shot create-order core and guest COD checkout wiring are implemented. Native idempotency/client-reference semantics, `cod` business semantics, status transition semantics, webhook guarantees, local-state mapping, and controlled live create-order verification remain separate gates.**
 
 ## Authoritative boundaries
 
@@ -194,19 +194,55 @@ Manual review of the fingerprinted document still found no trustworthy native id
 
 No automated CI test performs a live Pancake create-order write. A controlled live create-order verification remains a separate human gate.
 
+## T10 order-status read contract verification
+
+The same fingerprinted Pancake OpenAPI source is now used to establish the read-only order-detail contract required by T10. The raw file remains uncommitted; `docs/integrations/pancake-order-status-contract-observed.json` is the sanitized deterministic artifact and `docs/integrations/pancake-order-status-openapi-evidence.md` documents how to reproduce it.
+
+The checked source fingerprint is:
+
+```text
+sha256 = 44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f
+bytes  = 2774602
+```
+
+Run the local-only bounded inspector with:
+
+```bash
+pnpm pancake:order-status:inspect-openapi <local-openapi.json>
+```
+
+The evidence establishes:
+
+- `GET /shops/{SHOP_ID}/orders/{ORDER_ID}`;
+- required integer path parameter `SHOP_ID`;
+- required string path parameter `ORDER_ID`;
+- documented `200 application/json` response;
+- selected response fields `id`, `system_id`, `shop_id`, `status`, `inserted_at`, `updated_at`;
+- `id`, `system_id`, `shop_id`, `status` are integers;
+- `inserted_at` and `updated_at` are `string` with `date-time` format;
+- the exact structural `status` enum is:
+
+```text
+0, 17, 11, 12, 13, 20, 1, 8, 9, 2, 3, 16, 4, 15, 5, 6, 7
+```
+
+The status evidence inspector is intentionally narrower than the full order schema: it selects only those six properties, limits local-reference traversal/work, and never emits examples, descriptions, customer objects or other order PII. The production parser/gateway may validate the verified read shape and exact enum, but must not infer business semantics from enum order or numeric values.
+
+This evidence does **not** establish the meaning of individual codes, a valid/terminal/reversible transition graph, event ordering guarantees, webhook authentication/retry/deduplication semantics, or a mapping into website-owned `LocalOrderState`. Those remain separate gates.
+
 ## Later integration contracts still unverified
 
 These items remain intentionally unverified or separately gated:
 
 1. Business semantics for optional `cod`; PR #45 omits it rather than guessing.
 2. Correct website-origin/client-reference field and native create-order idempotency or unique-reference behavior.
-3. Exact order status codes/transitions used by reconciliation.
-4. Webhook event names, payload shape, authentication/signature and replay protection.
-5. Browser checkout submit wiring and controlled live create-order verification.
+3. Business meanings and allowed transition graph for the now-verified Pancake status enum, including any mapping into website `LocalOrderState`.
+4. Webhook event names, payload completeness, authentication/signature, retry, duplicate-delivery, replay protection and ordering guarantees.
+5. Controlled live create-order verification against the production shop.
 
 The guest shipping-fee policy is website-owned and was approved separately by the product owner on 2026-08-11: 30,000 VND by default, with free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3. It is not an unverified Pancake API contract.
 
-Do not guess the remaining integration contracts. In particular, do not add blind retries for uncertain Pancake order writes.
+Do not guess the remaining integration contracts. In particular, do not add blind retries for uncertain Pancake order writes or map Pancake status codes into `LocalOrderState` without separate semantic evidence.
 
 ## Official sources checked
 
