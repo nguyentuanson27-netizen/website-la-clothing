@@ -254,7 +254,7 @@ export function createGuestCheckoutSnapshotService(
   client: PrismaClient,
   options: GuestCheckoutSnapshotServiceOptions = {},
 ) {
-  const checkoutInputValidated = options.checkoutInputValidated ?? true;
+  const checkoutInputValidated = options.checkoutInputValidated ?? false;
 
   async function create({
     cartId,
