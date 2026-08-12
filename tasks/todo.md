@@ -8,11 +8,11 @@ Intended repository path: `tasks/todo.md`
 - [x] T2 Bootstrap Next.js project and real quality commands
 - [x] T3 Build design system and storefront shell
 - [x] T4 Add database and secure CUSTOMER/ADMIN auth foundation
-- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order structural inspector/evidence are merged and the one-shot create-order transport/runtime is in draft PR #45 while order-status adapters remain
+- [~] T5 Implement typed Pancake adapter with schema validation — secure client + reviewed catalog parser/fixtures/verification implemented; create-order structural inspector/evidence and one-shot create-order transport/runtime are merged through PR #45, while order-status adapters remain
 - [x] T6 Implement idempotent catalog synchronization/mirror — C4 approved and merged in PR #39
 - [~] T7 Deliver Pancake-backed PLP/PDP vertical slice — implementation, automated verification and code-level approval/merge complete; storefront browser/mobile/a11y verification remains
 - [~] T8 Deliver stock-aware Color × Size selection and anonymous cart — DB service, ownership lock, opaque cookie, 30-day TTL, Add-to-Bag and full current-state cart UI/update/remove are implemented and merged; cart browser/mobile/a11y verification remains
-- [~] T9 Deliver guest COD checkout → exactly one Pancake order — C7 secure snapshot foundation is merged; draft PR #45 implements the server-only live revalidation + durable one-shot Pancake create-order core, while browser submit wiring and a controlled live create-order verification remain
+- [~] T9 Deliver guest COD checkout → exactly one Pancake order — C7 snapshot foundation and PR #45 one-shot Pancake create-order core are merged; draft PR #46 adds the hardened server-side browser submission boundary, while visible checkout selectors, browser/mobile/a11y flow verification and a controlled live create-order verification remain
 - [ ] T10 Sync order statuses and implement safe guest tracking
 - [ ] T11 Add optional customer account and protected order history — deferred by product owner
 - [~] T12 Add editorial homepage/lookbook and restricted content admin — restricted product editorial admin foundation implemented; homepage/lookbook composition remains
@@ -21,7 +21,7 @@ Intended repository path: `tasks/todo.md`
 - [ ] T15 Run security/observability/accessibility/E2E hardening
 - [ ] T16 Add CI and release/rollback readiness
 
-## Current execution path: C4/C5/C6/C7 and C8 OpenAPI contract/evidence PRs #43/#44 are merged and green on `main`; draft PR #45 adds the production one-shot create-order core. Native idempotency/client-reference semantics remain unverified, so no automatic second POST/retry is authorized. Browser checkout submission and a controlled live Pancake create-order exercise remain separate gates
+## Current execution path: C4/C5/C6/C7 and C8 OpenAPI/evidence + one-shot create-order PRs #43/#44/#45 are merged and green on `main`; draft PR #46 hardens the guest-checkout Server Action boundary, retry/recovery semantics and public abuse controls. Native idempotency/client-reference semantics remain unverified, so no automatic second POST/retry is authorized. Visible checkout UI remains gated on verified Pancake geo lookup semantics, and a controlled live Pancake create-order exercise remains a separate gate
 
 - [x] C1 Next.js guest-cart request identity adapter
   - [x] RED test
@@ -74,7 +74,7 @@ Intended repository path: `tasks/todo.md`
 - [~] C5 PLP/PDP Color × Size storefront — code-level approved and merged in PR #40; storefront browser/mobile/a11y remains pending
   - [x] server-authoritative price/availability and Add-to-Bag reauthorization
   - [x] URL-backed bounded pagination keeps products after the first 24 browseable
-  - [x] review Comment `5248837169` Required fixed with a 25-product database regression
+  - [x] review Comment `5248837169`: Required fixed with a 25-product database regression
   - [x] Consider #1 fixed: storefront shop scope no longer requires `PANCAKE_API_KEY`; live Pancake config still does
   - [x] Consider #2 fixed: storefront public purchase action owns a fixed browser response shape and strips downstream fields
   - [x] review Comment `5249082862`: APPROVE — 0 Critical / 0 Required / 1 non-blocking Consider
@@ -107,7 +107,7 @@ Intended repository path: `tasks/todo.md`
   - [x] squash-merged to `main` as `053fcbd`; post-merge CI #420 passed both `verify` and `admin-a11y-runtime`
   - [x] C7 deliberately stops at a local DRAFT snapshot; browser checkout submission and actual POS order write remain C8 work rather than a fake half-checkout flow
   - [x] architecture records that authoritative live Pancake price/stock must be revalidated again immediately before POS order creation; mirrored snapshot is not a reservation
-- [~] C8 Pancake create-order orchestration — OpenAPI inspector/evidence approved and merged in PRs #43/#44; draft PR #45 implements the server-only live revalidation + durable one-shot create-order core
+- [~] C8 Pancake create-order orchestration — OpenAPI inspector/evidence and one-shot create-order core are approved/merged through PR #45; draft PR #46 hardens the server-side guest checkout submission boundary before visible UI activation
   - [x] current official full reference at `api-docs.pancake.biz` verifies reference v1.0.0, OpenAPI 3.1.0, production base `https://pos.pages.fm/api/v1`, and `POST /shops/{SHOP_ID}/orders` endpoint existence
   - [x] local pure OpenAPI inspector locates exactly one create-order operation without guessing the path-parameter name and emits only structural metadata
   - [x] inspector rejects external/unresolved/circular refs, malformed documents and bounded-inspection overflow; chained local refs and local Path Item refs are resolved with the same bounded guards
@@ -141,17 +141,22 @@ Intended repository path: `tasks/todo.md`
   - [x] validation transport failure before any POST safely returns the order to `DRAFT`; local price/stock/shape drift rejects before POST
   - [x] success/concurrency/price-drift/stock-drift/validation-failure/create-timeout/malformed-success-identity/`SYNC_UNKNOWN` regressions prove at most one create POST per claimed order
   - [x] secure `PancakeClient.postJson` reuses endpoint canonicalization, query API-key auth and bounded timeout while keeping response/request details out of diagnostics
-  - [x] strict server-owned create-order mapper emits only reviewed fields; `custom_id`, `cash`, browser authority fields and status are not passed through
-  - [x] COD request amount is server-derived as freshly revalidated merchandise subtotal + approved shipping fee; `cod` is never accepted from browser/caller input and safe-integer overflow fails closed
+  - [x] strict server-owned create-order mapper emits only reviewed fields; `custom_id`, `cash`, `cod`, browser authority fields and status are not passed through; `cod` remains omitted because current trusted evidence does not establish its business semantics
   - [x] production order gateway delegates live validation to the existing bounded full-catalog traversal and posts only the strict request to `/shops/{shopId}/orders`
   - [x] critical-path structured lifecycle events use stable names + internal order UUID correlation and exclude public code, guest PII, secrets, raw remote errors and Pancake order identity; observer failure cannot alter submission semantics
-  - [x] PR #45 TDD: core RED #468; POST transport RED #471 → full GREEN #472; clean gateway RED #474 → full GREEN #476; observability RED #477 → verify GREEN #480; COD RED #481 at 166/169 → full GREEN #483
+  - [x] PR #45 TDD: core RED #468; POST transport RED #471 → full GREEN #472; clean gateway RED #474 → full GREEN #476; observability RED #477 → verify GREEN #480; later review cycles removed the unverified `cod` assumption and hardened exact-HTTP-status + redirect handling
   - [ ] correct website-origin reference field verified — `custom_id` is documented only as `Custom ID`, so it is not treated as a verified idempotency/client-reference key
   - [ ] native idempotency / unique client-reference behavior verified — absent from supplied create-order documentation; this blocks automatic retry/duplicate-safe recovery, not the approved one-shot write pattern
   - [x] no blind retry after `POS_SUBMITTING`; any create transport/HTTP/parser ambiguity becomes `SYNC_UNKNOWN`, while an already `POS_SUBMITTING`/`SYNC_UNKNOWN` order cannot auto-post again
   - [x] create-order adapter/server runtime path implemented; CI uses fake transport and no live Pancake order is created by automated verification
-  - [ ] browser checkout submit wiring and controlled live Pancake create-order verification
-  - [~] self-review: APPROVE — 0 Critical / 0 Required / 2 Consider. Consider: bounded full-catalog revalidation is heavier than an unverified targeted lookup; hard process crash can conservatively leave `VALIDATING`/`POS_SUBMITTING` for manual reconciliation, but no automatic second POST is permitted. Human re-review remains required
+  - [x] PR #46 Required retry fix: `DRAFT/VALIDATION_UNAVAILABLE` is superseded as `REJECTED/VALIDATION_RETRY_SUPERSEDED`, then current cart + current contact/address are snapshotted into a fresh attempt; a fresh in-flight DRAFT remains reusable for double-submit concurrency safety
+  - [x] PR #46 retry collision hardening: if a fresh server-generated public code collides while superseding a retryable DRAFT, uniqueness recovery fails closed as `PUBLIC_CODE_UNAVAILABLE` instead of falling back to the stale retryable snapshot
+  - [x] PR #46 public abuse control layers a pseudonymous trusted-client PostgreSQL bucket over the cart bucket, so rotating anonymous carts does not reset the client-level checkout budget; raw client IP is not persisted
+  - [x] PR #46 recovery closes stale `VALIDATING` as `REJECTED/VALIDATION_INTERRUPTED` and stale `POS_SUBMITTING` as `SYNC_UNKNOWN/CREATE_OUTCOME_UNKNOWN`; recovery never restores a state that authorizes an automatic Pancake repost
+  - [x] PR #46 CI includes a real Next Server Action HTTP smoke through request cookie + trusted client header → both rate-limit buckets → confirmed fast-path cart-cookie clear, using a seeded confirmed order and no live Pancake write
+  - [x] PR #46 review-fix code and documentation have passed the full CI matrix on successive exact heads; final branch head remains subject to the same required green CI gate before human re-review
+  - [~] browser checkout submission: server boundary is implemented and runtime-verified in PR #46; visible province → district → commune selectors/cart CTA remain gated on exact verified Pancake geo query/response + ID namespace semantics
+  - [~] self-review: APPROVE — 0 Critical / 0 Required for the current review; the Required stale-DRAFT finding and all three requested Consider findings are closed. Bounded full-catalog revalidation remains a separate performance consideration, and visible checkout activation remains externally gated by Pancake geo evidence. Human re-review remains required
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed

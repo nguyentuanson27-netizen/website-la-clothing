@@ -1,6 +1,6 @@
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
-import { readPancakeConfig } from "../integrations/pancake/config.ts";
+import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
 import {
   createPancakeOrderSubmissionService,
@@ -11,13 +11,18 @@ function writePancakeOrderSubmissionEvent(event: PancakeOrderSubmissionEvent): v
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
-export async function submitPancakeOrderByPublicCode(publicCode: string) {
-  const config = readPancakeConfig();
+export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const client = new PancakeClient({ apiKey: config.apiKey });
   const gateway = createPancakeOrderGateway(client);
-  const service = createPancakeOrderSubmissionService(prisma, gateway, {
+  return createPancakeOrderSubmissionService(prisma, gateway, {
     onEvent: writePancakeOrderSubmissionEvent,
   });
+}
 
-  return service.submit({ publicCode, shopId: config.shopId });
+export async function submitPancakeOrderByPublicCode(publicCode: string) {
+  const config = readPancakeConfig();
+  return createPancakeOrderSubmissionRuntime(config).submit({
+    publicCode,
+    shopId: config.shopId,
+  });
 }

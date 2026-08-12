@@ -6,6 +6,17 @@ import { buildStorefrontCartLines } from "./storefront-cart.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
+const RETRYABLE_DRAFT_ERROR = "VALIDATION_UNAVAILABLE";
+const SUPERSEDED_RETRY_ERROR = "VALIDATION_RETRY_SUPERSEDED";
+const ACTIVE_CHECKOUT_STATES = [
+  "DRAFT",
+  "VALIDATING",
+  "POS_SUBMITTING",
+  "CONFIRMED",
+  "SYNC_UNKNOWN",
+] as const;
+
+type ActiveCheckoutState = (typeof ACTIVE_CHECKOUT_STATES)[number];
 
 type CheckoutFailureReason =
   | "INVALID_INPUT"
@@ -20,13 +31,23 @@ type CheckoutSnapshotResult =
       ok: true;
       order: {
         publicCode: string;
-        state: "DRAFT";
+        state: ActiveCheckoutState;
         merchandiseSubtotalVnd: bigint;
         shippingFeeVnd: bigint;
         totalVnd: bigint;
       };
     }
   | { ok: false; reason: CheckoutFailureReason };
+
+const snapshotOrderSelection = {
+  id: true,
+  publicCode: true,
+  state: true,
+  syncErrorCode: true,
+  merchandiseSubtotalVnd: true,
+  shippingFeeVnd: true,
+  totalVnd: true,
+} satisfies Prisma.OrderMirrorSelect;
 
 const productSelection = {
   name: true,
@@ -51,6 +72,9 @@ const productSelection = {
   },
 } satisfies Prisma.ProductMirrorSelect;
 
+type SelectedSnapshotOrder = Prisma.OrderMirrorGetPayload<{
+  select: typeof snapshotOrderSelection;
+}>;
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 type TransactionClient = Prisma.TransactionClient;
 
@@ -69,6 +93,36 @@ function parsePublicCode(publicCode: unknown): string | null {
 
 function isValidDate(now: Date): boolean {
   return now instanceof Date && !Number.isNaN(now.getTime());
+}
+
+function isActiveCheckoutState(state: string): state is ActiveCheckoutState {
+  return (ACTIVE_CHECKOUT_STATES as readonly string[]).includes(state);
+}
+
+function isRetryableDraft(order: SelectedSnapshotOrder): boolean {
+  return order.state === "DRAFT" && order.syncErrorCode === RETRYABLE_DRAFT_ERROR;
+}
+
+function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult | null {
+  if (
+    !isActiveCheckoutState(order.state) ||
+    order.merchandiseSubtotalVnd === null ||
+    order.shippingFeeVnd === null ||
+    order.totalVnd === null
+  ) {
+    return null;
+  }
+
+  return {
+    ok: true,
+    order: {
+      publicCode: order.publicCode,
+      state: order.state,
+      merchandiseSubtotalVnd: order.merchandiseSubtotalVnd,
+      shippingFeeVnd: order.shippingFeeVnd,
+      totalVnd: order.totalVnd,
+    },
+  };
 }
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number | null {
@@ -112,6 +166,39 @@ async function lockLiveAnonymousCart(
     FOR UPDATE
   `;
   return rows.length === 1;
+}
+
+async function findActiveCheckout(tx: TransactionClient, cartId: string) {
+  return tx.orderMirror.findFirst({
+    where: {
+      sourceCartId: cartId,
+      state: { in: [...ACTIVE_CHECKOUT_STATES] },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: snapshotOrderSelection,
+  });
+}
+
+async function supersedeRetryableDraft(
+  tx: TransactionClient,
+  order: SelectedSnapshotOrder,
+): Promise<boolean> {
+  if (!isRetryableDraft(order)) {
+    return false;
+  }
+
+  const result = await tx.orderMirror.updateMany({
+    where: {
+      id: order.id,
+      state: "DRAFT",
+      syncErrorCode: RETRYABLE_DRAFT_ERROR,
+    },
+    data: {
+      state: "REJECTED",
+      syncErrorCode: SUPERSEDED_RETRY_ERROR,
+    },
+  });
+  return result.count === 1;
 }
 
 function toStorefrontProduct(product: SelectedProduct) {
@@ -171,6 +258,14 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
       return await client.$transaction(async (tx): Promise<CheckoutSnapshotResult> => {
         if (!(await lockLiveAnonymousCart(tx, cartId, now))) {
           return { ok: false, reason: "CART_UNAVAILABLE" };
+        }
+
+        const activeCheckout = await findActiveCheckout(tx, cartId);
+        if (activeCheckout) {
+          const superseded = await supersedeRetryableDraft(tx, activeCheckout);
+          if (!superseded) {
+            return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+          }
         }
 
         const items = await tx.cartItem.findMany({
@@ -271,6 +366,7 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
           data: {
             publicCode: safePublicCode,
             userId: null,
+            sourceCartId: cartId,
             pancakeShopId: safeShopId,
             state: "DRAFT",
             checkoutSnapshottedAt: now,
@@ -286,25 +382,10 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
             totalVnd: BigInt(totalVnd),
             lines: { create: snapshots },
           },
-          select: {
-            publicCode: true,
-            state: true,
-            merchandiseSubtotalVnd: true,
-            shippingFeeVnd: true,
-            totalVnd: true,
-          },
+          select: snapshotOrderSelection,
         });
 
-        return {
-          ok: true,
-          order: {
-            publicCode: order.publicCode,
-            state: "DRAFT",
-            merchandiseSubtotalVnd: order.merchandiseSubtotalVnd!,
-            shippingFeeVnd: order.shippingFeeVnd!,
-            totalVnd: order.totalVnd!,
-          },
-        };
+        return toSnapshotResult(order) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
       });
     } catch (error) {
       if (
@@ -313,7 +394,18 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
         "code" in error &&
         error.code === "P2002"
       ) {
-        return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
+        const activeCheckout = await client.orderMirror.findFirst({
+          where: {
+            sourceCartId: cartId,
+            state: { in: [...ACTIVE_CHECKOUT_STATES] },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: snapshotOrderSelection,
+        });
+        if (!activeCheckout || isRetryableDraft(activeCheckout)) {
+          return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
+        }
+        return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
       }
       throw error;
     }

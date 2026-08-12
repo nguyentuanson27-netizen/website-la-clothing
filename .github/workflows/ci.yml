@@ -65,6 +65,12 @@ jobs:
       - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
 
+      - name: Guest checkout Server Action HTTP smoke
+        env:
+          PANCAKE_API_KEY: ci-only-pancake-placeholder
+          PANCAKE_SHOP_ID: "920007"
+        run: node --experimental-strip-types scripts/guest-checkout-server-action-http-smoke.ts
+
       - name: Authenticated admin HTTP authorization smoke
         run: node --experimental-strip-types scripts/admin-authz-http-smoke.ts
 
