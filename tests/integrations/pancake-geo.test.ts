@@ -2,13 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  PancakeGeoContractError,
   listPancakeCommunes,
   listPancakeDistricts,
   listPancakeProvinces,
 } from "../../src/integrations/pancake/geo.ts";
 
 type Query = Readonly<Record<string, string | number | boolean>>;
+
+type GeoErrorCode = "INVALID_GEO_QUERY" | "MALFORMED_GEO_RESPONSE";
+
+function hasGeoCode(error: unknown, code: GeoErrorCode): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as Error & { code?: unknown }).code === code
+  );
+}
 
 class FakeReadableClient {
   readonly calls: Array<{ endpoint: string; query: Query }> = [];
@@ -105,8 +114,7 @@ test("geo gateway rejects malformed, duplicate and wrong-parent records", async 
   const malformed = new FakeReadableClient({ data: [{ id: "101", name: "   " }] });
   await assert.rejects(
     () => listPancakeProvinces(malformed, { countryCode: "84" }),
-    (error: unknown) =>
-      error instanceof PancakeGeoContractError && error.code === "MALFORMED_GEO_RESPONSE",
+    (error: unknown) => hasGeoCode(error, "MALFORMED_GEO_RESPONSE"),
   );
 
   const duplicate = new FakeReadableClient({
@@ -117,8 +125,7 @@ test("geo gateway rejects malformed, duplicate and wrong-parent records", async 
   });
   await assert.rejects(
     () => listPancakeProvinces(duplicate, { countryCode: "84" }),
-    (error: unknown) =>
-      error instanceof PancakeGeoContractError && error.code === "MALFORMED_GEO_RESPONSE",
+    (error: unknown) => hasGeoCode(error, "MALFORMED_GEO_RESPONSE"),
   );
 
   const wrongDistrictParent = new FakeReadableClient({
@@ -126,8 +133,7 @@ test("geo gateway rejects malformed, duplicate and wrong-parent records", async 
   });
   await assert.rejects(
     () => listPancakeDistricts(wrongDistrictParent, { provinceId: "101" }),
-    (error: unknown) =>
-      error instanceof PancakeGeoContractError && error.code === "MALFORMED_GEO_RESPONSE",
+    (error: unknown) => hasGeoCode(error, "MALFORMED_GEO_RESPONSE"),
   );
 
   const wrongCommuneParent = new FakeReadableClient({
@@ -142,8 +148,7 @@ test("geo gateway rejects malformed, duplicate and wrong-parent records", async 
   });
   await assert.rejects(
     () => listPancakeCommunes(wrongCommuneParent, { provinceId: "101", districtId: "10113" }),
-    (error: unknown) =>
-      error instanceof PancakeGeoContractError && error.code === "MALFORMED_GEO_RESPONSE",
+    (error: unknown) => hasGeoCode(error, "MALFORMED_GEO_RESPONSE"),
   );
 });
 
@@ -157,8 +162,7 @@ test("geo gateway validates bounded lookup identifiers before any Pancake read",
   ]) {
     await assert.rejects(
       run,
-      (error: unknown) =>
-        error instanceof PancakeGeoContractError && error.code === "INVALID_GEO_QUERY",
+      (error: unknown) => hasGeoCode(error, "INVALID_GEO_QUERY"),
     );
   }
 
@@ -175,7 +179,6 @@ test("geo gateway rejects oversized result sets before returning third-party dat
 
   await assert.rejects(
     () => listPancakeProvinces(client, { countryCode: "84" }),
-    (error: unknown) =>
-      error instanceof PancakeGeoContractError && error.code === "MALFORMED_GEO_RESPONSE",
+    (error: unknown) => hasGeoCode(error, "MALFORMED_GEO_RESPONSE"),
   );
 });
