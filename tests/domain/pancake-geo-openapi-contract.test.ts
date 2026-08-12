@@ -254,7 +254,7 @@ test("fails closed when duplicate slash variants make a geo operation ambiguous"
 test("geo inspection inherits bounded local-ref failures", () => {
   const document = structuredClone(syntheticOpenApi);
   const districts = (
-    document.paths as Record<string, { get: { parameters: Array<Record<string, string>> } }>
+    document.paths as unknown as Record<string, { get: { parameters: unknown[] } }>
   )["/geo/districts"];
   districts.get.parameters = [{ $ref: "https://example.test/parameter.json" }];
 
