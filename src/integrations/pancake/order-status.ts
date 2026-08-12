@@ -24,7 +24,7 @@ export class PancakeOrderStatusContractError extends Error {
 
 const STATUS_CODES = new Set<number>(PANCAKE_ORDER_STATUS_CODES);
 const RFC3339_DATE_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 function invalidContract(): never {
   throw new PancakeOrderStatusContractError();
@@ -69,17 +69,56 @@ function requireStatusCode(value: unknown): PancakeOrderStatusCode {
   return value as PancakeOrderStatusCode;
 }
 
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function daysInMonth(year: number, month: number): number {
+  switch (month) {
+    case 2:
+      return isLeapYear(year) ? 29 : 28;
+    case 4:
+    case 6:
+    case 9:
+    case 11:
+      return 30;
+    default:
+      return 31;
+  }
+}
+
 function requireDateTime(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64 || value.trim() !== value) {
+    invalidContract();
+  }
+
+  const match = RFC3339_DATE_TIME.exec(value);
+  if (!match) invalidContract();
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+
   if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > 64 ||
-    value.trim() !== value ||
-    !RFC3339_DATE_TIME.test(value) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59 ||
     !Number.isFinite(Date.parse(value))
   ) {
     invalidContract();
   }
+
   return value;
 }
 
