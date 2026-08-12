@@ -23,6 +23,10 @@ const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist
 
 const runId = `${Date.now()}-${process.pid}`;
 const publicCode = `LA-checkout-action-http-smoke-${runId}`;
+const productExternalId = `checkout-http-product-${runId}`;
+const variationExternalId = `checkout-http-variation-${runId}`;
+const warehouseExternalId = `checkout-http-warehouse-${runId}`;
+const productSlug = `checkout-http-${runId}`;
 const clientIp = "203.0.113.10";
 const shopId = Number(process.env.PANCAKE_SHOP_ID);
 
@@ -85,6 +89,9 @@ async function cleanupDatabase() {
     });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
+  await prisma.productMirror.deleteMany({
+    where: { pancakeProductId: productExternalId },
+  });
 }
 
 try {
@@ -100,8 +107,45 @@ try {
   );
   clientBucketId = `checkout-client:${expectedClientKey}`;
 
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: productExternalId,
+      slug: productSlug,
+      name: "Checkout HTTP Smoke Product",
+      syncedAt: new Date(),
+      variants: {
+        create: {
+          pancakeVariationId: variationExternalId,
+          pancakeRetailPrice: 500_000,
+          color: "Đen",
+          size: "M",
+          syncedAt: new Date(),
+          warehouseStocks: {
+            create: {
+              pancakeWarehouseId: warehouseExternalId,
+              quantity: 10,
+              syncedAt: new Date(),
+            },
+          },
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  const variantId = product.variants[0]?.id;
+  assert.ok(variantId, "checkout smoke variant must exist");
+
   const cart = await prisma.cart.create({
-    data: { expiresAt: new Date(Date.now() + 5 * 60_000) },
+    data: {
+      expiresAt: new Date(Date.now() + 5 * 60_000),
+      items: {
+        create: {
+          variantId,
+          quantity: 1,
+        },
+      },
+    },
   });
   cartId = cart.id;
 
@@ -149,6 +193,40 @@ try {
   const actionField = html.match(/name="(\$ACTION_[^"]+)"/)?.[1];
   assert.ok(actionField, "server-rendered checkout form must expose a progressive-enhancement Server Action field");
 
+  const cartResponse = await fetch(`${BASE_URL}/cart`, {
+    headers: { cookie: `la_cart=${cart.id}` },
+  });
+  assert.equal(cartResponse.status, 200, "seeded purchasable cart must render");
+  const cartHtml = await cartResponse.text();
+  assert.match(cartHtml, /href="\/checkout"/);
+  assert.match(cartHtml, /Tiến hành đặt hàng/);
+
+  const checkoutResponse = await fetch(`${BASE_URL}/checkout`, {
+    headers: { cookie: `la_cart=${cart.id}` },
+  });
+  assert.equal(checkoutResponse.status, 200, "seeded purchasable checkout must render");
+  const checkoutHtml = await checkoutResponse.text();
+  assert.match(checkoutHtml, />CHECKOUT</);
+  assert.match(checkoutHtml, /Đặt hàng COD/);
+  assert.match(
+    checkoutHtml,
+    /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/,
+  );
+  for (const fieldName of [
+    "name",
+    "phone",
+    "provinceRef",
+    "districtRef",
+    "communeRef",
+    "detail",
+  ]) {
+    assert.match(
+      checkoutHtml,
+      new RegExp(`name="${fieldName}"`),
+      `checkout markup must include ${fieldName}`,
+    );
+  }
+
   const form = new FormData();
   form.set(actionField, "");
   form.set("name", "Checkout Smoke");
@@ -190,7 +268,7 @@ try {
   assert.equal(order?.state, "CONFIRMED");
   assert.equal(order?.pancakeOrderId, "990001");
 
-  console.log("Guest checkout Server Action HTTP smoke passed: request cookie and trusted client identity reached both limiters, confirmed fast-path cleared the cart cookie, and no live Pancake order was needed.");
+  console.log("Guest checkout HTTP smoke passed: cart CTA and checkout form server-rendered, request cookie and trusted client identity reached both limiters, confirmed fast-path cleared the cart cookie, and no live Pancake geo/order call was needed.");
 } finally {
   await stopServer();
   await rm(probeDirectory, { recursive: true, force: true });
