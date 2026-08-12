@@ -18,6 +18,21 @@ async function cleanup() {
   await prisma.user.deleteMany({ where: { id: userId } });
 }
 
+function completeSnapshot(phone: string) {
+  return {
+    checkoutSnapshottedAt: new Date(),
+    guestName: "Tracking Fixture",
+    guestPhone: phone,
+    provinceRef: "tracking-province",
+    districtRef: "tracking-district",
+    communeRef: "tracking-commune",
+    addressDetail: "Tracking fixture address",
+    merchandiseSubtotalVnd: 100_000n,
+    shippingFeeVnd: 30_000n,
+    totalVnd: 130_000n,
+  };
+}
+
 test.beforeEach(cleanup);
 
 test.after(async () => {
@@ -86,11 +101,7 @@ test("guest order tracking collapses wrong phone and nonexistent order to the sa
     data: {
       publicCode,
       state: "CONFIRMED",
-      guestPhone: "0909999999",
-      checkoutSnapshottedAt: new Date(),
-      merchandiseSubtotalVnd: 100_000n,
-      shippingFeeVnd: 30_000n,
-      totalVnd: 130_000n,
+      ...completeSnapshot("0909999999"),
     },
   });
 
@@ -124,11 +135,7 @@ test("guest order tracking excludes account-linked orders from the public guest 
       publicCode,
       userId,
       state: "CONFIRMED",
-      guestPhone: "0908888888",
-      checkoutSnapshottedAt: new Date(),
-      merchandiseSubtotalVnd: 100_000n,
-      shippingFeeVnd: 30_000n,
-      totalVnd: 130_000n,
+      ...completeSnapshot("0908888888"),
     },
   });
 
