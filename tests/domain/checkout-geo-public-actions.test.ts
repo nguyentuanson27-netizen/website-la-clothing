@@ -21,11 +21,11 @@ test("checkout geo public actions return serializable allowlisted options and pr
   const calls: unknown[] = [];
   const actions = createCheckoutGeoPublicActions({
     loadProvinces: async () => provinces,
-    loadDistricts: async (provinceId) => {
+    loadDistricts: async (provinceId: unknown) => {
       calls.push(["districts", provinceId]);
       return districts;
     },
-    loadCommunes: async (provinceId, districtId) => {
+    loadCommunes: async (provinceId: unknown, districtId: unknown) => {
       calls.push(["communes", provinceId, districtId]);
       return communes;
     },
