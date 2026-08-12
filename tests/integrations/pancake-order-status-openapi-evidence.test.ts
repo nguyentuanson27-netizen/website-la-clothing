@@ -115,6 +115,24 @@ test("order-status inspection fails closed instead of silently dropping a select
   );
 });
 
+test("order-status inspection fails closed instead of silently dropping a selected Schema $ref writeOnly sibling", () => {
+  const document = evidenceDocument();
+  const statusSchema = document.paths["/shops/{SHOP_ID}/orders/{ORDER_ID}"].get.responses["200"].content[
+    "application/json"
+  ].schema.properties.status as Record<string, unknown>;
+  delete statusSchema.type;
+  delete statusSchema.enum;
+  statusSchema.$ref = "#/components/schemas/OrderStatusCode";
+  statusSchema.writeOnly = true;
+
+  assert.throws(
+    () => inspectPancakeOrderStatusOpenApi(document),
+    (error: unknown) =>
+      error instanceof PancakeOrderStatusOpenApiError &&
+      error.code === "MALFORMED_OPENAPI_DOCUMENT",
+  );
+});
+
 test("sanitized order-status evidence is deterministic, fingerprinted, and excludes customer PII", () => {
   const document = evidenceDocument();
   const source = Buffer.from(JSON.stringify(document));
