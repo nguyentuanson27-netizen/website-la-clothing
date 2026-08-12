@@ -68,7 +68,7 @@ test("order gateway rejects unsafe order identifiers before any network request"
 });
 
 test("order gateway fails closed when Pancake returns another shop or order identity", async () => {
-  for (const payload of [responsePayload(), { ...responsePayload(), shop_id: 5 }, { ...responsePayload(), id: 1419 }]) {
+  for (const payload of [{ ...responsePayload(), shop_id: 5 }, { ...responsePayload(), id: 1419 }]) {
     const client = {
       async getJson() {
         return payload;
@@ -79,7 +79,6 @@ test("order gateway fails closed when Pancake returns another shop or order iden
     };
     const gateway = createPancakeOrderGateway(client, async () => []);
 
-    if (payload === responsePayload()) continue;
     await assert.rejects(() => gateway.fetchOrderStatus(4, "1418"));
   }
 });
