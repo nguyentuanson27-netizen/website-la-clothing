@@ -150,11 +150,13 @@ Intended repository path: `tasks/todo.md`
   - [x] no blind retry after `POS_SUBMITTING`; any create transport/HTTP/parser ambiguity becomes `SYNC_UNKNOWN`, while an already `POS_SUBMITTING`/`SYNC_UNKNOWN` order cannot auto-post again
   - [x] create-order adapter/server runtime path implemented; CI uses fake transport and no live Pancake order is created by automated verification
   - [x] PR #46 Required retry fix: `DRAFT/VALIDATION_UNAVAILABLE` is superseded as `REJECTED/VALIDATION_RETRY_SUPERSEDED`, then current cart + current contact/address are snapshotted into a fresh attempt; a fresh in-flight DRAFT remains reusable for double-submit concurrency safety
+  - [x] PR #46 retry collision hardening: if a fresh server-generated public code collides while superseding a retryable DRAFT, uniqueness recovery fails closed as `PUBLIC_CODE_UNAVAILABLE` instead of falling back to the stale retryable snapshot
   - [x] PR #46 public abuse control layers a pseudonymous trusted-client PostgreSQL bucket over the cart bucket, so rotating anonymous carts does not reset the client-level checkout budget; raw client IP is not persisted
   - [x] PR #46 recovery closes stale `VALIDATING` as `REJECTED/VALIDATION_INTERRUPTED` and stale `POS_SUBMITTING` as `SYNC_UNKNOWN/CREATE_OUTCOME_UNKNOWN`; recovery never restores a state that authorizes an automatic Pancake repost
   - [x] PR #46 CI includes a real Next Server Action HTTP smoke through request cookie + trusted client header → both rate-limit buckets → confirmed fast-path cart-cookie clear, using a seeded confirmed order and no live Pancake write
+  - [x] PR #46 exact review-fix head `2a19b10da1c3dbe4d03d5048315e5b1dfc539da6` passed CI #529 / `31572292756`: migrations, DB regressions, existing HTTP security, guest checkout Server Action HTTP smoke, admin authz, lint, typecheck, domain/integration, production build and `admin-a11y-runtime` all green
   - [~] browser checkout submission: server boundary is implemented and runtime-verified in PR #46; visible province → district → commune selectors/cart CTA remain gated on exact verified Pancake geo query/response + ID namespace semantics
-  - [~] self-review: PR #46 review fixes close the current Required and three requested Consider findings; bounded full-catalog revalidation remains a separate performance consideration, and visible checkout activation remains externally gated by Pancake geo evidence. Human re-review remains required
+  - [~] self-review: APPROVE — 0 Critical / 0 Required for the current review; the Required stale-DRAFT finding and all three requested Consider findings are closed. Bounded full-catalog revalidation remains a separate performance consideration, and visible checkout activation remains externally gated by Pancake geo evidence. Human re-review remains required
 - [ ] C9 Order status reconciliation
   - [ ] exact status/lookup contract verified
   - [ ] unknown status fail-closed
