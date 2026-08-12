@@ -71,10 +71,10 @@ model Account {
   idToken               String?
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope                 String?
-  password              String?
-  createdAt             DateTime
-  updatedAt             DateTime
+  scope                  String?
+  password               String?
+  createdAt              DateTime
+  updatedAt              DateTime
 
   @@map("account")
 }
@@ -226,6 +226,7 @@ model OrderMirror {
   id                     String              @id @default(uuid())
   publicCode             String              @unique
   userId                 String?
+  pancakeShopId          Int?
   pancakeOrderId         String?             @unique
   state                  LocalOrderState     @default(DRAFT)
   syncErrorCode          String?

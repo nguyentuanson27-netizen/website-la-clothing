@@ -5,6 +5,7 @@ const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
+type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
 
 export class PancakeHttpError extends Error {
   readonly status: number;
@@ -65,6 +66,7 @@ export class PancakeClient {
     try {
       response = await this.fetcher(url, {
         method: "GET",
+        redirect: "error",
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -73,6 +75,41 @@ export class PancakeClient {
     }
 
     if (!response.ok) {
+      throw new PancakeHttpError(response.status, endpoint);
+    }
+
+    return response.json() as Promise<unknown>;
+  }
+
+  async postJson(endpoint: string, body: unknown, options: PostJsonOptions = {}): Promise<unknown> {
+    const url = this.buildUrl(endpoint, {});
+    let serializedBody: string;
+    try {
+      serializedBody = JSON.stringify(body);
+    } catch {
+      throw new TypeError("Pancake JSON request body must be serializable");
+    }
+    if (serializedBody === undefined) {
+      throw new TypeError("Pancake JSON request body must be serializable");
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetcher(url, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: serializedBody,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch {
+      throw new PancakeNetworkError(endpoint);
+    }
+
+    if (!response.ok || (options.expectedStatus !== undefined && response.status !== options.expectedStatus)) {
       throw new PancakeHttpError(response.status, endpoint);
     }
 

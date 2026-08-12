@@ -34,6 +34,7 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
         'communeRef',
         'addressDetail',
         'note',
+        'pancakeShopId',
         'merchandiseSubtotalVnd',
         'shippingFeeVnd',
         'totalVnd'
@@ -50,6 +51,7 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "guestPhone", data_type: "text" },
     { column_name: "merchandiseSubtotalVnd", data_type: "bigint" },
     { column_name: "note", data_type: "text" },
+    { column_name: "pancakeShopId", data_type: "integer" },
     { column_name: "provinceRef", data_type: "text" },
     { column_name: "shippingFeeVnd", data_type: "bigint" },
     { column_name: "totalVnd", data_type: "bigint" },

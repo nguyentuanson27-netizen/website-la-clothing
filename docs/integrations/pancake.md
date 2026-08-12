@@ -1,6 +1,6 @@
 # Pancake POS integration contract
 
-Status: **catalog read contract is implemented and verified; C8 create-order contract verification is in progress and the actual Pancake order write remains blocked on exact request/response plus idempotency/reference evidence.**
+Status: **catalog read contract is implemented and verified; fingerprinted raw OpenAPI evidence now establishes the reviewed C8 create-order structure, and PR #45 implements the server-only one-shot create-order core. Native idempotency/client-reference semantics, `cod` business semantics, browser submit wiring, and controlled live create-order verification remain separate gates.**
 
 ## Authoritative boundaries
 
@@ -154,9 +154,9 @@ The current official Pancake POS Open API reference at `https://api-docs.pancake
 - production server `https://pos.pages.fm/api/v1`;
 - Order Operations contains `POST /shops/{SHOP_ID}/orders`.
 
-Endpoint existence is **not** treated as evidence for the create-order request/response schema, a website-origin reference field, or native idempotency behavior.
+Endpoint existence alone is **not** treated as evidence for request/response semantics, a website-origin reference field, native idempotency, or the business meaning of optional monetary fields.
 
-PR #43 adds `src/integrations/pancake/order-openapi-contract.ts`, a pure local inspector for the create-order operation. It does not make network requests and does not need Pancake credentials. The inspector:
+PR #43 added `src/integrations/pancake/order-openapi-contract.ts`, a pure local inspector for the create-order operation. It does not make network requests and does not need Pancake credentials. The inspector:
 
 - locates exactly one `POST /shops/{...}/orders` operation without guessing the path-parameter name;
 - resolves bounded local `#/...` references, including chained references;
@@ -171,26 +171,38 @@ The shared budget and effective-parameter rules were added after review comment 
 
 This inspector is a **discovery/review aid, not write authorization**. It intentionally captures only the structural subset needed to inspect the operation safely; it does not claim to preserve every JSON Schema/OpenAPI validation keyword.
 
-The official reference exposes a “Download OpenAPI Document” control, but the raw downloadable document has not yet been captured into trusted local evidence in this project. The rendered/searchable official reference verifies the endpoint-level facts above, but current extraction does not expose the expanded `POST /shops/{SHOP_ID}/orders` request/response schema. Searches for candidate order field names are therefore not treated as contract evidence. Do not commit a guessed order payload based only on endpoint existence, UI examples, or generated client assumptions.
+PR #44 then captured a fingerprinted raw OpenAPI document through the bounded local evidence workflow documented in `docs/integrations/pancake-order-openapi-evidence.md`. The deterministic checked artifact `docs/integrations/pancake-order-create-contract-observed.json` establishes the create-order structural subset used by C8, including:
 
-Before any Pancake order write is implemented, trusted evidence still needs to establish at minimum:
+- required `application/json` request body;
+- top-level required property `shop_id`;
+- `items[]` requiring `variation_id` and `quantity`;
+- integer `variation_info.retail_price` in the reviewed subset;
+- selected shipping-address fields;
+- documented `200` JSON response with integer `id` identity;
+- `cod` exists structurally as an **optional integer**, but the evidence does not establish what value it must represent.
 
-1. exact create-order request body fields/types/requiredness used by this shop/API version;
-2. exact success/rejection response shape and Pancake order identity field;
-3. the correct website-origin/client-reference field, if one exists;
-4. native idempotency semantics or a documented unique client-reference constraint, if any;
-5. how to resolve an ambiguous timeout before deciding whether another write is safe.
+Therefore PR #45 does not infer `cod = merchandise subtotal + shipping fee`; the strict create-order mapper omits `cod` until trusted semantic evidence authorizes a value. The website-owned shipping policy may still populate the separately reviewed `shipping_fee` field; that policy is not evidence for `cod` semantics.
 
-No destructive create-order probe is authorized by this verification slice.
+C7 also persists the source `pancakeShopId` with every new checkout snapshot. C8 requires the runtime server configuration to match that persisted scope and then uses the persisted value for live validation and order creation. The migration deliberately leaves pre-existing orders with `pancakeShopId = NULL`; those rows fail closed with `SHOP_SCOPE_UNVERIFIED` because their original shop cannot be proven. They are never backfilled from the current `PANCAKE_SHOP_ID`.
+
+Manual review of the fingerprinted document still found no trustworthy native idempotency key, uniqueness guarantee, `request_id`, or verified website-origin reference semantics. Accordingly:
+
+- do not treat `custom_id` as an idempotency key;
+- do not perform a blind second POST after timeout/network ambiguity;
+- the approved one-shot state machine remains: durable `POS_SUBMITTING` before the network call → exactly one POST attempt → definitive success `CONFIRMED`, safely classifiable local rejection `REJECTED`, ambiguous outcome `SYNC_UNKNOWN`;
+- duplicate-safe retry/reconciliation remains blocked until a trustworthy unique reference/idempotency mechanism is separately verified.
+
+No automated CI test performs a live Pancake create-order write. A controlled live create-order verification remains a separate human gate.
 
 ## Later integration contracts still unverified
 
-These items remain outside the verified catalog contract and continue to block their later slices:
+These items remain intentionally unverified or separately gated:
 
-1. Exact create-order request/response schema and the correct website-origin reference field; only the endpoint itself is verified so far.
-2. Native create-order idempotency behavior or unique client-reference constraint.
+1. Business semantics for optional `cod`; PR #45 omits it rather than guessing.
+2. Correct website-origin/client-reference field and native create-order idempotency or unique-reference behavior.
 3. Exact order status codes/transitions used by reconciliation.
 4. Webhook event names, payload shape, authentication/signature and replay protection.
+5. Browser checkout submit wiring and controlled live create-order verification.
 
 The guest shipping-fee policy is website-owned and was approved separately by the product owner on 2026-08-11: 30,000 VND by default, with free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3. It is not an unverified Pancake API contract.
 
