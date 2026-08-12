@@ -3,10 +3,11 @@ import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
 import type { PancakeCreateOrderRequest } from "./order-create.ts";
 
 type QueryValue = string | number | boolean;
+type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
 
 export type PancakeOrderGatewayClient = {
   getJson(endpoint: string, query?: Readonly<Record<string, QueryValue>>): Promise<unknown>;
-  postJson(endpoint: string, body: unknown): Promise<unknown>;
+  postJson(endpoint: string, body: unknown, options?: PostJsonOptions): Promise<unknown>;
 };
 
 type FetchCompleteCatalog = (input: {
@@ -32,7 +33,7 @@ export function createPancakeOrderGateway(
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {
       const shopId = requireShopId(request.shop_id);
-      return client.postJson(`/shops/${shopId}/orders`, request);
+      return client.postJson(`/shops/${shopId}/orders`, request, { expectedStatus: 200 });
     },
   };
 }
