@@ -1,14 +1,11 @@
 import type { PancakeOrderSubmissionResult } from "./pancake-order-submit.ts";
 
-const ACTIVE_SNAPSHOT_STATES = [
-  "DRAFT",
-  "VALIDATING",
-  "POS_SUBMITTING",
-  "CONFIRMED",
-  "SYNC_UNKNOWN",
-] as const;
-
-type ActiveSnapshotState = (typeof ACTIVE_SNAPSHOT_STATES)[number];
+type ActiveSnapshotState =
+  | "DRAFT"
+  | "VALIDATING"
+  | "POS_SUBMITTING"
+  | "CONFIRMED"
+  | "SYNC_UNKNOWN";
 
 type SnapshotFailureReason =
   | "INVALID_INPUT"
