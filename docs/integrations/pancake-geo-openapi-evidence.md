@@ -1,6 +1,6 @@
 # Pancake geo OpenAPI evidence
 
-Status: **the fingerprinted Pancake POS OpenAPI document establishes the structural province → district → commune read contract needed for a server-side geo gateway. The product policy for Vietnam old/new administrative identifiers remains intentionally separate from this low-level contract.**
+Status: **the fingerprinted Pancake POS OpenAPI document establishes the structural province → district → commune read contract, and the first strict read-only server gateway has been implemented against that evidence. The product policy for Vietnam old/new administrative identifiers remains intentionally separate from this low-level contract.**
 
 ## Source fingerprint
 
@@ -100,7 +100,7 @@ The raw document describes:
 - province `all` as including old and new provinces;
 - `new_id` fields on province/commune records.
 
-The document therefore exposes an administrative-version choice for Vietnam. This evidence does **not** establish which old/new mode LA Clothing should present to shoppers, nor that a mixed old/new hierarchy is valid. The low-level gateway must preserve the documented parameters without silently choosing that product policy.
+The document therefore exposes an administrative-version choice for Vietnam. This evidence does **not** establish which old/new mode LA Clothing should present to shoppers, nor that a mixed old/new hierarchy is valid. The low-level gateway preserves the documented parameters without silently choosing that product policy.
 
 The raw commune example also shows `new_id` and `postcode` as `null` even though their structural schema says `string`. Checkout does not need those fields, so the first production parser deliberately does not expose them instead of widening the public contract around inconsistent optional metadata.
 
@@ -117,4 +117,26 @@ The server-side gateway built from this evidence must:
 - remain read-only and perform no Pancake write;
 - not treat examples/default values as browser authority.
 
-Visible checkout selectors remain a later slice. They should be activated only after the LA Clothing Vietnam old/new administrative policy is explicit and the server-side gateway is green.
+## Implemented gateway boundary
+
+`src/integrations/pancake/geo.ts` now implements the evidence-backed read boundary:
+
+- province lookup always requires an explicit `countryCode`; optional `isNew` / `all` flags are omitted unless the caller deliberately supplies them;
+- district lookup sends exactly `province_id`;
+- commune lookup sends exactly both `district_id` and `province_id`;
+- lookup identifiers must be non-empty, already-trimmed strings no longer than 64 characters before any network read;
+- third-party response `data` must be an array of at most 1,000 entries;
+- response IDs must be non-empty, already-trimmed strings no longer than 64 characters;
+- display names are trimmed and bounded to 256 characters;
+- duplicate IDs, malformed rows and parent-ID mismatches fail closed as `MALFORMED_GEO_RESPONSE`;
+- only the hierarchy fields required by checkout are returned; `name_en`, `new_id`, `postcode` and unknown external fields are not propagated.
+
+The gateway uses the existing `PancakeClient` read method, which owns the fixed Pancake base URL, server-side `api_key`, timeout, redirect rejection and URL query encoding. No Pancake write is introduced by this slice.
+
+## TDD evidence
+
+- Clean RED: commit `7dfaed771ec0792da50cc69a43c31fee049030f9`, CI **#549 / 31579419917**. Database 64/64, all three HTTP smokes, lint and admin accessibility passed; typecheck failed only because `src/integrations/pancake/geo.ts` did not exist.
+- GREEN gateway implementation: commit `8079813f3ba5c8714642f744b735cfd47c3721c2`, CI **#550 / 31579737424**. Database, all three HTTP smokes, lint, typecheck, full domain/integration tests, production build and admin accessibility all passed.
+- A follow-up regression also verifies that non-boolean province-mode values are rejected at runtime when a JavaScript caller bypasses TypeScript. The final PR-head CI must remain green after that test and this documentation update.
+
+Visible checkout selectors remain a later slice. They should be activated only after the LA Clothing Vietnam old/new administrative policy is explicit.
