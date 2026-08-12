@@ -102,7 +102,7 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
       !order ||
       order.checkoutSnapshottedAt === null ||
       order.totalVnd === null ||
-      order.totalVnd < 0n
+      order.totalVnd < BigInt(0)
     ) {
       return { ok: false, reason: "NOT_FOUND" };
     }
