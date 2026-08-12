@@ -15,19 +15,27 @@ const checkoutInput = {
   note: null,
 };
 
-test("guest checkout runtime reads Pancake config once and keeps shop/order identity server-owned", async () => {
+test("guest checkout runtime recovers current cart first, reads Pancake config once, and keeps authority server-owned", async () => {
   let configReads = 0;
+  let recoveryInput: unknown;
   let snapshotInput: unknown;
   let submissionInput: unknown;
   let orderFactoryConfig: unknown;
+  const calls: string[] = [];
 
   const runtime = createGuestCheckoutSubmitRuntime({
+    recoverStranded: async (input) => {
+      calls.push("recover");
+      recoveryInput = input;
+    },
     readConfig: () => {
+      calls.push("config");
       configReads += 1;
       return { apiKey: "server-secret", shopId: 920_007 };
     },
     createSnapshot: () => ({
       async create(input) {
+        calls.push("snapshot");
         snapshotInput = input;
         return {
           ok: true as const,
@@ -45,6 +53,7 @@ test("guest checkout runtime reads Pancake config once and keeps shop/order iden
       orderFactoryConfig = config;
       return {
         async submit(input) {
+          calls.push("submit");
           submissionInput = input;
           return {
             ok: true as const,
@@ -63,6 +72,8 @@ test("guest checkout runtime reads Pancake config once and keeps shop/order iden
     status: "CONFIRMED",
     orderCode: "LA-server-owned",
   });
+  assert.deepEqual(calls, ["recover", "config", "snapshot", "submit"]);
+  assert.deepEqual(recoveryInput, { cartId, now });
   assert.equal(configReads, 1);
   assert.deepEqual(orderFactoryConfig, { apiKey: "server-secret", shopId: 920_007 });
   assert.deepEqual(snapshotInput, {
