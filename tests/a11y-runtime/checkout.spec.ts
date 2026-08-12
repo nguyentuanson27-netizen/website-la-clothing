@@ -169,6 +169,29 @@ async function assertCheckoutAccessibility(page: Page) {
   expect(accessibilityScan.violations).toEqual([]);
 }
 
+async function waitForConfirmedOrder() {
+  let observed: {
+    state: string;
+    syncErrorCode: string | null;
+    pancakeOrderId: string | null;
+  } | null = null;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    observed = await prisma.orderMirror.findFirst({
+      where: { sourceCartId: cartId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { state: true, syncErrorCode: true, pancakeOrderId: true },
+    });
+    if (observed?.state === "CONFIRMED") return;
+    if (observed && ["DRAFT", "REJECTED", "SYNC_UNKNOWN"].includes(observed.state)) break;
+    await delay(100);
+  }
+
+  throw new Error(
+    `Checkout did not reach CONFIRMED. Observed order: ${JSON.stringify(observed)}\nServer output:\n${serverOutput}`,
+  );
+}
+
 test.beforeAll(async () => {
   await cleanupDatabase();
   const syncedAt = new Date();
@@ -315,6 +338,8 @@ test("guest checkout cascades both geo datasets, ignores stale children, and sub
   await expect(submit).toBeEnabled();
 
   await submit.click();
+  await waitForConfirmedOrder();
+
   const successStatus = page.getByRole("status").filter({ hasText: "Đặt hàng thành công" });
   await expect(successStatus).toContainText("LA-");
   await expect(submit).toBeDisabled();
