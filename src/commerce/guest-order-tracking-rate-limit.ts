@@ -6,6 +6,7 @@ const DEFAULT_MAX_CLIENT_ATTEMPTS = 10;
 const DEFAULT_MAX_ORDER_CODE_ATTEMPTS = 5;
 const DEFAULT_WINDOW_MS = 60_000;
 const MAX_PUBLIC_CODE_LENGTH = 128;
+const ORDER_CODE_CLEANUP_BATCH_SIZE = 64;
 const PSEUDONYMOUS_KEY = /^v1:[0-9a-f]{64}$/;
 const ORDER_CODE_HMAC_CONTEXT = "la-clothing:guest-order-tracking-order-code:v1";
 
@@ -87,6 +88,34 @@ export function createGuestOrderTrackingRateLimiter(
     "Guest order tracking code max attempts",
   );
 
+  async function cleanupExpiredOrderCodeBuckets(now: Date): Promise<void> {
+    const safeNow = requireNow(now);
+    const staleBefore = BigInt(safeNow.getTime()) - BigInt(windowMs);
+
+    const deletedCount = await client.$executeRaw`
+      WITH stale AS (
+        SELECT "id"
+        FROM "rateLimit"
+        WHERE "id" LIKE 'order-track-code:%'
+          AND "lastRequest" <= ${staleBefore}
+        ORDER BY "lastRequest" ASC, "id" ASC
+        LIMIT ${ORDER_CODE_CLEANUP_BATCH_SIZE}
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM "rateLimit" AS target
+      USING stale
+      WHERE target."id" = stale."id"
+    `;
+
+    if (
+      !Number.isSafeInteger(deletedCount) ||
+      deletedCount < 0 ||
+      deletedCount > ORDER_CODE_CLEANUP_BATCH_SIZE
+    ) {
+      throw new Error("Guest order tracking rate-limit cleanup returned an invalid result");
+    }
+  }
+
   async function consumeBucket({
     bucketKey,
     now,
@@ -148,9 +177,11 @@ export function createGuestOrderTrackingRateLimiter(
     now?: Date;
   }): Promise<boolean> {
     const safeCodeKey = requirePseudonymousKey(codeKey, "Guest order tracking code key");
+    const safeNow = requireNow(now);
+    await cleanupExpiredOrderCodeBuckets(safeNow);
     return consumeBucket({
       bucketKey: `order-track-code:${safeCodeKey}`,
-      now,
+      now: safeNow,
       maxAttempts: maxOrderCodeAttempts,
       cap: orderCodeCap,
     });
