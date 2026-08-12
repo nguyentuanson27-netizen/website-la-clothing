@@ -24,7 +24,7 @@ function requireParentId(value: unknown): string {
   return value;
 }
 
-export function loadCheckoutProvinces(
+export async function loadCheckoutProvinces(
   client: CheckoutGeoReadableClient,
 ): Promise<PancakeProvince[]> {
   return listPancakeProvinces(client, {
@@ -33,7 +33,7 @@ export function loadCheckoutProvinces(
   });
 }
 
-export function loadCheckoutDistricts(
+export async function loadCheckoutDistricts(
   client: CheckoutGeoReadableClient,
   provinceId: unknown,
 ): Promise<PancakeDistrict[]> {
@@ -42,7 +42,7 @@ export function loadCheckoutDistricts(
   });
 }
 
-export function loadCheckoutCommunes(
+export async function loadCheckoutCommunes(
   client: CheckoutGeoReadableClient,
   provinceId: unknown,
   districtId: unknown,
