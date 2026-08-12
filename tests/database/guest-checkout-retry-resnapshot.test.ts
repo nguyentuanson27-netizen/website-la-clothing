@@ -88,7 +88,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("retryable DRAFT re-snapshots current cart and address before a later Pancake POST", async () => {
+test("retryable DRAFT is superseded so retry snapshots current cart and address before Pancake POST", async () => {
   await cleanup();
   const productA = await createProduct("a", 400_000);
   const productB = await createProduct("b", 650_000);
@@ -140,10 +140,11 @@ test("retryable DRAFT re-snapshots current cart and address before a later Panca
     prisma.cartItem.create({ data: { cartId: cart.id, variantId: variantB.id, quantity: 1 } }),
   ]);
 
+  const retryPublicCode = `${key}-retry`;
   const retry = await snapshot.create({
     cartId: cart.id,
     shopId,
-    publicCode: `${key}-unused-new-code`,
+    publicCode: retryPublicCode,
     checkoutInput: {
       name: "Nguyễn Văn B",
       phone: "0987654321",
@@ -157,7 +158,13 @@ test("retryable DRAFT re-snapshots current cart and address before a later Panca
   });
   assert.equal(retry.ok, true);
   if (!retry.ok) return;
-  assert.equal(retry.order.publicCode, first.order.publicCode);
+  assert.equal(retry.order.publicCode, retryPublicCode);
+
+  const superseded = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: first.order.publicCode },
+  });
+  assert.equal(superseded.state, "REJECTED");
+  assert.equal(superseded.syncErrorCode, "VALIDATION_RETRY_SUPERSEDED");
 
   let request: PancakeCreateOrderRequest | undefined;
   const healthy = createPancakeOrderSubmissionService(prisma, {
@@ -173,7 +180,7 @@ test("retryable DRAFT re-snapshots current cart and address before a later Panca
     },
   });
 
-  assert.deepEqual(await healthy.submit({ publicCode: first.order.publicCode, shopId }), {
+  assert.deepEqual(await healthy.submit({ publicCode: retry.order.publicCode, shopId }), {
     ok: true,
     state: "CONFIRMED",
     pancakeOrderId: "800001",
