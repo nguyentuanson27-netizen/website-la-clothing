@@ -74,6 +74,8 @@ test("order status parser rejects missing, malformed, or non-canonical required 
     validPayload({ inserted_at: "not-a-date" }),
     validPayload({ updated_at: "2026-08-12" }),
     validPayload({ updated_at: " 2026-08-12T09:12:13Z" }),
+    validPayload({ updated_at: "2026-02-31T09:12:13Z" }),
+    validPayload({ updated_at: "2026-08-12T25:12:13Z" }),
   ];
 
   for (const payload of invalidPayloads) {
