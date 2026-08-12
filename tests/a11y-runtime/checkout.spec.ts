@@ -77,6 +77,7 @@ async function cleanupDatabase() {
 
 test.beforeAll(async () => {
   await cleanupDatabase();
+  const syncedAt = new Date();
 
   const product = await prisma.productMirror.create({
     data: {
@@ -84,19 +85,24 @@ test.beforeAll(async () => {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: "Checkout A11y Product",
-      syncedAt: new Date(),
+      isPresent: true,
+      isActive: true,
+      syncedAt,
       variants: {
         create: {
           pancakeVariationId: variationExternalId,
           pancakeRetailPrice: 500_000,
+          pancakeRetailPriceAfterDiscount: 500_000,
           color: "Đen",
           size: "M",
-          syncedAt: new Date(),
+          isPresent: true,
+          isActive: true,
+          syncedAt,
           warehouseStocks: {
             create: {
               pancakeWarehouseId: warehouseExternalId,
               quantity: 5,
-              syncedAt: new Date(),
+              syncedAt,
             },
           },
         },
