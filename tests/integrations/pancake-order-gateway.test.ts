@@ -5,9 +5,10 @@ import { createPancakeOrderGateway } from "../../src/integrations/pancake/order-
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
 
+type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
 type TestGatewayClient = {
   getJson(endpoint: string, query?: Readonly<Record<string, string | number | boolean>>): Promise<unknown>;
-  postJson(endpoint: string, body: unknown): Promise<unknown>;
+  postJson(endpoint: string, body: unknown, options?: PostJsonOptions): Promise<unknown>;
 };
 
 const request: PancakeCreateOrderRequest = {
@@ -76,16 +77,18 @@ test("order gateway delegates live validation to the reviewed complete catalog t
   assert.equal(observedShopId, 4_741_464);
 });
 
-test("order gateway posts the strict reviewed request to the matching trusted shop order endpoint", async () => {
+test("order gateway posts the strict reviewed request and requires the documented HTTP 200 status", async () => {
   let endpoint = "";
   let postedBody: unknown;
+  let postOptions: PostJsonOptions | undefined;
   const client: TestGatewayClient = {
     async getJson() {
       throw new Error("not used");
     },
-    async postJson(inputEndpoint: string, body: unknown) {
+    async postJson(inputEndpoint: string, body: unknown, options?: PostJsonOptions) {
       endpoint = inputEndpoint;
       postedBody = body;
+      postOptions = options;
       return { id: 700_001 };
     },
   };
@@ -94,5 +97,6 @@ test("order gateway posts the strict reviewed request to the matching trusted sh
   assert.deepEqual(await gateway.createOrder(request), { id: 700_001 });
   assert.equal(endpoint, "/shops/4741464/orders");
   assert.equal(postedBody, request);
+  assert.deepEqual(postOptions, { expectedStatus: 200 });
   assert.equal("cod" in request, false);
 });
