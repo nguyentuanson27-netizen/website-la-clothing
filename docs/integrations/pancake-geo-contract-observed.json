@@ -1,0 +1,143 @@
+{
+  "source": {
+    "sha256": "44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f",
+    "bytes": 2774602,
+    "openapi": "3.1.0",
+    "title": "Pancake POS Open API",
+    "version": "1.0.0",
+    "server": "https://pos.pages.fm/api/v1"
+  },
+  "auth": {
+    "type": "apiKey",
+    "in": "query",
+    "name": "api_key"
+  },
+  "operations": {
+    "provinces": {
+      "path": "/geo/provinces",
+      "method": "GET",
+      "parameters": [
+        {
+          "name": "country_code",
+          "in": "query",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "is_new",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "boolean" }
+        },
+        {
+          "name": "all",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "boolean" }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "name": { "type": "string" },
+                      "name_en": { "type": "string" },
+                      "new_id": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "districts": {
+      "path": "/geo/districts",
+      "method": "GET",
+      "parameters": [
+        {
+          "name": "province_id",
+          "in": "query",
+          "required": true,
+          "schema": { "type": "string" }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "name": { "type": "string" },
+                      "name_en": { "type": "string" },
+                      "province_id": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "communes": {
+      "path": "/geo/communes",
+      "method": "GET",
+      "parameters": [
+        {
+          "name": "district_id",
+          "in": "query",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "province_id",
+          "in": "query",
+          "required": true,
+          "schema": { "type": "string" }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "name": { "type": "string" },
+                      "name_en": { "type": "string" },
+                      "district_id": { "type": "string" },
+                      "province_id": { "type": "string" },
+                      "new_id": { "type": "string" },
+                      "postcode": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

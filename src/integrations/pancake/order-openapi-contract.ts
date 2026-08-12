@@ -1,11 +1,14 @@
 type JsonRecord = Record<string, unknown>;
 
 type InspectedParameter = PancakeCreateOrderOpenApiInspection["parameters"][number];
+type InspectedResponses = PancakeCreateOrderOpenApiInspection["responses"];
 
 export type PancakeOrderOpenApiErrorCode =
   | "MALFORMED_OPENAPI_DOCUMENT"
   | "CREATE_ORDER_OPERATION_NOT_FOUND"
   | "CREATE_ORDER_OPERATION_AMBIGUOUS"
+  | "GEO_OPERATION_SET_INCOMPLETE"
+  | "GEO_OPERATION_AMBIGUOUS"
   | "UNSUPPORTED_EXTERNAL_REF"
   | "UNRESOLVED_LOCAL_REF"
   | "CIRCULAR_LOCAL_REF"
@@ -54,7 +57,25 @@ export type PancakeCreateOrderOpenApiInspection = {
   >;
 };
 
+export type PancakeGeoOpenApiOperationInspection = {
+  path: string;
+  method: "GET";
+  parameters: PancakeCreateOrderOpenApiInspection["parameters"];
+  responses: PancakeCreateOrderOpenApiInspection["responses"];
+};
+
+export type PancakeGeoOpenApiInspection = {
+  provinces: PancakeGeoOpenApiOperationInspection;
+  districts: PancakeGeoOpenApiOperationInspection;
+  communes: PancakeGeoOpenApiOperationInspection;
+};
+
 const CREATE_ORDER_PATH = /^\/shops\/\{([^/{}]+)\}\/orders\/?$/;
+const GEO_PATHS = {
+  provinces: /^\/geo\/provinces\/?$/,
+  districts: /^\/geo\/districts\/?$/,
+  communes: /^\/geo\/communes\/?$/,
+} as const;
 const MAX_INSPECTION_DEPTH = 32;
 const MAX_INSPECTION_WORK_UNITS = 10_000;
 const PARAMETER_LOCATIONS = new Set(["query", "header", "path", "cookie"]);
@@ -69,6 +90,14 @@ const STRUCTURAL_SCHEMA_KEYS = [
   "allOf",
   "additionalProperties",
 ];
+
+type GeoOperationName = keyof typeof GEO_PATHS;
+
+type MatchedGeoOperation = {
+  path: string;
+  pathItem: JsonRecord;
+  operation: JsonRecord;
+};
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -347,6 +376,28 @@ function structuralContent(
   return content;
 }
 
+function structuralResponses(
+  inspector: OpenApiStructureInspector,
+  operation: JsonRecord,
+): InspectedResponses {
+  if (!isRecord(operation.responses)) {
+    malformed();
+  }
+
+  const responses: InspectedResponses = {};
+  for (const status in operation.responses) {
+    inspector.chargeWork();
+    if (!Object.hasOwn(operation.responses, status)) {
+      continue;
+    }
+
+    const response = inspector.object(operation.responses[status]);
+    const content = structuralContent(inspector, response.content);
+    responses[status] = content === undefined ? {} : { content };
+  }
+  return responses;
+}
+
 function inspectParameter(
   inspector: OpenApiStructureInspector,
   parameter: unknown,
@@ -445,6 +496,18 @@ function validateCreateOrderPathParameters(
   }
 }
 
+function inspectMatchedGeoOperation(
+  inspector: OpenApiStructureInspector,
+  matched: MatchedGeoOperation,
+): PancakeGeoOpenApiOperationInspection {
+  return {
+    path: matched.path,
+    method: "GET",
+    parameters: structuralParameters(inspector, matched.pathItem, matched.operation),
+    responses: structuralResponses(inspector, matched.operation),
+  };
+}
+
 export function inspectPancakeCreateOrderOpenApi(
   document: unknown,
 ): PancakeCreateOrderOpenApiInspection {
@@ -499,7 +562,7 @@ export function inspectPancakeCreateOrderOpenApi(
     path: matchedPath,
     method: "POST",
     parameters,
-    responses: {},
+    responses: structuralResponses(inspector, operation),
   };
 
   if (operation.requestBody !== undefined) {
@@ -511,19 +574,54 @@ export function inspectPancakeCreateOrderOpenApi(
     };
   }
 
-  if (!isRecord(operation.responses)) {
+  return result;
+}
+
+export function inspectPancakeGeoOpenApi(document: unknown): PancakeGeoOpenApiInspection {
+  if (!isRecord(document) || typeof document.openapi !== "string" || !isRecord(document.paths)) {
     malformed();
   }
-  for (const status in operation.responses) {
+
+  const inspector = new OpenApiStructureInspector(document);
+  const matched: Partial<Record<GeoOperationName, MatchedGeoOperation>> = {};
+
+  for (const path in document.paths) {
     inspector.chargeWork();
-    if (!Object.hasOwn(operation.responses, status)) {
+    if (!Object.hasOwn(document.paths, path)) {
       continue;
     }
 
-    const response = inspector.object(operation.responses[status]);
-    const content = structuralContent(inspector, response.content);
-    result.responses[status] = content === undefined ? {} : { content };
+    for (const name of Object.keys(GEO_PATHS) as GeoOperationName[]) {
+      if (!GEO_PATHS[name].test(path)) {
+        continue;
+      }
+
+      const pathItem = inspector.object(document.paths[path]);
+      if (!isRecord(pathItem.get)) {
+        continue;
+      }
+      if (matched[name] !== undefined) {
+        throw new PancakeOrderOpenApiError("GEO_OPERATION_AMBIGUOUS");
+      }
+      matched[name] = {
+        path,
+        pathItem,
+        operation: pathItem.get,
+      };
+    }
   }
 
-  return result;
+  if (
+    matched.provinces === undefined ||
+    matched.districts === undefined ||
+    matched.communes === undefined
+  ) {
+    throw new PancakeOrderOpenApiError("GEO_OPERATION_SET_INCOMPLETE");
+  }
+
+  return {
+    provinces: inspectMatchedGeoOperation(inspector, matched.provinces),
+    districts: inspectMatchedGeoOperation(inspector, matched.districts),
+    communes: inspectMatchedGeoOperation(inspector, matched.communes),
+  };
 }

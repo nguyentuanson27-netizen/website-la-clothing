@@ -19,6 +19,8 @@ const bucketIds = [
   `checkout:${otherCartId}`,
   `checkout-client:${clientKey}`,
   `checkout-client:${otherClientKey}`,
+  `checkout-geo-client:${clientKey}`,
+  `checkout-geo-client:${otherClientKey}`,
 ];
 const start = new Date("2026-08-12T05:40:00.000Z");
 
@@ -85,6 +87,31 @@ test("guest checkout limiter atomically caps one trusted client across cart rota
   assert.equal(saturated.lastRequest, BigInt(start.getTime()));
 });
 
+test("checkout geo reads use a separate trusted-client bucket from checkout submission", async () => {
+  await cleanup();
+  const limiter = createGuestCheckoutRateLimiter(prisma, {
+    maxClientAttempts: 1,
+    maxGeoClientAttempts: 3,
+    geoClientWindowMs: 60_000,
+  });
+
+  assert.equal(await limiter.consumeClient({ clientKey, now: start }), true);
+  assert.equal(await limiter.consumeClient({ clientKey, now: start }), false);
+
+  const concurrent = await Promise.all(
+    Array.from({ length: 4 }, () => limiter.consumeGeoClient({ clientKey, now: start })),
+  );
+  assert.equal(concurrent.filter(Boolean).length, 3);
+  assert.equal(concurrent.filter((allowed) => !allowed).length, 1);
+  assert.equal(await limiter.consumeGeoClient({ clientKey: otherClientKey, now: start }), true);
+
+  const geoBucket = await prisma.rateLimit.findUniqueOrThrow({
+    where: { id: `checkout-geo-client:${clientKey}` },
+  });
+  assert.equal(geoBucket.count, 4);
+  assert.equal(geoBucket.lastRequest, BigInt(start.getTime()));
+});
+
 test("guest checkout limiter rejects malformed local configuration before database access", async () => {
   assert.throws(
     () => createGuestCheckoutRateLimiter(prisma, { maxAttempts: 0 }),
@@ -102,6 +129,14 @@ test("guest checkout limiter rejects malformed local configuration before databa
     () => createGuestCheckoutRateLimiter(prisma, { clientWindowMs: 0 }),
     /Checkout client rate-limit window must be a positive safe integer/,
   );
+  assert.throws(
+    () => createGuestCheckoutRateLimiter(prisma, { maxGeoClientAttempts: 0 }),
+    /Checkout geo client max attempts must be a positive safe integer/,
+  );
+  assert.throws(
+    () => createGuestCheckoutRateLimiter(prisma, { geoClientWindowMs: 0 }),
+    /Checkout geo client rate-limit window must be a positive safe integer/,
+  );
 
   const limiter = createGuestCheckoutRateLimiter(prisma);
   await assert.rejects(
@@ -114,6 +149,10 @@ test("guest checkout limiter rejects malformed local configuration before databa
   );
   await assert.rejects(
     () => limiter.consumeClient({ clientKey: "203.0.113.10", now: start }),
+    /Checkout client key must be a pseudonymous v1 key/,
+  );
+  await assert.rejects(
+    () => limiter.consumeGeoClient({ clientKey: "203.0.113.10", now: start }),
     /Checkout client key must be a pseudonymous v1 key/,
   );
 });

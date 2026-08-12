@@ -4,7 +4,8 @@ import { screenReaderConfig } from "@guidepup/playwright";
 export default defineConfig({
   ...screenReaderConfig,
   testDir: ".",
-  testMatch: "admin-editor.spec.ts",
+  testMatch: ["admin-editor.spec.ts", "checkout.spec.ts"],
+  workers: 1,
   timeout: 120_000,
   expect: {
     timeout: 10_000,

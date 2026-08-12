@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
@@ -42,8 +43,9 @@ export async function submitGuestCheckoutAction(
   _previousState: GuestCheckoutSubmitResult | null,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
+  let result: GuestCheckoutSubmitResult;
   try {
-    return await submitGuestCheckoutPublicAction(
+    result = await submitGuestCheckoutPublicAction(
       await createGuestCheckoutActionDependencies(),
       formData,
     );
@@ -54,4 +56,9 @@ export async function submitGuestCheckoutAction(
       reason: "CHECKOUT_UNAVAILABLE",
     };
   }
+
+  if (result.ok) {
+    redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
+  }
+  return result;
 }

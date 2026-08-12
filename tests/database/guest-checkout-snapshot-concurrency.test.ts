@@ -95,7 +95,9 @@ test.after(async () => {
 test("concurrent checkout snapshots reuse one active order per cart and allow a new attempt after rejection", async () => {
   await cleanup();
   const cart = await createCart();
-  const service = createGuestCheckoutSnapshotService(prisma);
+  const service = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
   const publicCodes = [`${key}-a`, `${key}-b`];
 
   const results = await Promise.all(
