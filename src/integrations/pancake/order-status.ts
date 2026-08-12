@@ -24,7 +24,7 @@ export class PancakeOrderStatusContractError extends Error {
 
 const STATUS_CODES = new Set<number>(PANCAKE_ORDER_STATUS_CODES);
 const RFC3339_DATE_TIME =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-](\d{2}):(\d{2}))$/;
 
 function invalidContract(): never {
   throw new PancakeOrderStatusContractError();
@@ -87,7 +87,9 @@ function daysInMonth(year: number, month: number): number {
   }
 }
 
-function requireDateTime(value: unknown): string {
+function parseDateTime(
+  value: unknown,
+): Readonly<{ value: string; epochMilliseconds: number; subMillisecondNanoseconds: number }> {
   if (typeof value !== "string" || value.length === 0 || value.length > 64 || value.trim() !== value) {
     invalidContract();
   }
@@ -101,8 +103,10 @@ function requireDateTime(value: unknown): string {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   const second = Number(match[6]);
-  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
-  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+  const fraction = match[7] ?? "";
+  const timezone = match[8];
+  const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
+  const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
 
   if (
     month < 1 ||
@@ -113,13 +117,37 @@ function requireDateTime(value: unknown): string {
     minute > 59 ||
     second > 59 ||
     offsetHour > 23 ||
-    offsetMinute > 59 ||
-    !Number.isFinite(Date.parse(value))
+    offsetMinute > 59
   ) {
     invalidContract();
   }
 
-  return value;
+  const paddedFraction = fraction.padEnd(9, "0");
+  const milliseconds = paddedFraction.slice(0, 3);
+  const subMillisecondNanoseconds = Number(paddedFraction.slice(3, 9) || "0");
+  const normalized = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}${
+    fraction.length > 0 ? `.${milliseconds}` : ""
+  }${timezone}`;
+  const epochMilliseconds = Date.parse(normalized);
+  if (!Number.isSafeInteger(epochMilliseconds) || !Number.isSafeInteger(subMillisecondNanoseconds)) {
+    invalidContract();
+  }
+
+  return { value, epochMilliseconds, subMillisecondNanoseconds };
+}
+
+function requireDateTime(value: unknown): string {
+  return parseDateTime(value).value;
+}
+
+export function comparePancakeOrderStatusTimestamps(left: unknown, right: unknown): -1 | 0 | 1 {
+  const leftTimestamp = parseDateTime(left);
+  const rightTimestamp = parseDateTime(right);
+  if (leftTimestamp.epochMilliseconds < rightTimestamp.epochMilliseconds) return -1;
+  if (leftTimestamp.epochMilliseconds > rightTimestamp.epochMilliseconds) return 1;
+  if (leftTimestamp.subMillisecondNanoseconds < rightTimestamp.subMillisecondNanoseconds) return -1;
+  if (leftTimestamp.subMillisecondNanoseconds > rightTimestamp.subMillisecondNanoseconds) return 1;
+  return 0;
 }
 
 export function parsePancakeOrderStatusResponse(
