@@ -106,3 +106,30 @@ test("missing anonymous cart stops before checkout submission", async () => {
   });
   assert.equal(submitCalls, 0);
 });
+
+test("rate-limited anonymous cart stops before checkout submission", async () => {
+  let limiterCalls = 0;
+  let submitCalls = 0;
+  const dependencies = {
+    cartSession: { read: () => "server-cart-id", clear: () => undefined },
+    consumeAttempt: async (cartId: string) => {
+      limiterCalls += 1;
+      assert.equal(cartId, "server-cart-id");
+      return false;
+    },
+    submitCheckout: async () => {
+      submitCalls += 1;
+      return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-should-not-run" };
+    },
+  };
+
+  const result = await submitGuestCheckoutPublicAction(dependencies, makeFormData());
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: "RETRYABLE",
+    reason: "CHECKOUT_UNAVAILABLE",
+  });
+  assert.equal(limiterCalls, 1);
+  assert.equal(submitCalls, 0);
+});
