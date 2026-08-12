@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db/prisma.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
+import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
 import { createGuestCheckoutSnapshotService } from "./guest-checkout-snapshot.ts";
 import {
   createGuestCheckoutSubmitService,
@@ -15,6 +16,7 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   createOrderSubmission: (
     config: PancakeConfig,
   ) => GuestCheckoutSubmitDependencies["orderSubmission"];
+  recoverStranded: (input: { cartId: string; now: Date }) => Promise<void>;
   generatePublicCode: () => string;
   clock: () => Date;
 }>;
@@ -29,6 +31,9 @@ export function createGuestCheckoutSubmitRuntime(
     options.createSnapshot ?? (() => createGuestCheckoutSnapshotService(prisma));
   const createOrderSubmission =
     options.createOrderSubmission ?? createPancakeOrderSubmissionRuntime;
+  const recoverStranded =
+    options.recoverStranded ??
+    (({ cartId, now }) => recoverStrandedGuestCheckoutForCart(prisma, cartId, now));
   const generatePublicCode = options.generatePublicCode ?? (() => `LA-${randomUUID()}`);
   const clock = options.clock ?? (() => new Date());
 
@@ -39,6 +44,9 @@ export function createGuestCheckoutSubmitRuntime(
     cartId: string;
     checkoutInput: unknown;
   }) {
+    const now = clock();
+    await recoverStranded({ cartId, now });
+
     const config = readConfig();
     const service = createGuestCheckoutSubmitService({
       snapshot: createSnapshot(),
@@ -50,7 +58,7 @@ export function createGuestCheckoutSubmitRuntime(
       cartId,
       shopId: config.shopId,
       checkoutInput,
-      now: clock(),
+      now,
     });
   }
 
