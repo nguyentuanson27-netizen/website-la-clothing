@@ -90,7 +90,9 @@ async function makeRetryableDraft({ suffix, variantId }: { suffix: string; varia
       items: { create: { variantId, quantity: 1 } },
     },
   });
-  const snapshot = createGuestCheckoutSnapshotService(prisma);
+  const snapshot = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
   const first = await snapshot.create({
     cartId: cart.id,
     shopId,

@@ -4,6 +4,8 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_CLIENT_ATTEMPTS = 20;
 const DEFAULT_CLIENT_WINDOW_MS = 60_000;
+const DEFAULT_MAX_GEO_CLIENT_ATTEMPTS = 60;
+const DEFAULT_GEO_CLIENT_WINDOW_MS = 60_000;
 const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
@@ -12,6 +14,8 @@ type GuestCheckoutRateLimiterOptions = Readonly<{
   windowMs?: number;
   maxClientAttempts?: number;
   clientWindowMs?: number;
+  maxGeoClientAttempts?: number;
+  geoClientWindowMs?: number;
 }>;
 
 function requirePositiveSafeInteger(value: number, label: string): number {
@@ -75,8 +79,20 @@ export function createGuestCheckoutRateLimiter(
     options.clientWindowMs ?? DEFAULT_CLIENT_WINDOW_MS,
     "Checkout client rate-limit window",
   );
+  const maxGeoClientAttempts = requirePositiveSafeInteger(
+    options.maxGeoClientAttempts ?? DEFAULT_MAX_GEO_CLIENT_ATTEMPTS,
+    "Checkout geo client max attempts",
+  );
+  const geoClientWindowMs = requirePositiveSafeInteger(
+    options.geoClientWindowMs ?? DEFAULT_GEO_CLIENT_WINDOW_MS,
+    "Checkout geo client rate-limit window",
+  );
   const cartCappedCount = cappedCount(maxAttempts, "Checkout max attempts");
   const clientCappedCount = cappedCount(maxClientAttempts, "Checkout client max attempts");
+  const geoClientCappedCount = cappedCount(
+    maxGeoClientAttempts,
+    "Checkout geo client max attempts",
+  );
 
   async function consumeBucket({
     bucketKey,
@@ -152,5 +168,22 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient };
+  async function consumeGeoClient({
+    clientKey,
+    now = new Date(),
+  }: {
+    clientKey: string;
+    now?: Date;
+  }): Promise<boolean> {
+    const safeClientKey = requireClientKey(clientKey);
+    return consumeBucket({
+      bucketKey: `checkout-geo-client:${safeClientKey}`,
+      now,
+      windowMs: geoClientWindowMs,
+      maxAttempts: maxGeoClientAttempts,
+      cap: geoClientCappedCount,
+    });
+  }
+
+  return { consume, consumeClient, consumeGeoClient };
 }

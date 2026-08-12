@@ -180,6 +180,18 @@ export default async function CartPage() {
           <p className="mt-4 text-sm leading-6 text-black/60">
             Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.
           </p>
+          {!hasUnavailableLines && subtotal !== null ? (
+            <Link
+              className="mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/checkout"
+            >
+              Tiến hành đặt hàng
+            </Link>
+          ) : (
+            <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/60">
+              Hãy xử lý các dòng chưa khả dụng trước khi thanh toán.
+            </p>
+          )}
           <Link className="text-link mt-7 inline-block" href="/shop">
             Continue shopping ↗
           </Link>
