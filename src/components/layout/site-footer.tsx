@@ -12,6 +12,7 @@ export function SiteFooter() {
         <Link href="/shop">Shop</Link>
         <Link href="/new-arrivals">New arrivals</Link>
         <Link href="/lookbook">Lookbook</Link>
+        <Link href="/track-order">Tra cứu đơn</Link>
         <Link href="/account">Account</Link>
       </div>
 
