@@ -24,6 +24,21 @@ type GeoError = Readonly<{
 const fieldClassName =
   "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45";
 
+const geoFailures = {
+  provinces: {
+    level: "provinces",
+    message: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
+  },
+  districts: {
+    level: "districts",
+    message: "Chưa tải được danh sách quận/huyện. Vui lòng thử lại.",
+  },
+  communes: {
+    level: "communes",
+    message: "Chưa tải được danh sách phường/xã. Vui lòng thử lại.",
+  },
+} as const satisfies Record<GeoError["level"], GeoError>;
+
 export function GuestCheckoutForm() {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
@@ -57,19 +72,25 @@ export function GuestCheckoutForm() {
     setDistricts([]);
     setCommunes([]);
 
-    const result = await loadCheckoutProvincesAction();
-    if (requestId !== provinceRequest.current) return;
+    try {
+      const result = await loadCheckoutProvincesAction();
+      if (requestId !== provinceRequest.current) return;
 
-    setProvinceLoading(false);
-    if (!result.ok) {
+      if (!result.ok) {
+        setProvinces([]);
+        setGeoError(geoFailures.provinces);
+        return;
+      }
+      setProvinces(result.options);
+    } catch {
+      if (requestId !== provinceRequest.current) return;
       setProvinces([]);
-      setGeoError({
-        level: "provinces",
-        message: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
-      });
-      return;
+      setGeoError(geoFailures.provinces);
+    } finally {
+      if (requestId === provinceRequest.current) {
+        setProvinceLoading(false);
+      }
     }
-    setProvinces(result.options);
   }, []);
 
   const requestDistricts = useCallback(async (selectedProvince: string) => {
@@ -77,19 +98,25 @@ export function GuestCheckoutForm() {
     setDistrictLoading(true);
     setGeoError(null);
 
-    const result = await loadCheckoutDistrictsAction(selectedProvince);
-    if (requestId !== districtRequest.current) return;
+    try {
+      const result = await loadCheckoutDistrictsAction(selectedProvince);
+      if (requestId !== districtRequest.current) return;
 
-    setDistrictLoading(false);
-    if (!result.ok) {
+      if (!result.ok) {
+        setDistricts([]);
+        setGeoError(geoFailures.districts);
+        return;
+      }
+      setDistricts(result.options);
+    } catch {
+      if (requestId !== districtRequest.current) return;
       setDistricts([]);
-      setGeoError({
-        level: "districts",
-        message: "Chưa tải được danh sách quận/huyện. Vui lòng thử lại.",
-      });
-      return;
+      setGeoError(geoFailures.districts);
+    } finally {
+      if (requestId === districtRequest.current) {
+        setDistrictLoading(false);
+      }
     }
-    setDistricts(result.options);
   }, []);
 
   const requestCommunes = useCallback(
@@ -98,29 +125,65 @@ export function GuestCheckoutForm() {
       setCommuneLoading(true);
       setGeoError(null);
 
-      const result = await loadCheckoutCommunesAction(
-        selectedProvince,
-        selectedDistrict,
-      );
-      if (requestId !== communeRequest.current) return;
+      try {
+        const result = await loadCheckoutCommunesAction(
+          selectedProvince,
+          selectedDistrict,
+        );
+        if (requestId !== communeRequest.current) return;
 
-      setCommuneLoading(false);
-      if (!result.ok) {
+        if (!result.ok) {
+          setCommunes([]);
+          setGeoError(geoFailures.communes);
+          return;
+        }
+        setCommunes(result.options);
+      } catch {
+        if (requestId !== communeRequest.current) return;
         setCommunes([]);
-        setGeoError({
-          level: "communes",
-          message: "Chưa tải được danh sách phường/xã. Vui lòng thử lại.",
-        });
-        return;
+        setGeoError(geoFailures.communes);
+      } finally {
+        if (requestId === communeRequest.current) {
+          setCommuneLoading(false);
+        }
       }
-      setCommunes(result.options);
     },
     [],
   );
 
   useEffect(() => {
-    void requestProvinces();
-  }, [requestProvinces]);
+    const requestId = ++provinceRequest.current;
+    let active = true;
+
+    void (async () => {
+      try {
+        const result = await loadCheckoutProvincesAction();
+        if (!active || requestId !== provinceRequest.current) return;
+
+        if (!result.ok) {
+          setProvinces([]);
+          setGeoError(geoFailures.provinces);
+          return;
+        }
+        setProvinces(result.options);
+      } catch {
+        if (!active || requestId !== provinceRequest.current) return;
+        setProvinces([]);
+        setGeoError(geoFailures.provinces);
+      } finally {
+        if (active && requestId === provinceRequest.current) {
+          setProvinceLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (requestId === provinceRequest.current) {
+        ++provinceRequest.current;
+      }
+    };
+  }, []);
 
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
