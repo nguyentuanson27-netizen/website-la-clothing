@@ -56,6 +56,17 @@ const SELECTED_RESPONSE_PROPERTIES = [
 ] as const;
 const SELECTED_RESPONSE_PROPERTY_SET = new Set<string>(SELECTED_RESPONSE_PROPERTIES);
 const PARAMETER_LOCATIONS = new Set(["query", "header", "path", "cookie"]);
+const NON_STRUCTURAL_SCHEMA_REF_SIBLINGS = new Set([
+  "title",
+  "description",
+  "$comment",
+  "default",
+  "examples",
+  "example",
+  "deprecated",
+  "readOnly",
+  "writeOnly",
+]);
 const MAX_WORK_UNITS = 10_000;
 const MAX_REF_DEPTH = 32;
 const MAX_ENUM_VALUES = 256;
@@ -82,13 +93,28 @@ class Inspector {
     if (this.work > MAX_WORK_UNITS) fail("OPENAPI_INSPECTION_LIMIT_EXCEEDED");
   }
 
-  resolve(value: unknown, stack: readonly string[] = []): unknown {
+  private assertSafeSchemaRefSiblings(source: JsonRecord): void {
+    for (const key of Object.keys(source)) {
+      this.charge();
+      if (
+        key === "$ref" ||
+        key.startsWith("x-") ||
+        NON_STRUCTURAL_SCHEMA_REF_SIBLINGS.has(key)
+      ) {
+        continue;
+      }
+      fail("MALFORMED_OPENAPI_DOCUMENT");
+    }
+  }
+
+  resolve(value: unknown, stack: readonly string[] = [], schemaContext = false): unknown {
     let current = value;
     const seen = new Set(stack);
     let depth = stack.length;
 
     while (isRecord(current) && Object.hasOwn(current, "$ref")) {
       this.charge();
+      if (schemaContext) this.assertSafeSchemaRefSiblings(current);
       if (typeof current.$ref !== "string") fail("MALFORMED_OPENAPI_DOCUMENT");
       const ref = current.$ref;
       if (!ref.startsWith("#/")) fail("UNSUPPORTED_EXTERNAL_REF");
@@ -120,7 +146,9 @@ class Inspector {
 
   schema(value: unknown, includeSelectedProperties = false): PancakeOrderStatusSchemaEvidence {
     this.charge();
-    const source = this.object(value);
+    const resolved = this.resolve(value, [], true);
+    if (!isRecord(resolved)) fail("MALFORMED_OPENAPI_DOCUMENT");
+    const source = resolved;
     const result: PancakeOrderStatusSchemaEvidence = {};
 
     if (typeof source.type === "string") {
