@@ -65,7 +65,6 @@ const NON_STRUCTURAL_SCHEMA_REF_SIBLINGS = new Set([
   "example",
   "deprecated",
   "readOnly",
-  "writeOnly",
 ]);
 const MAX_WORK_UNITS = 10_000;
 const MAX_REF_DEPTH = 32;
