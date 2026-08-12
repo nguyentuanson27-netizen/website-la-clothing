@@ -27,9 +27,9 @@ function completeSnapshot(phone: string) {
     districtRef: "tracking-district",
     communeRef: "tracking-commune",
     addressDetail: "Tracking fixture address",
-    merchandiseSubtotalVnd: 100_000n,
-    shippingFeeVnd: 30_000n,
-    totalVnd: 130_000n,
+    merchandiseSubtotalVnd: BigInt(100_000),
+    shippingFeeVnd: BigInt(30_000),
+    totalVnd: BigInt(130_000),
   };
 }
 
@@ -59,9 +59,9 @@ test("guest order tracking requires code + phone and returns an allowlisted summ
       pancakeStatus: 6,
       pancakeStatusUpdatedAt: "2026-08-13T00:00:00Z",
       checkoutSnapshottedAt: new Date("2026-08-13T00:00:00Z"),
-      merchandiseSubtotalVnd: 500_000n,
-      shippingFeeVnd: 30_000n,
-      totalVnd: 530_000n,
+      merchandiseSubtotalVnd: BigInt(500_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(530_000),
     },
   });
 
