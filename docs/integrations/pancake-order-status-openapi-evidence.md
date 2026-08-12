@@ -35,7 +35,9 @@ The command:
 - applies a 10,000-work-unit inspection budget and a 32-hop local-reference depth limit;
 - rejects external, unresolved and circular references;
 - treats Schema Object `$ref` values separately from ordinary OpenAPI Reference Objects: every Schema `$ref` hop is checked before dereference;
-- strips only non-contract annotation/sample siblings such as descriptions/examples and vendor extensions next to a Schema `$ref`; any other sibling that could add an unsupported validation/structural constraint fails closed with `MALFORMED_OPENAPI_DOCUMENT` instead of being silently discarded;
+- strips only non-contract annotation/sample siblings such as descriptions/examples, `readOnly`, and vendor extensions next to a Schema `$ref`;
+- rejects `writeOnly` next to a selected Schema `$ref` instead of silently stripping it, because this evidence describes a GET response and `writeOnly` changes whether a value is available when the resource is retrieved;
+- fails closed with `MALFORMED_OPENAPI_DOCUMENT` for any other Schema `$ref` sibling that could add an unsupported validation/structural constraint;
 - requires exactly one matching `GET /shops/{...}/orders/{...}` operation;
 - rejects operation/path deployment overrides that would make root server/security metadata ambiguous;
 - validates the two required path parameters before producing evidence;
@@ -46,7 +48,19 @@ The command:
 
 The exact candidate CLI source checked into this PR was executed locally against the supplied raw OpenAPI file and produced the checked artifact with the fingerprint above.
 
-After the Schema `$ref`-sibling hardening review, the candidate inspector/CLI was rerun against that exact raw fingerprint. The generated JSON remained byte-for-byte equal to the checked artifact; both generated and checked files have SHA-256 `aafdf1394a74be71e6f6b48df9566a1410ea2fa5d836299e11a7ca695cb077a0`. The current selected order-detail schemas therefore require no artifact content change, while the inspector now fails closed if a future selected Schema `$ref` would otherwise hide an unsupported sibling constraint.
+## Schema `$ref` hardening review evidence
+
+The first Schema `$ref` hardening closed silent loss of structural siblings such as `type` and `enum`. Re-review comment `5271066252` then identified one remaining directional annotation issue: `writeOnly` was still classified as safe to strip, which is not safe for evidence about a GET response.
+
+The follow-up was implemented with focused TDD:
+
+- RED commit `7cedbc4395ca2ba19bff17c9dab0076c83d6abf2`, CI #642 / `31628714359`: DB 69/69, all three HTTP/security smokes, lint and typecheck passed; domain/integration failed exactly the new `$ref + writeOnly: true` regression with `Missing expected exception` (224/225 pass), and build was skipped after that intentional failure;
+- GREEN production commit `187091d3b0bf52355f24e55a6ab7351dad3c69a8`: `writeOnly` was removed from the ignorable Schema-ref sibling set, so the existing per-hop fail-closed check rejects it without changing the generic Reference Object resolver or production Pancake gateway/parser;
+- `readOnly` remains ignorable for this GET/output evidence because it does not make the field unavailable on retrieval.
+
+After the `writeOnly` hardening, the exact candidate inspector/CLI source was executed locally against the same raw fingerprint. The raw source remained SHA-256 `44916312beb9f6d23ec96ac2ef4cf6428274ca024708f23afd19794ecddba81f` and 2,774,602 bytes. The generated evidence remained 1,582 bytes and byte-for-byte equal to the checked artifact; both generated and checked files have SHA-256 `aafdf1394a74be71e6f6b48df9566a1410ea2fa5d836299e11a7ca695cb077a0`.
+
+The current selected order-detail schemas therefore require no artifact content change, while the inspector now fails closed if a future selected Schema `$ref` would otherwise hide `writeOnly` or another unsupported contract-affecting sibling.
 
 ## Verified read contract
 
