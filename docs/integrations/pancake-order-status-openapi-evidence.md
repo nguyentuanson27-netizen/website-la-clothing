@@ -34,6 +34,8 @@ The command:
 - limits the raw evidence file to 16 MiB and reads through the same opened handle used for metadata checks;
 - applies a 10,000-work-unit inspection budget and a 32-hop local-reference depth limit;
 - rejects external, unresolved and circular references;
+- treats Schema Object `$ref` values separately from ordinary OpenAPI Reference Objects: every Schema `$ref` hop is checked before dereference;
+- strips only non-contract annotation/sample siblings such as descriptions/examples and vendor extensions next to a Schema `$ref`; any other sibling that could add an unsupported validation/structural constraint fails closed with `MALFORMED_OPENAPI_DOCUMENT` instead of being silently discarded;
 - requires exactly one matching `GET /shops/{...}/orders/{...}` operation;
 - rejects operation/path deployment overrides that would make root server/security metadata ambiguous;
 - validates the two required path parameters before producing evidence;
@@ -43,6 +45,8 @@ The command:
 - never copies response examples, descriptions, defaults, customer objects, phone/name values or other order PII.
 
 The exact candidate CLI source checked into this PR was executed locally against the supplied raw OpenAPI file and produced the checked artifact with the fingerprint above.
+
+After the Schema `$ref`-sibling hardening review, the candidate inspector/CLI was rerun against that exact raw fingerprint. The generated JSON remained byte-for-byte equal to the checked artifact; both generated and checked files have SHA-256 `aafdf1394a74be71e6f6b48df9566a1410ea2fa5d836299e11a7ca695cb077a0`. The current selected order-detail schemas therefore require no artifact content change, while the inspector now fails closed if a future selected Schema `$ref` would otherwise hide an unsupported sibling constraint.
 
 ## Verified read contract
 
