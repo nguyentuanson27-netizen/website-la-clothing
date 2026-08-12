@@ -39,6 +39,10 @@ type CheckoutSnapshotResult =
     }
   | { ok: false; reason: CheckoutFailureReason };
 
+type GuestCheckoutSnapshotServiceOptions = Readonly<{
+  checkoutInputValidated?: boolean;
+}>;
+
 const snapshotOrderSelection = {
   id: true,
   publicCode: true,
@@ -179,6 +183,26 @@ async function findActiveCheckout(tx: TransactionClient, cartId: string) {
   });
 }
 
+export async function requiresFreshGuestCheckoutSnapshot(
+  client: PrismaClient,
+  cartId: string,
+): Promise<boolean> {
+  if (typeof cartId !== "string" || cartId.length === 0) {
+    return true;
+  }
+
+  const activeCheckout = await client.orderMirror.findFirst({
+    where: {
+      sourceCartId: cartId,
+      state: { in: [...ACTIVE_CHECKOUT_STATES] },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: snapshotOrderSelection,
+  });
+
+  return !activeCheckout || isRetryableDraft(activeCheckout);
+}
+
 async function supersedeRetryableDraft(
   tx: TransactionClient,
   order: SelectedSnapshotOrder,
@@ -226,7 +250,12 @@ function toStorefrontProduct(product: SelectedProduct) {
   };
 }
 
-export function createGuestCheckoutSnapshotService(client: PrismaClient) {
+export function createGuestCheckoutSnapshotService(
+  client: PrismaClient,
+  options: GuestCheckoutSnapshotServiceOptions = {},
+) {
+  const checkoutInputValidated = options.checkoutInputValidated ?? true;
+
   async function create({
     cartId,
     shopId,
@@ -262,10 +291,25 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
 
         const activeCheckout = await findActiveCheckout(tx, cartId);
         if (activeCheckout) {
-          const superseded = await supersedeRetryableDraft(tx, activeCheckout);
-          if (!superseded) {
-            return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+          if (isRetryableDraft(activeCheckout)) {
+            if (!checkoutInputValidated) {
+              return { ok: false, reason: "INVALID_INPUT" };
+            }
+            const superseded = await supersedeRetryableDraft(tx, activeCheckout);
+            if (!superseded) {
+              return toSnapshotResult(activeCheckout) ?? {
+                ok: false,
+                reason: "MONEY_UNSUPPORTED",
+              };
+            }
+          } else {
+            return toSnapshotResult(activeCheckout) ?? {
+              ok: false,
+              reason: "MONEY_UNSUPPORTED",
+            };
           }
+        } else if (!checkoutInputValidated) {
+          return { ok: false, reason: "INVALID_INPUT" };
         }
 
         const items = await tx.cartItem.findMany({
@@ -405,7 +449,10 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
         if (!activeCheckout || isRetryableDraft(activeCheckout)) {
           return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
         }
-        return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
+        return toSnapshotResult(activeCheckout) ?? {
+          ok: false,
+          reason: "PUBLIC_CODE_UNAVAILABLE",
+        };
       }
       throw error;
     }
