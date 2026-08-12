@@ -63,18 +63,18 @@ model Session {
 model Account {
   id                    String    @id
   accountId             String
-  providerId            String
-  userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                  String?
-  password               String?
-  createdAt              DateTime
-  updatedAt              DateTime
+  providerId             String
+  userId                 String
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken            String?
+  refreshToken           String?
+  idToken                String?
+  accessTokenExpiresAt   DateTime?
+  refreshTokenExpiresAt  DateTime?
+  scope                   String?
+  password                String?
+  createdAt               DateTime
+  updatedAt               DateTime
 
   @@map("account")
 }
@@ -226,6 +226,7 @@ model OrderMirror {
   id                     String              @id @default(uuid())
   publicCode             String              @unique
   userId                 String?
+  sourceCartId           String?
   pancakeShopId          Int?
   pancakeOrderId         String?             @unique
   state                  LocalOrderState     @default(DRAFT)
@@ -247,6 +248,7 @@ model OrderMirror {
   lines                  OrderLineSnapshot[]
 
   @@index([userId, createdAt])
+  @@index([sourceCartId])
   @@index([state, createdAt])
 }
 
