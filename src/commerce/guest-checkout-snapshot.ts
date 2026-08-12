@@ -99,6 +99,10 @@ function isActiveCheckoutState(state: string): state is ActiveCheckoutState {
   return (ACTIVE_CHECKOUT_STATES as readonly string[]).includes(state);
 }
 
+function isRetryableDraft(order: SelectedSnapshotOrder): boolean {
+  return order.state === "DRAFT" && order.syncErrorCode === RETRYABLE_DRAFT_ERROR;
+}
+
 function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult | null {
   if (
     !isActiveCheckoutState(order.state) ||
@@ -179,7 +183,7 @@ async function supersedeRetryableDraft(
   tx: TransactionClient,
   order: SelectedSnapshotOrder,
 ): Promise<boolean> {
-  if (order.state !== "DRAFT" || order.syncErrorCode !== RETRYABLE_DRAFT_ERROR) {
+  if (!isRetryableDraft(order)) {
     return false;
   }
 
@@ -398,8 +402,10 @@ export function createGuestCheckoutSnapshotService(client: PrismaClient) {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: snapshotOrderSelection,
         });
-        const activeResult = activeCheckout ? toSnapshotResult(activeCheckout) : null;
-        return activeResult ?? { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
+        if (!activeCheckout || isRetryableDraft(activeCheckout)) {
+          return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
+        }
+        return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
       }
       throw error;
     }
