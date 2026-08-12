@@ -39,6 +39,25 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
+test("snapshot service fails closed when checkout geo authority is omitted", async () => {
+  const cart = await createBareCart();
+  const service = createGuestCheckoutSnapshotService(prisma);
+
+  assert.deepEqual(
+    await service.create({
+      cartId: cart.id,
+      shopId,
+      publicCode: "checkout-geo-authority-default",
+      checkoutInput,
+      now,
+    }),
+    { ok: false, reason: "INVALID_INPUT" },
+  );
+  assert.equal(await prisma.orderMirror.count({ where: { sourceCartId: cart.id } }), 0);
+
+  await cleanup(cart.id);
+});
+
 test("unvalidated checkout input cannot create a fresh snapshot", async () => {
   const cart = await createBareCart();
   const service = createGuestCheckoutSnapshotService(prisma, {
