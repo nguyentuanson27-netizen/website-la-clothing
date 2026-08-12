@@ -1,16 +1,20 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
+import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
+import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
 import { submitGuestCheckoutPublicAction } from "./guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 import { submitGuestCheckoutByCart } from "./guest-checkout-submit-runtime.ts";
 
 async function createGuestCheckoutActionDependencies() {
-  const cookieStore = await cookies();
+  const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
+  const authConfig = readAuthServerConfig();
+  const clientKey = deriveGuestCheckoutClientKey(requestHeaders, authConfig);
   const cartSession = createAnonymousCartCookieSession({
     get(name: string) {
       return cookieStore.get(name);
@@ -23,8 +27,12 @@ async function createGuestCheckoutActionDependencies() {
 
   return {
     cartSession,
-    consumeAttempt(cartId: string) {
-      return rateLimiter.consume({ cartId });
+    async consumeAttempt(cartId: string) {
+      const now = new Date();
+      if (!(await rateLimiter.consumeClient({ clientKey, now }))) {
+        return false;
+      }
+      return rateLimiter.consume({ cartId, now });
     },
     submitCheckout: submitGuestCheckoutByCart,
   };
