@@ -45,9 +45,9 @@ function one(value: SearchParamValue): string | undefined {
 function optionalText(value: SearchParamValue, maxLength: number): string | null {
   const raw = one(value);
   if (raw === undefined || raw === "") return null;
+  if (raw.length > maxLength) invalid();
   const normalized = raw.trim();
   if (normalized.length === 0) return null;
-  if (normalized.length > maxLength) invalid();
   return normalized;
 }
 
