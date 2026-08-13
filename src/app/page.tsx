@@ -2,13 +2,12 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
-import type { StorefrontProduct } from "@/commerce/storefront-catalog";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 
-async function loadHomepageProductEdit(): Promise<StorefrontProduct[]> {
+async function loadHomepageProductEdit() {
   try {
     return await listConfiguredStorefrontProducts(4);
   } catch (error) {
