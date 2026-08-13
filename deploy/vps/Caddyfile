@@ -1,0 +1,14 @@
+{$APP_DOMAIN} {
+	encode zstd gzip
+	log
+
+	reverse_proxy app:3000 {
+		# Always overwrite the application-owned client-IP header. With Caddy as the
+		# direct edge, {client_ip} is the direct client address. If Cloudflare proxying
+		# is enabled later, configure Caddy trusted_proxies first.
+		header_up X-LA-Client-IP {client_ip}
+		health_uri /shop
+		health_interval 30s
+		health_timeout 5s
+	}
+}
