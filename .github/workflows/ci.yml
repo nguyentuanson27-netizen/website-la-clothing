@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -85,6 +89,45 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Release environment preflight
+        env:
+          BETTER_AUTH_URL: https://shop.example.test
+          PANCAKE_API_KEY: ci-only-pancake-placeholder
+          PANCAKE_SHOP_ID: "920007"
+          LA_SHIPPING_FEE_VND: "30000"
+          LA_FREE_SHIPPING_SUBTOTAL_VND: "1000000"
+          LA_FREE_SHIPPING_MIN_QUANTITY: "3"
+        run: pnpm release:check
+
+      - name: Production start smoke
+        env:
+          BETTER_AUTH_URL: http://127.0.0.1:3219
+          PANCAKE_SHOP_ID: "920007"
+          NEXT_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm start --hostname 127.0.0.1 --port 3219 >"$RUNNER_TEMP/next-start.log" 2>&1 &
+          APP_PID=$!
+          cleanup() {
+            kill "$APP_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..40}; do
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+              cat "$RUNNER_TEMP/next-start.log"
+              exit 1
+            fi
+            if curl --fail --silent --show-error http://127.0.0.1:3219/ >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+
+          cat "$RUNNER_TEMP/next-start.log"
+          exit 1
 
   admin-a11y-runtime:
     runs-on: macos-14
