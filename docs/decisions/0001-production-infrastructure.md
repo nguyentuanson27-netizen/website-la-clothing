@@ -3,6 +3,7 @@
 - **Status:** Accepted for provisioning
 - **Date:** 2026-08-13
 - **Release baseline:** `788c273a1974ada5131993f6798f405b9ee9b3f5`
+- **Bootstrap branch:** `release/production-bootstrap-788c273` (must remain pinned to the release baseline)
 
 ## Context
 
@@ -11,6 +12,8 @@ LA Clothing is release-ready at the repository level, but production deployment 
 The repository currently pins Next.js 16.2.11, Node `>=22.14.0`, pnpm 11.4.0, Prisma 7.9.1, and PostgreSQL. CI runs Node 22 and enables Corepack before using the pinned pnpm version.
 
 The first production release must preserve the existing release rules: run the real environment preflight, review migrations and establish a recoverable database point before migration, deploy the exact approved commit, avoid live Pancake order creation as a generic smoke test, and never blind-retry a Pancake create-order outcome in `SYNC_UNKNOWN`.
+
+Render starts a service's first deploy as part of Web Service creation. Therefore, creating a service from a moving `main` branch and planning to correct it later with `Manual Deploy -> Deploy a specific commit` does **not** guarantee that the first successful production deploy is the approved release baseline. The initial service source itself must be pinned before the service is created.
 
 ## Decision
 
@@ -25,15 +28,30 @@ Initial production settings:
 - Service runtime: native **Node.js**.
 - Instance type: **Standard** as the initial production baseline; resize only from observed load.
 - Node version: set `NODE_VERSION=22.22.0` to stay on the same major version as CI and avoid Render's unbounded Node default changing the runtime major.
-- Auto-deploy: **disabled**. Production deploys are deliberate exact-commit releases.
+- Source branch for service creation: **`release/production-bootstrap-788c273`**.
+- The bootstrap branch must resolve to exactly `788c273a1974ada5131993f6798f405b9ee9b3f5` immediately before the Web Service is created, and it must not receive later commits.
+- Auto-deploy: **disabled at service creation**, not after the first deploy. If provisioning through the Render API, create the service with `autoDeploy=no`. If using another Render flow, it must provide the equivalent pre-create setting; do not create the production Web Service until this is true.
 - Build command:
   `corepack enable && pnpm --version && pnpm install --frozen-lockfile --ignore-scripts && pnpm prisma:generate && pnpm build`
 - Start command: `pnpm start`.
 - Pre-deploy command: `pnpm release:check && pnpm prisma:migrate:deploy`.
+- HTTP health check path: **`/shop`** for the bootstrap release.
 
-Provisioning has a hard compatibility gate: the build log must report **pnpm 11.4.0**. If Render's native runtime does not honor the repository's pinned package-manager version, stop the production launch and make the toolchain deterministic in a separate reviewed change; do not silently downgrade pnpm for production.
+The production Web Service is provisioned **last**, only after the production database, intended domain value, secrets/configuration, migration review/recovery gate, CI/review evidence, and Pancake production-acceptance gate are ready. Creating the Web Service is itself the action that starts the first deploy.
 
-Render supports deploying a specific commit SHA. For the first launch, deploy exactly `788c273a1974ada5131993f6798f405b9ee9b3f5` after the database backup/migration gate is satisfied.
+This sequencing guarantees that Render's first deploy can only build the immutable bootstrap branch at `788c273a1974ada5131993f6798f405b9ee9b3f5`. After Render reports the first deploy successful, the release owner must verify that the deploy metadata records that exact SHA before connecting production DNS or declaring the service live. A SHA mismatch is a release failure and must not receive production traffic.
+
+Provisioning also has a hard compatibility gate: the build log must report **pnpm 11.4.0**. If Render's native runtime does not honor the repository's pinned package-manager version, stop the production launch and make the toolchain deterministic in a separate reviewed change; do not silently downgrade pnpm for production.
+
+After the first successful baseline deploy, later releases use Render's **Deploy a specific commit** flow and keep auto-deploy disabled. The bootstrap branch remains a historical release pointer and is not advanced.
+
+### HTTP readiness
+
+Do not rely only on Render's default TCP port probe. Configure the Web Service health check path as **`/shop`** during initial service creation.
+
+This path exists in the exact bootstrap commit and is an application-level readiness signal rather than a simple socket check: rendering `/shop` reads the configured Pancake shop ID and queries the PostgreSQL-backed storefront catalog. A missing required shop configuration or unavailable database causes the request to fail instead of reporting a healthy instance. The route does not make a live Pancake network request or create an order.
+
+A dedicated minimal `/api/health` endpoint would be preferable for long-term health-check cost and isolation, but it does not exist in the immutable first-release SHA. Adding one would change the application release candidate and is therefore outside this infrastructure-selection PR. It should be considered in a later reviewed application change; until then `/shop` is the bootstrap HTTP readiness path.
 
 ### PostgreSQL
 
@@ -54,11 +72,12 @@ PITR restores to a new database instance. Database recovery therefore remains a 
 
 Use **Cloudflare as the authoritative DNS provider**. If the production domain has not been purchased yet, prefer Cloudflare Registrar when the chosen TLD is supported; otherwise the existing registrar can remain in place while nameservers are delegated to Cloudflare.
 
-The exact production domain is business input and is intentionally not invented by this ADR. It must be supplied before provisioning `BETTER_AUTH_URL` and before the production environment can pass `pnpm release:check`.
+The exact production domain is business input and is intentionally not invented by this ADR. It must be chosen before Web Service creation so the intended HTTPS origin can be supplied as `BETTER_AUTH_URL` for the first pre-deploy environment check.
 
 For initial launch:
 
-- Add the production root domain to the Render web service.
+- Do **not** point the production domain at Render before the first successful deploy's SHA has been verified as `788c273a1974ada5131993f6798f405b9ee9b3f5`.
+- After that verification, add the production root domain to the Render web service.
 - Configure Cloudflare root and `www` records to point to the Render service according to Render's Cloudflare DNS instructions.
 - Keep Cloudflare proxy status **DNS only** while Render verifies the domain and issues certificates; do not introduce a second proxy layer during first-launch acceptance.
 - Remove conflicting `AAAA` records while using Render, because Render's documented custom-domain path is IPv4-based.
@@ -72,7 +91,7 @@ Required runtime configuration includes:
 
 - `DATABASE_URL` — Render Postgres internal URL;
 - `BETTER_AUTH_SECRET` — newly generated high-entropy production-only secret;
-- `BETTER_AUTH_URL` — exact `https://` production origin;
+- `BETTER_AUTH_URL` — exact intended `https://` production origin;
 - `BETTER_AUTH_IP_HEADER=cf-connecting-ip`;
 - `PANCAKE_API_KEY`;
 - `PANCAKE_SHOP_ID`;
@@ -83,7 +102,7 @@ Render's public web-service traffic passes through Cloudflare and Render documen
 
 ### Observability and rollback
 
-Use Render application/deploy logs plus the application's existing Pancake/order telemetry for launch acceptance. The Pro workspace additionally provides HTTP request logs and request identifiers useful for correlating public requests.
+Use Render application/deploy logs, HTTP health-check state, and the application's existing Pancake/order telemetry for launch acceptance. The Pro workspace additionally provides HTTP request logs and request identifiers useful for correlating public requests.
 
 Application rollback uses Render's previous known-good deployment / exact known-good commit. Database rollback uses the reviewed Render PITR/logical-backup procedure when data restoration is actually required. These are intentionally separate rollback mechanisms.
 
@@ -105,15 +124,18 @@ Not selected. It adds operating-system patching, process supervision, TLS automa
 
 Positive:
 
+- the first successful production deploy is constrained at service creation to the approved exact SHA instead of relying on a corrective deploy afterward;
 - compute and database are colocated in Singapore and can use a private network;
-- exact-commit deployment maps directly to the current release gate;
 - production preflight and Prisma migration can run before promotion of the new build;
+- an HTTP application-level readiness signal is enabled from the bootstrap release;
 - provider-managed TLS and paid Postgres recovery reduce launch-day operational work;
 - production secrets remain outside source control;
 - the trusted client-IP configuration has a provider-documented header source.
 
 Trade-offs:
 
+- the immutable bootstrap branch is an operational release pointer that must not be advanced;
+- `/shop` is heavier than a dedicated minimal health endpoint and should eventually be replaced by one in a separately reviewed application release;
 - this is not Vercel's Next.js-specific platform, so Vercel-only framework optimizations are not part of the production architecture;
 - Basic-1gb Postgres is not a high-availability database tier; scale/HA is a later evidence-based capacity decision;
 - the exact domain is still a human/business input;
@@ -121,7 +143,10 @@ Trade-offs:
 
 ## Provider references
 
+- Render first deploy/service creation: https://render.com/docs/your-first-deploy
 - Render deploys and exact-commit deploys: https://render.com/docs/deploys
+- Render Create Service API (`branch`, `autoDeploy`): https://api-docs.render.com/reference/create-service
+- Render health checks: https://render.com/docs/health-checks
 - Render Node version pinning: https://render.com/docs/node-version
 - Render private network: https://render.com/docs/private-network
 - Render Postgres connections: https://render.com/docs/postgresql-creating-connecting
