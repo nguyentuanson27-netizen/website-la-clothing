@@ -52,7 +52,9 @@ function parseTextField(value: unknown, maxLength: number): ParsedTextField {
 }
 
 function parseCollectionSlugs(value: unknown): ParsedCollectionSlugs {
-  if (value === undefined || value === "") return { ok: true, value: [] };
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: [] };
+  }
   if (typeof value !== "string") return { ok: false };
 
   const rawSlugs = value.split(",").map((entry) => entry.trim());
