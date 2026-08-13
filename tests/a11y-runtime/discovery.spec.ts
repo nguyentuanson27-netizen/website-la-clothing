@@ -174,7 +174,7 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   await expect(page.getByRole("heading", { level: 2, name: "Tìm trong catalog" })).toBeVisible();
 
   await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
-  await page.getByLabel("Collection").selectOption("city-uniform");
+  await page.getByRole("combobox", { name: "Collection", exact: true }).selectOption("city-uniform");
   await page.getByLabel("Màu").selectOption("Ink");
   await page.getByLabel("Kích cỡ").selectOption("M");
   await page.getByLabel("Giá tối thiểu").fill("1000000");
