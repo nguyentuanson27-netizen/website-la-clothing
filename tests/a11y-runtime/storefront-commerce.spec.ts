@@ -1,0 +1,200 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+import { prisma } from "../../src/db/prisma.ts";
+
+const HOST = "127.0.0.1";
+const PORT = 3218;
+const BASE_URL = `http://${HOST}:${PORT}`;
+const APP_ROOT = resolve(import.meta.dirname, "../..");
+const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+const SHOP_ID = 920_010;
+const runId = `${Date.now()}-${process.pid}`;
+const productExternalId = `commerce-runtime-product-${runId}`;
+const productSlug = `commerce-runtime-product-${runId}`;
+const productName = `Commerce Runtime Overshirt ${runId}`;
+const variantExternalId = `commerce-runtime-variant-${runId}`;
+const warehouseExternalId = `commerce-runtime-warehouse-${runId}`;
+const syncedAt = new Date("2026-08-13T03:00:00.000Z");
+
+let server: ChildProcess | undefined;
+let serverOutput = "";
+
+function captureServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Next.js storefront commerce server exited with ${server.exitCode}\n${serverOutput}`);
+    }
+    try {
+      const response = await fetch(`${BASE_URL}/shop/${productSlug}`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // Next dev may still be compiling.
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for storefront commerce server\n${serverOutput}`);
+}
+
+async function waitForServerExit(timeoutMs: number) {
+  if (!server || server.exitCode !== null) return true;
+  return Promise.race([
+    once(server, "exit").then(() => true),
+    delay(timeoutMs).then(() => false),
+  ]);
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) {
+    server = undefined;
+    return;
+  }
+  server.kill("SIGTERM");
+  if (!(await waitForServerExit(5_000))) {
+    server.kill("SIGKILL");
+    await waitForServerExit(5_000);
+  }
+  server = undefined;
+}
+
+async function cleanup() {
+  await prisma.cartItem.deleteMany({
+    where: { variant: { product: { pancakeShopId: SHOP_ID } } },
+  });
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+}
+
+async function assertPageQuality(page: import("@playwright/test").Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+}
+
+test.beforeAll(async () => {
+  await cleanup();
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: productExternalId,
+      slug: productSlug,
+      name: productName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          editorialDescription: "Mobile runtime purchase-path regression product.",
+        },
+      },
+    },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: variantExternalId,
+      productId: product.id,
+      color: "Black",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 890_000,
+      pancakeRetailPriceAfterDiscount: 890_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: variant.id,
+      pancakeWarehouseId: warehouseExternalId,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
+  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+    cwd: APP_ROOT,
+    env: {
+      ...process.env,
+      PANCAKE_SHOP_ID: String(SHOP_ID),
+      BETTER_AUTH_URL: BASE_URL,
+      NEXT_TELEMETRY_DISABLED: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", captureServerOutput);
+  server.stderr?.on("data", captureServerOutput);
+  await waitForServer();
+});
+
+test.afterAll(async () => {
+  await stopServer();
+  await cleanup();
+  await prisma.$disconnect();
+});
+
+test("mobile shopper selects Color × Size, adds to bag, updates cart and reaches checkout", async ({
+  page,
+}) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await assertPageQuality(page);
+
+  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  await expect(addToBag).toBeDisabled();
+  await page.getByRole("radio", { name: "Black" }).check();
+  await page.getByRole("radio", { name: "M" }).check();
+  await expect(addToBag).toBeEnabled();
+  await addToBag.click();
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+
+  const cartCookie = (await page.context().cookies()).find(({ name }) => name === "la_cart");
+  expect(cartCookie?.httpOnly).toBe(true);
+  expect(cartCookie?.sameSite).toBe("Lax");
+
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
+  await expect(page.getByText("Black / M")).toBeVisible();
+  await expect(page.getByText("890.000")).toBeVisible();
+  await assertPageQuality(page);
+
+  const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("2");
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.getByRole("status")).toContainText("Đã cập nhật số lượng.");
+  await expect(quantity).toHaveValue("2");
+
+  const checkoutLink = page.getByRole("link", { name: "Tiến hành đặt hàng" });
+  await expect(checkoutLink).toBeVisible();
+  await checkoutLink.click();
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await assertPageQuality(page);
+
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
