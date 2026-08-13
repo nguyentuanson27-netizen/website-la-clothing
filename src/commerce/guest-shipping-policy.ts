@@ -79,7 +79,7 @@ export function calculateGuestShippingFeeVnd(
     subtotalVnd: number;
     totalQuantity: number;
   },
-  policy: GuestShippingPolicy = DEFAULT_GUEST_SHIPPING_POLICY,
+  policy: GuestShippingPolicy = readGuestShippingPolicy(),
 ): number {
   if (!Number.isSafeInteger(subtotalVnd) || subtotalVnd < 0) {
     throw new RangeError("Guest checkout subtotal must be a safe non-negative integer VND amount");
@@ -112,7 +112,6 @@ export function describeGuestShippingPromotion(policy: GuestShippingPolicy): {
   title: string;
   detail: string;
 } {
-  // Validate policy through the same fail-closed rules used for calculation.
   calculateGuestShippingFeeVnd({ subtotalVnd: 0, totalQuantity: 1 }, policy);
   return {
     title: "Miễn phí vận chuyển",
