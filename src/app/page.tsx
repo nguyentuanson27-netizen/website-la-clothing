@@ -1,15 +1,15 @@
 import Link from "next/link";
+import { connection } from "next/server";
 
-import { ProductCard } from "@/components/commerce/product-card";
+import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 
-const newArrivals = [
-  { name: "Relaxed Oxford Shirt", price: "790.000₫", tone: "stone" as const },
-  { name: "Wide Pleat Trousers", price: "890.000₫", tone: "ink" as const, badge: "New" },
-  { name: "Utility Overshirt", price: "990.000₫", tone: "olive" as const },
-  { name: "Essential Box Tee", price: "490.000₫", tone: "sand" as const },
-];
+const tones = ["stone", "ink", "olive", "sand"] as const;
 
-export default function HomePage() {
+export default async function HomePage() {
+  await connection();
+  const featuredProducts = await listConfiguredStorefrontProducts(4);
+
   return (
     <>
       <section className="campaign-hero" aria-labelledby="campaign-title">
@@ -23,14 +23,14 @@ export default function HomePage() {
           <p className="campaign-intro">
             Clean lines, relaxed proportions and a muted palette designed for everyday movement.
           </p>
-          <Link className="text-link" href="/collections">
-            Explore the collection <span aria-hidden="true">↗</span>
+          <Link className="text-link" href="/shop">
+            Shop the collection <span aria-hidden="true">↗</span>
           </Link>
         </div>
       </section>
 
       <section className="collection-intro" aria-labelledby="new-collection-title">
-        <p className="eyebrow">New collection / 01</p>
+        <p className="eyebrow">Collection / 01</p>
         <h2 id="new-collection-title">ESSENTIALS FOR THE IN-BETWEEN.</h2>
         <p>
           Shirts, trousers and layers built around proportion rather than noise — simple enough to wear every day,
@@ -38,16 +38,34 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="product-section" aria-labelledby="new-arrivals-title">
+      <section className="product-section" aria-labelledby="shop-edit-title">
         <div className="section-heading-row">
-          <h2 id="new-arrivals-title">New arrivals</h2>
-          <Link className="text-link" href="/new-arrivals">View all</Link>
+          <h2 id="shop-edit-title">Shop edit</h2>
+          <Link className="text-link" href="/shop">View all</Link>
         </div>
-        <div className="product-grid">
-          {newArrivals.map((product) => (
-            <ProductCard key={product.name} {...product} href="/shop" />
-          ))}
-        </div>
+        {featuredProducts.length > 0 ? (
+          <div className="product-grid">
+            {featuredProducts.map((product, index) => (
+              <StorefrontProductCard
+                key={product.id}
+                slug={product.slug}
+                name={product.name}
+                editorialDescription={product.editorialDescription}
+                variants={product.variants}
+                tone={tones[index % tones.length]!}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="border-t border-black/20 py-16">
+            <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
+              The current edit is being prepared.
+            </p>
+            <p className="mt-4 max-w-lg text-sm leading-6 text-black/60">
+              Products will appear here when the shop catalog is available for the website.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="lookbook-grid" aria-labelledby="lookbook-title">
