@@ -77,7 +77,9 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
-      EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}
+      # Documentation-only default keeps `docker compose config` usable in CI.
+      # deploy.sh refuses production deployment until the real value is present.
+      EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:-192.0.2.1/32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -94,11 +96,11 @@ services:
 networks:
   backend:
     driver: bridge
-  # Pre-existing Docker network owned by the shared NPM stack. It must exist
-  # before deployment and NPM must already be attached to it.
+  # Pre-existing Docker network owned by the shared NPM stack. The default is
+  # deliberately non-production; deploy.sh requires the real host network name.
   edge:
     external: true
-    name: ${EDGE_NETWORK_NAME:?set EDGE_NETWORK_NAME}
+    name: ${EDGE_NETWORK_NAME:-la-clothing-edge-unconfigured}
 
 volumes:
   postgres_data:
