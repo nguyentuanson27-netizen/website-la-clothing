@@ -1,0 +1,210 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+import { prisma } from "../../src/db/prisma.ts";
+
+const HOST = "127.0.0.1";
+const PORT = 3217;
+const BASE_URL = `http://${HOST}:${PORT}`;
+const APP_ROOT = resolve(import.meta.dirname, "../..");
+const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+const SHOP_ID = 920_013;
+const runId = `${Date.now()}-${process.pid}`;
+const syncedAt = new Date("2026-08-13T02:00:00.000Z");
+
+let server: ChildProcess | undefined;
+let serverOutput = "";
+
+function captureServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Next.js discovery server exited with ${server.exitCode}\n${serverOutput}`);
+    }
+    try {
+      const response = await fetch(`${BASE_URL}/shop`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // Next dev may still be compiling.
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for discovery server\n${serverOutput}`);
+}
+
+async function waitForServerExit(timeoutMs: number) {
+  if (!server || server.exitCode !== null) return true;
+  return Promise.race([
+    once(server, "exit").then(() => true),
+    delay(timeoutMs).then(() => false),
+  ]);
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) {
+    server = undefined;
+    return;
+  }
+  server.kill("SIGTERM");
+  if (!(await waitForServerExit(5_000))) {
+    server.kill("SIGKILL");
+    await waitForServerExit(5_000);
+  }
+  server = undefined;
+}
+
+async function cleanup() {
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+}
+
+async function seedProduct(input: {
+  key: string;
+  name: string;
+  collection: string;
+  color: string;
+  size: string;
+  price: number;
+  stock: number;
+}) {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `discovery-${input.key}-${runId}`,
+      slug: `discovery-${input.key}-${runId}`,
+      name: input.name,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          editorialDescription: `Editorial ${input.key}`,
+          collectionSlugs: [input.collection],
+        },
+      },
+    },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `discovery-${input.key}-variant-${runId}`,
+      productId: product.id,
+      color: input.color,
+      size: input.size,
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: input.price,
+      pancakeRetailPriceAfterDiscount: input.price,
+      syncedAt,
+    },
+  });
+  if (input.stock > 0) {
+    await prisma.warehouseStock.create({
+      data: {
+        variantId: variant.id,
+        pancakeWarehouseId: `discovery-${input.key}-warehouse-${runId}`,
+        quantity: input.stock,
+        syncedAt,
+      },
+    });
+  }
+}
+
+test.beforeAll(async () => {
+  await cleanup();
+  await seedProduct({
+    key: "coat",
+    name: `Runtime City Coat ${runId}`,
+    collection: "city-uniform",
+    color: "Ink",
+    size: "M",
+    price: 1_200_000,
+    stock: 2,
+  });
+  await seedProduct({
+    key: "trouser",
+    name: `Runtime Stone Trouser ${runId}`,
+    collection: "essentials",
+    color: "Stone",
+    size: "L",
+    price: 700_000,
+    stock: 0,
+  });
+
+  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+    cwd: APP_ROOT,
+    env: {
+      ...process.env,
+      PANCAKE_SHOP_ID: String(SHOP_ID),
+      BETTER_AUTH_URL: BASE_URL,
+      NEXT_TELEMETRY_DISABLED: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", captureServerOutput);
+  server.stderr?.on("data", captureServerOutput);
+  await waitForServer();
+});
+
+test.afterAll(async () => {
+  await stopServer();
+  await cleanup();
+  await prisma.$disconnect();
+});
+
+test("mobile shop filters catalog through shareable URL state", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "SHOP" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Tìm trong catalog" })).toBeVisible();
+
+  await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
+  await page.getByLabel("Collection").selectOption("city-uniform");
+  await page.getByLabel("Màu").selectOption("Ink");
+  await page.getByLabel("Kích cỡ").selectOption("M");
+  await page.getByLabel("Giá tối thiểu").fill("1000000");
+  await page.getByLabel("Giá tối đa").fill("1300000");
+  await page.getByLabel("Chỉ còn hàng").check();
+  await page.getByRole("button", { name: "Áp dụng" }).click();
+  await page.waitForLoadState("networkidle");
+
+  const url = new URL(page.url());
+  expect(url.pathname).toBe("/shop");
+  expect(url.searchParams.get("q")).toBe("Runtime City Coat");
+  expect(url.searchParams.get("collection")).toBe("city-uniform");
+  expect(url.searchParams.get("color")).toBe("Ink");
+  expect(url.searchParams.get("size")).toBe("M");
+  expect(url.searchParams.get("availability")).toBe("in-stock");
+  expect(url.searchParams.get("minPrice")).toBe("1000000");
+  expect(url.searchParams.get("maxPrice")).toBe("1300000");
+
+  await expect(page.getByRole("heading", { level: 2, name: `Runtime City Coat ${runId}` })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: `Runtime Stone Trouser ${runId}` })).toHaveCount(0);
+  await expect(page.getByText("1 sản phẩm · Trang 1/1")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Xóa bộ lọc" })).toHaveAttribute("href", "/shop");
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
