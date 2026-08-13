@@ -98,6 +98,32 @@ test("product editorial updates fail closed when the mirrored product does not e
   assert.equal(saveCalls, 0);
 });
 
+test("product editorial updates preserve old form submissions with no collection field", async () => {
+  const writes: unknown[] = [];
+  const service = createProductContentAdminService({
+    async productExists() {
+      return true;
+    },
+    async saveContent(content) {
+      writes.push(content);
+      return content;
+    },
+  });
+
+  const { collectionSlugs: _collectionSlugs, ...legacyInput } = validInput();
+  const nullFieldInput = { ...legacyInput, collectionSlugs: null };
+
+  for (const input of [legacyInput, nullFieldInput]) {
+    const result = await service.update(adminSession, input);
+    assert.equal(result.ok, true);
+  }
+
+  assert.deepEqual(
+    writes.map((write) => (write as { collectionSlugs: string[] }).collectionSlugs),
+    [[], []],
+  );
+});
+
 test("product editorial updates normalize the full editor snapshot before persistence", async () => {
   const writes: unknown[] = [];
   const service = createProductContentAdminService({
