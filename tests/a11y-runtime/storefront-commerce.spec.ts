@@ -192,8 +192,10 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
 
   const addToBag = page.getByRole("button", { name: "Add to Bag" });
   await expect(addToBag).toBeDisabled();
-  await page.getByRole("radio", { name: "Black" }).check();
-  await page.getByRole("radio", { name: "M" }).check();
+  await page.getByText("Black", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
   await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
