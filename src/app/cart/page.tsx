@@ -182,7 +182,7 @@ export default async function CartPage() {
           </p>
           {!hasUnavailableLines && subtotal !== null ? (
             <Link
-              className="mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white underline decoration-transparent underline-offset-4 hover:decoration-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              className="checkout-cta mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] underline decoration-transparent underline-offset-4 hover:decoration-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               href="/checkout"
             >
               Tiến hành đặt hàng
