@@ -69,7 +69,7 @@ export function StorefrontProductCard({
         </div>
         <div className="shrink-0 text-right">
           <p>{describePrice(options)}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/50">
+          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/60">
             {describeAvailability(options)}
           </p>
         </div>
