@@ -39,8 +39,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
       </Link>
 
       <div className="mt-7 grid gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] lg:gap-16">
-        <div className="min-w-0 lg:sticky lg:top-28 lg:self-start">
-          <div className="product-visual product-visual--stone min-h-[32rem] md:min-h-[44rem]" aria-hidden="true">
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <div className="product-visual product-visual--stone md:min-h-[44rem]" aria-hidden="true">
             <span className="garment-silhouette" />
           </div>
           <p className="mt-3 text-xs uppercase tracking-[0.12em] text-black/50">
@@ -48,9 +48,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </p>
         </div>
 
-        <article className="min-w-0 pb-10 lg:pt-4">
+        <article className="pb-10 lg:pt-4">
           <p className="eyebrow">LA Clothing / Product</p>
-          <h1 className="mt-5 break-words text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
+          <h1 className="mt-5 text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
             {product.name}
           </h1>
           {product.editorialDescription ? (
@@ -63,7 +63,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             </p>
           )}
 
-          <div className="mt-10 min-w-0">
+          <div className="mt-10">
             <ProductPurchasePanel slug={product.slug} options={options} />
           </div>
 
