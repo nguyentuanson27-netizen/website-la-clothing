@@ -69,15 +69,15 @@ services:
     networks:
       - backend
 
+  # This host already runs nginx-proxy-manager (NPM) for unrelated production
+  # services. NPM owns host 80/81/443, terminates TLS, and forwards to Caddy
+  # over the external edge network. Caddy must not publish those host ports.
   caddy:
     image: ${CADDY_IMAGE:?set CADDY_IMAGE}
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -86,11 +86,19 @@ services:
       app:
         condition: service_healthy
     networks:
-      - backend
+      backend:
+      edge:
+        aliases:
+          - la-clothing-caddy
 
 networks:
   backend:
     driver: bridge
+  # Pre-existing Docker network owned by the shared NPM stack. It must exist
+  # before deployment and NPM must already be attached to it.
+  edge:
+    external: true
+    name: ${EDGE_NETWORK_NAME:?set EDGE_NETWORK_NAME}
 
 volumes:
   postgres_data:
