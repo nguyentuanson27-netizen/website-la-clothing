@@ -200,19 +200,43 @@ test("discovery requires color, size, stock and price to match the same live var
     stock: 3,
   });
 
-  const discovery = parseStorefrontDiscoverySearchParams({
-    color: "Black",
-    size: "M",
-    availability: "in-stock",
-    minPrice: "500000",
-    maxPrice: "700000",
-    collection: "city-uniform",
+  const colorOnly = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ color: "Black" }),
+  });
+  assert.equal(colorOnly.products.some(({ name }) => name === "Split Match Jacket"), true);
+
+  const sizeStockAndPrice = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({
+      size: "M",
+      availability: "in-stock",
+      minPrice: "500000",
+      maxPrice: "700000",
+    }),
+  });
+  assert.equal(
+    sizeStockAndPrice.products.some(({ name }) => name === "Split Match Jacket"),
+    true,
+  );
+
+  const combined = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({
+      color: "Black",
+      size: "M",
+      availability: "in-stock",
+      minPrice: "500000",
+      maxPrice: "700000",
+      collection: "city-uniform",
+    }),
   });
 
-  const page = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery });
-
-  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
-  assert.equal(page.products.some(({ name }) => name === "Split Match Jacket"), false);
+  assert.deepEqual(combined.products.map(({ name }) => name), ["Linen Overshirt"]);
+  assert.equal(combined.products.some(({ name }) => name === "Split Match Jacket"), false);
 });
 
 test("price discovery uses only the existing fail-closed resolved storefront price", async () => {
