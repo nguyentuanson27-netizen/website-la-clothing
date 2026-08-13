@@ -141,6 +141,7 @@ model ProductContent {
   sizeGuide             String?
   seoTitle              String?
   seoDescription        String?
+  collectionSlugs      String[]      @default([])
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   product               ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
