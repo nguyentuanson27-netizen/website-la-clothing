@@ -40,10 +40,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
       <div className="mt-7 grid gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] lg:gap-16">
         <div className="lg:sticky lg:top-28 lg:self-start">
-          <div className="product-visual product-visual--stone min-h-[32rem] md:min-h-[44rem]" aria-hidden="true">
+          <div className="product-visual product-visual--stone md:min-h-[44rem]" aria-hidden="true">
             <span className="garment-silhouette" />
           </div>
-          <p className="mt-3 text-xs uppercase tracking-[0.12em] text-black/50">
+          <p className="mt-3 text-xs uppercase tracking-[0.12em] text-black/60">
             Hình ảnh sản phẩm đang được chuẩn hóa cho storefront.
           </p>
         </div>
@@ -87,7 +87,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             </section>
           )}
 
-          <p className="mt-8 max-w-xl text-xs leading-5 text-black/50">
+          <p className="mt-8 max-w-xl text-xs leading-5 text-black/60">
             Tình trạng mua được được kiểm tra lại phía máy chủ khi Add to Bag. Dữ liệu tồn kho được dùng để quyết định khả dụng nhưng không gửi số lượng tồn chính xác xuống client.
           </p>
         </article>
