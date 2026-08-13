@@ -205,9 +205,10 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   expect(cartCookie?.sameSite).toBe("Lax");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
-  await expect(page.getByText("Black / M")).toBeVisible();
-  await expect(page.getByText("890.000")).toBeVisible();
+  await expect(cartLine.getByText("Black / M")).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
   await assertPageQuality(page);
 
   const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
