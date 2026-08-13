@@ -32,6 +32,10 @@ a {
   text-decoration: none;
 }
 
+.checkout-cta {
+  color: var(--white);
+}
+
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {
