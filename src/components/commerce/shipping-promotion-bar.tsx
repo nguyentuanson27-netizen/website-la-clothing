@@ -1,9 +1,12 @@
+import { connection } from "next/server";
+
 import {
   describeGuestShippingPromotion,
   readGuestShippingPolicy,
 } from "@/commerce/guest-shipping-policy";
 
-export function ShippingPromotionBar() {
+export async function ShippingPromotionBar() {
+  await connection();
   const promotion = describeGuestShippingPromotion(readGuestShippingPolicy());
 
   return (
