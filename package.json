@@ -18,6 +18,7 @@
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "release:check": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/release-readiness.ts",
     "pancake:contract:discover": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-contract-discover.ts",
     "pancake:contract:verify": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-contract-shape.ts",
     "pancake:stock:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-stock-probe.ts",
