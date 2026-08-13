@@ -74,6 +74,40 @@ async function seedProduct(input: {
   return product;
 }
 
+async function seedVariant(input: {
+  productId: string;
+  id: string;
+  color: string;
+  size: string;
+  price: number;
+  stock: number;
+}) {
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `t13-${input.id}-variant`,
+      productId: input.productId,
+      color: input.color,
+      size: input.size,
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: input.price,
+      pancakeRetailPriceAfterDiscount: input.price,
+      syncedAt,
+    },
+  });
+
+  if (input.stock > 0) {
+    await prisma.warehouseStock.create({
+      data: {
+        variantId: variant.id,
+        pancakeWarehouseId: `t13-${input.id}-warehouse`,
+        quantity: input.stock,
+        syncedAt,
+      },
+    });
+  }
+}
+
 test.beforeEach(async () => {
   await cleanup();
   await seedProduct({
@@ -145,6 +179,40 @@ test("discovery combines search, same-variant filters and website-owned collecti
   assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
   assert.equal(page.hasPrevious, false);
   assert.equal(page.hasNext, false);
+});
+
+test("discovery requires color, size, stock and price to match the same live variant", async () => {
+  const splitMatchProduct = await seedProduct({
+    id: "split-match",
+    name: "Split Match Jacket",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "L",
+    price: 400_000,
+    stock: 0,
+  });
+  await seedVariant({
+    productId: splitMatchProduct.id,
+    id: "split-match-stocked-medium",
+    color: "Navy",
+    size: "M",
+    price: 600_000,
+    stock: 3,
+  });
+
+  const discovery = parseStorefrontDiscoverySearchParams({
+    color: "Black",
+    size: "M",
+    availability: "in-stock",
+    minPrice: "500000",
+    maxPrice: "700000",
+    collection: "city-uniform",
+  });
+
+  const page = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery });
+
+  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
+  assert.equal(page.products.some(({ name }) => name === "Split Match Jacket"), false);
 });
 
 test("price discovery uses only the existing fail-closed resolved storefront price", async () => {
