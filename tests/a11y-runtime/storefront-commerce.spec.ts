@@ -205,7 +205,7 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   expect(cartCookie?.sameSite).toBe("Lax");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
+  await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(page.getByText("Black / M")).toBeVisible();
   await expect(page.getByText("890.000")).toBeVisible();
   await assertPageQuality(page);
