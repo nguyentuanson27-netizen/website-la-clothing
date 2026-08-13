@@ -497,7 +497,7 @@ summary:focus-visible {
 
 @media (max-width: 520px) {
   .product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .product-meta {
