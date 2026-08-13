@@ -110,7 +110,8 @@ test("product editorial updates preserve old form submissions with no collection
     },
   });
 
-  const { collectionSlugs: _collectionSlugs, ...legacyInput } = validInput();
+  const { collectionSlugs, ...legacyInput } = validInput();
+  void collectionSlugs;
   const nullFieldInput = { ...legacyInput, collectionSlugs: null };
 
   for (const input of [legacyInput, nullFieldInput]) {
