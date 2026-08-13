@@ -101,11 +101,14 @@ jobs:
           set -euo pipefail
           pnpm start --hostname 127.0.0.1 --port 3218 > "$RUNNER_TEMP/shipping-runtime.log" 2>&1 &
           APP_PID=$!
-          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          cleanup() {
+            kill "$APP_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
 
           ready=0
           for attempt in {1..30}; do
-            if ! kill -0 "$APP_PID" 2>/dev/null; then
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
               cat "$RUNNER_TEMP/shipping-runtime.log"
               exit 1
             fi
@@ -121,12 +124,22 @@ jobs:
             exit 1
           fi
 
-          grep -F "750.000" "$RUNNER_TEMP/lookbook.html"
-          grep -F "4 sản phẩm" "$RUNNER_TEMP/lookbook.html"
-          if grep -F "650.000" "$RUNNER_TEMP/lookbook.html"; then
-            echo "Promotion copy still contains build-time shipping policy"
+          if grep -Fq "750.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+            if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+              echo "Shipping promotion mixes runtime and build-time policy"
+              exit 1
+            fi
+            echo "Shipping promotion resolved the runtime policy"
+            exit 0
+          fi
+
+          if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+            echo "Shipping promotion rendered the build-time policy instead of the runtime policy"
             exit 1
           fi
+
+          echo "Shipping promotion rendered an unexpected policy state"
+          exit 1
 
   admin-a11y-runtime:
     runs-on: macos-14
