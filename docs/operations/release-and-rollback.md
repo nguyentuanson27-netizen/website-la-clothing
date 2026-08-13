@@ -1,6 +1,6 @@
 # LA Clothing release and rollback runbook
 
-Production infrastructure is defined by [ADR 0002](../decisions/0002-vps-production-infrastructure.md): a self-managed VPS running Docker Compose with Next.js, PostgreSQL, and Caddy. [ADR 0001](../decisions/0001-production-infrastructure.md) remains historical context for the superseded Render decision.
+Production infrastructure is defined by [ADR 0002](../decisions/0002-vps-production-infrastructure.md) and amended for the selected shared VPS by [ADR 0003](../decisions/0003-shared-host-npm-edge.md). The active edge is nginx-proxy-manager (NPM) on host 80/81/443, with LA Clothing's Caddy running internal-only behind it. [ADR 0001](../decisions/0001-production-infrastructure.md) remains historical context for the superseded Render decision.
 
 Host provisioning is documented in [VPS bootstrap handoff](./vps-bootstrap.md).
 
@@ -10,8 +10,6 @@ Production does not auto-deploy a moving branch. Every release uses one reviewed
 
 `deploy/vps/.env.production` contains `RELEASE_SHA`. `bash deploy/vps/deploy.sh` refuses to continue if the checked-out commit differs or the worktree is dirty.
 
-The old Render bootstrap commit `788c273a1974ada5131993f6798f405b9ee9b3f5` remains historical release evidence. After the VPS-readiness change is merged, the first VPS candidate must be the exact newly reviewed commit containing the VPS deployment assets, not an automatic reuse of the old Render candidate.
-
 ## Release gate
 
 A candidate is eligible only when all of these are true:
@@ -20,16 +18,18 @@ A candidate is eligible only when all of these are true:
 2. CI is green on that exact commit, including normal application gates and the VPS Docker/Compose smoke.
 3. The production domain and server configuration are known.
 4. `deploy/vps/.env.production` contains real production values and is protected on the VPS.
-5. PostgreSQL/Caddy image references have been reviewed/pinned for the host.
-6. Migration changes since the current deployment have been reviewed.
-7. Off-site backup is configured and a restore drill has succeeded; destructive migrations additionally have a release-specific recovery plan.
-8. The previous known-good application SHA/image is recorded and retained locally.
-9. The controlled Pancake production write acceptance has completed; a read-only contract probe alone is insufficient.
-10. VPS host firewall/SSH/TLS/monitoring prerequisites in `vps-bootstrap.md` are satisfied.
+5. `EDGE_NETWORK_NAME` identifies the existing NPM Docker network and `EDGE_TRUSTED_PROXY_CIDR` contains the smallest reviewed stable NPM trust range. Do not deploy the documentation-only fallbacks `la-clothing-edge-unconfigured` or `192.0.2.1/32`.
+6. NPM is attached to that network and the LA Clothing Proxy Host is configured to forward `APP_DOMAIN` to `http://la-clothing-caddy:80` without changing unrelated live proxy hosts.
+7. PostgreSQL/Caddy image references have been reviewed/pinned for the host.
+8. Migration changes since the current deployment have been reviewed.
+9. Off-site backup is configured and a restore drill has succeeded; destructive migrations additionally have a release-specific recovery plan.
+10. The previous known-good application SHA/image is recorded and retained locally.
+11. The controlled Pancake production write acceptance has completed; a read-only contract probe alone is insufficient.
+12. VPS host firewall/SSH/NPM/TLS/monitoring prerequisites in `vps-bootstrap.md` are satisfied.
 
 ## Production configuration preflight
 
-The canonical preflight remains:
+The canonical application preflight remains:
 
 ```bash
 pnpm release:check
@@ -43,9 +43,13 @@ Production uses:
 BETTER_AUTH_URL=https://<production-domain>
 BETTER_AUTH_IP_HEADER=x-la-client-ip
 DATABASE_URL=postgresql://...@postgres:5432/...
+EDGE_NETWORK_NAME=<existing NPM Docker network>
+EDGE_TRUSTED_PROXY_CIDR=<reviewed NPM trust CIDR>
 ```
 
-Caddy overwrites `X-LA-Client-IP` before proxying to Next.js. Initial Cloudflare records remain DNS-only so Caddy is the direct edge. Cloudflare proxying requires a later trusted-proxy review before enablement.
+NPM terminates public TLS and appends the forwarding chain. Caddy accepts traffic only over its Docker networks, trusts the configured NPM CIDR with strict right-to-left `X-Forwarded-For` parsing, and overwrites `X-LA-Client-IP` before proxying to Next.js.
+
+Cloudflare remains DNS-only for the initial launch. If Cloudflare proxying is enabled later, that trust must be handled at the NPM edge in a separately reviewed change.
 
 ## Standard release
 
@@ -54,18 +58,22 @@ Caddy overwrites `X-LA-Client-IP` before proxying to Next.js. Initial Cloudflare
 3. Review migrations and database recovery requirements.
 4. Confirm off-site backup/restore evidence and current backup freshness.
 5. Confirm Pancake controlled production acceptance is complete.
-6. On VPS, fetch and detach at the exact candidate SHA; confirm clean worktree.
-7. Set `RELEASE_SHA` in protected `deploy/vps/.env.production` to the same exact SHA.
-8. Run:
+6. Confirm the existing NPM stack is healthy and its unrelated proxy hosts are unchanged.
+7. Confirm the external edge network exists and NPM is attached.
+8. Confirm the LA Clothing NPM Proxy Host targets `http://la-clothing-caddy:80` and owns certificate/HTTPS redirect for `APP_DOMAIN`.
+9. On VPS, fetch and detach at the exact candidate SHA; confirm clean worktree.
+10. Set `RELEASE_SHA`, `EDGE_NETWORK_NAME`, and `EDGE_TRUSTED_PROXY_CIDR` in protected `deploy/vps/.env.production` to the reviewed values.
+11. Run:
 
    ```bash
    bash deploy/vps/deploy.sh
    ```
 
-9. The helper validates Compose, builds exact-SHA images, starts/waits for PostgreSQL, runs production `release:check`, creates a pre-migration custom-format dump, deploys Prisma migrations, starts the exact app image, and waits for `/shop` health.
-10. Verify public HTTPS and non-destructive buyer-flow smoke through Caddy.
-11. Review Caddy/application/PostgreSQL logs and container health.
-12. Record post-release evidence before declaring success.
+12. The helper validates Compose, builds exact-SHA images, starts/waits for PostgreSQL, runs production `release:check`, creates a pre-migration custom-format dump, deploys Prisma migrations, starts the exact app/Caddy stack, and waits for `/shop` application health.
+13. Verify public HTTPS and non-destructive buyer-flow smoke through **NPM -> Caddy -> app**.
+14. Verify Caddy exposes no host ports and client-IP/rate-limit behavior is not collapsed to the NPM container address.
+15. Review NPM/Caddy/application/PostgreSQL logs and container health.
+16. Record post-release evidence before declaring success.
 
 Do not create a live Pancake order merely as a generic release smoke test. The write acceptance is a controlled, separately recorded gate.
 
@@ -75,6 +83,8 @@ Rollback/recovery is required for material user harm or integrity/security risk,
 
 - the app container cannot become healthy;
 - public critical buyer flows fail after promotion;
+- NPM -> Caddy routing or TLS for the LA Clothing host fails after launch changes;
+- client-IP attribution is incorrect enough to break or weaken auth/rate limiting;
 - new auth/authz/security failure is observed;
 - a migration causes data/read/write integrity issues;
 - checkout/Pancake telemetry shows a release-caused unsafe state.
@@ -92,11 +102,13 @@ The previous exact image must already exist locally. The rollback helper does no
 After rollback:
 
 - wait for `/shop` health;
-- verify public HTTPS and critical read/checkout/tracking flows;
-- inspect logs/error state;
+- verify public HTTPS through NPM and critical read/checkout/tracking flows;
+- inspect NPM/Caddy/application logs/error state;
 - record the failed candidate and rollback SHA.
 
 Do not automatically reverse additive migrations.
+
+NPM route/certificate rollback is a separate host operation. Do not revert or restart unrelated shared proxy hosts while rolling back LA Clothing.
 
 ## Database/data recovery
 
@@ -120,6 +132,9 @@ Record without secrets:
 - GitHub CI run for that SHA;
 - runtime Docker image tag/digest;
 - PostgreSQL and Caddy image digests;
+- NPM stack/version identifier where available;
+- selected NPM Docker network and reviewed trust CIDR;
+- NPM Proxy Host target `la-clothing-caddy:80` and TLS status;
 - `release:check` pass/fail;
 - migration set applied;
 - local pre-migration dump path/checksum;
@@ -127,7 +142,8 @@ Record without secrets:
 - `/shop` health result;
 - domain/TLS status;
 - public non-destructive smoke result;
-- Caddy/app/database telemetry review;
+- client-IP attribution/rate-limit sanity result;
+- NPM/Caddy/app/database telemetry review;
 - Pancake production-acceptance evidence;
 - previous known-good SHA retained for rollback;
 - any rollback or `SYNC_UNKNOWN` reconciliation performed.
@@ -139,9 +155,11 @@ The repository cannot claim these complete until observed on the real VPS:
 - OS hardening/patching;
 - SSH/firewall configuration;
 - Docker Engine/Compose installation;
-- production DNS and certificate issuance;
+- existing NPM inventory and safe network attachment;
+- LA Clothing NPM Proxy Host and certificate issuance;
+- production DNS;
 - real secret installation;
 - off-site backup scheduling and restore drill;
-- external uptime/disk/backup alerting;
+- external uptime/disk/backup/NPM alerting;
 - controlled Pancake create -> verify -> cancel acceptance;
 - first real production deploy and public smoke.
