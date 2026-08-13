@@ -2,13 +2,24 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import type { StorefrontProduct } from "@/commerce/storefront-catalog";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { PancakeConfigError } from "@/integrations/pancake/config";
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 
+async function loadHomepageProductEdit(): Promise<StorefrontProduct[]> {
+  try {
+    return await listConfiguredStorefrontProducts(4);
+  } catch (error) {
+    if (error instanceof PancakeConfigError) return [];
+    throw error;
+  }
+}
+
 export default async function HomePage() {
   await connection();
-  const featuredProducts = await listConfiguredStorefrontProducts(4);
+  const featuredProducts = await loadHomepageProductEdit();
 
   return (
     <>
