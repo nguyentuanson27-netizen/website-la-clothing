@@ -5,7 +5,11 @@ export const PRODUCT_CONTENT_LIMITS = {
   editorialField: 50_000,
   seoTitle: 500,
   seoDescription: 2_000,
+  collectionCount: 8,
+  collectionSlug: 48,
 } as const;
+
+const COLLECTION_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 type AdminSessionCandidate =
   | {
@@ -27,6 +31,7 @@ export type ProductContentSnapshot = {
   sizeGuide: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  collectionSlugs: string[];
 };
 
 type ProductContentAdminDependencies = {
@@ -35,6 +40,7 @@ type ProductContentAdminDependencies = {
 };
 
 type ParsedTextField = { ok: true; value: string | null } | { ok: false };
+type ParsedCollectionSlugs = { ok: true; value: string[] } | { ok: false };
 
 function parseTextField(value: unknown, maxLength: number): ParsedTextField {
   if (typeof value !== "string" || value.length > maxLength) {
@@ -43,6 +49,28 @@ function parseTextField(value: unknown, maxLength: number): ParsedTextField {
 
   const normalized = value.trim();
   return { ok: true, value: normalized.length > 0 ? normalized : null };
+}
+
+function parseCollectionSlugs(value: unknown): ParsedCollectionSlugs {
+  if (value === undefined || value === "") return { ok: true, value: [] };
+  if (typeof value !== "string") return { ok: false };
+
+  const rawSlugs = value.split(",").map((entry) => entry.trim());
+  if (
+    rawSlugs.length > PRODUCT_CONTENT_LIMITS.collectionCount ||
+    rawSlugs.some(
+      (slug) =>
+        slug.length === 0 ||
+        slug.length > PRODUCT_CONTENT_LIMITS.collectionSlug ||
+        !COLLECTION_SLUG_PATTERN.test(slug),
+    )
+  ) {
+    return { ok: false };
+  }
+
+  const unique = new Set(rawSlugs);
+  if (unique.size !== rawSlugs.length) return { ok: false };
+  return { ok: true, value: rawSlugs };
 }
 
 function parseProductContentInput(input: unknown): ProductContentSnapshot | null {
@@ -75,13 +103,15 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
     record.seoDescription,
     PRODUCT_CONTENT_LIMITS.seoDescription,
   );
+  const collectionSlugs = parseCollectionSlugs(record.collectionSlugs);
 
   if (
     !editorialDescription.ok ||
     !careInstructions.ok ||
     !sizeGuide.ok ||
     !seoTitle.ok ||
-    !seoDescription.ok
+    !seoDescription.ok ||
+    !collectionSlugs.ok
   ) {
     return null;
   }
@@ -93,6 +123,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
     sizeGuide: sizeGuide.value,
     seoTitle: seoTitle.value,
     seoDescription: seoDescription.value,
+    collectionSlugs: collectionSlugs.value,
   };
 }
 
