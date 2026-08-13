@@ -88,7 +88,62 @@ jobs:
         run: pnpm test
 
       - name: Build
+        env:
+          LA_SHIPPING_FEE_VND: "17000"
+          LA_FREE_SHIPPING_SUBTOTAL_VND: "650000"
+          LA_FREE_SHIPPING_MIN_QUANTITY: "5"
         run: pnpm build
+
+      - name: Shipping promotion runtime policy smoke
+        env:
+          BETTER_AUTH_URL: http://127.0.0.1:3218
+          LA_SHIPPING_FEE_VND: "25000"
+          LA_FREE_SHIPPING_SUBTOTAL_VND: "750000"
+          LA_FREE_SHIPPING_MIN_QUANTITY: "4"
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm start --hostname 127.0.0.1 --port 3218 > "$RUNNER_TEMP/shipping-runtime.log" 2>&1 &
+          APP_PID=$!
+          cleanup() {
+            kill "$APP_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for attempt in {1..30}; do
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+              cat "$RUNNER_TEMP/shipping-runtime.log"
+              exit 1
+            fi
+            if curl --fail --silent --show-error http://127.0.0.1:3218/lookbook > "$RUNNER_TEMP/lookbook.html"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/shipping-runtime.log"
+            exit 1
+          fi
+
+          if grep -Fq "750.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+            if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+              echo "Shipping promotion mixes runtime and build-time policy"
+              exit 1
+            fi
+            echo "Shipping promotion resolved the runtime policy"
+            exit 0
+          fi
+
+          if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+            echo "Shipping promotion rendered the build-time policy instead of the runtime policy"
+            exit 1
+          fi
+
+          echo "Shipping promotion rendered an unexpected policy state"
+          exit 1
 
       - name: Release environment preflight
         env:
