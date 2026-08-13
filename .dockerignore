@@ -6,8 +6,8 @@ coverage
 playwright-report
 test-results
 *.log
-.env
-.env.*
+**/.env
+**/.env.*
 !.env.example
 docs
 tasks
