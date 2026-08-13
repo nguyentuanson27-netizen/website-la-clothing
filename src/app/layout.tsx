@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-bar";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="vi">
       <body>
+        <ShippingPromotionBar />
         <SiteHeader />
         <main id="main-content">{children}</main>
         <SiteFooter />
