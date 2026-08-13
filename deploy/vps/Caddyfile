@@ -1,11 +1,22 @@
-{$APP_DOMAIN} {
+{
+	# This VPS is shared. nginx-proxy-manager (NPM) is the public TLS edge and
+	# forwards plain HTTP to Caddy over a host-owned external Docker network.
+	# Trust only the configured NPM network and parse X-Forwarded-For from
+	# right-to-left because NPM appends the connecting address to that header.
+	servers {
+		trusted_proxies static {$EDGE_TRUSTED_PROXY_CIDR}
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+:80 {
 	encode zstd gzip
 	log
 
 	reverse_proxy app:3000 {
-		# Always overwrite the application-owned client-IP header. With Caddy as the
-		# direct edge, {client_ip} is the direct client address. If Cloudflare proxying
-		# is enabled later, configure Caddy trusted_proxies first.
+		# Always overwrite the application-owned client-IP header. {client_ip}
+		# is derived only from the trusted NPM hop configured above.
 		header_up X-LA-Client-IP {client_ip}
 		health_uri /shop
 		health_interval 30s
