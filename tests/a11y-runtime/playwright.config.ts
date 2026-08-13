@@ -9,6 +9,7 @@ export default defineConfig({
     "checkout.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
+    "storefront-commerce.spec.ts",
     "tracking.spec.ts",
   ],
   workers: 1,
