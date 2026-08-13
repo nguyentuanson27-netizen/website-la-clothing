@@ -23,11 +23,7 @@ const currency = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
-type ShippingPolicyEnvironment = Readonly<{
-  LA_SHIPPING_FEE_VND?: string;
-  LA_FREE_SHIPPING_SUBTOTAL_VND?: string;
-  LA_FREE_SHIPPING_MIN_QUANTITY?: string;
-}>;
+type ShippingPolicyEnvironment = Readonly<Record<string, string | undefined>>;
 
 function parseConfiguredInteger(
   name: string,
