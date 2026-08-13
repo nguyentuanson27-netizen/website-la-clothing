@@ -74,9 +74,38 @@ async function cleanup() {
 }
 
 async function assertPageQuality(page: import("@playwright/test").Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
-  );
+  const overflowReport = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const offenders = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          tag: element.tagName.toLowerCase(),
+          className: element.className,
+          text: (element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 100),
+          left: Math.round(rect.left * 10) / 10,
+          right: Math.round(rect.right * 10) / 10,
+          width: Math.round(rect.width * 10) / 10,
+        };
+      })
+      .filter(({ left, right }) => left < -0.5 || right > viewportWidth + 0.5)
+      .slice(0, 12);
+
+    return {
+      viewportWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      offenders,
+    };
+  });
+  expect(
+    overflowReport.offenders,
+    `horizontal overflow report: ${JSON.stringify(overflowReport)}`,
+  ).toEqual([]);
+  expect(
+    overflowReport.documentWidth,
+    `horizontal overflow report: ${JSON.stringify(overflowReport)}`,
+  ).toBeLessThanOrEqual(overflowReport.viewportWidth);
+
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
