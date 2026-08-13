@@ -1,10 +1,15 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22.22.0-bookworm-slim AS base
+# Full Bookworm is used instead of bookworm-slim because the slim variant does
+# not provide the OpenSSL runtime Prisma requires. The multi-platform digest is
+# pinned so base-image updates are explicit reviewed changes.
+ARG NODE_IMAGE=node:22.22.0-bookworm@sha256:20a424ecd1d2064a44e12fe287bf3dae443aab31dc5e0c0cb6c74bef9c78911c
+
+FROM ${NODE_IMAGE} AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 WORKDIR /app
-RUN corepack enable
+RUN openssl version && corepack enable
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml ./
@@ -27,12 +32,11 @@ COPY package.json pnpm-lock.yaml ./
 RUN test "$(pnpm --version)" = "11.4.0" \
   && pnpm install --prod --frozen-lockfile --ignore-scripts
 
-FROM node:22.22.0-bookworm-slim AS runner
+FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-WORKDIR /app
 
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
