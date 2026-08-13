@@ -83,6 +83,20 @@ jobs:
       - name: Build operations image
         run: docker build --target build --tag la-clothing:vps-ops-ci .
 
+      - name: Verify Prisma OpenSSL detection
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm la-clothing:vps-ops-ci sh -lc '
+            set -eu
+            openssl version
+            pnpm prisma:generate 2>&1 | tee /tmp/prisma-generate.log
+            if grep -Fq "Prisma failed to detect the libssl/openssl version to use" /tmp/prisma-generate.log; then
+              echo "Prisma still cannot detect OpenSSL" >&2
+              exit 1
+            fi
+          '
+
       - name: Run release preflight and migrations in operations image
         shell: bash
         run: |
