@@ -1,0 +1,148 @@
+name: VPS container verification
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/vps/**
+      - package.json
+      - pnpm-lock.yaml
+      - prisma/**
+      - src/**
+      - next.config.mjs
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/vps/**
+      - package.json
+      - pnpm-lock.yaml
+      - prisma/**
+      - src/**
+      - next.config.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-vps-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: la_clothing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d la_clothing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/la_clothing
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      PANCAKE_API_KEY: ci-only-pancake-placeholder
+      PANCAKE_SHOP_ID: "920007"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Validate host helper shell syntax
+        run: |
+          bash -n deploy/vps/deploy.sh
+          bash -n deploy/vps/rollback.sh
+
+      - name: Validate Compose model
+        shell: bash
+        run: |
+          cp deploy/vps/env.example deploy/vps/.env.production
+          sed -i "s/^RELEASE_SHA=.*/RELEASE_SHA=${GITHUB_SHA}/" deploy/vps/.env.production
+          docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml config --quiet
+
+      - name: Validate Caddy configuration
+        run: >-
+          docker run --rm
+          -e APP_DOMAIN=localhost
+          -v "${{ github.workspace }}/deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2-alpine
+          caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: Build operations image
+        run: docker build --target build --tag la-clothing:vps-ops-ci .
+
+      - name: Verify Prisma OpenSSL detection
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm la-clothing:vps-ops-ci sh -lc '
+            set -eu
+            openssl version
+            pnpm prisma:generate 2>&1 | tee /tmp/prisma-generate.log
+            if grep -Fq "Prisma failed to detect the libssl/openssl version to use" /tmp/prisma-generate.log; then
+              echo "Prisma still cannot detect OpenSSL" >&2
+              exit 1
+            fi
+          '
+
+      - name: Run release preflight and migrations in operations image
+        shell: bash
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL \
+            -e BETTER_AUTH_SECRET \
+            -e BETTER_AUTH_IP_HEADER \
+            -e PANCAKE_API_KEY \
+            -e PANCAKE_SHOP_ID \
+            -e BETTER_AUTH_URL=https://shop.example.test \
+            la-clothing:vps-ops-ci \
+            sh -lc 'pnpm release:check && pnpm prisma:migrate:deploy'
+
+      - name: Build production runtime image
+        run: docker build --target runner --tag la-clothing:vps-runtime-ci .
+
+      - name: Run production runtime health smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name la-clothing-vps-ci --network host \
+            -e DATABASE_URL \
+            -e BETTER_AUTH_SECRET \
+            -e BETTER_AUTH_IP_HEADER \
+            -e PANCAKE_API_KEY \
+            -e PANCAKE_SHOP_ID \
+            -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
+            la-clothing:vps-runtime-ci
+
+          cleanup() {
+            docker rm -f la-clothing-vps-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..50}; do
+            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' la-clothing-vps-ci)"
+            if [[ "$status" == "healthy" ]]; then
+              curl --fail --silent --show-error http://127.0.0.1:3000/shop >/dev/null
+              exit 0
+            fi
+            if [[ "$status" == "unhealthy" ]]; then
+              docker logs la-clothing-vps-ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker logs la-clothing-vps-ci
+          exit 1

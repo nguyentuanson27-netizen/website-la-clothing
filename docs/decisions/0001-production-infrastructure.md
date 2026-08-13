@@ -1,9 +1,13 @@
 # ADR 0001: Production infrastructure
 
-- **Status:** Accepted for provisioning
+- **Status:** Superseded by ADR 0002
 - **Date:** 2026-08-13
 - **Release baseline:** `788c273a1974ada5131993f6798f405b9ee9b3f5`
 - **Bootstrap branch:** `release/production-bootstrap-788c273` (must remain pinned to the release baseline)
+
+## Supersession
+
+This Render-based production decision is historical. It was superseded by [ADR 0002: VPS production infrastructure](0002-vps-production-infrastructure.md). The Render-specific guidance below remains only as decision history and is not the active production runbook.
 
 ## Context
 
