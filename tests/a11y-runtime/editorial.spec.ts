@@ -128,6 +128,9 @@ test.beforeAll(async () => {
       ...process.env,
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
+      LA_SHIPPING_FEE_VND: "25000",
+      LA_FREE_SHIPPING_SUBTOTAL_VND: "750000",
+      LA_FREE_SHIPPING_MIN_QUANTITY: "4",
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -157,6 +160,9 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   });
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
+  await expect(shippingPromotion).toBeVisible();
+  await expect(shippingPromotion).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Shop edit" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
