@@ -56,6 +56,11 @@ export default async function CheckoutSuccessPage({
         )}
 
         <div className="mt-8 flex flex-wrap gap-x-8 gap-y-4 text-sm font-semibold uppercase tracking-[0.1em]">
+          {confirmed ? (
+            <Link className="underline underline-offset-4" href="/track-order">
+              Tra cứu đơn hàng
+            </Link>
+          ) : null}
           <Link className="underline underline-offset-4" href="/shop">
             Tiếp tục mua sắm
           </Link>
