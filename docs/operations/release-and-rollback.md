@@ -1,154 +1,147 @@
 # LA Clothing release and rollback runbook
 
-Production infrastructure is defined by [ADR 0001](../decisions/0001-production-infrastructure.md): a Render Web Service and Render Postgres in Singapore, Cloudflare DNS, and Render-managed TLS. CI proves release readiness but does not deploy production automatically. Production auto-deploy remains disabled so every release is an explicit exact-commit action.
+Production infrastructure is defined by [ADR 0002](../decisions/0002-vps-production-infrastructure.md): a self-managed VPS running Docker Compose with Next.js, PostgreSQL, and Caddy. [ADR 0001](../decisions/0001-production-infrastructure.md) remains historical context for the superseded Render decision.
 
-## Selected production infrastructure
+Host provisioning is documented in [VPS bootstrap handoff](./vps-bootstrap.md).
 
-- **Hosting:** Render Web Service, Singapore, native Node.js, Standard instance, Pro workspace.
-- **Runtime:** `NODE_VERSION=22.22.0`; build must report pnpm `11.4.0` before launch is allowed.
-- **Bootstrap source:** `release/production-bootstrap-788c273`, permanently pinned to `788c273a1974ada5131993f6798f405b9ee9b3f5`.
-- **Auto-deploy:** disabled **at Web Service creation**, not after the first deploy begins.
-- **Build:** `corepack enable && pnpm --version && pnpm install --frozen-lockfile --ignore-scripts && pnpm prisma:generate && pnpm build`.
-- **Pre-deploy:** `pnpm release:check && pnpm prisma:migrate:deploy`.
-- **Start:** `pnpm start`.
-- **HTTP readiness:** Render health check path `/shop` for the bootstrap release. It exercises the Next.js request path, required Pancake shop configuration, and PostgreSQL-backed storefront catalog without making a live Pancake network call.
-- **Database:** paid Render Postgres Basic-1gb in Singapore; application `DATABASE_URL` uses the database internal URL.
-- **Database recovery:** Render PITR is required; the selected Pro workspace provides a 7-day recovery window. Create a logical backup/recovery point before a migration when the reviewed migration risk calls for one.
-- **DNS:** Cloudflare authoritative DNS. Keep the Render records DNS-only for initial verification/launch and remove conflicting `AAAA` records.
-- **TLS:** Render-managed certificate and HTTP-to-HTTPS redirect.
-- **Secrets:** Render Production environment variables. Production secrets do not belong in GitHub or repository files.
-- **Trusted client IP:** `BETTER_AUTH_IP_HEADER=cf-connecting-ip`.
-- **First release candidate:** `788c273a1974ada5131993f6798f405b9ee9b3f5`.
+## Release model
 
-The exact public domain is still a human/business input. Do not invent `BETTER_AUTH_URL`; choose the production domain before the Web Service is created so the intended HTTPS origin can be supplied during the first pre-deploy check.
+Production does not auto-deploy a moving branch. Every release uses one reviewed, CI-green, full 40-character Git SHA.
 
-## Why Web Service creation is a release action
+`deploy/vps/.env.production` contains `RELEASE_SHA`. `bash deploy/vps/deploy.sh` refuses to continue if the checked-out commit differs or the worktree is dirty.
 
-Render starts a service's first deploy as part of Web Service creation. Therefore, **do not create the production Web Service early** and plan to correct it later with `Manual Deploy -> Deploy a specific commit`.
-
-The production Web Service is created only after every pre-launch prerequisite that can be completed without it is ready. Its initial linked branch is the immutable bootstrap branch `release/production-bootstrap-788c273`, which must resolve to exactly `788c273a1974ada5131993f6798f405b9ee9b3f5`. Auto-deploy must already be off in the create-service configuration.
-
-This is the invariant:
-
-> The first successful Render production deploy must have commit SHA `788c273a1974ada5131993f6798f405b9ee9b3f5`. No newer `main`/PR commit is allowed to become the first live deploy.
-
-If the bootstrap branch does not resolve to that exact SHA, if auto-deploy cannot be disabled before service creation, or if the first successful Render deploy metadata shows another SHA, stop the launch. Do not connect production DNS or treat the service as released.
+The old Render bootstrap commit `788c273a1974ada5131993f6798f405b9ee9b3f5` remains historical release evidence. After the VPS-readiness change is merged, the first VPS candidate must be the exact newly reviewed commit containing the VPS deployment assets, not an automatic reuse of the old Render candidate.
 
 ## Release gate
 
-A release candidate is eligible only when all of the following are true:
+A candidate is eligible only when all of these are true:
 
-1. The exact candidate commit has the required human review/approval.
-2. CI is green on that exact commit, including migrations, database smoke tests, security/authz HTTP smokes, lint, typecheck, domain/integration tests, production build, release preflight, production-start smoke, and the macOS Chromium/Axe/VoiceOver runtime suite.
-3. The intended Render production environment values are prepared. `pnpm release:check` runs in Render's pre-deploy phase and must succeed before migration/promotion.
-4. The migration diff since the currently deployed commit has been reviewed. Classify every migration as additive/backward-compatible or requiring an explicit data/schema rollback plan.
-5. A recoverable Render Postgres point exists when the migration review requires restoration safety. Create/confirm it **before** Web Service creation or any later Render deployment whose pre-deploy command applies Prisma migrations.
-6. The release owner records the previous known-good application commit and the candidate commit before deployment.
-7. For the first release, `release/production-bootstrap-788c273` resolves exactly to `788c273a1974ada5131993f6798f405b9ee9b3f5` and has not been advanced.
-8. For the first release, production auto-deploy will be disabled in the Web Service creation request/configuration.
-9. The controlled Pancake production-acceptance gate required for launch has been completed. Do not use Web Service creation as a substitute for that acceptance step.
+1. Human review/approval exists for the exact candidate.
+2. CI is green on that exact commit, including normal application gates and the VPS Docker/Compose smoke.
+3. The production domain and server configuration are known.
+4. `deploy/vps/.env.production` contains real production values and is protected on the VPS.
+5. PostgreSQL/Caddy image references have been reviewed/pinned for the host.
+6. Migration changes since the current deployment have been reviewed.
+7. Off-site backup is configured and a restore drill has succeeded; destructive migrations additionally have a release-specific recovery plan.
+8. The previous known-good application SHA/image is recorded and retained locally.
+9. The controlled Pancake production write acceptance has completed; a read-only contract probe alone is insufficient.
+10. VPS host firewall/SSH/TLS/monitoring prerequisites in `vps-bootstrap.md` are satisfied.
 
-## Configuration preflight
+## Production configuration preflight
 
-Required server configuration is validated by `pnpm release:check`:
+The canonical preflight remains:
 
-- `DATABASE_URL` must be the Render Postgres internal PostgreSQL URL used by the application;
-- `BETTER_AUTH_SECRET` is a production-only high-entropy secret;
-- `BETTER_AUTH_URL` is the exact intended HTTPS production origin;
-- `BETTER_AUTH_IP_HEADER=cf-connecting-ip`;
-- Pancake API key and positive shop ID pass the existing integration validator;
-- shipping fee/free-shipping thresholds pass the same server-owned policy parser used by checkout and shopper-facing free-shipping copy.
+```bash
+pnpm release:check
+```
 
-Also set `NODE_VERSION=22.22.0` for the Render service. During the first provider build, verify the build log reports pnpm `11.4.0`. If it does not, stop the launch and fix the toolchain deterministically in a reviewed change; do not silently downgrade the repository's pinned package manager.
+On VPS it is run inside the `ops` Docker target with the real production environment before migration. It validates PostgreSQL URL shape, Better Auth URL/secret/trusted IP header, Pancake configuration, and shipping policy without printing secret values.
 
-Do not paste preflight environment values into tickets, CI logs, PR comments, or screenshots. A failed preflight reports the field/rule, not the supplied secret.
+Production uses:
 
-## HTTP readiness
+```text
+BETTER_AUTH_URL=https://<production-domain>
+BETTER_AUTH_IP_HEADER=x-la-client-ip
+DATABASE_URL=postgresql://...@postgres:5432/...
+```
 
-Configure the Render Web Service health check path as **`/shop`** during service creation instead of relying only on the default TCP port probe.
+Caddy overwrites `X-LA-Client-IP` before proxying to Next.js. Initial Cloudflare records remain DNS-only so Caddy is the direct edge. Cloudflare proxying requires a later trusted-proxy review before enablement.
 
-The exact bootstrap SHA does not contain a dedicated health endpoint, but `/shop` is suitable as an initial application-level readiness signal because it:
+## Standard release
 
-- exists in `788c273a1974ada5131993f6798f405b9ee9b3f5`;
-- resolves the required configured Pancake shop ID;
-- queries the PostgreSQL-backed storefront catalog;
-- returns an application error when those required dependencies are not usable;
-- does **not** call Pancake over the network or create an order.
+1. Record current known-good SHA and candidate SHA.
+2. Confirm review/CI for the candidate.
+3. Review migrations and database recovery requirements.
+4. Confirm off-site backup/restore evidence and current backup freshness.
+5. Confirm Pancake controlled production acceptance is complete.
+6. On VPS, fetch and detach at the exact candidate SHA; confirm clean worktree.
+7. Set `RELEASE_SHA` in protected `deploy/vps/.env.production` to the same exact SHA.
+8. Run:
 
-Render considers a new deploy ready only after its configured HTTP health check returns a successful HTTP status. A future reviewed application release should replace `/shop` with a minimal dedicated readiness endpoint such as `/api/health`; do not change the first-release SHA merely to add that endpoint.
+   ```bash
+   bash deploy/vps/deploy.sh
+   ```
 
-## First production launch
+9. The helper validates Compose, builds exact-SHA images, starts/waits for PostgreSQL, runs production `release:check`, creates a pre-migration custom-format dump, deploys Prisma migrations, starts the exact app image, and waits for `/shop` health.
+10. Verify public HTTPS and non-destructive buyer-flow smoke through Caddy.
+11. Review Caddy/application/PostgreSQL logs and container health.
+12. Record post-release evidence before declaring success.
 
-The ordering below is mandatory because creating a Render Web Service immediately starts its first deploy.
+Do not create a live Pancake order merely as a generic release smoke test. The write acceptance is a controlled, separately recorded gate.
 
-1. Merge/review the infrastructure documentation as required, but keep the application release candidate fixed at `788c273a1974ada5131993f6798f405b9ee9b3f5`.
-2. Confirm GitHub branch `release/production-bootstrap-788c273` resolves exactly to `788c273a1974ada5131993f6798f405b9ee9b3f5`. Do not move this branch.
-3. Provision the Render Pro workspace/project Production environment and paid Render Postgres in **Singapore**. **Do not create the production Web Service yet.**
-4. Restrict Postgres external access. Prepare the application `DATABASE_URL` from the database's internal URL.
-5. Choose the production domain and prepare Cloudflare authoritative DNS. Do not point the production hostname at a Render service yet.
-6. Prepare the production environment values/secrets needed by `release:check`, including the intended HTTPS `BETTER_AUTH_URL`, Better Auth secret, Pancake credentials/shop ID, trusted IP header, shipping policy, and Node version. Do not copy production secrets into GitHub Actions.
-7. Confirm exact-SHA CI/review evidence, complete the migration review/recovery gate, and complete the controlled Pancake production-acceptance gate.
-8. Create the **production Render Web Service last** with all of these settings in the creation request/form:
-   - source branch `release/production-bootstrap-788c273`;
-   - auto-deploy **Off** from creation (`autoDeploy=no` when using the Render API);
-   - Singapore / Standard / Node runtime;
-   - the approved build, pre-deploy, and start commands;
-   - all required production environment values;
-   - HTTP health check path `/shop`.
-9. Creating the Web Service starts Render's first deploy. Observe the build and confirm Node 22.22.0 and pnpm 11.4.0. A toolchain mismatch is a release blocker.
-10. Observe the pre-deploy command: `pnpm release:check && pnpm prisma:migrate:deploy`. Any failure blocks promotion and must be diagnosed before retrying. Because the service remains linked to the immutable bootstrap branch, retries must still build the exact baseline SHA.
-11. Verify the application process starts with `pnpm start` and Render's `/shop` HTTP health check passes.
-12. **Before connecting production DNS**, inspect the successful Render deploy metadata and verify its Git commit is exactly `788c273a1974ada5131993f6798f405b9ee9b3f5`. If it is not exact, stop; do not route production traffic.
-13. Add the production root domain to Render, configure Cloudflare root/`www` records according to Render's Cloudflare instructions, keep them DNS-only for certificate verification, and wait for Render-managed TLS to succeed.
-14. Run non-destructive smoke checks: homepage -> shop -> product/cart -> checkout availability -> tracking. **Do not create a live Pancake order solely as a release smoke test.**
-15. Check Render application/request logs, HTTP health-check state, and existing Pancake integration telemetry for new validation failures, rejected configuration, or `SYNC_UNKNOWN` order outcomes before declaring launch complete.
-16. Record the post-release evidence listed below.
+## Rollback triggers
 
-## Later production releases
+Rollback/recovery is required for material user harm or integrity/security risk, including:
 
-For each later release:
+- the app container cannot become healthy;
+- public critical buyer flows fail after promotion;
+- new auth/authz/security failure is observed;
+- a migration causes data/read/write integrity issues;
+- checkout/Pancake telemetry shows a release-caused unsafe state.
 
-1. Record the previous known-good commit and exact approved candidate SHA.
-2. Confirm exact-head CI/review evidence.
-3. Review migration changes since the deployed commit and create/confirm a database recovery point when required.
-4. Trigger **Manual Deploy -> Deploy a specific commit** in Render using the exact approved SHA. Keep auto-deploy disabled. Do not advance the bootstrap branch.
-5. Observe build -> production preflight -> migration -> start -> HTTP readiness.
-6. Verify Render deploy metadata records the intended SHA.
-7. Run the same non-destructive smoke and telemetry checks.
+## Application-only rollback
 
-## Rollback
+When schema/data remain compatible with the previous application:
 
-### Application-only or additive-schema rollback
+```bash
+bash deploy/vps/rollback.sh <PREVIOUS_APPROVED_FULL_SHA>
+```
 
-1. Stop further rollout of the bad candidate.
-2. Deploy the previous known-good application commit in Render using an exact-commit deploy. Restore its previous server configuration if configuration changed.
-3. Do **not** automatically reverse database migrations. If migrations are additive and the previous application ignores the new fields/tables, leave the schema in place.
-4. Re-run the HTTP readiness check and non-destructive smoke checks; verify order tracking/checkout state remains readable.
-5. Confirm Render logs and application telemetry have returned to the expected state.
+The previous exact image must already exist locally. The rollback helper does not rebuild old code during the incident.
 
-### Migration or data rollback
+After rollback:
 
-If a migration is destructive, changes meanings/types, removes data, or is not backward-compatible, the PR must include a release-specific database rollback/restoration plan before it can pass the release gate. Do not invent a reverse migration during an incident.
+- wait for `/shop` health;
+- verify public HTTPS and critical read/checkout/tracking flows;
+- inspect logs/error state;
+- record the failed candidate and rollback SHA.
 
-Render PITR restores to a new database instance. When recovery is required, restore according to the reviewed recovery procedure, validate the recovered database, then deliberately switch `DATABASE_URL` to the recovered instance. Rolling back the web-service commit alone is not a database rollback.
+Do not automatically reverse additive migrations.
 
-### Pancake write safety during rollback
+## Database/data recovery
 
-Application rollback does not undo a Pancake order already accepted by the POS. For an order in `SYNC_UNKNOWN`, never issue a blind second create-order request. Reconcile the remote outcome using the existing safe status/reconciliation path before taking any further write action.
+Application rollback is not database rollback.
+
+For destructive/incompatible migrations or damaged data, use the release-specific recovery plan. Restore the selected logical/off-site backup into an isolated target first, validate it, then deliberately switch the application database only after the recovery point is understood.
+
+Never invent a reverse migration while responding to an incident.
+
+## Pancake write safety during rollback
+
+Application or database rollback does not undo a Pancake order accepted by the external POS.
+
+For an order in `SYNC_UNKNOWN`, never issue a blind duplicate create request. Use the existing status/reconciliation path to determine the remote outcome before any additional write.
 
 ## Post-release evidence
 
-Record:
+Record without secrets:
 
-- deployed application commit;
-- for the first launch, evidence that `release/production-bootstrap-788c273` resolved to `788c273a1974ada5131993f6798f405b9ee9b3f5` immediately before service creation;
-- Render deploy identifier and recorded Git commit SHA;
+- exact deployed application SHA;
+- GitHub CI run for that SHA;
+- runtime Docker image tag/digest;
+- PostgreSQL and Caddy image digests;
+- `release:check` pass/fail;
 - migration set applied;
-- CI run for the exact commit;
-- production `release:check` result (pass/fail only, no secrets);
-- database recovery/backup evidence when required;
-- HTTP health-check result/path;
-- domain/TLS status for first launch or domain changes;
-- smoke-check result;
-- Render/Pancake telemetry review result;
-- any rollback action or `SYNC_UNKNOWN` investigation.
+- local pre-migration dump path/checksum;
+- off-site backup freshness / restore-drill reference;
+- `/shop` health result;
+- domain/TLS status;
+- public non-destructive smoke result;
+- Caddy/app/database telemetry review;
+- Pancake production-acceptance evidence;
+- previous known-good SHA retained for rollback;
+- any rollback or `SYNC_UNKNOWN` reconciliation performed.
+
+## Host-only work not performed by repository automation
+
+The repository cannot claim these complete until observed on the real VPS:
+
+- OS hardening/patching;
+- SSH/firewall configuration;
+- Docker Engine/Compose installation;
+- production DNS and certificate issuance;
+- real secret installation;
+- off-site backup scheduling and restore drill;
+- external uptime/disk/backup alerting;
+- controlled Pancake create -> verify -> cancel acceptance;
+- first real production deploy and public smoke.
