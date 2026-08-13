@@ -335,7 +335,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       `),
     ]);
 
-    const totalCount = bigintToSafeNumber(countRows[0]?.count ?? 0n);
+    const totalCount = countRows[0] ? bigintToSafeNumber(countRows[0].count) : 0;
     const ids = idRows.map(({ id }) => id);
     const products =
       ids.length === 0
