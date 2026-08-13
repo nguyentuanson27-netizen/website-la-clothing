@@ -29,7 +29,7 @@ The first VPS release after this ADR is **not** automatically the old Render boo
 
 ### Application image
 
-Use `node:22.22.0-bookworm-slim`, matching the Node 22 production contract selected for the project. The Dockerfile verifies that Corepack resolves repository-pinned `pnpm 11.4.0` before installing dependencies.
+Use the full `node:22.22.0-bookworm` image rather than `bookworm-slim` because the full Bookworm variant provides the OpenSSL runtime Prisma needs. Pin the multi-platform base-image index digest in the Dockerfile so a base-image refresh is an explicit reviewed change rather than a mutable-tag surprise. CI verifies `openssl version` and fails if Prisma emits its OpenSSL-detection warning.
 
 Use a multi-stage build:
 
@@ -114,7 +114,7 @@ Before go-live, the VPS operator/agent must complete host-only controls that can
 - protect Docker daemon access as root-equivalent;
 - configure disk/resource monitoring and log retention;
 - configure off-site database backups and test restoration;
-- record/pin reviewed container image digests before production promotion.
+- record/pin reviewed PostgreSQL and Caddy image digests before production promotion.
 
 ### Observability
 
@@ -148,6 +148,7 @@ Positive:
 
 Trade-offs:
 
+- the full Bookworm Node image is larger than the slim variant; this is accepted to provide Prisma's required OpenSSL runtime without an implicit missing system dependency;
 - OS patching, Docker, PostgreSQL recovery, disk capacity, firewall, TLS reachability, and incident response are now operator responsibilities;
 - same-host PostgreSQL creates a larger single-machine failure domain than managed database infrastructure;
 - local pre-migration dumps must be replicated off-host to become resilient backups;
@@ -158,6 +159,8 @@ Trade-offs:
 
 - Next.js self-hosting: https://nextjs.org/docs/app/guides/self-hosting
 - Next.js deployment options: https://nextjs.org/docs/app/getting-started/deploying
+- Prisma system requirements: https://docs.prisma.io/docs/orm/reference/system-requirements
+- Prisma Docker deployment: https://www.prisma.io/docs/guides/deployment/docker
 - Docker build best practices: https://docs.docker.com/build/building/best-practices/
 - Docker Compose service health/restart: https://docs.docker.com/reference/compose-file/services/
 - Caddy automatic HTTPS: https://caddyserver.com/docs/quick-starts/https
