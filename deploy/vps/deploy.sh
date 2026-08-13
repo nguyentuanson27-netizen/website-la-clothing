@@ -35,6 +35,29 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops
+"${compose[@]}" up -d postgres
+
+for _ in {1..30}; do
+  postgres_id="$("${compose[@]}" ps -q postgres)"
+  postgres_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$postgres_id" 2>/dev/null || true)"
+  if [[ "$postgres_health" == "healthy" ]]; then
+    break
+  fi
+  if [[ "$postgres_health" == "unhealthy" ]]; then
+    "${compose[@]}" logs --tail=200 postgres
+    echo "PostgreSQL health check failed" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+postgres_id="$("${compose[@]}" ps -q postgres)"
+postgres_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$postgres_id" 2>/dev/null || true)"
+if [[ "$postgres_health" != "healthy" ]]; then
+  "${compose[@]}" logs --tail=200 postgres
+  echo "Timed out waiting for PostgreSQL health" >&2
+  exit 1
+fi
 
 # Validate real production configuration before any database-changing command.
 "${compose[@]}" run --rm ops pnpm release:check
