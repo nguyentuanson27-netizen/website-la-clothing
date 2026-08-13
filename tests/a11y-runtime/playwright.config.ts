@@ -4,7 +4,13 @@ import { screenReaderConfig } from "@guidepup/playwright";
 export default defineConfig({
   ...screenReaderConfig,
   testDir: ".",
-  testMatch: ["admin-editor.spec.ts", "checkout.spec.ts", "editorial.spec.ts", "tracking.spec.ts"],
+  testMatch: [
+    "admin-editor.spec.ts",
+    "checkout.spec.ts",
+    "discovery.spec.ts",
+    "editorial.spec.ts",
+    "tracking.spec.ts",
+  ],
   workers: 1,
   timeout: 120_000,
   expect: {

@@ -49,6 +49,7 @@ test("product content repository reads mirrored products and upserts one editori
     sizeGuide: null,
     seoTitle: "First title",
     seoDescription: null,
+    collectionSlugs: ["city-uniform"],
   });
   const updated = await repository.saveContent({
     productId: product.id,
@@ -57,17 +58,21 @@ test("product content repository reads mirrored products and upserts one editori
     sizeGuide: "Relaxed fit.",
     seoTitle: "Updated title",
     seoDescription: "Updated description.",
+    collectionSlugs: ["city-uniform", "essentials"],
   });
 
   assert.equal(initial.productId, product.id);
+  assert.deepEqual(initial.collectionSlugs, ["city-uniform"]);
   assert.equal(updated.editorialDescription, "Updated editorial copy.");
   assert.equal(updated.careInstructions, null);
   assert.equal(updated.sizeGuide, "Relaxed fit.");
+  assert.deepEqual(updated.collectionSlugs, ["city-uniform", "essentials"]);
   assert.equal(await prisma.productContent.count({ where: { productId: product.id } }), 1);
 
   const editorProduct = await repository.findForEditor(product.id);
   assert.equal(editorProduct?.name, "Editorial Repository Product");
   assert.equal(editorProduct?.content?.seoTitle, "Updated title");
+  assert.deepEqual(editorProduct?.content?.collectionSlugs, ["city-uniform", "essentials"]);
 
   const products = await repository.listForAdmin(100);
   assert.ok(products.some(({ id }) => id === product.id));

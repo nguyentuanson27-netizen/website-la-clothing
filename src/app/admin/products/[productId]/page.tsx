@@ -65,6 +65,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       sizeGuide: formData.get("sizeGuide"),
       seoTitle: formData.get("seoTitle"),
       seoDescription: formData.get("seoDescription"),
+      collectionSlugs: formData.get("collectionSlugs"),
     });
 
     if (!result.ok) {
@@ -76,6 +77,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
     revalidatePath(editorPath);
     revalidatePath("/admin");
+    revalidatePath("/shop");
     redirect(`${editorPath}?saved=1`);
   }
 
@@ -155,7 +157,33 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         </div>
 
         <aside className="space-y-10 lg:border-l lg:border-black/20 lg:pl-8">
-          <section aria-labelledby="seo-heading">
+          <section aria-labelledby="collections-heading">
+            <p className="eyebrow">Discovery</p>
+            <h2 id="collections-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+              Collections
+            </h2>
+            <label className="mt-8 block">
+              <span className="text-xs font-semibold uppercase tracking-[0.13em]">
+                Collection slugs
+              </span>
+              <input
+                className={inputClassName}
+                defaultValue={product.content?.collectionSlugs.join(", ") ?? ""}
+                maxLength={
+                  PRODUCT_CONTENT_LIMITS.collectionCount *
+                  (PRODUCT_CONTENT_LIMITS.collectionSlug + 2)
+                }
+                name="collectionSlugs"
+                placeholder="city-uniform, essentials"
+                type="text"
+              />
+              <span className="mt-3 block text-xs leading-5 text-black/55">
+                Tối đa {PRODUCT_CONTENT_LIMITS.collectionCount} slug, phân cách bằng dấu phẩy; chỉ dùng chữ thường, số và dấu gạch ngang.
+              </span>
+            </label>
+          </section>
+
+          <section aria-labelledby="seo-heading" className="border-t border-black/20 pt-10">
             <p className="eyebrow">Search</p>
             <h2 id="seo-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
               SEO

@@ -1,0 +1,283 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { PrismaPg } from "@prisma/adapter-pg";
+
+import { createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
+import { parseStorefrontDiscoverySearchParams } from "../../src/commerce/storefront-discovery.ts";
+import { PrismaClient } from "../../src/generated/prisma/client.ts";
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const repository = createStorefrontCatalogRepository(prisma);
+const shopId = 930_013;
+const otherShopId = 930_014;
+const syncedAt = new Date("2026-08-13T02:00:00.000Z");
+
+async function cleanup() {
+  await prisma.productMirror.deleteMany({
+    where: { pancakeShopId: { in: [shopId, otherShopId] } },
+  });
+}
+
+async function seedProduct(input: {
+  shopId?: number;
+  id: string;
+  name: string;
+  collectionSlugs?: string[];
+  color: string;
+  size: string;
+  price: number;
+  discountedPrice?: number;
+  stock: number;
+  active?: boolean;
+}) {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: input.shopId ?? shopId,
+      pancakeProductId: `t13-${input.id}`,
+      slug: `t13-${input.id}`,
+      name: input.name,
+      isPresent: true,
+      isActive: input.active ?? true,
+      syncedAt,
+      content: input.collectionSlugs
+        ? { create: { collectionSlugs: input.collectionSlugs } }
+        : undefined,
+    },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `t13-${input.id}-variant`,
+      productId: product.id,
+      color: input.color,
+      size: input.size,
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: input.price,
+      pancakeRetailPriceAfterDiscount: input.discountedPrice ?? input.price,
+      syncedAt,
+    },
+  });
+  if (input.stock > 0) {
+    await prisma.warehouseStock.create({
+      data: {
+        variantId: variant.id,
+        pancakeWarehouseId: `t13-${input.id}-warehouse`,
+        quantity: input.stock,
+        syncedAt,
+      },
+    });
+  }
+  return product;
+}
+
+async function seedVariant(input: {
+  productId: string;
+  id: string;
+  color: string;
+  size: string;
+  price: number;
+  stock: number;
+}) {
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `t13-${input.id}-variant`,
+      productId: input.productId,
+      color: input.color,
+      size: input.size,
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: input.price,
+      pancakeRetailPriceAfterDiscount: input.price,
+      syncedAt,
+    },
+  });
+
+  if (input.stock > 0) {
+    await prisma.warehouseStock.create({
+      data: {
+        variantId: variant.id,
+        pancakeWarehouseId: `t13-${input.id}-warehouse`,
+        quantity: input.stock,
+        syncedAt,
+      },
+    });
+  }
+}
+
+test.beforeEach(async () => {
+  await cleanup();
+  await seedProduct({
+    id: "linen-overshirt",
+    name: "Linen Overshirt",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "M",
+    price: 600_000,
+    stock: 2,
+  });
+  await seedProduct({
+    id: "stone-trouser",
+    name: "Stone Trouser",
+    collectionSlugs: ["essentials"],
+    color: "Stone",
+    size: "L",
+    price: 450_000,
+    stock: 0,
+  });
+  await seedProduct({
+    id: "olive-shirt",
+    name: "Olive Shirt",
+    collectionSlugs: ["city-uniform"],
+    color: "Olive",
+    size: "M",
+    price: 700_000,
+    discountedPrice: 650_000,
+    stock: 3,
+  });
+  await seedProduct({
+    id: "other-shop",
+    shopId: otherShopId,
+    name: "Other Shop Black Shirt",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "M",
+    price: 100_000,
+    stock: 5,
+  });
+  await seedProduct({
+    id: "inactive",
+    name: "Inactive Black Shirt",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "M",
+    price: 200_000,
+    stock: 5,
+    active: false,
+  });
+});
+
+test.afterEach(cleanup);
+test.after(async () => prisma.$disconnect());
+
+test("discovery combines search, same-variant filters and website-owned collection membership", async () => {
+  const discovery = parseStorefrontDiscoverySearchParams({
+    q: "linen",
+    color: "Black",
+    size: "M",
+    availability: "in-stock",
+    minPrice: "500000",
+    maxPrice: "700000",
+    collection: "city-uniform",
+  });
+
+  const page = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery });
+  assert.equal(page.totalCount, 1);
+  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
+  assert.equal(page.hasPrevious, false);
+  assert.equal(page.hasNext, false);
+});
+
+test("discovery requires color, size, stock and price to match the same live variant", async () => {
+  const splitMatchProduct = await seedProduct({
+    id: "split-match",
+    name: "Split Match Jacket",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "L",
+    price: 400_000,
+    stock: 0,
+  });
+  await seedVariant({
+    productId: splitMatchProduct.id,
+    id: "split-match-stocked-medium",
+    color: "Navy",
+    size: "M",
+    price: 600_000,
+    stock: 3,
+  });
+
+  const colorOnly = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ color: "Black" }),
+  });
+  assert.equal(colorOnly.products.some(({ name }) => name === "Split Match Jacket"), true);
+
+  const sizeStockAndPrice = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({
+      size: "M",
+      availability: "in-stock",
+      minPrice: "500000",
+      maxPrice: "700000",
+    }),
+  });
+  assert.equal(
+    sizeStockAndPrice.products.some(({ name }) => name === "Split Match Jacket"),
+    true,
+  );
+
+  const combined = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({
+      color: "Black",
+      size: "M",
+      availability: "in-stock",
+      minPrice: "500000",
+      maxPrice: "700000",
+      collection: "city-uniform",
+    }),
+  });
+
+  assert.deepEqual(combined.products.map(({ name }) => name), ["Linen Overshirt"]);
+  assert.equal(combined.products.some(({ name }) => name === "Split Match Jacket"), false);
+});
+
+test("price discovery uses only the existing fail-closed resolved storefront price", async () => {
+  const discovery = parseStorefrontDiscoverySearchParams({
+    minPrice: "600000",
+    maxPrice: "800000",
+    collection: "city-uniform",
+    sort: "price-asc",
+  });
+
+  const page = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery });
+  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
+});
+
+test("price sorting keeps unresolved-price products browseable but places them last", async () => {
+  const ascending = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ sort: "price-asc" }),
+  });
+  assert.deepEqual(ascending.products.map(({ name }) => name), [
+    "Stone Trouser",
+    "Linen Overshirt",
+    "Olive Shirt",
+  ]);
+
+  const descending = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ sort: "price-desc" }),
+  });
+  assert.deepEqual(descending.products.map(({ name }) => name), [
+    "Linen Overshirt",
+    "Stone Trouser",
+    "Olive Shirt",
+  ]);
+});
+
+test("discovery facets stay scoped to visible products in the configured shop", async () => {
+  const facets = await repository.listDiscoveryFacets({ shopId });
+  assert.deepEqual(facets.colors, ["Black", "Olive", "Stone"]);
+  assert.deepEqual(facets.sizes, ["L", "M"]);
+  assert.deepEqual(facets.collections, ["city-uniform", "essentials"]);
+});

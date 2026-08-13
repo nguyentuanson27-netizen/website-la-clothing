@@ -33,6 +33,7 @@ export function createProductContentRepository(client: PrismaClient) {
         sizeGuide: true,
         seoTitle: true,
         seoDescription: true,
+        collectionSlugs: true,
       },
     });
   }
@@ -52,6 +53,7 @@ export function createProductContentRepository(client: PrismaClient) {
             sizeGuide: true,
             seoTitle: true,
             seoDescription: true,
+            collectionSlugs: true,
             updatedAt: true,
           },
         },

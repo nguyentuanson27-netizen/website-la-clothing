@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
 const MAX_STOREFRONT_OFFSET = 50_000;
@@ -91,6 +92,9 @@ const productSelection = {
 } satisfies Prisma.ProductMirrorSelect;
 
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
+type DiscoveryIdRow = { id: string; sortPrice: number | null };
+type DiscoveryCountRow = { count: bigint };
+type FacetRow = { value: string };
 
 function toStorefrontProduct(product: SelectedProduct) {
   return {
@@ -120,6 +124,136 @@ function visibleProductWhere(shopId: number) {
     isPresent: true,
     isActive: true,
   } satisfies Prisma.ProductMirrorWhereInput;
+}
+
+const variantStockCte = Prisma.sql`
+  WITH "variant_stock" AS (
+    SELECT
+      v."id",
+      v."productId",
+      v."color",
+      v."size",
+      CASE
+        WHEN v."pancakeRetailPrice" IS NOT NULL
+          AND v."pancakeRetailPriceAfterDiscount" IS NOT NULL
+          AND v."pancakeRetailPrice" = v."pancakeRetailPriceAfterDiscount"
+          AND v."pancakeRetailPrice" >= 0
+          AND v."pancakeRetailPrice" <> 'NaN'::float8
+          AND v."pancakeRetailPrice" <> 'Infinity'::float8
+          AND v."pancakeRetailPrice" <> '-Infinity'::float8
+        THEN v."pancakeRetailPrice"
+        ELSE NULL
+      END AS "resolvedPrice",
+      CASE
+        WHEN COUNT(ws."id") = 0 THEN 0::float8
+        WHEN BOOL_AND(
+          ws."quantity" <> 'NaN'::float8
+          AND ws."quantity" <> 'Infinity'::float8
+          AND ws."quantity" <> '-Infinity'::float8
+        ) THEN SUM(ws."quantity")
+        ELSE NULL
+      END AS "sellableStock"
+    FROM "VariantMirror" v
+    LEFT JOIN "WarehouseStock" ws ON ws."variantId" = v."id"
+    WHERE v."isPresent" = TRUE AND v."isActive" = TRUE
+    GROUP BY
+      v."id",
+      v."productId",
+      v."color",
+      v."size",
+      v."pancakeRetailPrice",
+      v."pancakeRetailPriceAfterDiscount"
+  )
+`;
+
+function buildVariantPredicate(discovery: StorefrontDiscoveryQuery) {
+  const filters: Prisma.Sql[] = [];
+  if (discovery.color) {
+    filters.push(Prisma.sql`LOWER(BTRIM(vf."color")) = LOWER(${discovery.color})`);
+  }
+  if (discovery.size) {
+    filters.push(Prisma.sql`LOWER(BTRIM(vf."size")) = LOWER(${discovery.size})`);
+  }
+  if (discovery.availability === "in-stock") {
+    filters.push(Prisma.sql`vf."sellableStock" > 0`);
+  }
+  if (discovery.minPriceVnd !== null) {
+    filters.push(Prisma.sql`vf."resolvedPrice" >= ${discovery.minPriceVnd}`);
+  }
+  if (discovery.maxPriceVnd !== null) {
+    filters.push(Prisma.sql`vf."resolvedPrice" <= ${discovery.maxPriceVnd}`);
+  }
+  return filters;
+}
+
+function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
+  const safeShopId = parseShopId(shopId);
+  const filters: Prisma.Sql[] = [
+    Prisma.sql`p."pancakeShopId" = ${safeShopId}`,
+    Prisma.sql`p."isPresent" = TRUE`,
+    Prisma.sql`p."isActive" = TRUE`,
+  ];
+
+  if (discovery.query) {
+    filters.push(Prisma.sql`POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0`);
+  }
+  if (discovery.collection) {
+    filters.push(
+      Prisma.sql`${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))`,
+    );
+  }
+
+  const variantFilters = buildVariantPredicate(discovery);
+  if (variantFilters.length > 0) {
+    filters.push(Prisma.sql`
+      EXISTS (
+        SELECT 1
+        FROM "variant_stock" vf
+        WHERE vf."productId" = p."id"
+          AND ${Prisma.join(variantFilters, " AND ")}
+      )
+    `);
+  }
+
+  return {
+    productPredicate: Prisma.join(filters, " AND "),
+    variantFilters,
+  };
+}
+
+function buildSortPrice(variantFilters: readonly Prisma.Sql[]) {
+  const extraFilters =
+    variantFilters.length > 0
+      ? Prisma.sql`AND ${Prisma.join([...variantFilters], " AND ")}`
+      : Prisma.sql``;
+  return Prisma.sql`
+    (
+      SELECT MIN(vf."resolvedPrice")
+      FROM "variant_stock" vf
+      WHERE vf."productId" = p."id" ${extraFilters}
+    )
+  `;
+}
+
+function buildDiscoveryOrder(sort: StorefrontDiscoveryQuery["sort"]) {
+  switch (sort) {
+    case "name-desc":
+      return Prisma.sql`p."name" DESC, p."id" ASC`;
+    case "price-asc":
+      return Prisma.sql`"sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC`;
+    case "price-desc":
+      return Prisma.sql`"sortPrice" DESC NULLS LAST, p."name" ASC, p."id" ASC`;
+    case "name-asc":
+      return Prisma.sql`p."name" ASC, p."id" ASC`;
+  }
+}
+
+function bigintToSafeNumber(value: bigint): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("Storefront discovery count is outside safe integer bounds");
+  }
+  return parsed;
 }
 
 export function createStorefrontCatalogRepository(client: PrismaClient) {
@@ -166,6 +300,117 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     };
   }
 
+  async function listDiscoveryPage({
+    shopId,
+    pageSize,
+    discovery,
+  }: {
+    shopId: number;
+    pageSize: number;
+    discovery: StorefrontDiscoveryQuery;
+  }) {
+    const safePageSize = parseListLimit(pageSize);
+    const offset = parsePageOffset(discovery.page, safePageSize);
+    const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery);
+    const sortPrice = buildSortPrice(variantFilters);
+    const orderBy = buildDiscoveryOrder(discovery.sort);
+
+    const [countRows, idRows] = await Promise.all([
+      client.$queryRaw<DiscoveryCountRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "ProductMirror" p
+        LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+        WHERE ${productPredicate}
+      `),
+      client.$queryRaw<DiscoveryIdRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT p."id", ${sortPrice} AS "sortPrice"
+        FROM "ProductMirror" p
+        LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+        WHERE ${productPredicate}
+        ORDER BY ${orderBy}
+        LIMIT ${safePageSize}
+        OFFSET ${offset}
+      `),
+    ]);
+
+    const totalCount = countRows[0] ? bigintToSafeNumber(countRows[0].count) : 0;
+    const ids = idRows.map(({ id }) => id);
+    const products =
+      ids.length === 0
+        ? []
+        : await client.productMirror.findMany({
+            where: { ...visibleProductWhere(shopId), id: { in: ids } },
+            select: productSelection,
+          });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const orderedProducts = ids.map((id) => {
+      const product = byId.get(id);
+      if (!product) throw new Error("Storefront discovery result changed during read");
+      return toStorefrontProduct(product);
+    });
+
+    return {
+      products: orderedProducts,
+      page: discovery.page,
+      pageSize: safePageSize,
+      totalCount,
+      totalPages: Math.ceil(totalCount / safePageSize),
+      hasPrevious: discovery.page > 1,
+      hasNext: offset + orderedProducts.length < totalCount,
+    };
+  }
+
+  async function listDiscoveryFacets({ shopId }: { shopId: number }) {
+    const safeShopId = parseShopId(shopId);
+    const [colorRows, sizeRows, collectionRows] = await Promise.all([
+      client.$queryRaw<FacetRow[]>(Prisma.sql`
+        SELECT DISTINCT BTRIM(v."color") AS "value"
+        FROM "VariantMirror" v
+        INNER JOIN "ProductMirror" p ON p."id" = v."productId"
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+          AND v."isPresent" = TRUE
+          AND v."isActive" = TRUE
+          AND v."color" IS NOT NULL
+          AND BTRIM(v."color") <> ''
+        ORDER BY "value" ASC
+      `),
+      client.$queryRaw<FacetRow[]>(Prisma.sql`
+        SELECT DISTINCT BTRIM(v."size") AS "value"
+        FROM "VariantMirror" v
+        INNER JOIN "ProductMirror" p ON p."id" = v."productId"
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+          AND v."isPresent" = TRUE
+          AND v."isActive" = TRUE
+          AND v."size" IS NOT NULL
+          AND BTRIM(v."size") <> ''
+        ORDER BY "value" ASC
+      `),
+      client.$queryRaw<FacetRow[]>(Prisma.sql`
+        SELECT DISTINCT collection AS "value"
+        FROM "ProductContent" pc
+        INNER JOIN "ProductMirror" p ON p."id" = pc."productId"
+        CROSS JOIN LATERAL UNNEST(pc."collectionSlugs") AS collection
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+          AND collection <> ''
+        ORDER BY "value" ASC
+      `),
+    ]);
+
+    return {
+      colors: colorRows.map(({ value }) => value),
+      sizes: sizeRows.map(({ value }) => value),
+      collections: collectionRows.map(({ value }) => value),
+    };
+  }
+
   async function getProductBySlug({ shopId, slug }: { shopId: number; slug: string }) {
     const product = await client.productMirror.findFirst({
       where: {
@@ -178,5 +423,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     return product ? toStorefrontProduct(product) : null;
   }
 
-  return { listProducts, listProductPage, getProductBySlug };
+  return {
+    listProducts,
+    listProductPage,
+    listDiscoveryPage,
+    listDiscoveryFacets,
+    getProductBySlug,
+  };
 }
