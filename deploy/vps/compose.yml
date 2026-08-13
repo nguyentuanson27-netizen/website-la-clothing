@@ -78,7 +78,7 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
       # Documentation-only default keeps `docker compose config` usable in CI.
-      # deploy.sh refuses production deployment until the real value is present.
+      # The VPS runbook requires the real NPM trust range before promotion.
       EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:-192.0.2.1/32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -97,7 +97,7 @@ networks:
   backend:
     driver: bridge
   # Pre-existing Docker network owned by the shared NPM stack. The default is
-  # deliberately non-production; deploy.sh requires the real host network name.
+  # deliberately non-production; deployment fails unless that network exists.
   edge:
     external: true
     name: ${EDGE_NETWORK_NAME:-la-clothing-edge-unconfigured}
