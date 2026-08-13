@@ -1,6 +1,6 @@
-import { readAuthServerConfig } from "@/auth/config";
-import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import { readPancakeConfig } from "@/integrations/pancake/config";
+import { readAuthServerConfig } from "../auth/config.ts";
+import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import { readPancakeConfig } from "../integrations/pancake/config.ts";
 
 type ReleaseEnvironment = Readonly<Record<string, string | undefined>>;
 
