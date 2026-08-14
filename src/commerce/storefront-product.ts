@@ -37,8 +37,10 @@ function normalizeOptionValue(value: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function optionPairKey(color: string, size: string): string {
-  return `${color.toLowerCase()}\u0000${size.toLowerCase()}`;
+function optionKey(color: string | null, size: string, hasColorDimension: boolean): string {
+  return hasColorDimension
+    ? `${color?.toLowerCase() ?? ""}\u0000${size.toLowerCase()}`
+    : size.toLowerCase();
 }
 
 function isUsablePrice(value: number | null): value is number {
@@ -92,21 +94,24 @@ export function buildStorefrontVariantOptions(
     color: normalizeOptionValue(variant.color),
     size: normalizeOptionValue(variant.size),
   }));
-  const pairCounts = new Map<string, number>();
+  const hasColorDimension = normalized.some((variant) => variant.color !== null);
+  const optionCounts = new Map<string, number>();
 
   for (const variant of normalized) {
-    if (!variant.color || !variant.size) continue;
-    const key = optionPairKey(variant.color, variant.size);
-    pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+    if (!variant.size || (hasColorDimension && !variant.color)) continue;
+    const key = optionKey(variant.color, variant.size, hasColorDimension);
+    optionCounts.set(key, (optionCounts.get(key) ?? 0) + 1);
   }
 
   return normalized.map((variant) => {
     const price = resolveStorefrontPrice(variant);
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 
-    if (!variant.color || !variant.size) {
+    if (!variant.size || (hasColorDimension && !variant.color)) {
       unavailableReason = "MAPPING_REQUIRED";
-    } else if ((pairCounts.get(optionPairKey(variant.color, variant.size)) ?? 0) > 1) {
+    } else if (
+      (optionCounts.get(optionKey(variant.color, variant.size, hasColorDimension)) ?? 0) > 1
+    ) {
       unavailableReason = "AMBIGUOUS_OPTION";
     } else if (!Number.isFinite(variant.sellableStock) || variant.sellableStock <= 0) {
       unavailableReason = "OUT_OF_STOCK";

@@ -26,7 +26,7 @@ test("storefront price resolves only when mirrored raw price fields agree", () =
   );
 });
 
-test("storefront variants fail closed on mapping, stock, price, and duplicate Color x Size pairs", () => {
+test("storefront variants fail closed on required size, stock, price, and duplicate Color x Size pairs", () => {
   const options = buildStorefrontVariantOptions([
     {
       id: "available",
@@ -86,6 +86,83 @@ test("storefront variants fail closed on mapping, stock, price, and duplicate Co
   assert.equal(byId.get("missing-size")?.unavailableReason, "MAPPING_REQUIRED");
   assert.equal(byId.get("duplicate-a")?.unavailableReason, "AMBIGUOUS_OPTION");
   assert.equal(byId.get("duplicate-b")?.unavailableReason, "AMBIGUOUS_OPTION");
+});
+
+test("storefront variants allow size-only products when no variant has a color", () => {
+  const options = buildStorefrontVariantOptions([
+    {
+      id: "size-only-m",
+      color: null,
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "size-only-l",
+      color: null,
+      size: "L",
+      sellableStock: 1,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+  ]);
+
+  assert.deepEqual(
+    options.map(({ id, purchasable, unavailableReason }) => ({ id, purchasable, unavailableReason })),
+    [
+      { id: "size-only-m", purchasable: true, unavailableReason: null },
+      { id: "size-only-l", purchasable: true, unavailableReason: null },
+    ],
+  );
+});
+
+test("storefront variants require color consistently when the product has a color dimension", () => {
+  const options = buildStorefrontVariantOptions([
+    {
+      id: "black-m",
+      color: "Black",
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "missing-color-l",
+      color: null,
+      size: "L",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+  ]);
+
+  assert.equal(options[0]?.purchasable, true);
+  assert.equal(options[1]?.unavailableReason, "MAPPING_REQUIRED");
+});
+
+test("storefront size-only variants fail closed on duplicate sizes", () => {
+  const options = buildStorefrontVariantOptions([
+    {
+      id: "duplicate-size-a",
+      color: null,
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "duplicate-size-b",
+      color: null,
+      size: "M",
+      sellableStock: 1,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+  ]);
+
+  assert.equal(options[0]?.unavailableReason, "AMBIGUOUS_OPTION");
+  assert.equal(options[1]?.unavailableReason, "AMBIGUOUS_OPTION");
 });
 
 test("storefront price range keeps resolved sold-out prices separate from purchase availability", () => {

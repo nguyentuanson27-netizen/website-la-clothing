@@ -20,6 +20,11 @@ const productSlug = `commerce-runtime-product-${runId}`;
 const productName = `Commerce Runtime Overshirt ${runId}`;
 const variantExternalId = `commerce-runtime-variant-${runId}`;
 const warehouseExternalId = `commerce-runtime-warehouse-${runId}`;
+const sizeOnlyProductExternalId = `commerce-runtime-size-only-product-${runId}`;
+const sizeOnlyProductSlug = `commerce-runtime-size-only-product-${runId}`;
+const sizeOnlyProductName = `Commerce Runtime Size Only Tee ${runId}`;
+const sizeOnlyVariantExternalId = `commerce-runtime-size-only-variant-${runId}`;
+const sizeOnlyWarehouseExternalId = `commerce-runtime-size-only-warehouse-${runId}`;
 const syncedAt = new Date("2026-08-13T03:00:00.000Z");
 
 let server: ChildProcess | undefined;
@@ -152,6 +157,44 @@ test.beforeAll(async () => {
     },
   });
 
+  const sizeOnlyProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: sizeOnlyProductExternalId,
+      slug: sizeOnlyProductSlug,
+      name: sizeOnlyProductName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          editorialDescription: "Size-only storefront regression product.",
+        },
+      },
+    },
+  });
+  const sizeOnlyVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: sizeOnlyVariantExternalId,
+      productId: sizeOnlyProduct.id,
+      color: null,
+      size: "L",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 690_000,
+      pancakeRetailPriceAfterDiscount: 690_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: sizeOnlyVariant.id,
+      pancakeWarehouseId: sizeOnlyWarehouseExternalId,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
@@ -227,6 +270,44 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
 
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
+test("size-only product hides Color and becomes purchasable after selecting Size", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: sizeOnlyProductName })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
+  await expect(page.getByText("Chọn Size", { exact: true })).toBeVisible();
+
+  const size = page.getByRole("radio", { name: "L" });
+  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  await expect(addToBag).toBeDisabled();
+  await page.getByText("L", { exact: true }).click();
+  await expect(size).toBeChecked();
+  await expect(addToBag).toBeEnabled();
+  await assertPageQuality(page);
+
+  await addToBag.click();
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  const cartLine = page.getByRole("article");
+  await expect(page.getByRole("link", { name: sizeOnlyProductName, exact: true })).toBeVisible();
+  await expect(cartLine.getByText("L", { exact: true })).toBeVisible();
+  await expect(cartLine.getByText(/690\.000.*₫/)).toBeVisible();
+  await assertPageQuality(page);
+
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });

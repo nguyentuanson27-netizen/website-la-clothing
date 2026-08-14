@@ -5,7 +5,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
-import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
+import type {
+  PancakeCatalogField,
+  PancakeCatalogVariation,
+} from "../../src/integrations/pancake/catalog-contract.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -18,11 +21,17 @@ const prisma = new PrismaClient({
 const repository = createCatalogMirrorRepository(prisma);
 const shopId = 910_039;
 
+const defaultFields: PancakeCatalogField[] = [
+  { id: "field-color", keyValue: "color", name: "Color", value: "Black" },
+  { id: "field-size", keyValue: "size", name: "Size", value: "M" },
+];
+
 function variation({
   id,
   productName = "Mirror Product",
   displayId,
   barcode,
+  fields = defaultFields,
   retailPrice = 500_000,
   retailPriceAfterDiscount = 450_000,
   stocks,
@@ -31,6 +40,7 @@ function variation({
   productName?: string;
   displayId: string;
   barcode: string;
+  fields?: PancakeCatalogField[];
   retailPrice?: number;
   retailPriceAfterDiscount?: number;
   stocks: Array<{ warehouseId: string; remainQuantity: number }>;
@@ -40,10 +50,7 @@ function variation({
     productId: "mirror-product-1",
     displayId,
     barcode,
-    fields: [
-      { id: "field-color", keyValue: "color", name: "Color", value: "Black" },
-      { id: "field-size", keyValue: "size", name: "Size", value: "M" },
-    ],
+    fields,
     imageUrls: ["https://example.test/mirror-product.jpg"],
     isHidden: false,
     isLocked: false,
@@ -66,7 +73,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("catalog mirror sync is idempotent, preserves website-owned policy, and aggregates all warehouses", async () => {
+test("catalog mirror sync is idempotent, maps Pancake options, preserves local activation/sku, and aggregates all warehouses", async () => {
   const firstSyncAt = new Date("2026-08-11T00:00:00.000Z");
   const secondSyncAt = new Date("2026-08-11T01:00:00.000Z");
   const firstSnapshot = [
@@ -111,6 +118,8 @@ test("catalog mirror sync is idempotent, preserves website-owned policy, and agg
   assert.equal(firstRead[0]?.variants[0]?.pancakeRetailPriceAfterDiscount, 450_000);
   assert.deepEqual(firstRead[0]?.variants[0]?.pancakeFields, firstSnapshot[0]?.fields);
   assert.deepEqual(firstRead[0]?.variants[0]?.pancakeImageUrls, firstSnapshot[0]?.imageUrls);
+  assert.equal(firstRead[0]?.variants[0]?.color, "Black");
+  assert.equal(firstRead[0]?.variants[0]?.size, "M");
   assert.equal(firstRead[0]?.variants[0]?.sellableStock, 7.5);
 
   const mirroredProduct = await prisma.productMirror.findFirstOrThrow({
@@ -123,7 +132,12 @@ test("catalog mirror sync is idempotent, preserves website-owned policy, and agg
   });
   await prisma.variantMirror.update({
     where: { id: mirroredProduct.variants[0]!.id },
-    data: { isActive: true, sku: "LOCAL-SKU", color: "Local Black", size: "Local M" },
+    data: {
+      isActive: true,
+      sku: "LOCAL-SKU",
+      color: "Stale Local Color",
+      size: "Stale Local Size",
+    },
   });
 
   const secondSnapshot = [
@@ -146,8 +160,8 @@ test("catalog mirror sync is idempotent, preserves website-owned policy, and agg
   assert.equal(secondRead[0]?.variants.length, 1);
   assert.equal(secondRead[0]?.variants[0]?.isActive, true);
   assert.equal(secondRead[0]?.variants[0]?.sku, "LOCAL-SKU");
-  assert.equal(secondRead[0]?.variants[0]?.color, "Local Black");
-  assert.equal(secondRead[0]?.variants[0]?.size, "Local M");
+  assert.equal(secondRead[0]?.variants[0]?.color, "Black");
+  assert.equal(secondRead[0]?.variants[0]?.size, "M");
   assert.equal(secondRead[0]?.variants[0]?.pancakeDisplayId, "DISPLAY-1-UPDATED");
   assert.equal(secondRead[0]?.variants[0]?.sellableStock, 2);
 
@@ -160,6 +174,28 @@ test("catalog mirror sync is idempotent, preserves website-owned policy, and agg
     await prisma.warehouseStock.count({ where: { variantId: staleVariant.id } }),
     0,
   );
+});
+
+test("catalog mirror maps size without inventing color for size-only Pancake variants", async () => {
+  await repository.syncSnapshot({
+    shopId,
+    syncedAt: new Date("2026-08-11T00:00:00.000Z"),
+    variations: [
+      variation({
+        id: "size-only-variation",
+        displayId: "SIZE-ONLY",
+        barcode: "SIZE-ONLY-BAR",
+        fields: [{ id: "field-size", keyValue: "size", name: "Size", value: "L" }],
+        retailPrice: 590_000,
+        retailPriceAfterDiscount: 590_000,
+        stocks: [{ warehouseId: "warehouse-a", remainQuantity: 2 }],
+      }),
+    ],
+  });
+
+  const product = (await repository.listPresentProducts({ shopId, limit: 10 }))[0];
+  assert.equal(product?.variants[0]?.size, "L");
+  assert.equal(product?.variants[0]?.color, null);
 });
 
 test("catalog mirror rejects inconsistent duplicate variation identity before database writes", async () => {

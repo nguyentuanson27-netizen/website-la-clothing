@@ -81,37 +81,49 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       <div className="flex items-baseline justify-between gap-6">
         <p className="text-xl font-medium tracking-[-0.02em]">{priceLabel}</p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/55">
-          {hasPurchasableVariant ? "Chọn Color × Size" : "Chưa thể mua online"}
+          {hasPurchasableVariant
+            ? selection.hasColorOptions
+              ? "Chọn Color × Size"
+              : "Chọn Size"
+            : "Chưa thể mua online"}
         </p>
       </div>
 
-      <fieldset className="mt-8">
-        <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Màu</legend>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {selection.colors.map((choice) => (
-            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
-              <input
-                className="peer sr-only"
-                type="radio"
-                name="storefront-color"
-                value={choice.value}
-                checked={color === choice.value}
-                disabled={choice.disabled || isPending}
-                onChange={() => chooseColor(choice.value)}
-              />
-              <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-                {choice.value}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      {selection.hasColorOptions ? (
+        <fieldset className="mt-8">
+          <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Màu</legend>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {selection.colors.map((choice) => (
+              <label
+                key={choice.value}
+                className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
+              >
+                <input
+                  className="peer sr-only"
+                  type="radio"
+                  name="storefront-color"
+                  value={choice.value}
+                  checked={color === choice.value}
+                  disabled={choice.disabled || isPending}
+                  onChange={() => chooseColor(choice.value)}
+                />
+                <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+                  {choice.value}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
 
-      <fieldset className="mt-7">
+      <fieldset className={selection.hasColorOptions ? "mt-7" : "mt-8"}>
         <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Kích cỡ</legend>
         <div className="mt-3 flex flex-wrap gap-2">
           {selection.sizes.map((choice) => (
-            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <label
+              key={choice.value}
+              className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
+            >
               <input
                 className="peer sr-only"
                 type="radio"
@@ -139,7 +151,12 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       </button>
 
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
-        {message || (!hasPurchasableVariant ? "Không có Color × Size khả dụng ở thời điểm hiện tại." : "")}
+        {message ||
+          (!hasPurchasableVariant
+            ? selection.hasColorOptions
+              ? "Không có Color × Size khả dụng ở thời điểm hiện tại."
+              : "Không có kích cỡ khả dụng ở thời điểm hiện tại."
+            : "")}
       </p>
     </div>
   );

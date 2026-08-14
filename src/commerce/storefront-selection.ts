@@ -42,25 +42,30 @@ export function deriveStorefrontSelection(
       supportsSelection(option, { color: value, size: null }),
     ),
   }));
+  const hasColorOptions = colors.length > 0;
 
   const sizes: StorefrontChoiceState[] = uniqueMappedValues(options, "size").map((value) => ({
     value,
     disabled: !options.some((option) =>
-      supportsSelection(option, { color: selection.color, size: value }),
+      supportsSelection(option, {
+        color: hasColorOptions ? selection.color : null,
+        size: value,
+      }),
     ),
   }));
 
   const selected =
-    selection.color !== null && selection.size !== null
+    selection.size !== null && (!hasColorOptions || selection.color !== null)
       ? options.find(
           (option) =>
             option.purchasable &&
-            option.color === selection.color &&
-            option.size === selection.size,
+            option.size === selection.size &&
+            (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
       : null;
 
   return {
+    hasColorOptions,
     colors,
     sizes,
     selectedVariantId: selected?.id ?? null,
