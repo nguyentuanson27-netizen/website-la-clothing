@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PANCAKE_ORDER_STATUS_CODES,
   PancakeOrderStatusContractError,
+  comparePancakeOrderStatusTimestamps,
   parsePancakeOrderStatusResponse,
 } from "../../src/integrations/pancake/order-status.ts";
 
@@ -41,6 +42,51 @@ test("order status parser returns only the allowlisted status fields for the exp
   );
 });
 
+test("order status parser accepts timezone-less Pancake wall-clock timestamps without inventing an offset", () => {
+  assert.deepEqual(
+    parsePancakeOrderStatusResponse(
+      validPayload({
+        inserted_at: "2026-08-12T08:10:11.123456789",
+        updated_at: "2026-08-12T09:12:13.987654321",
+      }),
+      { shopId: 4, orderId: "1418" },
+    ),
+    {
+      orderId: "1418",
+      systemId: 862,
+      shopId: 4,
+      status: 9,
+      insertedAt: "2026-08-12T08:10:11.123456789",
+      updatedAt: "2026-08-12T09:12:13.987654321",
+    },
+  );
+});
+
+test("order status timestamp comparison orders timezone-less wall clocks but rejects mixed timezone semantics", () => {
+  assert.equal(
+    comparePancakeOrderStatusTimestamps(
+      "2026-08-12T10:00:00.123456800",
+      "2026-08-12T10:00:00.123456700",
+    ),
+    1,
+  );
+  assert.equal(
+    comparePancakeOrderStatusTimestamps(
+      "2026-08-12T09:59:59.999999999",
+      "2026-08-12T10:00:00",
+    ),
+    -1,
+  );
+  assert.throws(
+    () =>
+      comparePancakeOrderStatusTimestamps(
+        "2026-08-12T10:00:00",
+        "2026-08-12T10:00:00Z",
+      ),
+    PancakeOrderStatusContractError,
+  );
+});
+
 test("order status parser accepts every verified status code", () => {
   for (const status of EXPECTED_STATUS_CODES) {
     assert.equal(
@@ -75,7 +121,9 @@ test("order status parser rejects missing, malformed, or non-canonical required 
     validPayload({ updated_at: "2026-08-12" }),
     validPayload({ updated_at: " 2026-08-12T09:12:13Z" }),
     validPayload({ updated_at: "2026-02-31T09:12:13Z" }),
+    validPayload({ updated_at: "2026-02-31T09:12:13" }),
     validPayload({ updated_at: "2026-08-12T25:12:13Z" }),
+    validPayload({ updated_at: "2026-08-12T25:12:13" }),
   ];
 
   for (const payload of invalidPayloads) {
