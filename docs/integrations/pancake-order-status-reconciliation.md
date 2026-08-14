@@ -5,7 +5,9 @@ This document records the durable persistence/concurrency contract for T10-B. It
 - `docs/integrations/pancake-order-status-contract-observed.json`
 - `docs/integrations/pancake-order-status-openapi-evidence.md`
 
-The upstream read shape and numeric status enum are therefore source-backed. This reconciliation layer still does **not** invent business meanings, a Pancake transition graph, webhook guarantees, or a mapping into website-owned `LocalOrderState`.
+The upstream read shape and numeric status enum are therefore source-backed. Production acceptance later observed that Pancake can return `inserted_at` / `updated_at` values without a timezone suffix even though the reviewed OpenAPI shape declares `date-time`. The adapter handles that observed deviation conservatively; it does **not** invent a timezone or reinterpret the numeric status semantics.
+
+This reconciliation layer still does **not** invent business meanings, a Pancake transition graph, webhook guarantees, or a mapping into website-owned `LocalOrderState`.
 
 ## Persisted upstream status tuple
 
@@ -19,24 +21,27 @@ They are intentionally nullable so existing orders are not backfilled with guess
 
 `pancakeSystemId` is canonical decimal text. The OpenAPI field is an integer, but storing it as PostgreSQL `INTEGER` would unnecessarily narrow a value that the source contract does not constrain to 32 bits.
 
-`pancakeStatusUpdatedAt` stores the already validated upstream RFC3339 revision **as text**. Pancake's `date-time` examples/schema allow fractional-second precision that can exceed JavaScript/Prisma millisecond precision. Persisting the validated source string prevents distinct sub-millisecond revisions from collapsing to the same local `DateTime` value.
+`pancakeStatusUpdatedAt` stores the validated upstream revision **as text**. Offset-aware values preserve their source representation and timezone-less Pancake values remain timezone-less; the application does not append `Z` or another offset. Fractional-second precision can exceed JavaScript/Prisma millisecond precision, so persisting the validated source string also prevents distinct sub-millisecond revisions from collapsing to the same local `DateTime` value.
 
 The three values form one logical status tuple. A partially populated tuple is treated as `STATUS_CONFLICT`; the service does not guess missing members.
 
 ## Revision ordering
 
-`comparePancakeOrderStatusTimestamps()` validates the bounded RFC3339 value and compares semantic instants as:
+`comparePancakeOrderStatusTimestamps()` accepts two bounded timestamp semantics:
 
-```text
-(epochMilliseconds, subMillisecondNanoseconds)
-```
+1. **Offset-aware instant** — `YYYY-MM-DDTHH:mm:ss[.fraction]Z` or an explicit numeric offset. These values compare by semantic instant using `(epochMilliseconds, subMillisecondNanoseconds)`.
+2. **Timezone-less Pancake wall clock** — `YYYY-MM-DDTHH:mm:ss[.fraction]`. These values compare lexicographically by already validated numeric calendar/time components, including all fractional precision. This is an ordering of Pancake's wall-clock revisions, not a claim that the value represents UTC or any other timezone.
+
+The comparator fails closed if asked to compare one wall-clock value with one offset-aware instant because their relative instant cannot be proven without inventing timezone semantics.
 
 Consequences:
 
-- timezone-equivalent representations compare equal;
+- timezone-equivalent offset-aware representations compare equal;
+- timezone-less revisions can advance safely when both sides use the same wall-clock semantics;
 - the six fractional digits below the millisecond remain ordered;
 - impossible calendar/time values fail closed;
-- lexical string order is never used as time order.
+- mixed timezone semantics fail closed as `STATUS_CONFLICT` during reconciliation;
+- raw lexical string order is never used without structural/calendar validation.
 
 The comparator is only an ordering mechanism for observed read revisions. It does not claim Pancake event-delivery or webhook ordering guarantees.
 
@@ -45,10 +50,11 @@ The comparator is only an ordering mechanism for observed read revisions. It doe
 For one local order scoped to the configured Pancake shop:
 
 - no previously persisted tuple + valid upstream read → `UPDATED`;
-- strictly newer upstream revision → atomic `UPDATED`;
-- strictly older revision → `STALE`, no write;
-- same semantic instant + same system id/status → idempotent `UNCHANGED`;
-- same semantic instant + different system id/status → `STATUS_CONFLICT`;
+- strictly newer upstream revision using compatible timestamp semantics → atomic `UPDATED`;
+- strictly older compatible revision → `STALE`, no write;
+- same semantic revision + same system id/status → idempotent `UNCHANGED`;
+- same revision + different system id/status → `STATUS_CONFLICT`;
+- offset-aware vs timezone-less revision comparison → `STATUS_CONFLICT`;
 - malformed/partial persisted tuple → `STATUS_CONFLICT`;
 - upstream transport/contract failure → safe non-PII `STATUS_UNAVAILABLE`.
 
