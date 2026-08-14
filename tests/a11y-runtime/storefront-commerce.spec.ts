@@ -293,7 +293,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   const size = page.getByRole("radio", { name: "L" });
   const addToBag = page.getByRole("button", { name: "Add to Bag" });
   await expect(addToBag).toBeDisabled();
-  await size.check();
+  await page.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await assertPageQuality(page);
