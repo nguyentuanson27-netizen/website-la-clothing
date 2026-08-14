@@ -50,6 +50,7 @@ const options = buildStorefrontVariantOptions([
 test("storefront selection exposes only options with at least one purchasable combination", () => {
   const state = deriveStorefrontSelection(options, { color: null, size: null });
 
+  assert.equal(state.hasColorOptions, true);
   assert.deepEqual(state.colors, [
     { value: "Black", disabled: false },
     { value: "Stone", disabled: false },
@@ -83,6 +84,41 @@ test("storefront selection resolves one exact purchasable Color x Size pair", ()
   assert.equal(state.selectedVariantId, "stone-l");
   assert.equal(state.selectedPrice, 620_000);
   assert.equal(state.canAdd, true);
+});
+
+test("storefront selection resolves a size-only product without requiring color", () => {
+  const sizeOnlyOptions = buildStorefrontVariantOptions([
+    {
+      id: "size-only-m",
+      color: null,
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "size-only-l",
+      color: null,
+      size: "L",
+      sellableStock: 1,
+      retailPrice: 620_000,
+      retailPriceAfterDiscount: 620_000,
+    },
+  ]);
+
+  const empty = deriveStorefrontSelection(sizeOnlyOptions, { color: null, size: null });
+  assert.equal(empty.hasColorOptions, false);
+  assert.deepEqual(empty.colors, []);
+  assert.deepEqual(empty.sizes, [
+    { value: "M", disabled: false },
+    { value: "L", disabled: false },
+  ]);
+  assert.equal(empty.canAdd, false);
+
+  const selected = deriveStorefrontSelection(sizeOnlyOptions, { color: null, size: "L" });
+  assert.equal(selected.selectedVariantId, "size-only-l");
+  assert.equal(selected.selectedPrice, 620_000);
+  assert.equal(selected.canAdd, true);
 });
 
 test("storefront selection fails closed for stale or unavailable selections", () => {
