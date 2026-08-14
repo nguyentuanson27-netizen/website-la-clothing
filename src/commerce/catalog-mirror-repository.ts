@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
 import type { PrismaClient } from "../generated/prisma/client.ts";
-import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
+import type {
+  PancakeCatalogField,
+  PancakeCatalogVariation,
+} from "../integrations/pancake/catalog-contract.ts";
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -11,6 +14,11 @@ const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 type CatalogProductSnapshot = {
   pancakeProductId: string;
   name: string;
+};
+
+type VariantOptionMapping = {
+  color: string | null;
+  size: string | null;
 };
 
 function requireShopId(shopId: number): number {
@@ -102,6 +110,25 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" | "size"): string | null {
+  const values = new Set<string>();
+
+  for (const field of fields) {
+    if (field.keyValue.trim().toLowerCase() !== key) continue;
+    const value = field.value.trim();
+    if (value.length > 0) values.add(value);
+  }
+
+  return values.size === 1 ? [...values][0]! : null;
+}
+
+function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptionMapping {
+  return {
+    color: mappedFieldValue(fields, "color"),
+    size: mappedFieldValue(fields, "size"),
+  };
+}
+
 export function createCatalogMirrorRepository(client: PrismaClient) {
   async function syncSnapshot({
     shopId,
@@ -168,6 +195,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
           if (!internalProductId) {
             throw new Error("Catalog mirror product identity could not be resolved");
           }
+          const optionMapping = mapVariantOptions(variation.fields);
 
           const mirrored = await tx.variantMirror.upsert({
             where: { pancakeVariationId: variation.id },
@@ -182,6 +210,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
               pancakeIsLocked: variation.isLocked,
               pancakeRetailPrice: variation.retailPrice,
               pancakeRetailPriceAfterDiscount: variation.retailPriceAfterDiscount,
+              color: optionMapping.color,
+              size: optionMapping.size,
               isPresent: true,
               isActive: false,
               syncedAt: safeSyncedAt,
@@ -196,6 +226,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
               pancakeIsLocked: variation.isLocked,
               pancakeRetailPrice: variation.retailPrice,
               pancakeRetailPriceAfterDiscount: variation.retailPriceAfterDiscount,
+              color: optionMapping.color,
+              size: optionMapping.size,
               isPresent: true,
               syncedAt: safeSyncedAt,
             },
