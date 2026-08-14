@@ -57,6 +57,7 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("session")
 }
 
@@ -76,6 +77,7 @@ model Account {
   createdAt               DateTime
   updatedAt               DateTime
 
+  @@index([userId])
   @@map("account")
 }
 
@@ -87,6 +89,7 @@ model Verification {
   createdAt  DateTime?
   updatedAt  DateTime?
 
+  @@index([identifier])
   @@map("verification")
 }
 
