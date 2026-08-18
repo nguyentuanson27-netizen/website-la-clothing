@@ -7,6 +7,9 @@ const MAX_CATALOG_ENTRIES = 50_000;
 const MAX_CATEGORIES = 10_000;
 const MAX_CATEGORY_DEPTH = 32;
 const MAX_CATEGORY_NAME_LENGTH = 256;
+const MAX_ID_LENGTH = 512;
+const MAX_NOTE_PRODUCT_LENGTH = 100_000;
+const MAX_IMAGE_URL_LENGTH = 4_096;
 const MAX_IMAGE_REFERENCES = 100_000;
 const IMAGE_EXTENSIONS = new Set(["avif", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
 const SAFE_PATH_SEGMENTS = new Set([
@@ -124,7 +127,7 @@ function requireSafeInteger(record: JsonRecord, key: string, message: string): n
 
 function requireNonEmptyString(record: JsonRecord, key: string, message: string): string {
   const value = record[key];
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_ID_LENGTH) {
     throw new PancakeCatalogAuditError(message);
   }
   return value;
@@ -135,7 +138,7 @@ function fingerprint(value: string): string {
 }
 
 function normalizeIdentifier(value: unknown, message: string): string {
-  if (typeof value === "string" && value.length > 0) {
+  if (typeof value === "string" && value.length > 0 && value.length <= MAX_ID_LENGTH) {
     return fingerprint(`s:${value}`);
   }
   if (typeof value === "number" && Number.isSafeInteger(value)) {
@@ -152,17 +155,16 @@ function noteFingerprint(value: unknown): string {
     return `malformed:${Array.isArray(value) ? "array" : typeof value}`;
   }
   const trimmed = value.trim();
-  return trimmed.length === 0 ? "missing" : `present:${fingerprint(trimmed)}`;
+  if (trimmed.length === 0) return "missing";
+  if (trimmed.length > MAX_NOTE_PRODUCT_LENGTH) return "malformed:oversize";
+  return `present:${fingerprint(trimmed)}`;
 }
 
 function optionalImageFingerprint(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw new PancakeCatalogAuditError("Pancake product image payload is malformed");
-  }
-  return fingerprint(value);
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") return `malformed:${Array.isArray(value) ? "array" : typeof value}`;
+  if (value.length > MAX_IMAGE_URL_LENGTH) return "malformed:oversize";
+  return `present:${fingerprint(value)}`;
 }
 
 function productCategoryFingerprints(value: unknown): readonly string[] {
@@ -237,7 +239,7 @@ function recordImageReference(
     throw new PancakeCatalogAuditError("Pancake catalog image-reference limit exceeded");
   }
 
-  if (typeof value !== "string" || value.length === 0 || value.length > 4096) {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_IMAGE_URL_LENGTH) {
     state.malformedCount += 1;
     return;
   }
@@ -486,7 +488,7 @@ export async function runPancakeCatalogAudit({
       }
       if (!existing) {
         productSnapshots.set(productKey, snapshot);
-        if (typeof product.image === "string" && product.image.length > 0) {
+        if (product.image !== undefined && product.image !== null && product.image !== "") {
           recordImageReference(product.image, imageState);
         }
       }
