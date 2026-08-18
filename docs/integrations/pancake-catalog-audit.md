@@ -29,7 +29,7 @@ It does **not**:
 - introduce a remote-image proxy;
 - expose the Pancake API key to browser code.
 
-Catalog traversal is capped at 500 pages / 50,000 variation entries. Category traversal is capped at 10,000 nodes and depth 32. Image-reference inspection is capped at 100,000 references.
+Catalog traversal is capped at 500 pages / 50,000 variation entries. Category traversal is capped at 10,000 nodes and depth 32. Image-reference inspection is capped at 100,000 references. External identifiers, category names, `note_product`, and image URLs also have explicit processing bounds before hashing or parsing.
 
 ## Sanitized output
 
@@ -43,9 +43,12 @@ The JSON between `PANCAKE_CATALOG_AUDIT_BEGIN` and `PANCAKE_CATALOG_AUDIT_END` c
 - malformed, credential-bearing, and non-default-port image reference counts;
 - category count, root count, maximum depth, normalized-name duplicate count, duplicate-ID count;
 - product-category assignment coverage and known/unknown assignment-reference counts;
+- observed structural assignment locations (`product.categories` and/or `variation.categories`) without promoting either location into the production source contract;
 - mechanical source-taxonomy classification: `usable`, `partial`, `empty`, or `unusable`.
 
-The classification is **not** an SEO taxonomy decision. Pancake categories remain candidate/source taxonomy only; website collections remain website-owned.
+The classification is **not** an SEO taxonomy decision. A flat tree is not automatically considered defective: depth is evidence only. `unusable` is reserved for duplicate category IDs or assignment references that do not resolve to the returned category tree; `partial` covers duplicate normalized names or incomplete product assignment coverage. Pancake categories remain candidate/source taxonomy only; website collections remain website-owned.
+
+If both observed assignment locations exist on one variation and disagree, the audit fails closed rather than guessing which source is authoritative. Numeric category IDs and their equivalent numeric-string representation are normalized only for equality checks in the audit report.
 
 ## Data minimization
 
@@ -68,6 +71,6 @@ P0 remains incomplete until a trusted local run establishes the current LA Cloth
 
 1. `note_product` coverage;
 2. actual image schemes/hostnames/path shapes and invalid-reference counts;
-3. category depth/count/duplicate state and product-assignment coverage.
+3. category depth/count/duplicate state, observed assignment source location(s), and product-assignment coverage.
 
 Only the sanitized aggregate block should be retained for review. P1 must not infer missing source facts before this gate is closed.
