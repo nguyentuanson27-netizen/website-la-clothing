@@ -257,6 +257,40 @@ test("catalog audit failure formatter never echoes external error values", () =>
   assert.equal(message.includes(secret), false);
 });
 
+test("catalog audit counts malformed source values without echoing them", async () => {
+  const oversizedNote = "N".repeat(100_001);
+  const client = {
+    async getJson(endpoint: string) {
+      if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+      return {
+        success: true,
+        page_number: 1,
+        page_size: 100,
+        total_entries: 1,
+        total_pages: 1,
+        data: [
+          {
+            id: "variation-a",
+            product_id: "product-a",
+            images: [],
+            product: {
+              id: "product-a",
+              note_product: oversizedNote,
+              image: { raw: "PRODUCT_IMAGE_SECRET" },
+              categories: [],
+            },
+          },
+        ],
+      };
+    },
+  };
+
+  const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
+  assert.equal(report.products.malformedNoteProductCount, 1);
+  assert.equal(report.images.malformedCount, 1);
+  assert.equal(JSON.stringify(report).includes("PRODUCT_IMAGE_SECRET"), false);
+});
+
 test("catalog audit fails closed when pagination exceeds the bounded traversal", async () => {
   const client = {
     async getJson() {
