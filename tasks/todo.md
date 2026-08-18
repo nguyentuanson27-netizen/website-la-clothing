@@ -1,203 +1,315 @@
-# LA Clothing — Productization Task Checklist
+# LA Clothing — Productization Task Checklist V2
 
-Status: **BUILD — storefront productization**
+Status: **FINAL PLAN — ready for /build**
 
-The existing `main` is the technical commerce foundation. Core catalog/cart/checkout/Pancake/order tracking/CI/VPS infrastructure is implemented, but the customer-facing product is **not launch-complete** until media, visual merchandising, SEO/GEO, live catalog acceptance and final operations gates below are complete.
+`main` remains the technical commerce foundation. The customer-facing website is not launch-complete until real media, trusted content, readable URL architecture, visual merchandising, Deep SEO/GEO, live catalog acceptance and dedicated-domain launch gates are complete.
 
-## Carried-forward product rules
+## Locked decisions
 - [x] Own-brand menswear store
 - [x] Guest COD checkout; account optional/deferred
-- [x] Pancake is operational source of truth
+- [x] Pancake remains operational source of truth for commerce/source facts
 - [x] Size required
 - [x] Color optional per product; hide Color when absent
-- [x] No blind retry for ambiguous Pancake writes
-- [ ] Product media, storefront visual quality and search discoverability still require completion
+- [x] `Product.note` = internal/private; never public/SEO/GEO
+- [x] `Product.note_product` = approved source-description field
+- [x] Website editorial/SEO copy is website-owned and must survive Pancake sync
+- [x] Pancake API has no SEO slug field; slug is website-owned
+- [x] Remote image origins require live allowlist evidence; no wildcard proxy/origin
+- [x] Pancake categories are candidate source taxonomy only; SEO collections remain website-owned
+- [x] `la.lanadesign.vn` is staging/temporary and should remain non-indexable
+- [x] Public SEO launch will use a dedicated LA Clothing domain; exact domain can be chosen later
+- [x] No AI auto-publish; missing facts stay missing
+- [x] No blind retry for ambiguous Pancake order writes
 
-## Current execution path
+## Execution path
 
 ```text
-P1 Trusted image contract
-  -> P2 PLP images
-  -> P3 PDP gallery
+P0 Live evidence
+  ↓
+P1 Source contract
+  ↓
+P2 Source mirror
+  ↓
+P3 Trusted media contract
+  ↓
+P4 Real product media
 
-P4 Visual foundation
-  -> P5 Homepage/lookbook
-  -> P6 Shop/collections
-  -> P7 PDP layout
-  -> P8 Cart/checkout/tracking polish
+P2 → P5 Editorial workflow
+P2 → P6 SEO slug lifecycle
+P0 → P7 Collection/taxonomy foundation
 
-P9 Technical SEO
-  -> P10 PDP metadata/OG
-  -> P11 Product structured data
-  -> P12 crawl/indexation/internal links
+P4 → P8 Visual foundation
+P4 + P8 → P9 Homepage/lookbook
+P4 + P5 + P7 + P8 → P10 Shop/collection/PDP
+P8 + P10 → P11 Cart/checkout/tracking
 
-P13 GEO/content/entity
-  -> P14 live catalog/media/content acceptance
-  -> P15 final visual/search/E2E gate
-  -> P16 production promotion
+P6 + P7 → P12 Domain/search exposure + technical SEO
+P4 + P5 + P6 + P12 → P13 PDP metadata/media SEO
+P10 + P13 → P14 Structured data/breadcrumbs
+P7 + P12 + P14 → P15 Crawl/indexation/internal links
+P5 + P9 + P10 + P13-P15 → P16 GEO/entity/content
+
+P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 ```
 
-## Media
+## P0 — Safe live Pancake audit
+- [ ] add/use bounded read-only trusted-local audit
+- [ ] measure `note_product` population coverage without emitting note contents
+- [ ] collect unique current LA Clothing image origins/path shapes without full URLs
+- [ ] inspect category tree/assignment coverage and classify usable/partial/empty/unusable
+- [ ] prove no secret/raw catalog/customer/inventory leakage
+- [ ] record only reviewed aggregate evidence
 
-- [ ] **P1 Trusted product-image contract**
-  - [ ] review actual production image host/path patterns
-  - [ ] normalize only valid reviewed HTTPS URLs
-  - [ ] deterministic primary/gallery selection
-  - [ ] RED/GREEN tests for malformed/duplicate/untrusted URLs
-  - [ ] security review: no wildcard image host/proxy
+## P1 — Extend reviewed Pancake source contract
+- [ ] map `product.note_product` → internal `sourceDescription`
+- [ ] map documented product primary-image URI
+- [ ] keep `product.note` intentionally unconsumed/private
+- [ ] fail closed on malformed mapped values
+- [ ] RED/GREEN parser fixtures/tests
+- [ ] reviewed live contract verifier remains green
 
-- [ ] **P2 Real product images on PLP/cards**
-  - [ ] configure narrow Next `images.remotePatterns`
-  - [ ] update CSP `img-src` with the same reviewed origins
-  - [ ] render real `next/image` product photography
-  - [ ] meaningful alt text + stable aspect ratio
-  - [ ] intentional fallback for missing/rejected media
-  - [ ] mobile/desktop browser evidence
+## P2 — Persist Pancake source content/media safely
+- [ ] add mirror persistence for source description and product primary-image URI
+- [ ] migration-from-empty passes
+- [ ] repeated sync converges idempotently
+- [ ] source changes do not overwrite `ProductContent`
+- [ ] stale/deactivated mirror semantics remain unchanged
+- [ ] DB/catalog sync regression passes
 
-- [ ] **P3 PDP gallery**
-  - [ ] primary + additional trusted images
-  - [ ] keyboard/screen-reader accessible gallery controls
-  - [ ] no selector UI for single-image products
-  - [ ] missing-media PDP remains usable
-  - [ ] browser/Axe/VoiceOver regression
+### Checkpoint A — source trust boundary
+- [ ] P0-P2 review: 0 Critical / 0 Required
+- [ ] private `note` cannot reach storefront/admin public output
+- [ ] website-owned content proven sync-safe
 
-### Checkpoint A
-- [ ] P1–P3 correctness/security review has 0 Critical / 0 Required
-- [ ] real production-shaped image host works without CSP/network errors
+## P3 — Trusted product-image contract
+- [ ] validate HTTPS only
+- [ ] allow only exact reviewed origin/path patterns from P0
+- [ ] reject credential-bearing/malformed/unreviewed URLs
+- [ ] deterministic primary/gallery selection from product + variation media
+- [ ] deterministic dedupe/order
+- [ ] no arbitrary server-side image proxy/fetcher
+- [ ] RED/GREEN security/domain tests
 
-## Storefront visual productization
+## P4 — Real PLP/PDP media
+- [ ] narrow Next `images.remotePatterns`
+- [ ] matching CSP `img-src`
+- [ ] real product photography on cards
+- [ ] accessible responsive PDP gallery
+- [ ] meaningful alt text
+- [ ] intentional missing/rejected-media fallback
+- [ ] mobile/desktop network/CSP/browser evidence
+- [ ] Axe/keyboard/VoiceOver regression
 
-- [ ] **P4 Rebaseline visual system**
-  - [ ] typography/spacing/grid/media ratios/tokens
-  - [ ] header/footer/navigation/promotion shell
-  - [ ] responsive + focus states
-  - [ ] no commerce semantics changed
+## P5 — Website editorial workflow
+- [ ] show `sourceDescription` to admin as read-only source context
+- [ ] public copy remains website-owned
+- [ ] add explicit publish workflow/status if required by implementation
+- [ ] optional material/fit facts remain nullable/manual only
+- [ ] Pancake sync cannot auto-publish/overwrite editorial copy
+- [ ] admin auth/input/DB tests
 
-- [ ] **P5 Homepage + Lookbook redesign**
-  - [ ] real approved imagery instead of silhouettes
-  - [ ] real featured products and collection links
-  - [ ] factual editorial claims only
-  - [ ] media-empty fallback
-  - [ ] mobile/desktop/Axe review
+## P6 — Stable readable product slug lifecycle
+- [ ] replace existing `p-<digest>` public slugs before indexing
+- [ ] deterministic Vietnamese-friendly slug normalization
+- [ ] deterministic collision handling
+- [ ] freeze published slug across Pancake name changes
+- [ ] explicit slug change creates old-slug history
+- [ ] old slug → 301 canonical slug
+- [ ] unknown slug → 404
+- [ ] migration + HTTP redirect tests
 
-- [ ] **P6 Shop + Collections discovery**
-  - [ ] every visible collection/category link resolves to implemented behavior
-  - [ ] stable crawlable collection landing pages
-  - [ ] direct links from collection pages to intended PDPs
-  - [ ] preserve same-variant Color/Size/stock/price filtering
-  - [ ] browser/filter/pagination regression
+## P7 — Website-owned collections/taxonomy
+- [ ] define stable collection slug/title/visible copy/SEO state
+- [ ] deterministic product membership
+- [ ] support manual taxonomy even if Pancake categories are unusable
+- [ ] optional POS category mapping only by explicit reviewed ID
+- [ ] no POS category can auto-publish an SEO landing page
+- [ ] admin/repository/public-route tests
 
-### Checkpoint B
-- [ ] human visual review with real product media
-- [ ] no placeholder silhouettes remain on approved launch surfaces unless explicitly intentional
+### Checkpoint B — information architecture
+- [ ] approve representative product slugs
+- [ ] approve collection/taxonomy naming
+- [ ] approve editorial ownership rules
+- [ ] no indexable architecture depends on unreviewed POS category names
 
-- [ ] **P7 PDP merchandising redesign**
-  - [ ] gallery + title/copy/price/availability hierarchy
-  - [ ] Size mandatory
-  - [ ] Color hidden when absent
-  - [ ] size guide/care presentation
-  - [ ] Add to Bag authority unchanged
-  - [ ] mobile/desktop purchase regression
+## P8 — Visual foundation
+- [ ] typography/spacing/grid/media ratios/tokens
+- [ ] header/footer/navigation/promotion shell
+- [ ] responsive states
+- [ ] focus/error/loading/empty patterns
+- [ ] no commerce/auth semantics changed
+- [ ] mobile/desktop/a11y shell evidence
 
-- [ ] **P8 Cart + Checkout + Tracking polish**
-  - [ ] visual consistency with storefront
-  - [ ] loading/empty/error/processing states
-  - [ ] cart → checkout → success/tracking browser path
-  - [ ] no new client authority over commerce/order facts
+## P9 — Homepage + Lookbook
+- [ ] remove fake silhouettes/placeholders where real media is available
+- [ ] approved real imagery or deliberate fallback
+- [ ] real featured products
+- [ ] real collection/PDP crawlable links
+- [ ] factual campaign/editorial copy only
+- [ ] visual/a11y regression
 
-## Technical SEO
+## P10 — Shop + Collections + PDP productization
+- [ ] polished product discovery
+- [ ] collection landing routes work
+- [ ] PDP hierarchy uses real media + published content
+- [ ] Size mandatory
+- [ ] Color hidden when product has no color dimension
+- [ ] price/availability remain server-authoritative
+- [ ] breadcrumbs/internal links
+- [ ] mobile/desktop/a11y/purchase-flow evidence
 
-- [ ] **P9 Technical SEO foundation**
-  - [ ] explicit server-owned canonical site origin
-  - [ ] root `metadataBase`/canonical policy
-  - [ ] `src/app/robots.ts`
-  - [ ] `src/app/sitemap.ts`
-  - [ ] noindex utility/private routes
-  - [ ] release preflight validates canonical origin
-  - [ ] OAI-SearchBot remains allowed for public discovery
+## P11 — Cart + Checkout + Tracking polish
+- [ ] consistent launch visual system
+- [ ] explicit empty/error/loading/processing states
+- [ ] no browser authority over price/stock/shipping/order/Pancake IDs
+- [ ] full mobile/desktop buyer-flow regression
+- [ ] existing security/DB/action tests remain green
 
-- [ ] **P10 Dynamic PDP metadata + social cards**
-  - [ ] `generateMetadata()` by product slug
-  - [ ] `seoTitle` / `seoDescription` preferred when present
-  - [ ] factual product-name/editorial fallback
-  - [ ] canonical PDP URL
-  - [ ] OG/Twitter product image or branded fallback
-  - [ ] hidden/non-public catalog data never leaks
+### Checkpoint C — storefront product quality
+- [ ] human review with representative real products/media
+- [ ] approve homepage → collection → PDP → cart → checkout journey
+- [ ] no placeholder-only visual sign-off
 
-- [ ] **P11 Product structured data**
-  - [ ] truthful `Product` + `Offer`
-  - [ ] `ProductGroup`/variant markup only where Size/optional-Color facts are representable truthfully
-  - [ ] structured price/availability comes from same server-authoritative storefront facts
-  - [ ] XSS-safe JSON-LD serialization
-  - [ ] no invented ratings/reviews/GTIN/discount/return/shipping promises
+## P12 — Fail-closed domain/search exposure + technical SEO
+- [ ] explicit canonical site origin
+- [ ] explicit `SEARCH_INDEXING_ENABLED`-style gate or equivalent
+- [ ] `la.lanadesign.vn` defaults non-indexable
+- [ ] dedicated domain required before indexing=true
+- [ ] `metadataBase`/canonical policy
+- [ ] `robots.ts`
+- [ ] `sitemap.ts`
+- [ ] noindex utility/private/search/faceted surfaces
+- [ ] sitemap contains canonical public URLs only
+- [ ] release preflight fails closed on bad domain/index config
+- [ ] HTTP disabled/enabled indexing smoke
 
-### Checkpoint C
-- [ ] production-shaped HTML proves canonical + robots + sitemap + metadata + JSON-LD on real product data
+## P13 — PDP metadata + media SEO
+- [ ] dynamic SEO title
+- [ ] dynamic meta description
+- [ ] canonical URL
+- [ ] Open Graph/Twitter metadata
+- [ ] trusted product social image + branded fallback
+- [ ] descriptive non-stuffed alt conventions
+- [ ] semantic filenames only for website-owned assets/media
+- [ ] do not rewrite remote Pancake filenames through unsafe proxy/storage
+- [ ] metadata/head tests
 
-- [ ] **P12 Faceted crawl control + internal linking**
-  - [ ] arbitrary search/filter/sort URL combinations follow explicit noindex/canonical policy
-  - [ ] stable collection pages have unique title/description/H1
-  - [ ] pagination/internal links expose all intended launch products
-  - [ ] sitemap/canonical/internal links agree on preferred URLs
-  - [ ] URL matrix regression tests
+## P14 — Structured data + breadcrumbs
+- [ ] Product/Offer facts match visible server-authoritative data
+- [ ] ProductGroup/variants only if current official docs support exact model
+- [ ] BreadcrumbList
+- [ ] Organization/WebSite factual entity data
+- [ ] XSS-safe JSON-LD serialization
+- [ ] no invented ratings/GTIN/discount/material/return/shipping promises
+- [ ] schema/domain regression
 
-## GEO / content / entity quality
+## P15 — Crawl/indexation/internal-link architecture
+- [ ] arbitrary filters/sort/search combinations stay out of index
+- [ ] stable collection landing pages are crawlable
+- [ ] intended products reachable through normal links
+- [ ] pagination exposes intended catalog pages
+- [ ] sitemap reacts to public/publish state
+- [ ] inactive/private/utility URLs excluded
+- [ ] canonical/noindex HTTP regression
 
-- [ ] **P13 GEO/content/entity pass**
-  - [ ] consistent LA Clothing brand/entity facts
-  - [ ] approved contact/policy facts visible where applicable
-  - [ ] meaningful product editorial description for launch products
-  - [ ] size guide/care content populated where available
-  - [ ] Breadcrumb/Organization structured data where truthful and useful
-  - [ ] important facts exist in server-rendered text, not only images/client interaction
-  - [ ] intended Google/Bing/OAI search crawlers can access public content
-  - [ ] no AI-only hidden text or fabricated facts
+### Checkpoint D — Deep SEO technical gate
+- [ ] canonical/noindex verified
+- [ ] sitemap verified
+- [ ] PDP metadata verified
+- [ ] breadcrumbs verified
+- [ ] Product JSON-LD verified
+- [ ] staging remains non-indexable
 
-## Live merchandise acceptance
+## P16 — GEO/entity/content quality
+- [ ] visible factual brand/about identity
+- [ ] visible approved COD/shipping facts
+- [ ] product copy grounded in verified/manual facts
+- [ ] collection context readable in HTML
+- [ ] size/care only where known
+- [ ] entity/heading/internal-link consistency
+- [ ] no hidden AI-only content
+- [ ] no fabricated material/fit/origin/policy facts
+- [ ] intended final-domain crawler policy does not block public search crawlers/OAI-SearchBot unless later policy says otherwise
 
-- [ ] **P14 Production catalog/media/content gate**
-  - [ ] deploy/use current Size-required/Color-optional mapping implementation in staging/production-like environment
-  - [ ] run controlled full catalog sync/reconciliation
-  - [ ] every launch product has trusted primary image
-  - [ ] every sellable variant has Size mapping
-  - [ ] product Color dimension is internally consistent when present
-  - [ ] current price resolvable
-  - [ ] availability valid
-  - [ ] acceptable name/slug
-  - [ ] SEO title/description factual
-  - [ ] editorial description present for selected launch products
-  - [ ] incomplete products are held back/unpublished, never filled with invented data
+## P17 — Live catalog/media/content acceptance
+- [ ] safe real catalog resync
+- [ ] every intended sellable product has valid Size mapping
+- [ ] optional Color behavior correct
+- [ ] trusted media or explicitly accepted fallback
+- [ ] readable stable slug
+- [ ] collection assignment
+- [ ] published editorial/SEO state
+- [ ] no private `note` leak
+- [ ] no malformed/unreviewed media leak
+- [ ] acceptance report with non-sensitive counts/IDs
 
-## Final QA and launch
+## P18 — Final visual/search/E2E gate
+- [ ] full CI green
+- [ ] production build/start smoke
+- [ ] mobile + desktop buyer E2E
+- [ ] Axe/keyboard/VoiceOver
+- [ ] metadata/robots/sitemap/schema HTTP inspection
+- [ ] representative home/PLP/PDP performance evidence
+- [ ] 0 Critical / 0 Required review findings
 
-- [ ] **P15 Final visual/search/E2E quality gate**
-  - [ ] exact-head CI green
-  - [ ] mobile + desktop human visual approval
-  - [ ] homepage → collection/shop → PDP → cart → checkout → success/tracking E2E
-  - [ ] Axe/VoiceOver/keyboard checks
-  - [ ] no unexpected console/network errors
-  - [ ] real-image performance measurements; LCP/CLS/INP reviewed
-  - [ ] robots/sitemap/canonical/metadata/JSON-LD verified on exact release SHA
-  - [ ] representative rich-result/schema validation
+## P19 — Dedicated-domain cutover + ship
+- [ ] choose dedicated LA Clothing domain
+- [ ] configure it as sole canonical public origin
+- [ ] TLS/NPM/Caddy/app routing verified
+- [ ] exact approved release SHA deployed
+- [ ] indexing explicitly enabled only after all checks
+- [ ] canonical/OG/schema/sitemap URLs use final domain
+- [ ] `la.lanadesign.vn` remains non-canonical staging or approved redirect
+- [ ] public commerce-route smoke
+- [ ] backup/restore gate closed
+- [ ] SSH hardening gate closed
+- [ ] uptime/backup monitoring gate closed
+- [ ] rollback target verified
+- [ ] final human launch approval
 
-- [ ] **P16 Production promotion + operations closure**
-  - [ ] exact approved SHA deployed through NPM → Caddy → app
-  - [ ] public real-media smoke
-  - [ ] public robots/sitemap/PDP metadata smoke
-  - [ ] off-site backup configured
-  - [ ] successful isolated restore drill recorded
-  - [ ] SSH hardening complete
-  - [ ] external uptime + backup freshness monitoring complete
-  - [ ] previous known-good image/SHA retained for rollback
-  - [ ] docs describe current production truth
+## SEO naming rules
+- [x] Source-code filenames (`page.tsx`, component names) are not renamed for SEO
+- [ ] Product slug format: meaningful lowercase hyphenated Vietnamese-friendly slug
+- [ ] Collection slug format: meaningful canonical category/collection slug
+- [ ] H1/title/meta/alt use natural factual language, not keyword stuffing
+- [ ] Website-owned media/OG filenames may use semantic names
+- [ ] Remote Pancake filenames are not faked/rewritten solely for SEO
 
-## Deferred / not launch blockers unless reactivated
-- [ ] Optional customer account + protected order history
-- [ ] Pancake webhook receiver until auth/replay semantics are verified
-- [ ] Native create-order retry/idempotency behavior until verified
-- [ ] Product reviews/ratings system
-- [ ] Promotion inference from unverified Pancake price-field differences
-- [ ] `llms.txt` or AI-specific hidden content
+## Product-content precedence
+```text
+Pancake source facts
+  → sourceDescription/media/commerce facts (read-only)
+  → website editorial workspace
+  → DRAFT / REVIEWED / PUBLISHED
+  → visible PDP/collection copy + SEO metadata + schema + GEO
+```
 
-## Definition of Done
-A task is complete only when its acceptance criteria pass **and** the project standing DoD passes: correctness, runtime verification, regression tests, quality, integration, current-truth documentation, security, observability/rollback where relevant, and required human review.
+- [x] commerce facts remain server-authoritative
+- [x] published website editorial copy wins for public content
+- [x] `sourceDescription` is input/fallback context, not overwrite authority
+- [x] private `note` is never a fallback
+- [x] missing facts remain missing
+
+## Standing verification / Definition of Done
+For every behavior-changing slice:
+- [ ] focused RED evidence
+- [ ] minimal GREEN implementation
+- [ ] relevant `pnpm test` / `pnpm test:db`
+- [ ] `pnpm lint`
+- [ ] `pnpm typecheck`
+- [ ] `pnpm build`
+- [ ] runtime/browser evidence where relevant
+- [ ] correctness → security → architecture → simplicity → performance review
+- [ ] no unrelated refactor
+- [ ] docs/current truth updated
+- [ ] migration/config/rollback accounted for
+- [ ] human review before merge
+
+## Human checkpoints remaining
+- [ ] visual approval after real media
+- [ ] taxonomy/collection naming approval
+- [ ] editorial publish approval
+- [ ] final dedicated domain choice
+- [ ] final launch approval
+
+**Next `/build` entry point: P0 — safe live Pancake audit.**
