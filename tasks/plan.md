@@ -1,531 +1,501 @@
-# LA Clothing productization plan — media, storefront, SEO/GEO, launch
+# LA Clothing productization plan V2 — product media, content, storefront, Deep SEO/GEO, launch
+
+Status: **FINAL PLAN — awaiting /build execution**
 
 ## Objective
-Turn the existing technically complete commerce foundation into a launch-quality menswear storefront that is visually credible, media-complete, crawlable, understandable by search/AI systems, and safe to operate in production.
+Turn the existing technically mature commerce foundation into a launch-quality LA Clothing storefront that uses real product media, trustworthy product content, stable human-readable URLs, strong merchandising, Deep SEO/GEO foundations, and a dedicated canonical brand domain.
 
-The current `main` is treated as the **technical commerce foundation**, not a finished ecommerce product. Core cart/checkout/Pancake/order tracking/release infrastructure already exists, but the buyer-facing site is still incomplete: product images are not rendered, several editorial surfaces are placeholders, metadata is shallow, and the repository has no complete robots/sitemap/product structured-data/indexation strategy.
+`main` is the technical commerce foundation, not a finished ecommerce product. Core catalog/cart/checkout/Pancake/order tracking/CI/VPS infrastructure already exists. The remaining work is buyer-facing productization and search/entity readiness.
 
-## Current product state
+## Evidence locked before V2
+The supplied Pancake POS OpenAPI is OpenAPI 3.1.0, `Pancake POS Open API` v1.0.0, production server `https://pos.pages.fm/api/v1`.
 
-### Already established
-- Next.js 16.2.11 + React 19.2.0 + PostgreSQL/Prisma commerce foundation.
-- Pancake catalog mirror, stock, price, checkout, one-shot order creation, order-status reconciliation and guest order tracking.
-- Size is required; Color is optional at the product level.
-- Product editorial fields already exist for description, care, size guide, SEO title/description and collection slugs.
-- `VariantMirror.pancakeImageUrls` already stores reviewed external image URL strings.
-- CI, browser/a11y runtime tests, Docker/VPS release tooling and rollback runbooks exist.
+The following semantics are now treated as verified API contract facts:
+- `Product.note` = **Internal note / Ghi chú nội bộ**. It must never be published or used for SEO/GEO.
+- `Product.note_product` = **Product note / Ghi chú sản phẩm**. It is an approved source field for website product-description input.
+- `Product.image` is a URI and `Variation.images[]` is an array of image URIs.
+- the OpenAPI contains no `slug` field; `keyword`, `custom_id`, and `display_id` have different documented meanings and are not SEO slugs.
+- `GET /shops/{SHOP_ID}/categories` exists, but current LA Clothing category-tree quality/coverage is not yet verified. Pancake categories are therefore only a candidate source taxonomy, never automatically the SEO taxonomy.
 
-### Product blockers
-- PLP/PDP still render generated silhouettes instead of product photography.
-- CSP currently allows only local/blob/data images; there is no reviewed remote-image allowlist in Next config.
-- PDP has no per-product dynamic metadata or merchant product JSON-LD.
-- No repository-level `robots.ts` or `sitemap.ts` exists.
-- Search/filter URLs can create many crawlable parameter combinations without an explicit indexation policy.
-- Homepage/lookbook/collections are visual/editorial shells rather than a complete merchandise experience.
-- Product content and merchandising completeness have not been validated product-by-product against the live catalog.
+Repository facts carried forward:
+- `VariantMirror.pancakeImageUrls` already stores variation image URL strings.
+- `ProductContent` already owns `editorialDescription`, `careInstructions`, `sizeGuide`, `seoTitle`, `seoDescription`, and `collectionSlugs`.
+- current mirror slugs are generated as opaque `p-<digest>` values and must be replaced by a website-owned SEO slug lifecycle before public indexing.
+- current CSP allows only local/blob/data images, so remote product media is not yet renderable.
 
-## Product decisions carried forward
-- Own-brand menswear store.
-- Guest COD checkout is primary; account remains optional/deferred.
-- Pancake remains operational source of truth for catalog/order facts.
-- Size is mandatory; Color is optional. A size-only product must not render an empty Color control.
-- Do not infer unverified product facts such as material, fit, promotion, chronology, or return policy from arbitrary Pancake fields.
-- Do not expose exact stock counts to the browser.
-- Do not blind-retry ambiguous Pancake writes.
+## Locked product/content/search decisions
+1. **Pancake remains operational source of truth** for product identity, price, inventory, variants, source note, and source media.
+2. **`note` is private forever.** Parser/tests must make accidental publication difficult.
+3. **`note_product` becomes `sourceDescription`.** It is read-only website input and may change on Pancake sync.
+4. **Website editorial content wins.** Pancake sync never overwrites `editorialDescription`, SEO fields, care, size guide, collection choices, or other website-owned copy.
+5. **No AI auto-publish.** If AI drafting is added later, it consumes only verified facts, produces DRAFT content, and requires review before publish.
+6. **Product images are untrusted external URLs.** No wildcard image proxy/origin. Live LA Clothing image origins must be audited before `next/image`/CSP allowlisting.
+7. **Slug is website-owned and stable.** Product-name/Pancake changes do not silently change a published URL. Explicit slug changes create 301 history.
+8. **SEO taxonomy is website-owned.** Pancake categories may seed/match collections only after live evidence and explicit mapping; an empty/poor POS taxonomy does not block launch.
+9. **`la.lanadesign.vn` is staging/temporary.** It should remain non-indexable. Public SEO launch uses a dedicated LA Clothing domain; the exact domain may be chosen later, but must be fixed before indexing is enabled.
+10. **Utility/faceted URLs are not SEO landing pages by default.** Stable homepage, collection/editorial pages, and public PDPs are the canonical indexable surfaces.
+11. **Deep SEO is factual, not keyword stuffing.** Titles, descriptions, headings, alt text, filenames for website-owned assets, schema, internal links, and copy must describe real content.
+12. **GEO uses the same public factual HTML and structured data as users/search engines.** No hidden AI-only copy and no special AI text file is required for launch.
 
-## Search/GEO principles
-- Use standard crawlable HTML, internal links, metadata and structured data as the foundation; do not make a special AI-only content path.
-- Allow public search crawlers, including OAI-SearchBot, unless an explicit product decision later changes this.
-- Structured data must match visible, server-authoritative content. Never invent reviews, ratings, discounts, GTINs, shipping/return promises or variant facts.
-- Product/search metadata is generated from website-owned content plus verified commerce facts.
-- Faceted/search utility URLs are not treated as landing pages by default. Stable editorial collection/category URLs are the intended indexable discovery pages.
-
-## Image security principles
-- External image URLs are untrusted input even though they originate from Pancake.
-- Do not add a generic image proxy or wildcard remote image host.
-- Review the actual production image host/path patterns first, then allow the smallest HTTPS `remotePatterns` and matching CSP `img-src` entries.
-- Invalid, non-HTTPS, unreviewed-host, duplicate or malformed image URLs fail closed to the existing non-image fallback.
-- Rendering a remote image must not introduce arbitrary server-side URL fetching outside Next.js' reviewed image boundary.
+## Non-goals for this plan
+- no redesign of existing Pancake order/write semantics;
+- no account feature revival;
+- no wildcard remote-image proxy;
+- no automatic scraping/copying Pancake images into new storage solely to rename filenames;
+- no automatic AI-generated material/fit/care claims;
+- no automatic mapping of every POS category/filter into an indexable landing page.
 
 ## Dependency graph
 
 ```text
-P1 image contract/origin evidence
-  -> P2 PLP product images
-  -> P3 PDP gallery
+P0 live evidence
+  -> P1 source contract
+  -> P2 source mirror
+  -> P3 trusted media contract
+  -> P4 real PLP/PDP media
 
-P4 storefront visual foundation
-  -> P5 homepage/lookbook
-  -> P6 shop/collections discovery
-  -> P7 PDP merchandising layout
-  -> P8 cart/checkout/tracking polish
+P2 -> P5 website editorial workflow
+P2 -> P6 SEO slug lifecycle
+P0 -> P7 collection/taxonomy foundation
 
-P1 + P3
-  -> P9 technical SEO foundation
-  -> P10 PDP metadata/social cards
-  -> P11 Product/ProductGroup structured data
+P4 -> P8 visual foundation
+P4 + P8 -> P9 homepage/lookbook
+P4 + P5 + P7 + P8 -> P10 shop/collection/PDP merchandising
+P8 + P10 -> P11 cart/checkout/tracking polish
 
-P6 + P9
-  -> P12 crawl/indexation + internal-link architecture
+P6 + P7 -> P12 search exposure/domain/technical SEO
+P4 + P5 + P6 + P12 -> P13 PDP metadata + media SEO
+P10 + P13 -> P14 structured data + breadcrumbs
+P7 + P12 + P14 -> P15 crawl/indexation/internal links
+P5 + P9 + P10 + P13 + P14 + P15 -> P16 GEO/entity/content quality
 
-P5 + P6 + P7 + P10 + P11 + P12
-  -> P13 GEO/content/entity pass
-  -> P14 live catalog/media/content acceptance
-  -> P15 final visual/search/E2E quality gate
-  -> P16 production promotion + operations gate
+P16 -> P17 live catalog/content acceptance
+P17 -> P18 final visual/search/E2E gate
+P18 -> P19 dedicated-domain cutover + ship
 ```
 
-P4 may begin after P1 is specified, but final visual sign-off must use real product images from P2/P3 rather than silhouettes.
+P8 visual work can start after P3 is specified, but final sign-off must use real media. P12 can be built while still on `la.lanadesign.vn`, but indexing remains fail-closed until the dedicated domain is configured.
 
 ---
 
-## Task P1 — Establish the trusted product-image contract
-
-**Description:** Convert persisted Pancake image strings into a narrow storefront image contract. Review real production URL host/path patterns, normalize only valid HTTPS URLs, remove duplicates deterministically and expose product-level primary/gallery image facts without fetching the remote resource.
+## Task P0 — Run a safe live Pancake content/media/taxonomy audit
+**Description:** Add/use a read-only trusted-local probe that reports only safe aggregate evidence needed by V2: `note_product` population coverage, unique image origins/path shapes, and category-tree/category-assignment coverage. Never emit API keys, full image URLs, product notes, customer data, exact inventory, or raw catalog payloads.
 
 **Acceptance criteria:**
-- [ ] only reviewed HTTPS origin/path patterns become renderable storefront images;
-- [ ] malformed, duplicate, non-HTTPS and unreviewed URLs fail closed without breaking the product page;
-- [ ] product primary/gallery selection is deterministic across repeated catalog reads.
+- [ ] know whether `note_product` is materially populated in the LA Clothing catalog;
+- [ ] know the exact image origins/path patterns needed for current catalog media;
+- [ ] know whether the current Pancake category tree is usable, partial, empty, or unsuitable for SEO mapping.
 
 **Verification:**
-- [ ] RED/GREEN domain tests for URL validation/deduplication/selection;
-- [ ] existing catalog/domain suites remain green;
-- [ ] trusted production evidence records only host/path shape, not secrets or customer data.
+- [ ] focused tests prove sanitized output and bounded traversal;
+- [ ] trusted-local live run is read-only and emits no secret/raw content;
+- [ ] evidence is recorded only as reviewed aggregate shape/coverage.
 
 **Dependencies:** None.
 
-**Files likely touched:**
-- `src/commerce/storefront-product-images.ts`
-- `src/commerce/storefront-catalog.ts` or existing projection module
-- `tests/domain/storefront-product-images.test.ts`
-- `docs/integrations/pancake.md`
+**Files likely touched:** `scripts/`, one Pancake inspection helper, one focused test, `docs/integrations/pancake.md`.
 
 **Estimated scope:** Medium.
 
-## Task P2 — Render real product photography on PLP/cards
-
-**Description:** Replace product-card silhouettes with `next/image` using P1's safe primary image contract. Add the minimum reviewed `images.remotePatterns` and CSP `img-src` configuration. Keep a deliberate non-image fallback for products whose media is missing or rejected.
+## Task P1 — Extend the reviewed Pancake catalog source contract
+**Description:** Extend the internal catalog adapter only with documented source fields needed by productization: `product.note_product` and `product.image`. Keep `product.note` explicitly ignored/private. Do not infer taxonomy object semantics from opaque `product.categories` until P0/live evidence supports them.
 
 **Acceptance criteria:**
-- [ ] cards with a trusted image render real photography with descriptive alt text and stable aspect ratio;
-- [ ] missing/rejected media renders an intentional fallback without broken-image UI;
-- [ ] Next image allowlist and CSP contain only reviewed origins/patterns, never broad wildcards.
+- [ ] parser returns `sourceDescription` from `note_product` and product primary-image source URI;
+- [ ] malformed mapped values fail closed;
+- [ ] no internal/public contract exposes `note`.
 
 **Verification:**
-- [ ] component/domain regression proves image/fallback choice;
-- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build`;
-- [ ] browser check at mobile + desktop: no CLS-inducing layout jump, no failed image/CSP requests, no horizontal overflow.
+- [ ] RED/GREEN parser fixtures/tests;
+- [ ] reviewed-key/live contract verifier still passes;
+- [ ] security review confirms private note cannot reach storefront projection.
+
+**Dependencies:** P0 evidence shape known.
+
+**Files likely touched:** Pancake catalog contract, reviewed fixture, parser tests, integration doc.
+
+**Estimated scope:** Medium.
+
+## Task P2 — Persist source description and product-level media without overwriting editorial content
+**Description:** Extend the mirror so Pancake-owned source content/media sync independently from website-owned `ProductContent`. Repeated sync updates source fields but preserves all editorial/SEO fields.
+
+**Acceptance criteria:**
+- [ ] `sourceDescription` and source primary-image URI converge idempotently with Pancake sync;
+- [ ] website-owned content survives repeated sync and source-note changes unchanged;
+- [ ] stale/deactivated products preserve deliberate existing mirror behavior.
+
+**Verification:**
+- [ ] migration-from-empty + PostgreSQL integration tests;
+- [ ] regression: Pancake source change cannot overwrite `ProductContent`;
+- [ ] existing catalog sync tests remain green.
 
 **Dependencies:** P1.
 
-**Files likely touched:**
-- `src/components/commerce/storefront-product-card.tsx`
-- `next.config.mjs`
-- relevant storefront projection/test file
-- `tests/a11y-runtime/editorial.spec.ts` or dedicated storefront media spec
+**Files likely touched:** Prisma schema/migration, catalog mirror repository, one DB test file, generated client as required.
 
 **Estimated scope:** Medium.
 
-### Checkpoint A
-Do not continue to the PDP gallery until P1/P2 are reviewed for correctness + security and browser evidence proves the configured production-shaped image origin works.
+### Checkpoint A — source trust boundary
+Do not begin editorial automation or media rendering until P0–P2 have 0 Critical / 0 Required findings. `note` must remain private and website-owned content must be proven sync-safe.
 
-## Task P3 — Build a real PDP image gallery
-
-**Description:** Replace the PDP silhouette with a product gallery driven by P1. Support primary image plus additional unique gallery images, keyboard-accessible selection, responsive presentation and safe fallback when only one/no image exists.
+## Task P3 — Establish the trusted product-image contract
+**Description:** Build a pure storefront media resolver over product-level and variation-level image URIs. Validate HTTPS, exact reviewed origins/path patterns from P0, bounded URL length, deterministic dedupe/order, and primary/gallery selection. No arbitrary server-side fetcher.
 
 **Acceptance criteria:**
-- [ ] PDP renders one or more trusted product images without exposing raw external URL internals as UI;
-- [ ] gallery controls are keyboard/screen-reader usable and do not exist when there is nothing to select;
-- [ ] product without trusted images remains usable and purchasable when all other commerce rules pass.
+- [ ] only reviewed HTTPS media patterns become renderable;
+- [ ] malformed, duplicate, non-HTTPS, credential-bearing, or unreviewed URLs fail closed;
+- [ ] primary/gallery selection is deterministic and uses product image plus variation images without duplication.
 
 **Verification:**
-- [ ] focused gallery behavior tests;
-- [ ] browser mobile/desktop + keyboard + Axe/VoiceOver regression;
-- [ ] image network failures do not break variant selection/Add to Bag.
+- [ ] RED/GREEN domain tests for trust/dedupe/order/error cases;
+- [ ] security review covers SSRF/open-proxy risks;
+- [ ] production-shaped origins from P0 are represented narrowly, not by wildcard.
 
-**Dependencies:** P1, P2.
+**Dependencies:** P2, P0 image-origin evidence.
 
-**Files likely touched:**
-- `src/app/shop/[slug]/page.tsx`
-- `src/components/commerce/product-gallery.tsx`
-- `tests/a11y-runtime/storefront-commerce.spec.ts`
-- one focused domain/component test file if needed
+**Files likely touched:** new storefront media helper, storefront projection, domain test, integration/security doc.
 
 **Estimated scope:** Medium.
 
-## Task P4 — Rebaseline the storefront visual system
-
-**Description:** Define the launch visual language for LA Clothing using the already approved minimal menswear direction: typography scale, spacing, grid, surfaces, buttons, media ratios, focus states and responsive rules. Update shared header/footer/layout primitives without changing commerce behavior.
+## Task P4 — Render real product media on cards and PDP gallery
+**Description:** Replace silhouettes on product cards and PDP with `next/image` driven by P3. Configure minimal `images.remotePatterns` and matching CSP `img-src`. Add accessible responsive gallery and intentional fallback.
 
 **Acceptance criteria:**
-- [ ] shared visual tokens and primitives produce a coherent mobile/desktop shell;
-- [ ] navigation, promotion bar, header/footer and focus treatment are consistent and accessible;
-- [ ] no commerce/auth/API semantics change in this slice.
+- [ ] PLP/home cards render trusted primary photography with meaningful alt text;
+- [ ] PDP renders accessible primary/additional images, with no redundant gallery controls for one image;
+- [ ] missing/rejected media leaves product browsing/purchase usable and never shows a broken-image surface.
 
 **Verification:**
-- [ ] lint/typecheck/build;
-- [ ] browser 390px and >=1280px shell review;
-- [ ] keyboard focus order + selected Axe checks.
+- [ ] focused render/fallback tests;
+- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build`;
+- [ ] mobile/desktop browser + network/CSP + Axe/keyboard/VoiceOver evidence.
 
-**Dependencies:** P1 specified; may run in parallel with P2/P3.
+**Dependencies:** P3.
 
-**Files likely touched:**
-- `src/app/globals.css`
-- `src/app/layout.tsx`
-- `src/components/layout/site-header.tsx`
-- `src/components/layout/site-footer.tsx`
-- one browser regression file
+**Files likely touched:** product card, product gallery/PDP, `next.config.mjs`, one browser spec, one focused test.
+
+**Estimated scope:** Medium; split card and gallery into separate PRs if >5 files.
+
+## Task P5 — Formalize website-owned product editorial workflow
+**Description:** Keep `sourceDescription` read-only and show it to admin as source context. Strengthen website-owned content with explicit publication state and concise product-copy fields needed by storefront/SEO. Optional facts such as material/fit remain nullable and manual unless a verified source is added later.
+
+**Acceptance criteria:**
+- [ ] admin can see source description but edits only website-owned fields;
+- [ ] public storefront consumes only published/approved editorial content, with factual fallbacks;
+- [ ] source sync never auto-publishes or replaces editorial/SEO copy.
+
+**Verification:**
+- [ ] admin authorization/input tests;
+- [ ] DB tests for DRAFT/REVIEWED/PUBLISHED behavior if status is added;
+- [ ] browser/admin regression and no source/private note leakage.
+
+**Dependencies:** P2.
+
+**Files likely touched:** ProductContent schema/migration if needed, admin service/repository, admin page/form, tests.
+
+**Estimated scope:** Medium; split schema/service and UI if needed.
+
+## Task P6 — Replace opaque product URLs with a stable website-owned SEO slug lifecycle
+**Description:** Keep Pancake product ID as stable identity while making `ProductMirror.slug` human-readable. Generate an initial slug from product name only as a website-owned bootstrap, freeze it after publication, support explicit admin change, and retain old slugs for permanent redirects. Never derive URL identity from `keyword`, `custom_id`, or `display_id`.
+
+**Acceptance criteria:**
+- [ ] current `p-<digest>` products receive deterministic readable unique slugs before indexing;
+- [ ] future Pancake name changes do not silently change public URLs;
+- [ ] explicit slug changes preserve previous slug → canonical slug 301 behavior.
+
+**Verification:**
+- [ ] slug normalization/collision/Unicode tests;
+- [ ] migration/redirect-history DB tests;
+- [ ] HTTP regression for old-slug 301, current-slug 200, unknown 404.
+
+**Dependencies:** P2.
+
+**Files likely touched:** Prisma schema/migration, slug service/repository, PDP route resolution, focused tests.
+
+**Estimated scope:** Medium; split persistence and HTTP redirects if >5 files.
+
+## Task P7 — Establish website-owned collection/taxonomy foundations
+**Description:** Create stable collection landing definitions with website-owned slug/title/description/SEO state and product membership. P0 determines whether Pancake categories can be mapped as optional source hints; no automatic `POS category = SEO collection` rule.
+
+**Acceptance criteria:**
+- [ ] owner can maintain canonical collections even when Pancake categories are empty/poor;
+- [ ] every published collection has stable slug, visible heading/copy, and deterministic product membership;
+- [ ] optional Pancake category mapping is explicit by ID and cannot auto-publish a collection.
+
+**Verification:**
+- [ ] repository/admin tests for collection definitions/membership;
+- [ ] duplicate/invalid slug and stale mapping fail safely;
+- [ ] browser route shows products or intentional empty state.
+
+**Dependencies:** P0; can proceed manually if category evidence is unusable.
+
+**Files likely touched:** collection model/config/repository, admin surface, collection route, one DB/domain test.
+
+**Estimated scope:** Medium; split admin and public route if required.
+
+### Checkpoint B — information architecture
+Before Deep SEO, human review confirms product slug examples, collection taxonomy, and editorial ownership. No indexable URL architecture should depend on unreviewed POS category names.
+
+## Task P8 — Rebaseline the storefront visual system
+**Description:** Finalize LA Clothing's minimal/editorial menswear visual system: typography, spacing, grid, media ratios, navigation, controls, focus states, responsive behavior, loading/empty/error patterns. Do not change commerce authority semantics.
+
+**Acceptance criteria:** coherent mobile/desktop shell; accessible controls/focus; no unrelated commerce/auth/API changes.
+
+**Verification:** lint/typecheck/build; browser 390px + desktop review; Axe/keyboard checks.
+
+**Dependencies:** P3 specified; may run in parallel with P4–P7.
+
+**Files likely touched:** global CSS, layout, header, footer, one browser spec.
 
 **Estimated scope:** Medium.
 
-## Task P5 — Redesign homepage and lookbook around real merchandise
+## Task P9 — Redesign homepage and lookbook with real merchandise
+**Description:** Replace abstract placeholders with approved real media, real featured products/collections, crawlable links, and factual brand/editorial copy.
 
-**Description:** Replace abstract campaign silhouettes with real approved brand/product imagery and rebuild the homepage/lookbook hierarchy around collection story, featured products and crawlable links to real merchandise. Keep editorial claims factual and website-owned.
+**Acceptance criteria:** real or intentional fallback media; real links to public collections/PDPs; no invented season/material/newness claims.
 
-**Acceptance criteria:**
-- [ ] hero/editorial sections use real approved imagery or a deliberate media-empty state, not fake garment silhouettes;
-- [ ] featured products link through real anchor URLs to live PDPs/collections;
-- [ ] no unsupported “new”, season, material or campaign claim is generated from Pancake data.
+**Verification:** mobile/desktop visual pass; broken-link/image check; accessibility regression.
 
-**Verification:**
-- [ ] browser visual pass mobile/desktop;
-- [ ] no broken links/images, overflow or Axe A/AA regression;
-- [ ] homepage remains useful when featured catalog/media is temporarily unavailable.
+**Dependencies:** P4, P7, P8.
 
-**Dependencies:** P2, P4.
-
-**Files likely touched:**
-- `src/app/page.tsx`
-- `src/app/lookbook/page.tsx`
-- `src/app/globals.css`
-- `tests/a11y-runtime/editorial.spec.ts`
+**Files likely touched:** homepage, lookbook, shared editorial styles/components, browser spec.
 
 **Estimated scope:** Medium.
 
-## Task P6 — Turn Shop and Collections into merchandise discovery surfaces
+## Task P10 — Productize Shop, Collections, and PDP merchandising
+**Description:** Polish discovery and PDP hierarchy around real media, published copy, price/availability, mandatory Size, optional Color, size guide/care, breadcrumbs, and meaningful internal links.
 
-**Description:** Polish PLP discovery and replace static collection shells with real collection landing/browse behavior backed by website-owned `collectionSlugs`. Fix or remove links whose query parameters do not map to an implemented discovery contract.
+**Acceptance criteria:** all visible collection links resolve; size/color purchase rules remain unchanged; missing copy/media degrade intentionally.
+
+**Verification:** existing commerce/domain tests; browser navigation/filter/purchase flow; mobile/desktop/a11y evidence.
+
+**Dependencies:** P4, P5, P7, P8.
+
+**Files likely touched:** shop page, collection page, PDP, purchase panel/styles, browser spec.
+
+**Estimated scope:** split PLP/collections and PDP into separate PRs if >5 files.
+
+## Task P11 — Polish cart, checkout, success, and tracking
+**Description:** Apply the launch visual system to the existing safe buyer journey without changing price/stock/shipping/order/Pancake trust boundaries.
+
+**Acceptance criteria:** consistent buyer journey; explicit loading/error/empty states; no new client authority over commerce facts.
+
+**Verification:** existing DB/security/action tests; mobile/desktop full-flow browser regression; console/network error review.
+
+**Dependencies:** P8, P10.
+
+**Files likely touched:** cart/checkout/success/tracking presentation files and one browser spec.
+
+**Estimated scope:** Medium; split if needed.
+
+### Checkpoint C — storefront product quality
+Human visual review must use representative real catalog/media and approve homepage → collection → PDP → cart → checkout before search launch work is called ready.
+
+## Task P12 — Add fail-closed domain/search exposure and technical SEO foundation
+**Description:** Introduce explicit canonical origin + explicit indexing flag. `la.lanadesign.vn` remains staging/temporary and non-indexable. Add metadata base, robots/sitemap conventions, and utility-route noindex. Indexing can be enabled only when the dedicated LA Clothing domain is configured and release preflight passes.
+
+**Indexable when enabled:** homepage, published collections/editorial pages, public active PDPs, deliberately indexable Shop pages.
+
+**Noindex/excluded:** admin, account, cart, checkout/success, tracking result flows, APIs, search result pages, arbitrary filter/sort combinations.
 
 **Acceptance criteria:**
-- [ ] every visible category/collection link resolves to a real browse state with products or an intentional empty state;
-- [ ] collection pages are reachable through normal `<a href>` links and can lead crawlers/users to all intended product pages;
-- [ ] filter controls remain server-authoritative and do not create contradictory variant combinations.
+- [ ] canonical URLs never trust arbitrary request Host headers;
+- [ ] staging defaults to `noindex`/non-discovery and cannot accidentally emit final canonicals;
+- [ ] final-domain release requires explicit configured origin + indexing enablement and sitemap points only to canonical public URLs.
 
 **Verification:**
-- [ ] DB/domain tests for collection discovery and same-variant filters;
-- [ ] browser navigation/filter/pagination regression;
-- [ ] mobile/desktop visual + accessibility pass.
+- [ ] focused metadata/robots/sitemap/indexing-policy tests;
+- [ ] production-start HTTP head/header smoke for indexing disabled/enabled modes;
+- [ ] release preflight fails closed on missing/mismatched final-domain configuration.
 
-**Dependencies:** P2, P4.
+**Dependencies:** P6, P7. Exact dedicated domain required only before enabling indexing, not before implementing this task.
 
-**Files likely touched:**
-- `src/app/shop/page.tsx`
-- `src/app/collections/page.tsx` and/or `src/app/collections/[slug]/page.tsx`
-- existing storefront discovery runtime/repository file
-- one DB/domain test file
-- one browser regression file
-
-**Estimated scope:** Medium; split into collection route and PLP polish if more than five files are required.
-
-### Checkpoint B
-After P3–P6, run a human visual review using real production-shaped products/images. Do not approve a later SEO/GEO launch plan against placeholder visuals.
-
-## Task P7 — Redesign PDP merchandising/content hierarchy
-
-**Description:** Recompose the product page around gallery, product title, factual editorial description, price, availability, mandatory Size, optional Color, Add to Bag, size guide and care. Preserve server-side purchase authorization.
-
-**Acceptance criteria:**
-- [ ] Size is always required for purchase; Color is rendered only when the product has a color dimension;
-- [ ] gallery, product copy, price/availability and purchase controls form a coherent mobile/desktop hierarchy;
-- [ ] missing editorial fields degrade gracefully without invented text.
-
-**Verification:**
-- [ ] existing size-only and Color×Size regressions stay green;
-- [ ] browser purchase flow with real media at 390px and desktop;
-- [ ] keyboard/VoiceOver/Axe checks for gallery + purchase controls.
-
-**Dependencies:** P3, P4.
-
-**Files likely touched:**
-- `src/app/shop/[slug]/page.tsx`
-- `src/components/commerce/product-purchase-panel.tsx`
-- `src/app/globals.css`
-- `tests/a11y-runtime/storefront-commerce.spec.ts`
+**Files likely touched:** layout/SEO config, `robots.ts`, `sitemap.ts`, release validation, tests.
 
 **Estimated scope:** Medium.
 
-## Task P8 — Polish cart, checkout and tracking as one buyer journey
-
-**Description:** Apply the launch visual system to cart, guest COD checkout, success and tracking while keeping the already-reviewed server trust boundaries unchanged.
-
-**Acceptance criteria:**
-- [ ] cart → checkout → success/tracking feels visually consistent with PLP/PDP;
-- [ ] error/loading/empty/processing states remain explicit and safe;
-- [ ] no new browser authority over price, stock, shipping, order state or Pancake identifiers.
-
-**Verification:**
-- [ ] existing DB/security/action tests remain green;
-- [ ] browser full purchase-path regression mobile + desktop;
-- [ ] no console/network >=400 regressions except deliberately tested error paths.
-
-**Dependencies:** P4, P7.
-
-**Files likely touched:**
-- `src/app/cart/page.tsx`
-- `src/app/checkout/page.tsx`
-- checkout success/tracking presentation file
-- `src/app/globals.css`
-- `tests/a11y-runtime/storefront-commerce.spec.ts`
-
-**Estimated scope:** Medium; split if visual changes exceed five files.
-
-## Task P9 — Add technical SEO foundation
-
-**Description:** Establish one server-owned canonical site origin and Next.js metadata-file conventions. Add `metadataBase`, canonical defaults, `robots.ts`, `sitemap.ts`, and route-level `noindex` for utility/private surfaces. Do not expose secrets or couple canonical URLs to request-supplied Host headers.
-
-**Index policy:**
-- Index: homepage, Shop root, stable collection landing pages, Lookbook/editorial pages intended for discovery, sellable/public PDPs.
-- Noindex: account, admin, cart, checkout/success, track-order result flow, internal API routes, search result pages and arbitrary faceted/sort query combinations by default.
+## Task P13 — Add product-specific metadata and media SEO
+**Description:** Generate product-specific title, meta description, canonical, Open Graph/Twitter image and descriptive alt conventions from website-owned SEO/editorial content with factual fallbacks. For remote Pancake images, do not pretend filenames are website-owned. Semantic filenames apply to website-owned assets/OG outputs and any future owned media storage only.
 
 **Acceptance criteria:**
-- [ ] canonical URLs are generated from an explicit configured production origin;
-- [ ] `robots.txt` references the sitemap and does not block intended public PDP/collection crawling or OAI-SearchBot;
-- [ ] sitemap contains only intended canonical public URLs and excludes utility/private/faceted URLs.
+- [ ] every public PDP has unique factual title/description/canonical;
+- [ ] trusted product image is used for social preview when available, branded fallback otherwise;
+- [ ] title/description/alt text remain readable and do not keyword-stuff or invent product facts.
 
-**Verification:**
-- [ ] metadata/robots/sitemap focused tests or production-start HTTP smoke;
-- [ ] build output and live HTML/head inspection;
-- [ ] malformed/missing canonical-origin production configuration fails closed in release preflight.
+**Verification:** metadata unit tests; rendered head inspection; social image resolution; representative copy review.
 
-**Dependencies:** P6; can begin earlier after public route policy is agreed.
+**Dependencies:** P4, P5, P6, P12.
 
-**Files likely touched:**
-- `src/app/layout.tsx`
-- `src/app/robots.ts`
-- `src/app/sitemap.ts`
-- release/environment validation module + test
-- relevant metadata test file
+**Files likely touched:** PDP metadata helper/page, OG asset/route, focused tests.
 
 **Estimated scope:** Medium.
 
-## Task P10 — Add dynamic PDP metadata and social sharing
+## Task P14 — Add truthful ecommerce structured data and breadcrumbs
+**Description:** Render XSS-safe JSON-LD using the same server-authoritative facts visible on the page. Use Product/Offer and ProductGroup/variant modeling only where current official search documentation supports the exact visible model. Add BreadcrumbList and Organization/WebSite entity data where factual.
 
-**Description:** Use `generateMetadata()` on `/shop/[slug]` to produce product-specific title, description, canonical, Open Graph/Twitter metadata and trusted product image. Prefer website-owned `seoTitle`/`seoDescription`, then factual fallback to product name/editorial description.
+**Acceptance criteria:** schema facts match visible product facts; no invented rating/GTIN/discount/material/return/shipping promises; structured text cannot break out of JSON-LD.
 
-**Acceptance criteria:**
-- [ ] every public PDP has unique factual title/description/canonical based on the configured site origin;
-- [ ] trusted primary product image is used for social metadata when available; otherwise a branded fallback is used;
-- [ ] nonexistent/non-public product metadata does not leak hidden catalog data.
+**Verification:** domain tests compare page facts vs schema; malicious-text serialization regression; current official structured-data validation during launch QA.
 
-**Verification:**
-- [ ] focused metadata tests for custom/fallback/missing product states;
-- [ ] rendered HTML head inspection on representative PDPs;
-- [ ] social image URLs resolve successfully in production-shaped runtime.
+**Dependencies:** P10, P13.
 
-**Dependencies:** P3, P9.
-
-**Files likely touched:**
-- `src/app/shop/[slug]/page.tsx`
-- shared SEO/product metadata helper
-- optional `src/app/opengraph-image.tsx` or branded static OG asset
-- one focused test file
+**Files likely touched:** structured-data helpers, PDP/layout, focused tests.
 
 **Estimated scope:** Medium.
 
-## Task P11 — Add truthful ecommerce structured data
+## Task P15 — Control faceted crawling, sitemap coverage, and internal linking
+**Description:** Keep arbitrary query/filter/sort/search combinations out of the index while exposing stable collection pages, pagination, breadcrumbs, homepage/collection/PDP links, and only canonical public URLs in sitemap.
 
-**Description:** Render sanitized JSON-LD for sellable PDPs using `Product`/`Offer`, and use `ProductGroup`/variants only where the visible Size/optional-Color model can be represented truthfully. Structured data consumes the same resolved price/availability/image facts as the page.
+**Acceptance criteria:** no faceted URL explosion; intended products are crawlable through normal links; sitemap excludes inactive/private/utility URLs and updates when publish state changes.
 
-**Acceptance criteria:**
-- [ ] JSON-LD never publishes a price/availability/variant that the page cannot support;
-- [ ] dynamic strings are serialized with an XSS-safe JSON-LD boundary;
-- [ ] no review/rating/GTIN/discount/return/shipping promise is invented when the source is absent or unverified.
+**Verification:** URL-policy domain tests; HTTP head/canonical/noindex smoke; crawl-link inspection across homepage → collection → PDP.
 
-**Verification:**
-- [ ] domain tests compare structured-data facts with storefront facts;
-- [ ] malformed/external text regression covers JSON-LD escaping;
-- [ ] validate representative rendered markup with current Google Rich Results / schema validation during launch QA.
+**Dependencies:** P7, P12, P14.
 
-**Dependencies:** P3, P7, P10.
-
-**Files likely touched:**
-- shared product structured-data helper
-- `src/app/shop/[slug]/page.tsx`
-- one domain test file
-- browser/HTTP metadata smoke if needed
+**Files likely touched:** discovery URL policy, shop/collection metadata, sitemap/internal-link components, focused tests.
 
 **Estimated scope:** Medium.
 
-### Checkpoint C
-SEO foundation is not “done” until a production-shaped build proves canonical, robots, sitemap, PDP metadata and JSON-LD from the same real product data used by the UI.
+### Checkpoint D — Deep SEO technical gate
+Before GEO/content scale-up: verify final URL model, canonical/noindex behavior, sitemap, PDP metadata, breadcrumbs, and Product JSON-LD in a production-shaped build. Staging must still be non-indexable.
 
-## Task P12 — Control faceted crawling and strengthen internal linking
-
-**Description:** Define which discovery URLs are indexable. Keep arbitrary query/filter/sort/search combinations out of the index while providing stable crawlable collection pages and pagination links that expose intended products.
-
-**Acceptance criteria:**
-- [ ] search/facet/sort utility combinations emit the agreed noindex/canonical policy rather than becoming thousands of index candidates;
-- [ ] indexable collection pages have unique title/description/H1 and direct links to member PDPs;
-- [ ] sitemap/canonical/internal links consistently point to the same preferred URLs.
-
-**Verification:**
-- [ ] URL-matrix tests cover root shop, pagination, collection landing, search and combined facets;
-- [ ] rendered head/canonical checks for each matrix class;
-- [ ] crawl-style link inspection proves intended PDPs are reachable without submitting a search form.
-
-**Dependencies:** P6, P9.
-
-**Files likely touched:**
-- storefront discovery metadata helper
-- `src/app/shop/page.tsx`
-- collection route/page
-- `src/app/sitemap.ts`
-- one focused test file
-
-**Estimated scope:** Medium.
-
-## Task P13 — GEO/content/entity pass
-
-**Description:** Make LA Clothing and its products easy for search and generative systems to understand using factual visible content, not AI-only text. Add consistent brand/entity facts, breadcrumb/organization markup where supported, and complete existing product editorial fields for launch products.
+## Task P16 — Build GEO/entity/content quality surfaces
+**Description:** Make LA Clothing and its products understandable from public factual text: brand/about identity, COD/shipping facts already approved, product editorial facts, size/care where known, collection context, and consistent Organization/WebSite/Product relationships. Do not create hidden AI-only pages. Public final domain should not block intended search crawlers including OAI-SearchBot unless a later policy explicitly changes this.
 
 **Acceptance criteria:**
-- [ ] brand name, site identity, contact/policy facts that are actually approved are consistently visible and machine-readable where appropriate;
-- [ ] launch PDPs contain meaningful factual descriptions plus available size-guide/care information instead of generic placeholders;
-- [ ] content is reachable in server-rendered HTML and internal links; no required fact exists only inside an image or client interaction.
+- [ ] key brand/product/commercial facts exist in visible crawlable HTML;
+- [ ] public content has clear entity names, headings, internal links, and factual consistency with structured data;
+- [ ] unknown material/fit/care/origin/policy claims remain absent rather than generated.
 
-**Verification:**
-- [ ] content completeness report for launch products/collections;
-- [ ] server-rendered HTML inspection without relying on client-only execution;
-- [ ] robots/WAF check confirms intended Google/Bing/OAI search crawlers can access public content.
+**Verification:** content inventory; rendered HTML/entity/schema consistency review; crawl policy smoke on final-domain configuration.
 
-**Dependencies:** P5, P6, P7, P9–P12.
+**Dependencies:** P5, P9, P10, P13–P15.
 
-**Files likely touched:**
-- website-owned editorial/admin content paths as needed
-- shared Organization/Breadcrumb JSON-LD helper if approved
-- relevant public content page(s)
-- focused structured-data/content tests
+**Files likely touched:** public brand/content pages, product/collection content, entity helpers, tests/docs.
 
-**Estimated scope:** Medium per slice. Product-copy entry is operational content work and must be batched separately from code.
+**Estimated scope:** Medium per slice; content entry is batched separately from code.
 
-## Task P14 — Run live catalog/media/content acceptance
-
-**Description:** On a production-like environment, sync the real Pancake catalog with the Size-required/Color-optional mapper, then produce an explicit launch readiness report per product rather than silently publishing incomplete inventory.
-
-**Launch product checks:**
-- trusted primary image exists;
-- Size mapping exists for every sellable variant;
-- Color mapping is either consistently present as a dimension or consistently absent for the product;
-- current price is resolvable;
-- stock/availability is valid;
-- product name/slug is acceptable;
-- PDP metadata has a factual title/description;
-- editorial description is present for products selected for launch.
+## Task P17 — Run live catalog/media/content acceptance
+**Description:** Resync the real Pancake catalog and audit every intended public product for sellability, source description, trusted images, readable slug, collection assignment, published editorial/SEO state, and safe variant mapping.
 
 **Acceptance criteria:**
-- [ ] no `MAPPING_REQUIRED` product is accidentally presented as purchasable;
-- [ ] launch set has no missing required image/size/price/content gate;
-- [ ] incomplete products are explicitly unpublished/held back rather than filled with invented data.
+- [ ] every intended sellable product has valid Size mapping and optional Color behavior;
+- [ ] every public PDP has either trusted media or an explicitly accepted fallback, readable slug, metadata and collection path;
+- [ ] no private `note`, malformed media, unsupported source claim, or inactive product leaks publicly.
 
-**Verification:**
-- [ ] controlled catalog sync/reconciliation evidence;
-- [ ] generated non-secret completeness report/counts;
-- [ ] manual spot-check of representative size-only and Color×Size products.
+**Verification:** safe catalog resync; acceptance report with counts/non-sensitive IDs; representative browser PDP checks and targeted fixes.
 
-**Dependencies:** P1–P13.
+**Dependencies:** P16.
 
-**Files likely touched:**
-- preferably no production-code change; use existing admin/sync paths;
-- optional bounded launch-audit script + test if manual reporting is too error-prone;
-- operations documentation.
+**Files likely touched:** preferably none; fixes become narrowly scoped follow-up PRs.
 
-**Estimated scope:** Small/Medium depending on whether an audit command is needed.
+**Estimated scope:** Operational/content QA.
 
-## Task P15 — Final visual, accessibility, performance and search QA
+## Task P18 — Final visual, accessibility, SEO and commerce E2E gate
+**Description:** Test the complete production candidate across mobile/desktop buyer flows, media, accessibility, metadata/indexation, structured data, performance-critical images, and commerce behavior.
 
-**Description:** Run the release candidate through representative real-product buyer journeys and search-surface verification. Fix evidence-backed issues only; avoid unrelated redesign after the candidate is frozen.
+**Acceptance criteria:** 0 Critical/Required review findings; no broken media/links; critical buyer and search surfaces pass release criteria.
 
-**Acceptance criteria:**
-- [ ] mobile and desktop homepage → collection/shop → PDP → cart → checkout → success/tracking flows are visually approved with real images/data;
-- [ ] accessibility, console/network, image loading and security checks pass;
-- [ ] SEO URL matrix, sitemap, robots, canonical, product metadata and structured data are correct on the exact release SHA.
+**Verification:** full CI; production build/start smoke; browser E2E + Axe/keyboard/VoiceOver; SEO/robots/sitemap/schema HTTP inspection; performance evidence for representative home/PLP/PDP.
 
-**Verification:**
-- [ ] repository CI + browser/VoiceOver/Axe on exact head;
-- [ ] performance measurements with real images (LCP/CLS/INP or current project-approved CWV checks) and no obvious image payload regression;
-- [ ] external Rich Results/Search inspection where applicable;
-- [ ] manual visual approval is a required human gate.
+**Dependencies:** P17.
 
-**Dependencies:** P14.
+**Files likely touched:** tests/docs only unless defects are found.
 
-**Files likely touched:** only evidence-driven fixes discovered by QA; each fix remains its own small PR/slice.
+**Estimated scope:** Verification gate.
 
-**Estimated scope:** Checkpoint, not a single implementation PR.
-
-## Task P16 — Promote the approved productized release
-
-**Description:** Only after P15 approval, promote the exact approved SHA through the existing VPS/NPM release path and close the remaining production operations gates.
+## Task P19 — Cut over dedicated LA Clothing domain and ship
+**Description:** Configure the chosen dedicated brand domain as the one canonical public origin, validate TLS/NPM/Caddy/app routing, enable indexing explicitly, submit/verify search surfaces, and retain `la.lanadesign.vn` as non-canonical staging or redirect it according to the approved hosting policy.
 
 **Acceptance criteria:**
-- [ ] exact-SHA deploy succeeds through NPM → Caddy → app;
-- [ ] off-site backup + restore drill, SSH hardening and external uptime/backup monitoring are complete;
-- [ ] public smoke includes real media, crawl metadata and commerce flow without creating an unnecessary live order.
+- [ ] dedicated domain serves the exact approved release and is the only public canonical origin;
+- [ ] HTTPS, redirects, robots, sitemap, canonical, OG/schema URLs and critical commerce routes are correct through the public edge;
+- [ ] rollback target exists and remaining VPS operations gates (backup/restore, SSH hardening, monitoring) are closed before production is called complete.
 
-**Verification:**
-- [ ] post-merge CI + VPS container verification on exact release SHA;
-- [ ] host deploy/runbook evidence;
-- [ ] public external HTTP/HTTPS, image, robots, sitemap and representative PDP checks;
-- [ ] rollback image/SHA retained and documented.
+**Verification:** exact-SHA deploy evidence; public HTTPS/route/search-surface smoke; post-launch health/telemetry/rollback verification.
 
-**Dependencies:** P15 + human approval.
+**Dependencies:** P18 + human choice/configuration of final domain.
 
-**Files likely touched:** operations docs only if the real host procedure reveals stale documentation.
+**Files likely touched:** environment/deploy docs/config only as required by actual domain.
 
-**Estimated scope:** Operations checkpoint.
+**Estimated scope:** Shipping/operations gate.
 
 ---
 
-## Parallelization
+## SEO naming conventions
+Use meaningful user-facing names, not source-code filenames.
 
-Safe after P1 contract is agreed:
-- P2/P3 media implementation and P4 visual foundation can proceed in parallel if they do not modify the same card/PDP files concurrently.
-- P5 homepage/lookbook and P8 cart/checkout polish can proceed separately after P4.
-- P9 technical SEO can proceed while P5–P8 visual work continues, but P10/P11 must wait for the final product media/data contract.
+Examples:
+```text
+Product slug:     ao-so-mi-oxford-trang
+Collection slug:  ao-so-mi-nam
+H1:               Áo Sơ Mi Oxford Trắng
+SEO title:        Áo Sơ Mi Oxford Trắng Nam | LA Clothing
+Breadcrumb:       Trang chủ > Áo sơ mi nam > Áo Sơ Mi Oxford Trắng
+Owned media name: ao-so-mi-oxford-trang-la-clothing-01.webp
+```
 
-Must stay sequential:
-- P1 → P2/P3 for remote image trust.
-- P9 → P10 → P11 for canonical/metadata/structured data.
-- P14 → P15 → P16 for launch acceptance.
+Rules:
+- source files such as `page.tsx`/component filenames have no SEO value and are not renamed for SEO;
+- remote Pancake filenames are not rewritten by inventing an unsafe proxy/storage layer;
+- if LA Clothing later owns media storage, semantic lowercase hyphenated filenames may be generated at ingestion while preserving media identity;
+- slug/title/alt/meta text must not repeat keywords unnaturally.
 
-Needs coordination:
-- P6/P12 share collection/discovery URL contracts.
-- P7/P10/P11 share PDP product facts.
+## Product-content precedence
+```text
+Pancake product name/price/stock/variants/media/note_product
+                    ↓
+        verified source facts (read-only)
+                    ↓
+          website editorial workspace
+                    ↓
+      DRAFT → REVIEWED → PUBLISHED
+                    ↓
+ visible PDP/collection copy + metadata + schema + GEO
+```
+
+Precedence rules:
+1. server-authoritative commerce facts always come from the verified commerce path;
+2. public editorial/SEO copy comes from published website content;
+3. `sourceDescription` is fallback/input context, not an overwrite authority;
+4. `note` is never a fallback;
+5. missing facts stay missing.
+
+## Verification commands available in repository
+Use focused RED/GREEN first, then relevant standing gates such as:
+- `pnpm test`
+- `pnpm test:db`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm release:check`
+
+Browser-facing slices additionally require actual runtime browser evidence using the repository's existing accessibility/browser workflow when available.
 
 ## PR strategy
-Prefer one focused PR per task (or smaller when a task crosses five files). Each PR follows:
-1. focused RED where behavior changes;
+Prefer one focused PR per task or smaller. Any task that would touch >5 files or two independent subsystems must be split before implementation. Each behavior-changing PR follows:
+1. focused RED evidence;
 2. minimal GREEN implementation;
-3. relevant full CI/browser runtime;
-4. self-review correctness → security → architecture → simplicity → performance;
-5. human review before merge for externally visible/product/security-sensitive slices.
+3. relevant full gates;
+4. self-review: correctness → security → architecture → simplicity → performance;
+5. human review before merge.
 
-Do not stack large visual + SEO + catalog changes into one PR.
+Security-and-hardening is mandatory for Pancake input, remote image URLs, admin content, slug redirects, metadata/JSON-LD, and domain/indexing configuration.
 
 ## Final Definition of Done
-The website is not launch-complete merely because CI is green. P16 may be called complete only when:
-- every task acceptance criterion above is satisfied;
-- real product images and launch product content are present;
-- current storefront UI has human visual approval on mobile + desktop;
-- technical SEO/GEO surfaces are runtime-verified on the exact release SHA;
-- security/accessibility/performance checks pass with real media;
-- production backup/restore/monitoring/rollback gates are closed;
-- docs describe current production truth.
+No phase is complete from code alone. Task acceptance criteria plus the project-wide Definition of Done apply. In particular:
+- runtime/browser evidence is required for buyer-facing behavior;
+- new behavior must have tests that fail without it;
+- migrations/config/backward compatibility must be accounted for;
+- docs must describe current truth;
+- security, observability, rollback and human review gates must pass before launch.
 
-## Explicitly deferred / not required for this launch plan
-- optional customer account/order history unless product owner reactivates it;
-- unverified Pancake webhook/idempotency semantics;
-- fabricated review/rating system;
-- speculative promotion logic from raw Pancake price fields;
-- AI-only hidden content or a special `llms.txt` dependency for launch;
-- broad wildcard remote-image proxying/hosts.
+## Human checkpoints still required
+Only these decisions remain intentionally human-owned:
+1. visual approval after real media is present;
+2. collection/taxonomy naming approval;
+3. editorial content approval/publish;
+4. final dedicated LA Clothing domain choice;
+5. final launch approval.
+
+Everything else in V2 is sufficiently specified to begin `/build` from P0.
