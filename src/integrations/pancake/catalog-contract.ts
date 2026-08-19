@@ -2,8 +2,23 @@ type JsonRecord = Record<string, unknown>;
 
 const PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH = 100_000;
 const PRODUCT_IMAGE_URL_MAX_LENGTH = 4_096;
-const URI_RFC3986_RAW_ASCII = /^[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$/;
-const URI_MALFORMED_PERCENT_ENCODING = /%(?![0-9A-Fa-f]{2})/;
+const URI_COMPONENTS =
+  /^[A-Za-z][A-Za-z0-9+.-]*:(?:\/\/([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/;
+const URI_UNRESERVED = "[A-Za-z0-9._~-]";
+const URI_PERCENT_ENCODED = "%[0-9A-Fa-f]{2}";
+const URI_SUB_DELIMS = "[!$&'()*+,;=]";
+const URI_PCHAR = `(?:${URI_UNRESERVED}|${URI_PERCENT_ENCODED}|${URI_SUB_DELIMS}|[:@])`;
+const URI_PATH = new RegExp(`^(?:${URI_PCHAR}|/)*$`);
+const URI_QUERY_OR_FRAGMENT = new RegExp(`^(?:${URI_PCHAR}|[/?])*$`);
+const URI_USERINFO = new RegExp(
+  `^(?:${URI_UNRESERVED}|${URI_PERCENT_ENCODED}|${URI_SUB_DELIMS}|:)*$`,
+);
+const URI_REG_NAME = new RegExp(
+  `^(?:${URI_UNRESERVED}|${URI_PERCENT_ENCODED}|${URI_SUB_DELIMS})*$`,
+);
+const URI_IPV6_CANDIDATE = /^[0-9A-Fa-f:.]+$/;
+const URI_IPV_FUTURE = /^v[0-9A-Fa-f]+\.[A-Za-z0-9._~!$&'()*+,;=:-]+$/i;
+const URI_PORT = /^\d*$/;
 
 export type PancakeCatalogContractReason =
   | "product-envelope"
@@ -130,6 +145,83 @@ function requireOptionalNonBlankString(
   return value.trim().length === 0 ? null : value;
 }
 
+function hasValidUriAuthority(authority: string): boolean {
+  let hostAndPort = authority;
+  const firstAt = authority.indexOf("@");
+  if (firstAt !== -1) {
+    if (firstAt !== authority.lastIndexOf("@")) {
+      return false;
+    }
+    if (!URI_USERINFO.test(authority.slice(0, firstAt))) {
+      return false;
+    }
+    hostAndPort = authority.slice(firstAt + 1);
+  }
+
+  if (hostAndPort.startsWith("[")) {
+    const closingBracket = hostAndPort.indexOf("]");
+    if (closingBracket === -1) {
+      return false;
+    }
+    const literal = hostAndPort.slice(1, closingBracket);
+    if (
+      literal.length === 0 ||
+      (!URI_IPV6_CANDIDATE.test(literal) && !URI_IPV_FUTURE.test(literal))
+    ) {
+      return false;
+    }
+    const suffix = hostAndPort.slice(closingBracket + 1);
+    return suffix.length === 0 || (suffix.startsWith(":") && URI_PORT.test(suffix.slice(1)));
+  }
+
+  if (hostAndPort.includes("[") || hostAndPort.includes("]")) {
+    return false;
+  }
+
+  const portSeparator = hostAndPort.lastIndexOf(":");
+  if (portSeparator === -1) {
+    return URI_REG_NAME.test(hostAndPort);
+  }
+
+  const host = hostAndPort.slice(0, portSeparator);
+  const port = hostAndPort.slice(portSeparator + 1);
+  return URI_REG_NAME.test(host) && URI_PORT.test(port);
+}
+
+function hasValidRfc3986Components(value: string): boolean {
+  const match = URI_COMPONENTS.exec(value);
+  if (match === null) {
+    return false;
+  }
+
+  const authority = match[1];
+  const path = match[2] ?? "";
+  const query = match[3];
+  const fragment = match[4];
+
+  if (authority !== undefined && !hasValidUriAuthority(authority)) {
+    return false;
+  }
+  if (!URI_PATH.test(path)) {
+    return false;
+  }
+  if (authority !== undefined) {
+    if (path.length > 0 && !path.startsWith("/")) {
+      return false;
+    }
+  } else if (path.startsWith("//")) {
+    return false;
+  }
+  if (query !== undefined && !URI_QUERY_OR_FRAGMENT.test(query)) {
+    return false;
+  }
+  if (fragment !== undefined && !URI_QUERY_OR_FRAGMENT.test(fragment)) {
+    return false;
+  }
+
+  return true;
+}
+
 function requireOptionalUri(
   record: JsonRecord,
   key: string,
@@ -142,7 +234,7 @@ function requireOptionalUri(
     return null;
   }
 
-  if (!URI_RFC3986_RAW_ASCII.test(value) || URI_MALFORMED_PERCENT_ENCODING.test(value)) {
+  if (!hasValidRfc3986Components(value)) {
     throw new PancakeCatalogContractError(reason, message);
   }
 
