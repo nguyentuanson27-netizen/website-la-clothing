@@ -22,7 +22,9 @@ Pancake responses are untrusted external input. The P1 adapter therefore fails c
 - `sourceDescription`: maximum 100,000 characters
 - `primaryImageUrl`: maximum 4,096 characters
 
-For `primaryImageUrl`, P1 also validates the documented URI syntax after the type/length/blank checks. Before absolute-URI parsing, the raw source value must contain only the RFC3986 raw ASCII URI character set, and each percent sign must begin a valid `%HH` triplet. Raw non-ASCII, whitespace/control characters, backslashes, angle brackets, backticks, braces, and malformed percent-encoding therefore fail closed instead of being accepted because WHATWG URL parsing can normalize them. A bounded nonblank value that fails these syntax checks is rejected with the existing fixed `variation-product-image` reason. The original external scalar is never normalized into an accepted value merely because the URL parser could rewrite it.
+For `primaryImageUrl`, P1 also validates the documented absolute-URI syntax after the type/length/blank checks. The raw source value is parsed into RFC3986 authority, path, query, and fragment components and each component is checked against its own grammar before the existing absolute-URI parser runs. Percent escapes must be valid `%HH` tokens; path uses RFC3986 `pchar` plus `/`; query and fragment use `pchar` plus `/` and `?`; userinfo and registered-name hosts use their component-specific character sets. Square brackets are accepted only as IP-literal host delimiters in authority, so raw bracket syntax in a path or query fails closed while a valid IPv6-literal URI such as `http://[::1]/...` remains syntactically acceptable.
+
+This component-aware boundary also rejects raw non-ASCII, whitespace/control characters, backslashes, angle brackets, backticks, braces, malformed percent-encoding, and other characters that are invalid in their specific RFC3986 component instead of relying on WHATWG URL normalization. A bounded nonblank value that fails these syntax checks is rejected with the existing fixed `variation-product-image` reason. The original external scalar is never normalized into an accepted value merely because a URL parser could rewrite it.
 
 This validation remains syntax-only: a syntactically valid non-HTTPS URI may still cross the P1 source adapter because scheme/origin/path render trust is deliberately deferred to P3.
 
@@ -58,7 +60,8 @@ Repository verification covers:
 - wrong-type and oversized fail-closed behavior;
 - invalid URI-syntax rejection for `product.image`;
 - malformed percent-encoding plus raw non-RFC3986 ASCII/non-ASCII rejection before URL-parser normalization;
-- focused regressions for raw whitespace/control, non-ASCII, backslash, angle bracket, backtick, and brace syntax;
+- focused regressions for raw whitespace/control, non-ASCII, backslash, angle bracket, backtick, brace, and bracket-in-path/query syntax;
+- a valid IPv6-literal authority case to prove square brackets remain available where RFC3986 permits them;
 - a syntactically valid non-HTTPS URI case to preserve the P1/P3 responsibility split;
 - private `product.note` non-exposure;
 - sanitized reviewed fixture compatibility;
