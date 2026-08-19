@@ -22,7 +22,7 @@ Pancake responses are untrusted external input. The P1 adapter therefore fails c
 - `sourceDescription`: maximum 100,000 characters
 - `primaryImageUrl`: maximum 4,096 characters
 
-For `primaryImageUrl`, P1 also validates the documented URI syntax after the type/length/blank checks. It rejects raw whitespace/control characters and malformed percent-encoding before applying absolute-URI parsing. A bounded nonblank value that fails these syntax checks is rejected with the existing fixed `variation-product-image` reason. The original external scalar is never normalized into an accepted value merely because the URL parser could rewrite it.
+For `primaryImageUrl`, P1 also validates the documented URI syntax after the type/length/blank checks. Before absolute-URI parsing, the raw source value must contain only the RFC3986 raw ASCII URI character set, and each percent sign must begin a valid `%HH` triplet. Raw non-ASCII, whitespace/control characters, backslashes, angle brackets, backticks, braces, and malformed percent-encoding therefore fail closed instead of being accepted because WHATWG URL parsing can normalize them. A bounded nonblank value that fails these syntax checks is rejected with the existing fixed `variation-product-image` reason. The original external scalar is never normalized into an accepted value merely because the URL parser could rewrite it.
 
 This validation remains syntax-only: a syntactically valid non-HTTPS URI may still cross the P1 source adapter because scheme/origin/path render trust is deliberately deferred to P3.
 
@@ -57,7 +57,8 @@ Repository verification covers:
 - null/blank normalization;
 - wrong-type and oversized fail-closed behavior;
 - invalid URI-syntax rejection for `product.image`;
-- malformed percent-encoding and raw whitespace/control rejection before URL-parser normalization;
+- malformed percent-encoding plus raw non-RFC3986 ASCII/non-ASCII rejection before URL-parser normalization;
+- focused regressions for raw whitespace/control, non-ASCII, backslash, angle bracket, backtick, and brace syntax;
 - a syntactically valid non-HTTPS URI case to preserve the P1/P3 responsibility split;
 - private `product.note` non-exposure;
 - sanitized reviewed fixture compatibility;
