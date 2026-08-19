@@ -142,7 +142,7 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       </fieldset>
 
       <button
-        className="mt-8 min-h-12 w-full border border-black bg-black px-6 text-sm font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
+        className="mt-8 min-h-12 w-full border border-black bg-black px-6 text-sm font-semibold uppercase tracking-[0.12em] text-white hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
         type="button"
         disabled={!selection.canAdd || isPending}
         onClick={addToBag}

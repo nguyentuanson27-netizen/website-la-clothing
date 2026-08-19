@@ -35,6 +35,9 @@ const productVariationsPayload = {
       product: {
         id: "product-1",
         name: "Test Shirt",
+        note_product: "Approved source description",
+        image: "https://example.test/product-primary.jpg",
+        note: "PRIVATE INTERNAL NOTE",
       },
       variations_warehouses: [
         { warehouse_id: "warehouse-a", remain_quantity: 3 },
@@ -88,7 +91,12 @@ test("catalog contract maps reviewed storefront fields, pagination, and all-ware
         isLocked: false,
         retailPrice: 500_000,
         retailPriceAfterDiscount: 450_000,
-        product: { id: "product-1", name: "Test Shirt" },
+        product: {
+          id: "product-1",
+          name: "Test Shirt",
+          sourceDescription: "Approved source description",
+          primaryImageUrl: "https://example.test/product-primary.jpg",
+        },
         warehouseStocks: [
           { warehouseId: "warehouse-a", remainQuantity: 3 },
           { warehouseId: "warehouse-b", remainQuantity: 4 },
@@ -97,7 +105,51 @@ test("catalog contract maps reviewed storefront fields, pagination, and all-ware
       },
     ],
   });
-  assert.equal(JSON.stringify(result).includes("ignored_external_field"), false);
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("ignored_external_field"), false);
+  assert.equal(serialized.includes("PRIVATE INTERNAL NOTE"), false);
+});
+
+test("catalog contract normalizes missing optional product source content and media to null", () => {
+  const missing = structuredClone(productVariationsPayload);
+  missing.data[0]!.product.note_product = null as unknown as string;
+  missing.data[0]!.product.image = null as unknown as string;
+
+  const parsedMissing = parsePancakeCatalogVariations(missing);
+  assert.equal(parsedMissing.variations[0]!.product.sourceDescription, null);
+  assert.equal(parsedMissing.variations[0]!.product.primaryImageUrl, null);
+
+  const blank = structuredClone(productVariationsPayload);
+  blank.data[0]!.product.note_product = "   ";
+  blank.data[0]!.product.image = "";
+
+  const parsedBlank = parsePancakeCatalogVariations(blank);
+  assert.equal(parsedBlank.variations[0]!.product.sourceDescription, null);
+  assert.equal(parsedBlank.variations[0]!.product.primaryImageUrl, null);
+});
+
+test("catalog contract fails closed on malformed product source content and primary image", () => {
+  const malformedDescription = structuredClone(productVariationsPayload);
+  malformedDescription.data[0]!.product.note_product = 123 as unknown as string;
+  assertContractReason(
+    () => parsePancakeCatalogVariations(malformedDescription),
+    "variation-product-description",
+  );
+
+  const oversizedDescription = structuredClone(productVariationsPayload);
+  oversizedDescription.data[0]!.product.note_product = "x".repeat(100_001);
+  assertContractReason(
+    () => parsePancakeCatalogVariations(oversizedDescription),
+    "variation-product-description",
+  );
+
+  const malformedImage = structuredClone(productVariationsPayload);
+  malformedImage.data[0]!.product.image = [] as unknown as string;
+  assertContractReason(() => parsePancakeCatalogVariations(malformedImage), "variation-product-image");
+
+  const oversizedImage = structuredClone(productVariationsPayload);
+  oversizedImage.data[0]!.product.image = `https://example.test/${"x".repeat(4_100)}`;
+  assertContractReason(() => parsePancakeCatalogVariations(oversizedImage), "variation-product-image");
 });
 
 test("catalog contract rejects malformed pagination needed for bounded full-catalog sync", () => {
@@ -163,6 +215,8 @@ test("catalog contract consumes top-level product_id as canonical identity and i
   assert.deepEqual(parsed.variations[0]!.product, {
     id: "product-1",
     name: "Test Shirt",
+    sourceDescription: "Approved source description",
+    primaryImageUrl: "https://example.test/product-primary.jpg",
   });
 
   const nestedIdDisagrees = structuredClone(productVariationsPayload);
@@ -207,6 +261,8 @@ test("reviewed Pancake allowlists are configured with the live-discovered catalo
     "retail_price",
     "retail_price_after_discount",
     "product",
+    "note_product",
+    "image",
     "variations_warehouses",
     "warehouse_id",
     "remain_quantity",
