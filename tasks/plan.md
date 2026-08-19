@@ -76,6 +76,83 @@ P18 -> P19 dedicated-domain cutover + ship
 
 P8 visual work can start after P3 is specified, but final sign-off must use real media. P12 can be built while still on `la.lanadesign.vn`, but indexing remains fail-closed until the dedicated domain is configured.
 
+## Parallel execution model — two workstreams
+
+This execution model maximizes useful parallelism without changing any task dependency, acceptance criterion, security boundary, checkpoint, or Definition of Done in P0–P19. The dependency graph above remains authoritative whenever a lane description appears to conflict with a task dependency.
+
+### Shared foundation and ownership rules
+- P0 → P1 → P2 remains the shared source-foundation path. Full two-lane execution begins only after Checkpoint A is satisfied.
+- P7 is the intentional exception: it depends only on P0 and may progress independently before P2, using website-owned taxonomy and only explicit reviewed Pancake category IDs.
+- P2 has one owner at a time because it changes mirror persistence/schema behavior used by both lanes. Do not implement P2 concurrently in both lanes.
+- Prefer one branch/PR per P-task or smaller vertical slice. Parallel work must not share an unreviewed mutable branch.
+- Before a convergence task starts, its owner must integrate the accepted dependency heads and rerun the task's required verification on the combined head.
+- Two agents must not concurrently edit the same persistence model, migration, public route resolution, or shared commerce component unless the plan explicitly splits ownership by file/subsystem.
+
+### Workstream A — Product Media & Storefront
+
+Primary responsibility: trusted product media, buyer-facing visual system, merchandising, and purchase-journey presentation.
+
+```text
+P3 trusted media contract
+  -> P4 real product media
+  -> P8 visual foundation
+  -> P9 homepage/lookbook
+  -> P10 shop/collection/PDP convergence
+  -> P11 cart/checkout/tracking polish
+```
+
+Lane A rules:
+- P3 owns render trust and media selection only; it must not absorb P5 editorial ownership or P6 slug policy.
+- P4 and P8 may overlap after the P3 contract is stable enough to keep media trust behavior deterministic, but final P8/P9 sign-off uses real trusted media.
+- P10 is a convergence task, not a private Lane A task: it may be owned by Lane A, but it cannot complete until P4 + P5 + P7 + P8 are accepted.
+- P11 may continue while the SEO lane advances P13+, because it changes buyer-journey presentation rather than canonical/search authority.
+
+### Workstream B — Content, Information Architecture & SEO
+
+Primary responsibility: website-owned content, collections, stable URLs, canonical/search policy, metadata, schema, crawl architecture, and GEO/entity quality.
+
+```text
+P7 collection/taxonomy foundation  (may start after P0)
+
+After P2 / Checkpoint A:
+P5 editorial workflow
+P6 stable slug lifecycle
+  -> P12 technical SEO foundation
+
+P4 + P5 + P6 + P12
+  -> P13 PDP metadata/media SEO
+
+P10 + P13
+  -> P14 structured data/breadcrumbs
+  -> P15 crawl/indexation/internal links
+  -> P16 GEO/entity/content quality
+```
+
+Lane B rules:
+- P5 and P6 are independent after P2 and may be implemented in parallel if they have separate owners/branches; with only one Lane B owner, prioritize P6 early because P6 → P12 is a long critical path while ensuring P5 completes before P10/P13 convergence.
+- P7 should be advanced as early as practical because it gates both P10 and P12, but taxonomy naming still requires the existing human checkpoint before indexable architecture is approved.
+- P12 may be fully implemented on staging with indexing fail-closed. It must not enable public indexing until the dedicated canonical domain gate is satisfied.
+- P14–P16 are progressively more convergent and should not start before their declared dependencies are accepted.
+
+### Synchronization gates
+
+| Gate | Required state | Unlocks |
+|---|---|---|
+| **G0 — Foundation** | P1 accepted/merged, P2 complete, Checkpoint A = 0 Critical / 0 Required | full Lane A + Lane B execution |
+| **G1 — Product trust/IA** | P3 + P5 + P6 + P7 accepted | safe deep productization and search-foundation convergence |
+| **G2 — Storefront convergence** | P4 + P5 + P7 + P8 accepted | P10 completion, then P11 |
+| **G3 — Search/schema convergence** | P10 + P13 accepted | P14 → P15 → P16 |
+| **G4 — Release sequence** | P16 accepted | P17 → P18 → P19, predominantly sequential |
+
+### Recommended two-agent ownership
+
+When exactly two coding/review agents are available:
+
+- **Agent A — Media/Storefront:** after P1 merge, own P2 as the single foundation owner, then P3 → P4 → P8 → P9; own P10 convergence unless a later plan explicitly reassigns it; then P11.
+- **Agent B — Content/SEO:** progress P7 as soon as P0 evidence permits; after P2, own P5 → P6 → P12 → P13; after P10 convergence, own P14 → P15 → P16.
+- While Agent A owns P2, Agent B may work only on P7 or other work whose declared dependencies are already satisfied; Agent B must not fork a competing P2 persistence implementation.
+- P17 → P19 are release/acceptance gates and should be treated as shared predominantly sequential work rather than independent feature lanes.
+
 ---
 
 ## Task P0 — Run a safe live Pancake content/media/taxonomy audit
