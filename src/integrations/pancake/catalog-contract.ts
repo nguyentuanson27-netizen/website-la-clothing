@@ -2,7 +2,7 @@ type JsonRecord = Record<string, unknown>;
 
 const PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH = 100_000;
 const PRODUCT_IMAGE_URL_MAX_LENGTH = 4_096;
-const URI_RAW_WHITESPACE_OR_CONTROL = /[\u0000-\u0020\u007f]/;
+const URI_RFC3986_RAW_ASCII = /^[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$/;
 const URI_MALFORMED_PERCENT_ENCODING = /%(?![0-9A-Fa-f]{2})/;
 
 export type PancakeCatalogContractReason =
@@ -142,7 +142,7 @@ function requireOptionalUri(
     return null;
   }
 
-  if (URI_RAW_WHITESPACE_OR_CONTROL.test(value) || URI_MALFORMED_PERCENT_ENCODING.test(value)) {
+  if (!URI_RFC3986_RAW_ASCII.test(value) || URI_MALFORMED_PERCENT_ENCODING.test(value)) {
     throw new PancakeCatalogContractError(reason, message);
   }
 
