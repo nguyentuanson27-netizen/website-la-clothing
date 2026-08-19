@@ -37,15 +37,25 @@ function payloadWithProductImage(image: unknown) {
   };
 }
 
-test("P1 rejects a syntactically invalid documented product image URI", () => {
+function assertRejectedProductImage(image: string) {
   assert.throws(
-    () => parsePancakeCatalogVariations(payloadWithProductImage("not a uri")),
+    () => parsePancakeCatalogVariations(payloadWithProductImage(image)),
     (error: unknown) => {
       assert.ok(error instanceof PancakeCatalogContractError);
       assert.equal(error.reason, "variation-product-image");
       return true;
     },
   );
+}
+
+test("P1 rejects a syntactically invalid documented product image URI", () => {
+  assertRejectedProductImage("not a uri");
+});
+
+test("P1 rejects malformed raw URI syntax that WHATWG URL parsing can normalize or preserve", () => {
+  assertRejectedProductImage("https://example.test/%ZZ");
+  assertRejectedProductImage("https://example.test/a b.jpg");
+  assertRejectedProductImage("https://example.test/a\tb.jpg");
 });
 
 test("P1 accepts URI syntax without applying P3 HTTPS/origin trust policy", () => {
