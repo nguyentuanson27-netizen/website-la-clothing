@@ -31,7 +31,10 @@
       "retail_price_after_discount": 450000,
       "product": {
         "id": "product-fixture-1",
-        "name": "Sanitized Test Shirt"
+        "name": "Sanitized Test Shirt",
+        "note_product": "Sanitized source description",
+        "image": "https://example.test/catalog/product-fixture-primary.jpg",
+        "note": "Synthetic private note that must remain unconsumed"
       },
       "variations_warehouses": [
         {
