@@ -136,9 +136,20 @@ test("catalog contract fails closed on malformed product source content and prim
     "variation-product-description",
   );
 
+  const oversizedDescription = structuredClone(productVariationsPayload);
+  oversizedDescription.data[0]!.product.note_product = "x".repeat(100_001);
+  assertContractReason(
+    () => parsePancakeCatalogVariations(oversizedDescription),
+    "variation-product-description",
+  );
+
   const malformedImage = structuredClone(productVariationsPayload);
   malformedImage.data[0]!.product.image = [] as unknown as string;
   assertContractReason(() => parsePancakeCatalogVariations(malformedImage), "variation-product-image");
+
+  const oversizedImage = structuredClone(productVariationsPayload);
+  oversizedImage.data[0]!.product.image = `https://example.test/${"x".repeat(4_100)}`;
+  assertContractReason(() => parsePancakeCatalogVariations(oversizedImage), "variation-product-image");
 });
 
 test("catalog contract rejects malformed pagination needed for bounded full-catalog sync", () => {
