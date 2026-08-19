@@ -128,6 +128,27 @@ function requireOptionalNonBlankString(
   return value.trim().length === 0 ? null : value;
 }
 
+function requireOptionalUri(
+  record: JsonRecord,
+  key: string,
+  reason: PancakeCatalogContractReason,
+  message: string,
+  maxLength: number,
+): string | null {
+  const value = requireOptionalNonBlankString(record, key, reason, message, maxLength);
+  if (value === null) {
+    return null;
+  }
+
+  try {
+    void new URL(value);
+  } catch {
+    throw new PancakeCatalogContractError(reason, message);
+  }
+
+  return value;
+}
+
 function requireNonEmptyString(
   record: JsonRecord,
   key: string,
@@ -273,7 +294,7 @@ function parseVariation(value: unknown): PancakeParsedCatalogVariation {
     "Pancake product note_product is malformed",
     PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH,
   );
-  const primaryImageUrl = requireOptionalNonBlankString(
+  const primaryImageUrl = requireOptionalUri(
     productRecord,
     "image",
     "variation-product-image",
