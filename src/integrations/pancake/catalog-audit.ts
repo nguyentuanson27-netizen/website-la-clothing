@@ -49,7 +49,7 @@ export type PancakeCatalogAuditReport = {
     withCategoryAssignments: number;
     categoryAssignmentCoveragePercent: number;
   };
-  variations: { total: number };
+  source: { rawVariationEntries: number };
   images: {
     totalReferences: number;
     malformedCount: number;
@@ -311,9 +311,9 @@ function inspectCategories(
     if (knownIds.has(id)) duplicateIdCount += 1;
     knownIds.add(id);
 
-    const name = boundedString(item.name, LIMITS.categoryNameLength, "Pancake category name is malformed");
-    const normalizedName = name.normalize("NFKC").trim().toLowerCase();
-    if (!normalizedName) fail("Pancake category name is malformed");
+    const text = boundedString(item.text, LIMITS.categoryNameLength, "Pancake category text is malformed");
+    const normalizedName = text.normalize("NFKC").trim().toLowerCase();
+    if (!normalizedName) fail("Pancake category text is malformed");
     if (normalizedNames.has(normalizedName)) duplicateNormalizedNameCount += 1;
     normalizedNames.add(normalizedName);
 
@@ -387,7 +387,7 @@ export async function runPancakeCatalogAudit({
   const endpoint = `/shops/${shopId}/products/variations`;
   let expectedEntries: number | undefined;
   let expectedPages: number | undefined;
-  let variationCount = 0;
+  let rawVariationEntryCount = 0;
 
   for (let pageNumber = 1; ; pageNumber += 1) {
     if (pageNumber > LIMITS.pages) fail("Pancake catalog traversal limit exceeded");
@@ -404,15 +404,12 @@ export async function runPancakeCatalogAudit({
     }
 
     for (const rawVariation of page.data) {
-      variationCount += 1;
-      if (variationCount > LIMITS.entries) fail("Pancake catalog entry limit exceeded");
+      rawVariationEntryCount += 1;
+      if (rawVariationEntryCount > LIMITS.entries) fail("Pancake catalog entry limit exceeded");
       const variation = record(rawVariation, "Pancake product-variation item is malformed");
       boundedString(variation.id, LIMITS.idLength, "Pancake variation id is malformed");
       const productId = boundedString(variation.product_id, LIMITS.idLength, "Pancake variation product_id is malformed");
       const product = record(variation.product, "Pancake variation product payload is malformed");
-      if (boundedString(product.id, LIMITS.idLength, "Pancake product id is malformed") !== productId) {
-        fail("Pancake product identity is inconsistent");
-      }
 
       const assignments = readAssignments(product, variation);
       for (const location of assignments.locations) assignmentSourceLocations.add(location);
@@ -438,7 +435,7 @@ export async function runPancakeCatalogAudit({
     if (pageNumber >= (expectedPages ?? 1)) break;
   }
 
-  if (variationCount !== expectedEntries) fail("Pancake catalog entry count does not match completed audit traversal");
+  if (rawVariationEntryCount !== expectedEntries) fail("Pancake catalog entry count does not match completed audit traversal");
 
   const categories = inspectCategories(
     await client.getJson(`/shops/${shopId}/categories`),
@@ -464,7 +461,7 @@ export async function runPancakeCatalogAudit({
       withCategoryAssignments,
       categoryAssignmentCoveragePercent: percent(withCategoryAssignments, products.size),
     },
-    variations: { total: variationCount },
+    source: { rawVariationEntries: rawVariationEntryCount },
     images: {
       totalReferences: images.totalReferences,
       malformedCount: images.malformedCount,
