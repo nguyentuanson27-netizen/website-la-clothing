@@ -5,25 +5,25 @@ import test from "node:test";
 import * as catalogAuditCli from "../../scripts/pancake-catalog-audit.ts";
 import { runPancakeCatalogAudit } from "../../src/integrations/pancake/catalog-audit.ts";
 
-test("catalog audit emits aggregate source coverage without raw product content", async () => {
+test("catalog audit emits aggregate source coverage from live-shaped Pancake fields without raw product content", async () => {
   const pages: Record<number, unknown> = {
     1: { success: true, page_number: 1, page_size: 2, total_entries: 3, total_pages: 2, data: [
-      { id: "variation-a", product_id: "product-a", images: ["https://cdn.example.test/catalog/123456/photo-a.jpg?token=IMAGE_QUERY_SECRET"], product: { id: "product-a", name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] }, variations_warehouses: [{ remain_quantity: 999999 }] },
-      { id: "variation-b", product_id: "product-a", images: ["http://legacy.example.test/images/photo-b.png"], product: { id: "product-a", name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] } },
+      { id: "variation-a", product_id: "product-a", images: ["https://cdn.example.test/catalog/123456/photo-a.jpg?token=IMAGE_QUERY_SECRET"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] }, variations_warehouses: [{ remain_quantity: 999999 }] },
+      { id: "variation-b", product_id: "product-a", images: ["http://legacy.example.test/images/photo-b.png"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] } },
     ] },
     2: { success: true, page_number: 2, page_size: 2, total_entries: 3, total_pages: 2, data: [
-      { id: "variation-c", product_id: "product-b", images: ["not a url"], product: { id: "product-b", name: "SECOND_RAW_PRODUCT_NAME_SECRET", note: "SECOND_PRIVATE_NOTE_SECRET", note_product: "   ", image: null, categories: [] } },
+      { id: "variation-c", product_id: "product-b", images: ["not a url"], product: { name: "SECOND_RAW_PRODUCT_NAME_SECRET", note: "SECOND_PRIVATE_NOTE_SECRET", note_product: "   ", image: null, categories: [] } },
     ] },
   };
   const requested: string[] = [];
   const client = { async getJson(endpoint: string, query?: Readonly<Record<string, string | number | boolean>>) {
     requested.push(endpoint);
-    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 10, name: "Shirts", nodes: [] }, { id: 11, name: "shirts", nodes: [] }] };
+    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 10, text: "Shirts", nodes: [] }, { id: 11, text: "shirts", nodes: [] }] };
     return pages[Number(query?.page_number)];
   } };
   const report = await runPancakeCatalogAudit({ client, shopId: 4741464, pageSize: 2 });
   assert.deepEqual(report.products, { total: 2, withNoteProduct: 1, withoutNoteProduct: 1, noteProductCoveragePercent: 50, malformedNoteProductCount: 0, withCategoryAssignments: 1, categoryAssignmentCoveragePercent: 50 });
-  assert.equal(report.variations.total, 3);
+  assert.deepEqual(report.source, { rawVariationEntries: 3 });
   assert.deepEqual(report.images.origins, [
     { scheme: "http", hostname: "legacy.example.test", referenceCount: 1, pathShapes: ["/images/:file.png"] },
     { scheme: "https", hostname: "cdn.example.test", referenceCount: 2, pathShapes: ["/catalog/:id/:file.jpg", "/catalog/:id/:file.webp"] },
@@ -41,7 +41,7 @@ test("catalog audit never fetches image URLs and rejects credential-bearing URLs
   const client = { async getJson(endpoint: string) {
     endpoints.push(endpoint);
     if (endpoint.endsWith("/categories")) return { success: true, data: [] };
-    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: ["https://user:password@cdn.example.test/catalog/a.jpg"], product: { id: "product-a", note_product: null, image: "https://cdn.example.test/catalog/a.jpg", categories: [] } }] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: ["https://user:password@cdn.example.test/catalog/a.jpg"], product: { note_product: null, image: "https://cdn.example.test/catalog/a.jpg", categories: [] } }] };
   } };
   const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
   assert.equal(report.images.credentialBearingCount, 1);
@@ -53,8 +53,8 @@ test("catalog audit fails on inconsistent repeated product source facts", async 
   const client = { async getJson(endpoint: string) {
     if (endpoint.endsWith("/categories")) return { success: true, data: [] };
     return { success: true, page_number: 1, page_size: 100, total_entries: 2, total_pages: 1, data: [
-      { id: "variation-a", product_id: "product-a", images: [], product: { id: "product-a", note_product: "A", image: null, categories: [] } },
-      { id: "variation-b", product_id: "product-a", images: [], product: { id: "product-a", note_product: "B", image: null, categories: [] } },
+      { id: "variation-a", product_id: "product-a", images: [], product: { note_product: "A", image: null, categories: [] } },
+      { id: "variation-b", product_id: "product-a", images: [], product: { note_product: "B", image: null, categories: [] } },
     ] };
   } };
   await assert.rejects(() => runPancakeCatalogAudit({ client, shopId: 4741464 }), /inconsistent repeated product source facts/i);
@@ -81,7 +81,7 @@ test("catalog audit counts malformed source values without echoing them", async 
   const oversizedNote = "N".repeat(100_001);
   const client = { async getJson(endpoint: string) {
     if (endpoint.endsWith("/categories")) return { success: true, data: [] };
-    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], product: { id: "product-a", note_product: oversizedNote, image: { raw: "PRODUCT_IMAGE_SECRET" }, categories: [] } }] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], product: { note_product: oversizedNote, image: { raw: "PRODUCT_IMAGE_SECRET" }, categories: [] } }] };
   } };
   const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
   assert.equal(report.products.malformedNoteProductCount, 1);
@@ -96,8 +96,8 @@ test("catalog audit fails closed when pagination exceeds bounded traversal", asy
 
 test("catalog audit discovers variation-level category assignment source without promoting it to production contract", async () => {
   const client = { async getJson(endpoint: string) {
-    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 20, name: "Outerwear", nodes: [] }] };
-    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], categories: [{ id: "20" }], product: { id: "product-a", note_product: null, image: null } }] };
+    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 20, text: "Outerwear", nodes: [] }] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], categories: [{ id: "20" }], product: { note_product: null, image: null } }] };
   } };
   const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
   assert.deepEqual(report.categories.assignmentSourceLocations, ["variation.categories"]);
@@ -108,8 +108,8 @@ test("catalog audit discovers variation-level category assignment source without
 
 test("flat unique source taxonomy can be usable when assignment coverage is complete", async () => {
   const client = { async getJson(endpoint: string) {
-    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 1, name: "Shirts", nodes: [] }] };
-    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], product: { id: "product-a", note_product: null, image: null, categories: [{ id: 1 }] } }] };
+    if (endpoint.endsWith("/categories")) return { success: true, data: [{ id: 1, text: "Shirts", nodes: [] }] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], product: { note_product: null, image: null, categories: [{ id: 1 }] } }] };
   } };
   const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
   assert.equal(report.categories.maxDepth, 1);
@@ -117,6 +117,6 @@ test("flat unique source taxonomy can be usable when assignment coverage is comp
 });
 
 test("category assignments fail closed when product and variation source locations disagree", async () => {
-  const client = { async getJson() { return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], categories: [{ id: 2 }], product: { id: "product-a", note_product: null, image: null, categories: [{ id: 1 }] } }] }; } };
+  const client = { async getJson() { return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], categories: [{ id: 2 }], product: { note_product: null, image: null, categories: [{ id: 1 }] } }] }; } };
   await assert.rejects(() => runPancakeCatalogAudit({ client, shopId: 4741464 }), /category assignments disagree/i);
 });
