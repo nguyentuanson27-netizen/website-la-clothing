@@ -52,12 +52,19 @@ export type PancakeCatalogVariation = {
   sellableStock: number;
 };
 
+export type PancakeParsedCatalogVariation = Omit<PancakeCatalogVariation, "product"> & {
+  product: PancakeCatalogVariation["product"] & {
+    sourceDescription: string | null;
+    primaryImageUrl: string | null;
+  };
+};
+
 export type PancakeCatalogPage = {
   pageNumber: number;
   pageSize: number;
   totalEntries: number;
   totalPages: number;
-  variations: PancakeCatalogVariation[];
+  variations: PancakeParsedCatalogVariation[];
 };
 
 export type PancakeWarehouse = {
@@ -237,7 +244,7 @@ function parseWarehouseStock(value: unknown): PancakeCatalogWarehouseStock {
   };
 }
 
-function parseVariation(value: unknown): PancakeCatalogVariation {
+function parseVariation(value: unknown): PancakeParsedCatalogVariation {
   const identityReason = "variation-identity" as const;
   const record = requireRecord(value, identityReason, "Pancake product-variation item is malformed");
   const id = requireNonEmptyString(record, "id", identityReason, "Pancake variation id is malformed");
