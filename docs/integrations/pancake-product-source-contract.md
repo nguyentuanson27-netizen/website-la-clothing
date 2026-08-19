@@ -1,6 +1,6 @@
 # Pancake product source content contract
 
-Status: **P1 reviewed source contract implemented; live reviewed-contract verification remains a final gate.**
+Status: **P1 reviewed source contract implemented; trusted live reviewed-contract verification passed on 2026-08-20. Fresh human review remains required before merge.**
 
 This document covers only the Pancake product-level source fields introduced by FINAL PLAN V2 P1. Persistence belongs to P2 and render trust belongs to P3.
 
@@ -32,9 +32,9 @@ Failures use fixed internal reason codes (`variation-product-description` and `v
 
 P1 does **not** decide whether an image URI is renderable. HTTPS/origin/path allowlisting, deduplication, primary/gallery selection, and SSRF/open-proxy review belong to P3. P1 does not fetch image URIs.
 
-## P0 live evidence carried forward
+## P0 point-in-time live evidence carried forward
 
-The reviewed trusted-local P0 aggregate for the current website publication scope established:
+The reviewed trusted-local P0 aggregate for the website publication scope at audit time established:
 
 - current products: 1
 - current variations: 1
@@ -43,7 +43,7 @@ The reviewed trusted-local P0 aggregate for the current website publication scop
 - exact reviewed media origin: `https://content.pancake.vn`
 - exact reviewed media path shape: `/:segment/:id/:id/:id/:file.jpg`
 
-Therefore P1 maps `note_product` because it is part of the documented source contract, but current live evidence does not justify assuming product-description coverage. P3 must not broaden the reviewed image origin/path evidence.
+That P0 aggregate is historical point-in-time evidence, not a permanent coverage claim. The later P1 live verifier observed a reviewed shape where `product.note_product` is a string and `product.image` is null; it did not emit source values and does not establish a new catalog-wide coverage percentage. P3 must not broaden the reviewed image origin/path evidence without its own live trust review.
 
 ## Compatibility
 
@@ -67,10 +67,12 @@ Repository verification covers:
 - sanitized reviewed fixture compatibility;
 - existing domain/integration/build gates.
 
-Final P1 acceptance also requires the trusted reviewed-contract verifier against the live shop:
+The trusted reviewed-contract verifier against the live shop was run on 2026-08-20:
 
 ```bash
 pnpm pancake:contract:verify
 ```
 
-Only sanitized verifier output should be retained. Do not commit or paste API credentials or raw Pancake payloads.
+Sanitized evidence contained the complete `PANCAKE_REVIEWED_CONTRACT_VERIFICATION_BEGIN` / `PANCAKE_REVIEWED_CONTRACT_VERIFICATION_END` envelope. The verifier only emits that envelope after reviewed-key validation and both mapped-contract parsers succeed; its failure paths instead emit a fixed safe failure message and set a non-zero exit code. The retained shape evidence included `product.note_product` as a string, `product.image` as null, and `product.note` as null, with no source values, credentials, full image URLs, or exact inventory retained.
+
+P1 still requires fresh human review with 0 Critical / 0 Required before merge.
