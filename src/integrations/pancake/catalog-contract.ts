@@ -1,5 +1,8 @@
 type JsonRecord = Record<string, unknown>;
 
+const PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH = 100_000;
+const PRODUCT_IMAGE_URL_MAX_LENGTH = 4_096;
+
 export type PancakeCatalogContractReason =
   | "product-envelope"
   | "pagination"
@@ -106,12 +109,13 @@ function requireOptionalNonBlankString(
   key: string,
   reason: PancakeCatalogContractReason,
   message: string,
+  maxLength: number,
 ): string | null {
   const value = record[key];
   if (value === undefined || value === null) {
     return null;
   }
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || value.length > maxLength) {
     throw new PancakeCatalogContractError(reason, message);
   }
   return value.trim().length === 0 ? null : value;
@@ -260,12 +264,14 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
     "note_product",
     "variation-product-description",
     "Pancake product note_product is malformed",
+    PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH,
   );
   const primaryImageUrl = requireOptionalNonBlankString(
     productRecord,
     "image",
     "variation-product-image",
     "Pancake product image is malformed",
+    PRODUCT_IMAGE_URL_MAX_LENGTH,
   );
 
   const warehouseReason = "variation-warehouse" as const;
