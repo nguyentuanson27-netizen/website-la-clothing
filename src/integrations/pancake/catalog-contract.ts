@@ -10,6 +10,8 @@ export type PancakeCatalogContractReason =
   | "variation-prices"
   | "variation-product-shape"
   | "variation-product-name"
+  | "variation-product-description"
+  | "variation-product-image"
   | "variation-warehouse"
   | "warehouse-envelope"
   | "warehouse-item";
@@ -40,6 +42,8 @@ export type PancakeCatalogVariation = {
   product: {
     id: string;
     name: string;
+    sourceDescription: string | null;
+    primaryImageUrl: string | null;
   };
   warehouseStocks: PancakeCatalogWarehouseStock[];
   sellableStock: number;
@@ -95,6 +99,22 @@ function requireString(
     throw new PancakeCatalogContractError(reason, message);
   }
   return value;
+}
+
+function requireOptionalNonBlankString(
+  record: JsonRecord,
+  key: string,
+  reason: PancakeCatalogContractReason,
+  message: string,
+): string | null {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new PancakeCatalogContractError(reason, message);
+  }
+  return value.trim().length === 0 ? null : value;
 }
 
 function requireNonEmptyString(
@@ -235,6 +255,18 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
     "variation-product-name",
     "Pancake product name is malformed",
   );
+  const sourceDescription = requireOptionalNonBlankString(
+    productRecord,
+    "note_product",
+    "variation-product-description",
+    "Pancake product note_product is malformed",
+  );
+  const primaryImageUrl = requireOptionalNonBlankString(
+    productRecord,
+    "image",
+    "variation-product-image",
+    "Pancake product image is malformed",
+  );
 
   const warehouseReason = "variation-warehouse" as const;
   const warehouseStocks = requireArray(
@@ -316,6 +348,8 @@ function parseVariation(value: unknown): PancakeCatalogVariation {
     product: {
       id: productId,
       name: productName,
+      sourceDescription,
+      primaryImageUrl,
     },
     warehouseStocks,
     sellableStock,
