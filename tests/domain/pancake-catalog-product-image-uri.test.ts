@@ -56,6 +56,11 @@ test("P1 rejects malformed raw URI syntax that WHATWG URL parsing can normalize 
   assertRejectedProductImage("https://example.test/%ZZ");
   assertRejectedProductImage("https://example.test/a b.jpg");
   assertRejectedProductImage("https://example.test/a\tb.jpg");
+  assertRejectedProductImage("https://example.test/á.jpg");
+  assertRejectedProductImage("https://example.test/a\\b.jpg");
+  assertRejectedProductImage("https://example.test/<image>.jpg");
+  assertRejectedProductImage("https://example.test/`image`.jpg");
+  assertRejectedProductImage("https://example.test/{image}.jpg");
 });
 
 test("P1 accepts URI syntax without applying P3 HTTPS/origin trust policy", () => {
