@@ -22,7 +22,9 @@ Pancake responses are untrusted external input. The P1 adapter therefore fails c
 - `sourceDescription`: maximum 100,000 characters
 - `primaryImageUrl`: maximum 4,096 characters
 
-For `primaryImageUrl`, P1 also validates the documented URI syntax after the type/length/blank checks. A bounded nonblank value that is not a syntactically valid URI is rejected with the existing fixed `variation-product-image` reason. This validation is syntax-only: a syntactically valid non-HTTPS URI may still cross the P1 source adapter because scheme/origin/path render trust is deliberately deferred to P3.
+For `primaryImageUrl`, P1 also validates the documented URI syntax after the type/length/blank checks. It rejects raw whitespace/control characters and malformed percent-encoding before applying absolute-URI parsing. A bounded nonblank value that fails these syntax checks is rejected with the existing fixed `variation-product-image` reason. The original external scalar is never normalized into an accepted value merely because the URL parser could rewrite it.
+
+This validation remains syntax-only: a syntactically valid non-HTTPS URI may still cross the P1 source adapter because scheme/origin/path render trust is deliberately deferred to P3.
 
 Failures use fixed internal reason codes (`variation-product-description` and `variation-product-image`) and do not echo the external value.
 
@@ -55,6 +57,7 @@ Repository verification covers:
 - null/blank normalization;
 - wrong-type and oversized fail-closed behavior;
 - invalid URI-syntax rejection for `product.image`;
+- malformed percent-encoding and raw whitespace/control rejection before URL-parser normalization;
 - a syntactically valid non-HTTPS URI case to preserve the P1/P3 responsibility split;
 - private `product.note` non-exposure;
 - sanitized reviewed fixture compatibility;
