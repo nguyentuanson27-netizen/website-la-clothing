@@ -61,9 +61,16 @@ test("P1 rejects malformed raw URI syntax that WHATWG URL parsing can normalize 
   assertRejectedProductImage("https://example.test/<image>.jpg");
   assertRejectedProductImage("https://example.test/`image`.jpg");
   assertRejectedProductImage("https://example.test/{image}.jpg");
+  assertRejectedProductImage("https://example.test/a[b].jpg");
+  assertRejectedProductImage("https://example.test/a?label=[b]");
 });
 
 test("P1 accepts URI syntax without applying P3 HTTPS/origin trust policy", () => {
-  const result = parsePancakeCatalogVariations(payloadWithProductImage("http://example.test/product.jpg"));
-  assert.equal(result.variations[0]?.product.primaryImageUrl, "http://example.test/product.jpg");
+  const httpUri = "http://example.test/product.jpg";
+  const httpResult = parsePancakeCatalogVariations(payloadWithProductImage(httpUri));
+  assert.equal(httpResult.variations[0]?.product.primaryImageUrl, httpUri);
+
+  const ipv6LiteralUri = "http://[::1]/product.jpg";
+  const ipv6Result = parsePancakeCatalogVariations(payloadWithProductImage(ipv6LiteralUri));
+  assert.equal(ipv6Result.variations[0]?.product.primaryImageUrl, ipv6LiteralUri);
 });
