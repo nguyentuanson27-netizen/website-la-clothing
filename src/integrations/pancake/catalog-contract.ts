@@ -42,8 +42,8 @@ export type PancakeCatalogVariation = {
   product: {
     id: string;
     name: string;
-    sourceDescription: string | null;
-    primaryImageUrl: string | null;
+    sourceDescription?: string | null;
+    primaryImageUrl?: string | null;
   };
   warehouseStocks: PancakeCatalogWarehouseStock[];
   sellableStock: number;
