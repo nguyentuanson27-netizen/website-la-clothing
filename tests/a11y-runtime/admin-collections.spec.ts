@@ -235,6 +235,32 @@ test("admin can maintain canonical collections with accessible success and error
   await expect(persistedSlug).toHaveValue(collectionSlug);
   await expect(persistedSlug).not.toBeEditable();
 
+  const forgedSlug = `${collectionSlug}-forged`;
+  const existingForm = page.locator("form").filter({ has: persistedSlug });
+  await persistedSlug.evaluate((input, nextSlug) => {
+    const element = input as HTMLInputElement;
+    element.readOnly = false;
+    element.value = nextSlug;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, forgedSlug);
+  await existingForm.getByLabel("Tiêu đề").fill("City Uniform Runtime Updated");
+  await existingForm.getByRole("button", { name: "Lưu collection" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === collectionsPath && url.searchParams.get("saved") === "1",
+  );
+
+  const forged = await prisma.collectionDefinition.findUnique({
+    where: { slug: forgedSlug },
+    select: { slug: true },
+  });
+  expect(forged).toBeNull();
+  const updatedOriginal = await prisma.collectionDefinition.findUnique({
+    where: { slug: collectionSlug },
+    select: { title: true },
+  });
+  expect(updatedOriginal).toEqual({ title: "City Uniform Runtime Updated" });
+
   expect(
     browserErrors,
     `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,
