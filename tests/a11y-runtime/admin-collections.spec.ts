@@ -231,12 +231,15 @@ test("admin can maintain canonical collections with accessible success and error
     pancakeCategoryIds: [7, 42],
   });
 
-  const persistedSlug = page.locator('input[name="slug"][readonly]');
+  const existingForm = page
+    .getByRole("heading", { level: 3, name: "City Uniform Runtime" })
+    .locator("xpath=ancestor::article")
+    .locator("form");
+  const persistedSlug = existingForm.locator('input[name="slug"]');
   await expect(persistedSlug).toHaveValue(collectionSlug);
   await expect(persistedSlug).not.toBeEditable();
 
   const forgedSlug = `${collectionSlug}-forged`;
-  const existingForm = page.locator("form").filter({ has: persistedSlug });
   await persistedSlug.evaluate((input, nextSlug) => {
     const element = input as HTMLInputElement;
     element.readOnly = false;
