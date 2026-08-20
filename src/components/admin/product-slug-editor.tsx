@@ -15,6 +15,9 @@ const adminService = createProductSlugAdminService({ changeSlug: repository.chan
 const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 
+const PRODUCT_SLUG_INPUT_ID = "product-slug-input";
+const PRODUCT_SLUG_DESCRIPTION_ID = "product-slug-current-url";
+
 type ProductSlugEditorProps = {
   productId: string;
   currentSlug: string;
@@ -60,7 +63,7 @@ export function ProductSlugEditor({
     >
       <p className="eyebrow">Website URL · sở hữu bởi LA Clothing</p>
       <h2 id="product-slug-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
-        Slug sản phẩm
+        Quản lý URL sản phẩm
       </h2>
       <p className="mt-4 max-w-3xl text-xs leading-5 text-black/55">
         Pancake chỉ cung cấp tên làm dữ liệu bootstrap ban đầu. Đồng bộ tên sau đó không tự đổi URL. Mỗi thay đổi slug explicit sẽ giữ slug cũ trong lịch sử URL và slug lịch sử không được tái sử dụng.
@@ -83,19 +86,29 @@ export function ProductSlugEditor({
       ) : null}
 
       <form action={saveProductSlug} className="mt-6 grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
-        <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-[0.13em]">Slug sản phẩm</span>
+        <div className="block">
+          <label
+            className="text-xs font-semibold uppercase tracking-[0.13em]"
+            htmlFor={PRODUCT_SLUG_INPUT_ID}
+          >
+            Slug sản phẩm
+          </label>
           <input
+            aria-describedby={PRODUCT_SLUG_DESCRIPTION_ID}
             className={inputClassName}
             defaultValue={currentSlug}
+            id={PRODUCT_SLUG_INPUT_ID}
             maxLength={PRODUCT_SLUG_LIMITS.rawInput}
             name="slug"
             type="text"
           />
-          <span className="mt-3 block break-all text-xs leading-5 text-black/55">
+          <p
+            className="mt-3 break-all text-xs leading-5 text-black/55"
+            id={PRODUCT_SLUG_DESCRIPTION_ID}
+          >
             URL hiện tại: /shop/{currentSlug}
-          </span>
-        </label>
+          </p>
+        </div>
         <button
           className="inline-flex min-h-11 items-center justify-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
           type="submit"
