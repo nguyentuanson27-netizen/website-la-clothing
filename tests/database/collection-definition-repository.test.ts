@@ -56,6 +56,31 @@ test("P7 repository validates and upserts one canonical website-owned definition
   );
 });
 
+test("P7 create-only persistence never overwrites an existing collection", async () => {
+  const created = await repository.createDefinition({
+    slug: "p7-repo-create-only",
+    title: "Create Only",
+    description: "Original copy.",
+  });
+  assert.equal(created?.title, "Create Only");
+
+  const duplicate = await repository.createDefinition({
+    slug: "p7-repo-create-only",
+    title: "Forged Replacement",
+    description: "Must not overwrite the original row.",
+  });
+  assert.equal(duplicate, null);
+
+  const persisted = await prisma.collectionDefinition.findUnique({
+    where: { slug: "p7-repo-create-only" },
+    select: { title: true, description: true },
+  });
+  assert.deepEqual(persisted, {
+    title: "Create Only",
+    description: "Original copy.",
+  });
+});
+
 test("P7 update-existing persistence cannot create a forged or missing collection target", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-existing",
