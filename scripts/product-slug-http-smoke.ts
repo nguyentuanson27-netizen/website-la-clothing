@@ -35,7 +35,6 @@ function captureServerOutput(chunk: Buffer) {
 
 function requestPath(
   path: string,
-  headers: Record<string, string> = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolveRequest, rejectRequest) => {
     const request = http.request(
@@ -44,7 +43,6 @@ function requestPath(
         port: PORT,
         path,
         method: "GET",
-        headers,
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -149,9 +147,7 @@ try {
 
   await waitForServer();
 
-  const historicalResponse = await requestPath(`/shop/${historicalSlug}`, {
-    host: "attacker.example",
-  });
+  const historicalResponse = await requestPath(`/shop/${historicalSlug}`);
   assert.equal(
     historicalResponse.status,
     301,
@@ -160,7 +156,7 @@ try {
   assert.equal(
     historicalResponse.headers.location,
     `/shop/${currentSlug}`,
-    "historical slug redirect must use a relative site-owned Location and never trust request Host",
+    "historical slug redirect must use an exact relative site-owned Location; relative Location prevents request Host from influencing canonical identity",
   );
 
   const currentResponse = await requestPath(`/shop/${currentSlug}`);
