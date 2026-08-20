@@ -26,6 +26,39 @@ const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 const textareaClassName = `${inputClassName} min-h-28 resize-y leading-7`;
 
+async function persistCollection(slug: unknown, formData: FormData) {
+  const adminSession = await requireCurrentAdmin();
+  const result = await adminService.save(adminSession, {
+    slug,
+    title: formData.get("title"),
+    description: formData.get("description"),
+    seoTitle: formData.get("seoTitle"),
+    seoDescription: formData.get("seoDescription"),
+    isPublished: formData.get("isPublished"),
+    pancakeCategoryIds: formData.get("pancakeCategoryIds"),
+  });
+
+  if (!result.ok) {
+    redirect("/admin/collections?error=invalid");
+  }
+
+  revalidatePath("/admin/collections");
+  revalidatePath("/admin");
+  redirect("/admin/collections?saved=1");
+}
+
+async function createCollection(formData: FormData) {
+  "use server";
+
+  await persistCollection(formData.get("slug"), formData);
+}
+
+async function updateCollection(originalSlug: string, formData: FormData) {
+  "use server";
+
+  await persistCollection(originalSlug, formData);
+}
+
 function queryValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
 }
@@ -158,39 +191,6 @@ type AdminCollectionsPageProps = {
 export default async function AdminCollectionsPage({ searchParams }: AdminCollectionsPageProps) {
   await requireCurrentAdminPage();
   const collections = await repository.listForAdmin(100);
-
-  async function persistCollection(slug: unknown, formData: FormData) {
-    const adminSession = await requireCurrentAdmin();
-    const result = await adminService.save(adminSession, {
-      slug,
-      title: formData.get("title"),
-      description: formData.get("description"),
-      seoTitle: formData.get("seoTitle"),
-      seoDescription: formData.get("seoDescription"),
-      isPublished: formData.get("isPublished"),
-      pancakeCategoryIds: formData.get("pancakeCategoryIds"),
-    });
-
-    if (!result.ok) {
-      redirect("/admin/collections?error=invalid");
-    }
-
-    revalidatePath("/admin/collections");
-    revalidatePath("/admin");
-    redirect("/admin/collections?saved=1");
-  }
-
-  async function createCollection(formData: FormData) {
-    "use server";
-
-    await persistCollection(formData.get("slug"), formData);
-  }
-
-  async function updateCollection(originalSlug: string, formData: FormData) {
-    "use server";
-
-    await persistCollection(originalSlug, formData);
-  }
 
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
