@@ -56,6 +56,38 @@ test("P7 repository validates and upserts one canonical website-owned definition
   );
 });
 
+test("P7 update-existing persistence cannot create a forged or missing collection target", async () => {
+  await repository.saveDefinition({
+    slug: "p7-repo-existing",
+    title: "Existing",
+    description: "Existing copy.",
+  });
+
+  const updated = await repository.updateExistingDefinition("p7-repo-existing", {
+    title: "Existing Updated",
+    description: "Updated copy.",
+    seoTitle: null,
+    seoDescription: null,
+    isPublished: false,
+    pancakeCategoryIds: [],
+  });
+  assert.equal(updated?.title, "Existing Updated");
+
+  const missing = await repository.updateExistingDefinition("p7-repo-forged", {
+    title: "Forged",
+    description: "Must never be created by edit.",
+    seoTitle: null,
+    seoDescription: null,
+    isPublished: false,
+    pancakeCategoryIds: [],
+  });
+  assert.equal(missing, null);
+  assert.equal(
+    await prisma.collectionDefinition.count({ where: { slug: "p7-repo-forged" } }),
+    0,
+  );
+});
+
 test("P7 repository rejects malformed definitions before persistence", async () => {
   await assert.rejects(
     () =>
