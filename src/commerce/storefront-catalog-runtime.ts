@@ -2,6 +2,7 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
+import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 
 export async function listConfiguredStorefrontProducts(limit: number) {
   const shopId = readPancakeShopId();
@@ -42,4 +43,9 @@ export async function listConfiguredStorefrontDiscoveryFacets() {
 export async function getConfiguredStorefrontProductBySlug(slug: string) {
   const shopId = readPancakeShopId();
   return createStorefrontCatalogRepository(prisma).getProductBySlug({ shopId, slug });
+}
+
+export async function resolveConfiguredStorefrontProductSlug(slug: string) {
+  const shopId = readPancakeShopId();
+  return createStorefrontProductSlugResolver(prisma)({ shopId, slug });
 }
