@@ -19,9 +19,10 @@ Pancake product.name
 
 - Pancake product ID remains the stable source identity.
 - Pancake product name is used only when a mirrored product receives its initial website slug.
-- Later Pancake name sync updates `ProductMirror.name` but never updates the stored slug.
+- Later Pancake name sync updates `ProductMirror.name` but never updates an already-readable website-owned slug.
+- Exact legacy opaque slugs matching `p-[0-9a-f]{20}` are a compatibility-only exception: new runtime heals them once to the readable deterministic form and stores the old slug in permanent history.
 - `keyword`, `custom_id`, `display_id`, variation IDs, barcode and SKU are not URL identity inputs.
-- A website slug can change only through the explicit ADMIN-gated slug workflow.
+- A website slug can otherwise change only through the explicit ADMIN-gated slug workflow.
 - Previous slugs are never released for another product; this prevents redirect ambiguity and URL takeover.
 
 P6 deliberately does not depend on P5 publication state. The slug freezes from first website bootstrap, which is stronger than waiting for publication and preserves FINAL PLAN V2's declared P2-only dependency for P6.
@@ -44,7 +45,9 @@ Initial mirror slugs use:
 <readable-normalized-name>-<20-hex stable identity digest>
 ```
 
-The digest remains derived only from `pancakeShopId:pancakeProductId`, matching the old opaque `p-<digest>` identity suffix. This makes same-name product collisions deterministic without relying on import order or mutable product fields. If a name contains no usable characters, the factual generic URL label `san-pham` is used; it does not create a product claim.
+The digest remains derived only from `pancakeShopId:pancakeProductId`, matching the old opaque `p-<digest>` identity suffix. This makes same-name product collisions deterministic without relying on import order or mutable product fields. If a name contains no usable characters, or would use the reserved legacy base `p`, the factual generic URL label `san-pham` is used; it does not create a product claim.
+
+The exact pattern `p-[0-9a-f]{20}` is reserved permanently for legacy compatibility. Admin input cannot claim that namespace, and new bootstrap output cannot recreate it.
 
 ## Migration from legacy opaque slugs
 
@@ -60,6 +63,8 @@ The migration runs transactionally. Any uniqueness conflict aborts the migration
 Rolling/rollback implications:
 
 - older application code tolerates the additive history table;
+- if old runtime creates a new `p-<20hex>` row after the migration but before all instances are upgraded, the new runtime detects that exact legacy pattern on the next catalog sync, reserves the old slug in history and assigns the deterministic readable slug atomically under the shared slug advisory lock;
+- already-readable existing slugs are never recomputed from later Pancake names;
 - older storefront reads still use `ProductMirror.slug`, so a code rollback can continue serving the new readable current slug;
 - do not drop `ProductSlugHistory` in the same rollout because it is required by the later redirect slice;
 - migration rollback must restore current slugs from history before dropping the table if a true data rollback is ever required.
@@ -73,30 +78,37 @@ Server-side flow:
 1. authenticate and authorize ADMIN before parsing browser values;
 2. use the server-resolved product ID rather than trusting browser product identity;
 3. normalize and bound the proposed slug;
-4. serialize slug ownership changes with the catalog bootstrap path;
-5. reject any candidate that is already a current or historical slug;
-6. create history for the previous current slug and update the product in one transaction;
-7. repeat of the current slug is a no-op and creates no history.
+4. reject the exact reserved legacy `p-[0-9a-f]{20}` namespace;
+5. serialize slug ownership changes with the catalog bootstrap/healing path;
+6. reject any candidate that is already a current or historical slug;
+7. create history for the previous current slug and update the product in one transaction;
+8. repeat of the current slug is a no-op and creates no history.
 
 The browser cannot modify Pancake product identity, source description, commerce fields or publication state through the slug form.
 
 ## Catalog sync behavior
 
-Catalog sync still owns Pancake source facts such as name, source description, media and variant/stock data. For slug lifecycle it has only one authority: assigning the initial website-owned slug when a product row is first created.
+Catalog sync still owns Pancake source facts such as name, source description, media and variant/stock data. For slug lifecycle it has only two narrowly-scoped authorities:
 
-Sync and explicit admin slug mutations share a PostgreSQL advisory-lock namespace around slug ownership so a bootstrap cannot race with a history reservation. For existing products, sync updates source fields while intentionally omitting `slug` from the update set.
+1. assign the initial website-owned readable slug when a product row is first created;
+2. heal an exact legacy `p-[0-9a-f]{20}` current slug left by rolling deployment compatibility, preserving that old slug in history.
+
+Sync and explicit admin slug mutations share a PostgreSQL advisory-lock namespace around slug ownership so bootstrap/healing cannot race with a history reservation. For all already-readable existing products, sync updates source fields while intentionally omitting `slug` from the update set.
 
 ## Verification contract
 
 P6a is covered by:
 
-- domain tests for Vietnamese normalization, bounded deterministic bootstrap, same-name collision handling, ADMIN-first authorization and malformed input;
+- domain tests for Vietnamese normalization, bounded deterministic bootstrap, reserved legacy namespace handling, same-name collision handling, ADMIN-first authorization and malformed input;
 - database tests for explicit change, no-op behavior, current-slug collision, permanent history reservation and missing products;
-- catalog database tests proving readable initial bootstrap, Pancake rename freeze and fail-closed historical reservation;
+- catalog database tests proving readable initial bootstrap, Pancake rename freeze, fail-closed historical reservation and rolling-deploy healing of late legacy rows;
 - a migration test applying the real SQL to pre-P6 opaque rows;
 - the real admin browser/Axe/VoiceOver suite, which changes a slug through the UI, verifies current slug + history persistence, then continues the existing P5 editorial workflow regression.
 
-RED evidence: CI #899 failed only because the new P6 test imported the not-yet-existing `src/commerce/product-slug.ts`; the preceding 112 database tests were green. Production implementation was added only after that RED was observed.
+RED evidence:
+
+- CI #899 failed only because the new P6 test imported the not-yet-existing `src/commerce/product-slug.ts`; the preceding 112 database tests were green. Production implementation was added only after that RED was observed.
+- CI #912 reproduced the rolling-deploy compatibility defect: 120/121 database tests passed and the new legacy-healing regression alone failed because the existing `p-<digest>` row remained opaque. The compatibility healing patch was added only after that RED was observed.
 
 ## P6b remains required
 
