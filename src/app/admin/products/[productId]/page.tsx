@@ -66,6 +66,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     const adminSession = await requireCurrentAdmin();
     const result = await adminService.update(adminSession, {
       productId: persistedProductId,
+      status: formData.get("status"),
       editorialDescription: formData.get("editorialDescription"),
       careInstructions: formData.get("careInstructions"),
       sizeGuide: formData.get("sizeGuide"),
@@ -111,12 +112,35 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         <div className="text-xs font-semibold uppercase tracking-[0.13em] md:text-right">
           <p>{product.isActive ? "Catalog: đang hoạt động" : "Catalog: không hoạt động"}</p>
           <p className="mt-2 text-black/55">
-            {product.content ? "Editorial: đã lưu" : "Editorial: chưa có"}
+            Editorial: {product.content?.status ?? "DRAFT"}
           </p>
         </div>
       </div>
 
       <AdminFormStatus kind={formStatus} />
+
+      <section
+        aria-labelledby="source-description-heading"
+        className="mt-8 border border-black/20 bg-black/[0.025] p-6 md:p-8"
+      >
+        <p className="eyebrow">Nguồn Pancake · chỉ đọc</p>
+        <h2
+          id="source-description-heading"
+          className="mt-2 font-serif text-3xl tracking-[-0.03em]"
+        >
+          Nguồn mô tả từ Pancake
+        </h2>
+        {product.sourceDescription ? (
+          <p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-black/75">
+            {product.sourceDescription}
+          </p>
+        ) : (
+          <p className="mt-5 text-sm leading-7 text-black/55">Chưa có mô tả nguồn từ Pancake.</p>
+        )}
+        <p className="mt-5 max-w-3xl text-xs leading-5 text-black/55">
+          Dữ liệu này chỉ dùng làm ngữ cảnh đối chiếu. Đồng bộ Pancake không tự xuất bản và không ghi đè nội dung editorial hoặc SEO do website sở hữu.
+        </p>
+      </section>
 
       <form action={saveProductContent} className="mt-8 grid gap-12 lg:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-10">
@@ -163,7 +187,31 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         </div>
 
         <aside className="space-y-10 lg:border-l lg:border-black/20 lg:pl-8">
-          <section aria-labelledby="collections-heading">
+          <section aria-labelledby="publication-heading">
+            <p className="eyebrow">Publication</p>
+            <h2 id="publication-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+              Trạng thái
+            </h2>
+            <label className="mt-8 block">
+              <span className="text-xs font-semibold uppercase tracking-[0.13em]">
+                Trạng thái xuất bản
+              </span>
+              <select
+                className={inputClassName}
+                defaultValue={product.content?.status ?? "DRAFT"}
+                name="status"
+              >
+                <option value="DRAFT">DRAFT — Bản nháp</option>
+                <option value="REVIEWED">REVIEWED — Đã duyệt nội bộ</option>
+                <option value="PUBLISHED">PUBLISHED — Công khai</option>
+              </select>
+              <span className="mt-3 block text-xs leading-5 text-black/55">
+                Chỉ PUBLISHED được đưa các trường editorial và SEO ra storefront. DRAFT và REVIEWED vẫn là nội dung nội bộ.
+              </span>
+            </label>
+          </section>
+
+          <section aria-labelledby="collections-heading" className="border-t border-black/20 pt-10">
             <p className="eyebrow">Discovery</p>
             <h2 id="collections-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
               Collections
