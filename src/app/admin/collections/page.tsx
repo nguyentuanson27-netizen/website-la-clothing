@@ -215,7 +215,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
           Collection mới
         </h2>
         <div className="mt-8 border-t border-black/20 pt-8">
-          <CollectionForm action={saveCollection} />
+          <CollectionForm key={`new-${formStatus ?? "idle"}`} action={saveCollection} />
         </div>
       </section>
 
