@@ -66,12 +66,12 @@ test("collection admin normalizes browser form values and persists through the r
       seoTitle: "City Uniform | LA Clothing",
       seoDescription: "Everyday menswear essentials.",
       isPublished: true,
-      pancakeCategoryIds: [42, 7],
+      pancakeCategoryIds: [7, 42],
     },
   ]);
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.definition.pancakeCategoryIds, [42, 7]);
+    assert.deepEqual(result.definition.pancakeCategoryIds, [7, 42]);
   }
 });
 
