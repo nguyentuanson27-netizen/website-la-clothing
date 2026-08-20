@@ -191,8 +191,13 @@ try {
   );
   assert.equal(
     historicalResponse.location,
-    `${BASE_URL}/shop/${currentSlug}`,
-    "historical redirect must use the server-owned storefront origin even when the request Host is hostile",
+    `/shop/${currentSlug}`,
+    "historical redirect must resolve to the exact site-owned canonical path even when the request Host is hostile",
+  );
+  assert.equal(
+    historicalResponse.location?.includes(HOSTILE_HOST),
+    false,
+    "historical redirect must never contain the hostile request Host",
   );
   assertSecurityHeaders(historicalResponse, "historical slug 301");
 
@@ -205,7 +210,7 @@ try {
   assertSecurityHeaders(unknownResponse, "unknown slug 404");
 
   console.log(
-    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 destination, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
+    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
   );
 } finally {
   await stopServer();
