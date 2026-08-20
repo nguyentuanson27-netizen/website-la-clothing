@@ -9,9 +9,11 @@ export const PRODUCT_SLUG_LIMITS = {
   slug: 160,
 } as const;
 
+export const PRODUCT_SLUG_LOCK_NAMESPACE = 1_277_934_573;
+
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
-const PRODUCT_SLUG_LOCK_NAMESPACE = 1_277_934_573;
 const BOOTSTRAP_DIGEST_LENGTH = 20;
+const LEGACY_OPAQUE_PRODUCT_SLUG_PATTERN = /^p-[a-f0-9]{20}$/;
 
 type AdminSessionCandidate =
   | {
@@ -64,6 +66,10 @@ function requirePancakeProductId(pancakeProductId: string): string {
   return pancakeProductId;
 }
 
+export function isLegacyOpaqueProductSlug(slug: string): boolean {
+  return LEGACY_OPAQUE_PRODUCT_SLUG_PATTERN.test(slug);
+}
+
 export function normalizeProductSlug(value: string): string | null {
   if (typeof value !== "string") return null;
 
@@ -106,7 +112,8 @@ export function createBootstrapProductSlug({
   const suffix = `-${digest}`;
   const maxBaseLength = PRODUCT_SLUG_LIMITS.slug - suffix.length;
   const normalizedName = normalizeProductSlug(name) ?? "san-pham";
-  const base = normalizedName.slice(0, maxBaseLength).replace(/-+$/g, "") || "san-pham";
+  const bootstrapName = normalizedName === "p" ? "san-pham" : normalizedName;
+  const base = bootstrapName.slice(0, maxBaseLength).replace(/-+$/g, "") || "san-pham";
   return `${base}${suffix}`;
 }
 
@@ -129,7 +136,7 @@ function parseAdminInput(input: unknown): ProductSlugChangeInput | null {
   }
 
   const slug = normalizeProductSlug(rawSlug);
-  if (!slug) return null;
+  if (!slug || isLegacyOpaqueProductSlug(slug)) return null;
   return { productId, slug };
 }
 
