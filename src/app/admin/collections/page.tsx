@@ -19,25 +19,26 @@ export const metadata: Metadata = {
 
 const repository = createCollectionDefinitionRepository(prisma);
 const adminService = createCollectionDefinitionAdminService({
-  saveDefinition: repository.saveDefinition,
+  createDefinition: repository.createDefinition,
+  updateExistingDefinition: repository.updateExistingDefinition,
 });
 
 const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 const textareaClassName = `${inputClassName} min-h-28 resize-y leading-7`;
 
-async function persistCollection(slug: unknown, formData: FormData) {
-  const adminSession = await requireCurrentAdmin();
-  const result = await adminService.save(adminSession, {
-    slug,
+function mutableCollectionInput(formData: FormData) {
+  return {
     title: formData.get("title"),
     description: formData.get("description"),
     seoTitle: formData.get("seoTitle"),
     seoDescription: formData.get("seoDescription"),
     isPublished: formData.get("isPublished"),
     pancakeCategoryIds: formData.get("pancakeCategoryIds"),
-  });
+  };
+}
 
+function finishCollectionMutation(result: { ok: boolean }) {
   if (!result.ok) {
     redirect("/admin/collections?error=invalid");
   }
@@ -50,13 +51,24 @@ async function persistCollection(slug: unknown, formData: FormData) {
 async function createCollection(formData: FormData) {
   "use server";
 
-  await persistCollection(formData.get("slug"), formData);
+  const adminSession = await requireCurrentAdmin();
+  const result = await adminService.create(adminSession, {
+    slug: formData.get("slug"),
+    ...mutableCollectionInput(formData),
+  });
+  finishCollectionMutation(result);
 }
 
-async function updateCollection(originalSlug: string, formData: FormData) {
+async function updateCollection(targetSlug: string, formData: FormData) {
   "use server";
 
-  await persistCollection(originalSlug, formData);
+  const adminSession = await requireCurrentAdmin();
+  const result = await adminService.update(
+    adminSession,
+    targetSlug,
+    mutableCollectionInput(formData),
+  );
+  finishCollectionMutation(result);
 }
 
 function queryValue(value: string | string[] | undefined): string | undefined {
