@@ -19,7 +19,7 @@ export default async function CollectionsPage() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">LA Clothing / Collections</p>
-      <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
+      <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         COLLECTIONS
       </h1>
       {publishedCollections.length > 0 ? (
@@ -31,11 +31,11 @@ export default async function CollectionsPage() {
             >
               <div>
                 <p className="eyebrow">Collection</p>
-                <h2 className="mt-4 max-w-md font-serif text-3xl leading-tight md:text-5xl">
+                <h2 className="mt-4 max-w-md break-words font-serif text-3xl leading-tight md:text-5xl">
                   {collection.title}
                 </h2>
                 {collection.description ? (
-                  <p className="mt-4 max-w-lg text-sm leading-6 text-black/65">
+                  <p className="mt-4 max-w-lg break-words text-sm leading-6 text-black/65">
                     {collection.description}
                   </p>
                 ) : null}

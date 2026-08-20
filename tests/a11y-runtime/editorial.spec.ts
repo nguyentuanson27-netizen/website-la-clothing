@@ -71,9 +71,29 @@ async function cleanup() {
 }
 
 async function expectRuntimePageClean(page: import("@playwright/test").Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
-  );
+  const overflow = await page.evaluate(() => {
+    const scrollWidth = document.documentElement.scrollWidth;
+    const innerWidth = window.innerWidth;
+    if (scrollWidth <= innerWidth) return null;
+
+    const overflowingElements: Array<{ tag: string; className: string; text: string; right: number; width: number }> = [];
+    document.querySelectorAll("*").forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.right > innerWidth + 1 || rect.left < -1) {
+        overflowingElements.push({
+          tag: el.tagName,
+          className: el.className,
+          text: (el.textContent || "").slice(0, 50).trim(),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width),
+        });
+      }
+    });
+
+    return { scrollWidth, innerWidth, overflowingElements };
+  });
+
+  expect(overflow).toBeNull();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
