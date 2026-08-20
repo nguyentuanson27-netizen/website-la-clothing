@@ -231,8 +231,8 @@ test("admin can maintain canonical collections with accessible success and error
     pancakeCategoryIds: [7, 42],
   });
 
-  const persistedSlug = page.getByDisplayValue(collectionSlug);
-  await expect(persistedSlug).toBeVisible();
+  const persistedSlug = page.locator('input[name="slug"][readonly]');
+  await expect(persistedSlug).toHaveValue(collectionSlug);
   await expect(persistedSlug).not.toBeEditable();
 
   expect(
