@@ -17,6 +17,7 @@ const customerSession = {
 function validInput() {
   return {
     productId: "product-1",
+    status: "PUBLISHED",
     editorialDescription: "  Relaxed tailoring for everyday movement.  ",
     careInstructions: " Cold wash. ",
     sizeGuide: " ",
@@ -77,6 +78,9 @@ test("product editorial updates reject malformed browser input before database a
 
   for (const input of [
     { ...validInput(), productId: " product-1" },
+    { ...validInput(), status: "published" },
+    { ...validInput(), status: "ARCHIVED" },
+    { ...validInput(), status: 123 },
     { ...validInput(), seoTitle: 123 },
     { ...validInput(), collectionSlugs: "../sale" },
     { ...validInput(), collectionSlugs: "city-uniform, city-uniform" },
@@ -172,7 +176,30 @@ test("product editorial updates preserve old form submissions with no collection
   );
 });
 
-test("product editorial updates persist canonical collection membership returned by the resolver", async () => {
+test("legacy product editorial submissions without publication status default fail-closed to DRAFT", async () => {
+  const writes: unknown[] = [];
+  const service = createProductContentAdminService({
+    async productExists() {
+      return true;
+    },
+    async resolveCollectionSlugs(collectionSlugs) {
+      return passThroughCollections(collectionSlugs);
+    },
+    async saveContent(content) {
+      writes.push(content);
+      return content;
+    },
+  });
+
+  const { status, ...legacyInput } = validInput();
+  void status;
+
+  const result = await service.update(adminSession, legacyInput);
+  assert.equal(result.ok, true);
+  assert.equal((writes[0] as { status?: string }).status, "DRAFT");
+});
+
+test("product editorial updates persist canonical membership and explicit publication state without source fields", async () => {
   const writes: unknown[] = [];
   const service = createProductContentAdminService({
     async productExists(productId) {
@@ -189,11 +216,15 @@ test("product editorial updates persist canonical collection membership returned
     },
   });
 
-  const result = await service.update(adminSession, validInput());
+  const result = await service.update(adminSession, {
+    ...validInput(),
+    sourceDescription: "forged source field must never become website-owned content",
+  });
 
   assert.deepEqual(writes, [
     {
       productId: "product-1",
+      status: "PUBLISHED",
       editorialDescription: "Relaxed tailoring for everyday movement.",
       careInstructions: "Cold wash.",
       sizeGuide: null,
