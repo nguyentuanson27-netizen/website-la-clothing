@@ -115,4 +115,4 @@ P5 does not implement:
 - P12 domain/canonical/indexation behavior;
 - AI content generation or auto-publish.
 
-`la.lanadesign.vn` remains staging/temporary. P12 stays blocked until the product owner explicitly chooses the dedicated canonical production domain.
+`la.lanadesign.vn` remains staging/temporary and non-indexable. P12 may be implemented after its declared P6 + P7 dependencies while still on staging; enabling indexing and final-domain canonicals remain blocked until the dedicated LA Clothing domain is configured and release preflight passes.
