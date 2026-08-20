@@ -91,14 +91,14 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] RED/GREEN security/domain tests
 
 ## P4 — Real PLP/PDP media
-- [ ] narrow Next `images.remotePatterns`
-- [ ] matching CSP `img-src`
-- [ ] real product photography on cards
-- [ ] accessible responsive PDP gallery
-- [ ] meaningful alt text
-- [ ] intentional missing/rejected-media fallback
-- [ ] mobile/desktop network/CSP/browser evidence
-- [ ] Axe/keyboard/VoiceOver regression
+- [x] narrow Next `images.remotePatterns`
+- [x] matching CSP `img-src`
+- [x] real product photography on cards
+- [x] accessible responsive PDP gallery
+- [x] meaningful alt text
+- [x] intentional missing/rejected-media fallback
+- [x] mobile/desktop network/CSP/browser evidence
+- [x] Axe/keyboard/VoiceOver regression
 
 ## P5 — Website editorial workflow
 - [ ] show `sourceDescription` to admin as read-only source context

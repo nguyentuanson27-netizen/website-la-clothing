@@ -1,4 +1,8 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import {
+  resolveStorefrontProductMedia,
+  type StorefrontProductMedia,
+} from "./product-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
@@ -64,6 +68,7 @@ const productSelection = {
   id: true,
   slug: true,
   name: true,
+  primaryImageUrl: true,
   content: {
     select: {
       editorialDescription: true,
@@ -83,6 +88,7 @@ const productSelection = {
       size: true,
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
+      pancakeImageUrls: true,
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
@@ -96,11 +102,26 @@ type DiscoveryIdRow = { id: string; sortPrice: number | null };
 type DiscoveryCountRow = { count: bigint };
 type FacetRow = { value: string };
 
+function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 function toStorefrontProduct(product: SelectedProduct) {
+  const media: StorefrontProductMedia = resolveStorefrontProductMedia({
+    productName: product.name,
+    primaryImageUrl: product.primaryImageUrl,
+    variantImageUrls: product.variants.map((variant) =>
+      parseJsonStringArray(variant.pancakeImageUrls),
+    ),
+  });
+
   return {
     id: product.id,
     slug: product.slug,
     name: product.name,
+    media,
     editorialDescription: product.content?.editorialDescription ?? null,
     careInstructions: product.content?.careInstructions ?? null,
     sizeGuide: product.content?.sizeGuide ?? null,

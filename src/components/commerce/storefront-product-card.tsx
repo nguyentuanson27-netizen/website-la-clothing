@@ -1,5 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 
+import type { StorefrontProductMedia } from "@/commerce/product-media";
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
@@ -19,6 +21,7 @@ type StorefrontProductCardProps = {
   editorialDescription: string | null;
   variants: StorefrontVariantFacts[];
   tone: "stone" | "olive" | "ink" | "sand";
+  media?: StorefrontProductMedia | null;
 };
 
 function describePrice(options: readonly StorefrontVariantOption[]): string {
@@ -46,18 +49,30 @@ export function StorefrontProductCard({
   editorialDescription,
   variants,
   tone,
+  media,
 }: StorefrontProductCardProps) {
   const options = buildStorefrontVariantOptions(variants);
+  const primaryImage = media?.primary ?? null;
 
   return (
-    <article>
+    <article className="group">
       <Link
         className="product-visual-link block"
         href={`/shop/${encodeURIComponent(slug)}`}
         aria-label={`Xem ${name}`}
       >
-        <div className={`product-visual product-visual--${tone}`} aria-hidden="true">
-          <span className="garment-silhouette" />
+        <div className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`} aria-hidden="true">
+          {primaryImage ? (
+            <Image
+              src={primaryImage.url}
+              alt={primaryImage.alt || name}
+              fill
+              sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <span className="garment-silhouette" />
+          )}
         </div>
       </Link>
       <div className="product-meta">

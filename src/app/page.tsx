@@ -60,6 +60,7 @@ export default async function HomePage() {
                 key={product.id}
                 slug={product.slug}
                 name={product.name}
+                media={product.media}
                 editorialDescription={product.editorialDescription}
                 variants={product.variants}
                 tone={tones[index % tones.length]!}
