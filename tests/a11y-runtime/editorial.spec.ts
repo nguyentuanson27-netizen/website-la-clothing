@@ -97,6 +97,54 @@ async function expectVisualFoundationTokens(page: import("@playwright/test").Pag
   for (const value of Object.values(tokens)) {
     expect(value).not.toBe("");
   }
+
+  // Assert shared control, badge, and skeleton loading primitives resolve with non-empty styles
+  const primitives = await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.innerHTML = `
+      <button class="btn btn--primary">Primary</button>
+      <button class="btn btn--secondary">Secondary</button>
+      <button class="btn btn--outline">Outline</button>
+      <span class="badge badge--olive">Olive</span>
+      <span class="badge badge--stone">Stone</span>
+      <span class="badge badge--outline">Tag</span>
+      <div class="skeleton" style="width: 100px; height: 20px;"></div>
+    `;
+    document.body.appendChild(fixture);
+
+    const btnPrimary = getComputedStyle(fixture.querySelector(".btn--primary")!);
+    const btnSecondary = getComputedStyle(fixture.querySelector(".btn--secondary")!);
+    const btnOutline = getComputedStyle(fixture.querySelector(".btn--outline")!);
+    const badgeOlive = getComputedStyle(fixture.querySelector(".badge--olive")!);
+    const badgeStone = getComputedStyle(fixture.querySelector(".badge--stone")!);
+    const badgeOutline = getComputedStyle(fixture.querySelector(".badge--outline")!);
+    const skeleton = getComputedStyle(fixture.querySelector(".skeleton")!);
+
+    const result = {
+      primaryBg: btnPrimary.backgroundColor,
+      primaryColor: btnPrimary.color,
+      primaryHeight: btnPrimary.minHeight,
+      secondaryBg: btnSecondary.backgroundColor,
+      outlineBorder: btnOutline.borderColor,
+      badgeOliveBg: badgeOlive.backgroundColor,
+      badgeStoneBg: badgeStone.backgroundColor,
+      badgeOutlineBorder: badgeOutline.borderColor,
+      skeletonImage: skeleton.backgroundImage,
+    };
+
+    fixture.remove();
+    return result;
+  });
+
+  expect(primitives.primaryBg).not.toBe("");
+  expect(primitives.primaryColor).not.toBe("");
+  expect(primitives.primaryHeight).toBe("44px");
+  expect(primitives.secondaryBg).not.toBe("");
+  expect(primitives.outlineBorder).not.toBe("");
+  expect(primitives.badgeOliveBg).not.toBe("");
+  expect(primitives.badgeStoneBg).not.toBe("");
+  expect(primitives.badgeOutlineBorder).not.toBe("");
+  expect(primitives.skeletonImage).toContain("gradient");
 }
 
 test.beforeAll(async () => {

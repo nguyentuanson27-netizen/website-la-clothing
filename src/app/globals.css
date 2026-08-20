@@ -681,6 +681,104 @@ body {
   border-top-style: double;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Visual Foundation Reusable Component Tokens & States (Task P8)            */
+/* -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height, 44px);
+  padding: var(--space-3, 0.75rem) var(--space-5, 1.5rem);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn--primary {
+  background: var(--ink);
+  color: var(--white);
+  border-color: var(--ink);
+}
+
+.btn--primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn--secondary {
+  background: var(--stone);
+  color: var(--ink);
+  border-color: var(--stone);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: #cfc9be;
+}
+
+.btn--outline {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn--outline:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.badge--olive {
+  background: var(--olive);
+  color: var(--white);
+}
+
+.badge--stone {
+  background: var(--stone);
+  color: var(--ink);
+}
+
+.badge--outline {
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e8e4da 25%, #f2efe7 50%, #e8e4da 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @media (max-width: 900px) {
   .nav-shell {
     gap: var(--space-3);
