@@ -69,16 +69,17 @@ const productSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
-  content: {
-    select: {
-      status: true,
-      editorialDescription: true,
-      careInstructions: true,
-      sizeGuide: true,
-      seoTitle: true,
-      seoDescription: true,
+    content: {
+      select: {
+        status: true,
+        editorialDescription: true,
+        careInstructions: true,
+        sizeGuide: true,
+        seoTitle: true,
+        seoDescription: true,
+        collectionSlugs: true,
+      },
     },
-  },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -129,6 +130,7 @@ function toStorefrontProduct(product: SelectedProduct) {
     sizeGuide: publishedContent?.sizeGuide ?? null,
     seoTitle: publishedContent?.seoTitle ?? null,
     seoDescription: publishedContent?.seoDescription ?? null,
+    collectionSlugs: publishedContent ? parseJsonStringArray(publishedContent.collectionSlugs) : [],
     variants: product.variants.map((variant) => ({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,

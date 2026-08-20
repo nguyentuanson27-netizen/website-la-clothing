@@ -383,6 +383,22 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await expect(page.getByRole("link", { name: "essential outerwear" })).toHaveAttribute(
+    "href",
+    "/collections/essential-outerwear",
+  );
+  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeDisabled();
+
+  await page.getByRole("radio", { name: "M" }).click();
+  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeEnabled();
+  await page.getByRole("button", { name: "Add to Bag" }).click();
+  await expect(page.getByText("Đã thêm sản phẩm vào túi.")).toBeVisible();
+  await expectRuntimePageClean(page);
 });
 
 test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({
