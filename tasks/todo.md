@@ -101,12 +101,12 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] Axe/keyboard/VoiceOver regression
 
 ## P5 — Website editorial workflow
-- [ ] show `sourceDescription` to admin as read-only source context
-- [ ] public copy remains website-owned
-- [ ] add explicit publish workflow/status if required by implementation
-- [ ] optional material/fit facts remain nullable/manual only
-- [ ] Pancake sync cannot auto-publish/overwrite editorial copy
-- [ ] admin auth/input/DB tests
+- [x] show `sourceDescription` to admin as read-only source context
+- [x] public copy remains website-owned
+- [x] add explicit publish workflow/status if required by implementation
+- [x] optional material/fit facts remain nullable/manual only
+- [x] Pancake sync cannot auto-publish/overwrite editorial copy
+- [x] admin auth/input/DB tests
 
 ## P6 — Stable readable product slug lifecycle
 - [ ] replace existing `p-<digest>` public slugs before indexing
@@ -286,7 +286,7 @@ Pancake source facts
 
 - [x] commerce facts remain server-authoritative
 - [x] published website editorial copy wins for public content
-- [x] `sourceDescription` is input/fallback context, not overwrite authority
+- [x] `sourceDescription` is read-only input context, never public fallback or overwrite authority
 - [x] private `note` is never a fallback
 - [x] missing facts remain missing
 
@@ -312,4 +312,4 @@ For every behavior-changing slice:
 - [ ] final dedicated domain choice
 - [ ] final launch approval
 
-**Next `/build` entry point: P0 — safe live Pancake audit.**
+**Next `/build` entry point after P5 merge approval: P6 — stable readable product slug lifecycle. Do not start P12 before the dedicated canonical domain is explicitly chosen.**
