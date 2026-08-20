@@ -71,6 +71,7 @@ const productSelection = {
   primaryImageUrl: true,
   content: {
     select: {
+      status: true,
       editorialDescription: true,
       careInstructions: true,
       sizeGuide: true,
@@ -116,17 +117,18 @@ function toStorefrontProduct(product: SelectedProduct) {
       parseJsonStringArray(variant.pancakeImageUrls),
     ),
   });
+  const publishedContent = product.content?.status === "PUBLISHED" ? product.content : null;
 
   return {
     id: product.id,
     slug: product.slug,
     name: product.name,
     media,
-    editorialDescription: product.content?.editorialDescription ?? null,
-    careInstructions: product.content?.careInstructions ?? null,
-    sizeGuide: product.content?.sizeGuide ?? null,
-    seoTitle: product.content?.seoTitle ?? null,
-    seoDescription: product.content?.seoDescription ?? null,
+    editorialDescription: publishedContent?.editorialDescription ?? null,
+    careInstructions: publishedContent?.careInstructions ?? null,
+    sizeGuide: publishedContent?.sizeGuide ?? null,
+    seoTitle: publishedContent?.seoTitle ?? null,
+    seoDescription: publishedContent?.seoDescription ?? null,
     variants: product.variants.map((variant) => ({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
