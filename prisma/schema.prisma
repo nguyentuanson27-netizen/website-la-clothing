@@ -28,6 +28,12 @@ enum LocalOrderState {
   SYNC_UNKNOWN
 }
 
+enum ProductContentStatus {
+  DRAFT
+  REVIEWED
+  PUBLISHED
+}
+
 model User {
   id            String        @id
   name          String
@@ -68,7 +74,7 @@ model Account {
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken            String?
   refreshToken           String?
-  idToken                String?
+  idToken                 String?
   accessTokenExpiresAt   DateTime?
   refreshTokenExpiresAt  DateTime?
   scope                   String?
@@ -136,17 +142,18 @@ model ProductMirror {
 }
 
 model ProductContent {
-  id                   String        @id @default(cuid())
-  productId            String        @unique
+  id                   String               @id @default(cuid())
+  productId            String               @unique
+  status               ProductContentStatus @default(DRAFT)
   editorialDescription String?
   careInstructions     String?
   sizeGuide             String?
   seoTitle              String?
   seoDescription        String?
-  collectionSlugs      String[]      @default([])
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  product               ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+  collectionSlugs      String[]             @default([])
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  product               ProductMirror        @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model CollectionDefinition {
