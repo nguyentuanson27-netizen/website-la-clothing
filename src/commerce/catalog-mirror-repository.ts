@@ -1,10 +1,13 @@
-import { createHash } from "node:crypto";
-
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
+import {
+  createBootstrapProductSlug,
+  isLegacyOpaqueProductSlug,
+  PRODUCT_SLUG_LOCK_NAMESPACE,
+} from "./product-slug.ts";
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -42,14 +45,6 @@ function parseReadLimit(limit: number): number {
     throw new RangeError(`Catalog mirror read limit must be between 1 and ${MAX_READ_PRODUCTS}`);
   }
   return limit;
-}
-
-function stableMirrorSlug(shopId: number, pancakeProductId: string): string {
-  const digest = createHash("sha256")
-    .update(`${shopId}:${pancakeProductId}`)
-    .digest("hex")
-    .slice(0, 20);
-  return `p-${digest}`;
 }
 
 export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalogVariation[]) {
@@ -160,6 +155,11 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
 
+        // Product slug ownership spans the current-slug and history tables. Serialize
+        // sync bootstrap/healing with explicit admin slug changes so a historical slug
+        // cannot race back into use as a current slug.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PRODUCT_SLUG_LOCK_NAMESPACE}, 0)`;
+
         // ProductMirror rows created before C4 had no shop scope. The C4 migration
         // uses shop 0 as the legacy sentinel, and the runtime currently has one
         // configured Pancake shop, so adopt those rows before stale reconciliation.
@@ -179,29 +179,110 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
         const internalProductIds = new Map<string, string>();
 
         for (const product of productByExternalId.values()) {
-          const mirrored = await tx.productMirror.upsert({
+          const existing = await tx.productMirror.findUnique({
             where: { pancakeProductId: product.pancakeProductId },
-            create: {
-              pancakeShopId: safeShopId,
-              pancakeProductId: product.pancakeProductId,
-              slug: stableMirrorSlug(safeShopId, product.pancakeProductId),
-              name: product.name,
-              sourceDescription: product.sourceDescription,
-              primaryImageUrl: product.primaryImageUrl,
-              isPresent: true,
-              isActive: false,
-              syncedAt: safeSyncedAt,
-            },
-            update: {
-              pancakeShopId: safeShopId,
-              name: product.name,
-              sourceDescription: product.sourceDescription,
-              primaryImageUrl: product.primaryImageUrl,
-              isPresent: true,
-              syncedAt: safeSyncedAt,
-            },
-            select: { id: true },
+            select: { id: true, slug: true },
           });
+
+          const mirrored = existing
+            ? await (async () => {
+                if (!isLegacyOpaqueProductSlug(existing.slug)) {
+                  return tx.productMirror.update({
+                    where: { id: existing.id },
+                    data: {
+                      pancakeShopId: safeShopId,
+                      name: product.name,
+                      sourceDescription: product.sourceDescription,
+                      primaryImageUrl: product.primaryImageUrl,
+                      isPresent: true,
+                      syncedAt: safeSyncedAt,
+                    },
+                    select: { id: true },
+                  });
+                }
+
+                // Rolling compatibility: an old runtime may create a p-<digest>
+                // product after the migration has already backfilled existing rows.
+                // The exact legacy pattern is reserved, so the new runtime can heal
+                // only those rows without ever rewriting a normal website-owned slug.
+                const readableSlug = createBootstrapProductSlug({
+                  shopId: safeShopId,
+                  pancakeProductId: product.pancakeProductId,
+                  name: product.name,
+                });
+                const [currentOwner, candidateHistory, legacyHistory] = await Promise.all([
+                  tx.productMirror.findUnique({
+                    where: { slug: readableSlug },
+                    select: { id: true },
+                  }),
+                  tx.productSlugHistory.findUnique({
+                    where: { slug: readableSlug },
+                    select: { productId: true },
+                  }),
+                  tx.productSlugHistory.findUnique({
+                    where: { slug: existing.slug },
+                    select: { productId: true },
+                  }),
+                ]);
+
+                if (currentOwner || candidateHistory) {
+                  throw new Error("Catalog mirror readable slug is already reserved");
+                }
+                if (legacyHistory && legacyHistory.productId !== existing.id) {
+                  throw new Error("Catalog mirror legacy slug history has conflicting ownership");
+                }
+                if (!legacyHistory) {
+                  await tx.productSlugHistory.create({
+                    data: { slug: existing.slug, productId: existing.id },
+                  });
+                }
+
+                return tx.productMirror.update({
+                  where: { id: existing.id },
+                  data: {
+                    pancakeShopId: safeShopId,
+                    slug: readableSlug,
+                    name: product.name,
+                    sourceDescription: product.sourceDescription,
+                    primaryImageUrl: product.primaryImageUrl,
+                    isPresent: true,
+                    syncedAt: safeSyncedAt,
+                  },
+                  select: { id: true },
+                });
+              })()
+            : await (async () => {
+                const slug = createBootstrapProductSlug({
+                  shopId: safeShopId,
+                  pancakeProductId: product.pancakeProductId,
+                  name: product.name,
+                });
+                const [currentOwner, historicalOwner] = await Promise.all([
+                  tx.productMirror.findUnique({ where: { slug }, select: { id: true } }),
+                  tx.productSlugHistory.findUnique({
+                    where: { slug },
+                    select: { productId: true },
+                  }),
+                ]);
+                if (currentOwner || historicalOwner) {
+                  throw new Error("Catalog mirror bootstrap slug is already reserved");
+                }
+
+                return tx.productMirror.create({
+                  data: {
+                    pancakeShopId: safeShopId,
+                    pancakeProductId: product.pancakeProductId,
+                    slug,
+                    name: product.name,
+                    sourceDescription: product.sourceDescription,
+                    primaryImageUrl: product.primaryImageUrl,
+                    isPresent: true,
+                    isActive: false,
+                    syncedAt: safeSyncedAt,
+                  },
+                  select: { id: true },
+                });
+              })();
           internalProductIds.set(product.pancakeProductId, mirrored.id);
         }
 

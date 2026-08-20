@@ -11,6 +11,7 @@ import {
 } from "@/commerce/product-content-admin";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
 import { AdminFormStatus } from "@/components/admin/admin-form-status";
+import { ProductSlugEditor } from "@/components/admin/product-slug-editor";
 import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
@@ -38,6 +39,8 @@ type ProductEditorPageProps = {
   searchParams: Promise<{
     saved?: string | string[];
     error?: string | string[];
+    slugSaved?: string | string[];
+    slugError?: string | string[];
   }>;
 };
 
@@ -92,6 +95,10 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const saved = queryValue(query.saved) === "1";
   const invalid = queryValue(query.error) === "invalid";
   const formStatus = invalid ? "error" : saved ? "success" : null;
+  const slugSaved = queryValue(query.slugSaved) === "1";
+  const rawSlugError = queryValue(query.slugError);
+  const slugError =
+    rawSlugError === "invalid" || rawSlugError === "unavailable" ? rawSlugError : null;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -118,6 +125,14 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       </div>
 
       <AdminFormStatus kind={formStatus} />
+
+      <ProductSlugEditor
+        productId={persistedProductId}
+        currentSlug={product.slug}
+        editorPath={editorPath}
+        saved={slugSaved}
+        error={slugError}
+      />
 
       <section
         aria-labelledby="source-description-heading"

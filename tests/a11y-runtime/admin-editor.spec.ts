@@ -21,6 +21,7 @@ const adminEmail = `admin-a11y-${runId}@example.invalid`;
 const password = "admin-a11y-runtime-password-123";
 const productExternalId = `admin-a11y-product-${runId}`;
 const productSlug = `admin-a11y-product-${runId}`;
+const editedProductSlug = `ao-so-mi-admin-${runId}`;
 const productName = `Admin A11y Product ${runId}`;
 const sourceDescription = "Read-only Pancake source context for editorial decisions.";
 
@@ -170,6 +171,9 @@ test("admin editor keeps Pancake source read-only and announces publication save
   await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeVisible();
   await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
   await expect(page.locator('[name="sourceDescription"]')).toHaveCount(0);
+  const slugTextbox = page.getByRole("textbox", { name: "Slug sản phẩm", exact: true });
+  await expect(slugTextbox).toHaveValue(productSlug);
+  await expect(page.getByRole("button", { name: "Lưu slug" })).toBeVisible();
   await expect(page.getByLabel("Trạng thái xuất bản")).toHaveValue("DRAFT");
   await expect(page.getByRole("button", { name: "Lưu nội dung" })).toBeVisible();
   await expect(page.getByLabel("Mô tả biên tập")).toBeVisible();
@@ -187,6 +191,27 @@ test("admin editor keeps Pancake source read-only and announces publication save
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+  await slugTextbox.fill(`  Áo Sơ Mi Admin ${runId}  `);
+  await page.getByRole("button", { name: "Lưu slug" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("slugSaved") === "1",
+  );
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu slug sản phẩm." })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Slug sản phẩm", exact: true })).toHaveValue(
+    editedProductSlug,
+  );
+
+  const persistedSlug = await prisma.productMirror.findUniqueOrThrow({
+    where: { id: productId },
+    select: { slug: true },
+  });
+  expect(persistedSlug.slug).toBe(editedProductSlug);
+  const slugHistory = await prisma.productSlugHistory.findUniqueOrThrow({
+    where: { slug: productSlug },
+    select: { productId: true },
+  });
+  expect(slugHistory.productId).toBe(productId);
 
   await page.getByLabel("Trạng thái xuất bản").selectOption("PUBLISHED");
   await page.getByLabel("Mô tả biên tập").fill("Editorial content verified in a real browser.");
@@ -226,9 +251,9 @@ test("admin editor keeps Pancake source read-only and announces publication save
   });
   const sourceAfterSave = await prisma.productMirror.findUnique({
     where: { id: productId },
-    select: { sourceDescription: true },
+    select: { sourceDescription: true, slug: true },
   });
-  expect(sourceAfterSave?.sourceDescription).toBe(sourceDescription);
+  expect(sourceAfterSave).toEqual({ sourceDescription, slug: editedProductSlug });
 
   const seoTitle = page.getByLabel("SEO title");
   await seoTitle.evaluate((element) => {
