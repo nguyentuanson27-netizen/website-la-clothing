@@ -68,14 +68,19 @@ export default async function HomePage() {
             ))}
           </div>
         ) : (
-          <div className="border-t border-black/20 py-16">
-            <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
+          <section
+            aria-labelledby="homepage-empty-title"
+            className="ui-state ui-state--empty"
+            data-ui-state="empty"
+          >
+            <p className="eyebrow">Current edit</p>
+            <h2 id="homepage-empty-title" className="ui-state__title">
               The current edit is being prepared.
-            </p>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-black/60">
+            </h2>
+            <p className="ui-state__copy">
               Products will appear here when the shop catalog is available for the website.
             </p>
-          </div>
+          </section>
         )}
       </section>
 

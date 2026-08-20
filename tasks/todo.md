@@ -133,12 +133,12 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [ ] no indexable architecture depends on unreviewed POS category names
 
 ## P8 — Visual foundation
-- [ ] typography/spacing/grid/media ratios/tokens
-- [ ] header/footer/navigation/promotion shell
-- [ ] responsive states
-- [ ] focus/error/loading/empty patterns
-- [ ] no commerce/auth semantics changed
-- [ ] mobile/desktop/a11y shell evidence
+- [x] typography/spacing/grid/media ratios/tokens
+- [x] header/footer/navigation/promotion shell
+- [x] responsive states
+- [x] focus/error/loading/empty patterns
+- [x] no commerce/auth semantics changed
+- [x] mobile/desktop/a11y shell evidence
 
 ## P9 — Homepage + Lookbook
 - [ ] remove fake silhouettes/placeholders where real media is available

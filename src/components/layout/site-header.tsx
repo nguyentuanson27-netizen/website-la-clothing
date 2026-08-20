@@ -14,8 +14,6 @@ export function SiteHeader() {
         Bỏ qua đến nội dung chính
       </a>
 
-      <div className="announcement-bar">FALL / WINTER — NEW COLLECTION</div>
-
       <div className="nav-shell">
         <Link className="brand-mark" href="/" aria-label="LA Clothing — Trang chủ">
           LA CLOTHING
@@ -47,7 +45,7 @@ export function SiteHeader() {
         <nav className="utility-nav" aria-label="Tiện ích">
           <Link href="/search">Search</Link>
           <Link href="/account">Account</Link>
-          <Link href="/cart">Bag (0)</Link>
+          <Link href="/cart">Bag</Link>
         </nav>
       </div>
     </header>
