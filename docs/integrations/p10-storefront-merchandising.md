@@ -28,9 +28,15 @@ Task P10 productizes the storefront discovery, collections landing pages, and pr
 
 - **Price & Stock**: Server-authoritative calculation; no client trust for retail price or exact stock quantities.
 - **Purchase Rules**: Mandatory Size selection before "Add to Bag" enables; server re-verifies inventory during mutation.
+- **Publication Boundary for Collections**:
+  - PDP collection badges only resolve and render published `CollectionDefinition` rows (`isPublished: true`) with website-owned authentic titles; draft/unpublished collections are omitted to prevent 404 links.
+  - Shop discovery facets only expose collection slugs that belong to published `CollectionDefinition` records and published `ProductContent`.
+  - Shop collection filter (`/shop?collection=...`) requires `pc.status = 'PUBLISHED'` and an existing published `CollectionDefinition` (`isPublished = TRUE`), guaranteeing draft memberships never affect public storefront discovery.
 - **Links**: All internal links strictly guarded by `tests/integrations/homepage-links.test.ts`.
 
 ### 3. Verification Evidence
 
+- `tests/database/storefront-catalog.test.ts`: PASS (verifies only published collection definitions are exposed on product detail and facets).
+- `tests/database/storefront-discovery.test.ts`: PASS (verifies discovery search, same-variant filters, and publication-aware collection filtering).
 - `tests/integrations/homepage-links.test.ts`: PASS (100% internal links verified).
 - `tests/a11y-runtime/editorial.spec.ts`: PASS (Full flow: Homepage → Lookbook → Collections → Collection Landing → PDP → Add to Bag verified on 390px mobile and desktop with 0 Axe violations and 0 horizontal overflow).

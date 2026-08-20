@@ -20,6 +20,9 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({
     where: { pancakeShopId: { in: [shopId, otherShopId] } },
   });
+  await prisma.collectionDefinition.deleteMany({
+    where: { slug: { in: ["city-uniform", "essentials", "unpub-col"] } },
+  });
 }
 
 async function seedProduct(input: {
@@ -27,6 +30,7 @@ async function seedProduct(input: {
   id: string;
   name: string;
   collectionSlugs?: string[];
+  contentStatus?: "DRAFT" | "REVIEWED" | "PUBLISHED";
   color: string;
   size: string;
   price: number;
@@ -44,7 +48,12 @@ async function seedProduct(input: {
       isActive: input.active ?? true,
       syncedAt,
       content: input.collectionSlugs
-        ? { create: { collectionSlugs: input.collectionSlugs } }
+        ? {
+            create: {
+              status: input.contentStatus ?? "PUBLISHED",
+              collectionSlugs: input.collectionSlugs,
+            },
+          }
         : undefined,
     },
   });
@@ -110,6 +119,32 @@ async function seedVariant(input: {
 
 test.beforeEach(async () => {
   await cleanup();
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "city-uniform" },
+    create: {
+      slug: "city-uniform",
+      title: "City Uniform",
+      description: "City uniform collection.",
+      seoTitle: "City Uniform",
+      seoDescription: "City uniform",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: true, title: "City Uniform" },
+  });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "essentials" },
+    create: {
+      slug: "essentials",
+      title: "Essentials",
+      description: "Essentials collection.",
+      seoTitle: "Essentials",
+      seoDescription: "Essentials",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: true, title: "Essentials" },
+  });
   await seedProduct({
     id: "linen-overshirt",
     name: "Linen Overshirt",
@@ -280,4 +315,77 @@ test("discovery facets stay scoped to visible products in the configured shop", 
   assert.deepEqual(facets.colors, ["Black", "Olive", "Stone"]);
   assert.deepEqual(facets.sizes, ["L", "M"]);
   assert.deepEqual(facets.collections, ["city-uniform", "essentials"]);
+});
+
+test("discovery collection filter requires published ProductContent and published CollectionDefinition", async () => {
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "unpub-col" },
+    create: {
+      slug: "unpub-col",
+      title: "Unpublished Collection",
+      description: "Unpublished.",
+      seoTitle: "Unpub",
+      seoDescription: "Unpub",
+      isPublished: false,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: false, title: "Unpublished Collection" },
+  });
+
+  // (a) DRAFT ProductContent with valid published collection slug -> must not match
+  await seedProduct({
+    id: "draft-content-product",
+    name: "Draft Content Product",
+    collectionSlugs: ["city-uniform"],
+    contentStatus: "DRAFT",
+    color: "Black",
+    size: "M",
+    price: 500_000,
+    stock: 2,
+  });
+
+  // (b) PUBLISHED ProductContent referencing an unpublished collection -> must not match
+  await seedProduct({
+    id: "unpub-col-product",
+    name: "Unpublished Collection Product",
+    collectionSlugs: ["unpub-col"],
+    contentStatus: "PUBLISHED",
+    color: "Black",
+    size: "M",
+    price: 500_000,
+    stock: 2,
+  });
+
+  // (a) check: draft content with published collection slug is excluded from collection filter
+  const cityFiltered = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform" }),
+  });
+  assert.equal(
+    cityFiltered.products.some(({ name }) => name === "Draft Content Product"),
+    false,
+  );
+  assert.equal(
+    cityFiltered.products.some(({ name }) => name === "Linen Overshirt"),
+    true,
+  );
+
+  // (b) check: published content referencing unpublished collection returns 0 products
+  const unpubFiltered = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "unpub-col" }),
+  });
+  assert.equal(unpubFiltered.totalCount, 0);
+  assert.equal(unpubFiltered.products.length, 0);
+
+  // (c) check: published content with published collection filters normally
+  const essentialsFiltered = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "essentials" }),
+  });
+  assert.equal(essentialsFiltered.totalCount, 1);
+  assert.deepEqual(essentialsFiltered.products.map(({ name }) => name), ["Stone Trouser"]);
 });

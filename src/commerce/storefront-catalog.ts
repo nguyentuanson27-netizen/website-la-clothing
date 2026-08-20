@@ -260,9 +260,16 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
     filters.push(Prisma.sql`POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0`);
   }
   if (discovery.collection) {
-    filters.push(
-      Prisma.sql`${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))`,
-    );
+    filters.push(Prisma.sql`
+      pc."status" = 'PUBLISHED'
+      AND ${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))
+      AND EXISTS (
+        SELECT 1
+        FROM "CollectionDefinition" cd
+        WHERE cd."slug" = ${discovery.collection}
+          AND cd."isPublished" = TRUE
+      )
+    `);
   }
 
   const variantFilters = buildVariantPredicate(discovery);
