@@ -10,6 +10,7 @@ export default defineConfig({
     "discovery.spec.ts",
     "editorial.spec.ts",
     "storefront-commerce.spec.ts",
+    "storefront-media.spec.ts",
     "tracking.spec.ts",
   ],
   workers: 1,
