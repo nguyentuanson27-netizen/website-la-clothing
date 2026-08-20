@@ -90,8 +90,8 @@ model Verification {
   identifier String
   value      String
   expiresAt  DateTime
-  createdAt DateTime?
-  updatedAt DateTime?
+  createdAt  DateTime?
+  updatedAt  DateTime?
 
   @@map("verification")
 }
