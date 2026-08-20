@@ -20,11 +20,13 @@ async function loadHomepageProductEdit() {
 export default async function HomePage() {
   await connection();
   const featuredProducts = await loadHomepageProductEdit();
-  const heroProduct = featuredProducts[0];
+  const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
+  const heroProduct = productsWithMedia[0];
   const heroImage = heroProduct?.media?.primary ?? null;
-  const lookbookLargeProduct = featuredProducts[1] ?? featuredProducts[0];
+  const lookbookLargeProduct = productsWithMedia[1] ?? productsWithMedia[0];
   const lookbookLargeImage = lookbookLargeProduct?.media?.primary ?? null;
-  const lookbookSmallProduct = featuredProducts[2] ?? featuredProducts[1];
+  const lookbookSmallProduct =
+    productsWithMedia[2] ?? productsWithMedia[1] ?? productsWithMedia[0];
   const lookbookSmallImage = lookbookSmallProduct?.media?.primary ?? null;
 
   return (
@@ -43,16 +45,9 @@ export default async function HomePage() {
           </div>
         ) : (
           <div
-            className="campaign-visual relative flex min-h-[620px] items-center justify-center overflow-hidden bg-[var(--stone)] p-8 text-center"
+            className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]"
             aria-hidden="true"
-          >
-            <div>
-              <p className="eyebrow text-black/50">LA Clothing</p>
-              <p className="mt-2 text-xs uppercase tracking-[0.14em] text-black/40">
-                Visual edit in preparation
-              </p>
-            </div>
-          </div>
+          />
         )}
         <div className="campaign-copy">
           <p className="eyebrow">LA Clothing / Campaign</p>
@@ -129,11 +124,9 @@ export default async function HomePage() {
           </div>
         ) : (
           <div
-            className="lookbook-panel lookbook-panel--large relative flex min-h-[68vh] items-center justify-center overflow-hidden bg-[#b9b2a4] p-8 text-center md:min-h-[780px]"
+            className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]"
             aria-hidden="true"
-          >
-            <p className="eyebrow text-black/40">LA Clothing Editorial</p>
-          </div>
+          />
         )}
         <div className="lookbook-copy">
           <p className="eyebrow">Editorial / 02</p>
@@ -153,11 +146,9 @@ export default async function HomePage() {
           </div>
         ) : (
           <div
-            className="lookbook-panel lookbook-panel--small relative flex min-h-[55vh] items-center justify-center overflow-hidden bg-[var(--olive)] p-8 text-center"
+            className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]"
             aria-hidden="true"
-          >
-            <p className="eyebrow text-white/50">LA Clothing</p>
-          </div>
+          />
         )}
       </section>
 

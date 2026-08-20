@@ -9,7 +9,7 @@ import { PancakeConfigError } from "@/integrations/pancake/config";
 
 export const metadata: Metadata = {
   title: "Lookbook",
-  description: "LA Clothing seasonal editorial and styling stories.",
+  description: "LA Clothing editorial and styling stories for the city uniform.",
 };
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
@@ -26,9 +26,10 @@ async function loadLookbookProducts() {
 export default async function LookbookPage() {
   await connection();
   const featuredProducts = await loadLookbookProducts();
-  const chapter1Product = featuredProducts[0];
+  const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
+  const chapter1Product = productsWithMedia[0];
   const chapter1Image = chapter1Product?.media?.primary ?? null;
-  const chapter2Product = featuredProducts[1] ?? featuredProducts[0];
+  const chapter2Product = productsWithMedia[1] ?? productsWithMedia[0];
   const chapter2Image = chapter2Product?.media?.primary ?? null;
 
   return (
@@ -61,16 +62,9 @@ export default async function LookbookPage() {
           </div>
         ) : (
           <div
-            className="lookbook-panel relative flex min-h-[62vh] items-center justify-center overflow-hidden bg-[var(--stone)] p-8 text-center md:min-h-[760px]"
+            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--stone)] md:min-h-[760px]"
             aria-hidden="true"
-          >
-            <div>
-              <p className="eyebrow text-black/50">LA Clothing</p>
-              <p className="mt-2 text-xs uppercase tracking-[0.14em] text-black/40">
-                Editorial visual in preparation
-              </p>
-            </div>
-          </div>
+          />
         )}
         <div className="flex flex-col justify-end py-12 md:px-10 md:py-16">
           <p className="eyebrow">Chapter / 01 · 07:40</p>
@@ -105,16 +99,9 @@ export default async function LookbookPage() {
           </div>
         ) : (
           <div
-            className="lookbook-panel relative flex min-h-[62vh] items-center justify-center overflow-hidden bg-[var(--olive)] p-8 text-center md:min-h-[760px]"
+            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]"
             aria-hidden="true"
-          >
-            <div>
-              <p className="eyebrow text-white/60">LA Clothing</p>
-              <p className="mt-2 text-xs uppercase tracking-[0.14em] text-white/50">
-                Editorial visual in preparation
-              </p>
-            </div>
-          </div>
+          />
         )}
       </section>
 

@@ -286,7 +286,10 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
   await expect(page.locator(".campaign-visual img")).toBeVisible();
+  await expect(page.locator(".lookbook-panel--large img")).toBeVisible();
+  await expect(page.locator(".lookbook-panel--small img")).toBeVisible();
   await expect(page.locator(".campaign-figure")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "View collections ↗" })).toHaveAttribute(
     "href",
     "/collections",
@@ -303,8 +306,12 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
+  const metaDescription = page.locator('meta[name="description"]');
+  await expect(metaDescription).toHaveAttribute("content", /city uniform/);
+  await expect(metaDescription).not.toHaveAttribute("content", /seasonal/i);
   await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
   await expect(page.locator(".lookbook-panel img").first()).toBeVisible();
+  await expect(page.locator(".lookbook-panel img").nth(1)).toBeVisible();
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "MORNING / TRANSIT" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
@@ -322,7 +329,9 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expectRuntimePageClean(page);
 });
 
-test("P8 homepage empty state uses the shared semantic state pattern", async ({ page }) => {
+test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({
+  page,
+}) => {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -332,5 +341,15 @@ test("P8 homepage empty state uses the shared semantic state pattern", async ({ 
   await expect(
     emptyState.getByRole("heading", { level: 2, name: "The current edit is being prepared." }),
   ).toBeVisible();
+  await expect(page.locator(".campaign-visual img")).toHaveCount(0);
+  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
+  await expect(page.locator(".campaign-figure")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
+  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
   await expectRuntimePageClean(page);
 });
