@@ -114,9 +114,9 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] deterministic collision handling
 - [x] freeze published slug across Pancake name changes
 - [x] explicit slug change creates old-slug history
-- [ ] old slug → 301 canonical slug
-- [ ] unknown slug → 404
-- [ ] migration + HTTP redirect tests
+- [x] old slug → 301 canonical slug
+- [x] unknown slug → 404
+- [x] migration + HTTP redirect tests
 
 ## P7 — Website-owned collections/taxonomy
 - [ ] define stable collection slug/title/visible copy/SEO state
@@ -312,4 +312,4 @@ For every behavior-changing slice:
 - [ ] final dedicated domain choice
 - [ ] final launch approval
 
-**Current `/build`: P6a — readable slug persistence/admin lifecycle. After P6a merge approval, continue P6b — historical slug 301/current 200/unknown 404 HTTP resolution. P12 may begin only after full P6 + P7 while staging remains non-indexable; indexing=true and final-domain canonicals stay blocked until the dedicated-domain gate is satisfied.**
+**Current `/build`: P6b HTTP resolution is implemented and verified in PR #79 but is not merged until the human review gate approves it. After P6b merge approval, continue P7 website-owned collections/taxonomy. P12 may begin only after full P6 + P7 while staging remains non-indexable; indexing=true and final-domain canonicals stay blocked until the dedicated-domain gate is satisfied.**
