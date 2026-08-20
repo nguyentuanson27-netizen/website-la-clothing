@@ -231,6 +231,7 @@ test("admin can maintain canonical collections with accessible success and error
     pancakeCategoryIds: [7, 42],
   });
 
+  await page.goto(`${BASE_URL}${collectionsPath}`, { waitUntil: "networkidle" });
   const existingForm = page
     .getByRole("heading", { level: 3, name: "City Uniform Runtime" })
     .locator("xpath=ancestor::article")
