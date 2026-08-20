@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { resolveConfiguredStorefrontProductSlug } from "@/commerce/storefront-catalog-runtime";
+import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
 
@@ -13,10 +14,13 @@ export async function proxy(request: NextRequest) {
   }
 
   if (resolution.kind === "HISTORICAL") {
+    const destination = new URL(readStorefrontOrigin());
+    destination.pathname = `${SHOP_PRODUCT_PREFIX}${resolution.currentSlug}`;
+
     return new Response(null, {
       status: 301,
       headers: {
-        Location: `${SHOP_PRODUCT_PREFIX}${resolution.currentSlug}`,
+        Location: destination.href,
       },
     });
   }
