@@ -74,12 +74,27 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+}
+
+async function expectVisualFoundationTokens(page: import("@playwright/test").Page) {
+  const tokens = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      shellGutter: style.getPropertyValue("--shell-gutter").trim(),
+      shellMax: style.getPropertyValue("--shell-max").trim(),
+      space4: style.getPropertyValue("--space-4").trim(),
+      mediaProductRatio: style.getPropertyValue("--media-product-ratio").trim(),
+      focusRingColor: style.getPropertyValue("--focus-ring-color").trim(),
+    };
+  });
+
+  for (const value of Object.values(tokens)) {
+    expect(value).not.toBe("");
+  }
 }
 
 test.beforeAll(async () => {
@@ -146,7 +161,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
+test("P8 storefront shell exposes responsive navigation, shared tokens, focus treatment and semantic footer", async ({
   page,
 }) => {
   const browserErrors: string[] = [];
@@ -162,7 +177,48 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
   await expect(shippingPromotion).toBeVisible();
+  await expect(shippingPromotion).toHaveClass(/promotion-shell/);
   await expect(shippingPromotion).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
+  await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "LA Clothing — Trang chủ" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Bag", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Liên kết cuối trang" })).toBeVisible();
+  await expectVisualFoundationTokens(page);
+
+  const mobileMenu = page.locator("summary", { hasText: "Menu" });
+  await expect(mobileMenu).toBeVisible();
+  await mobileMenu.click();
+  const mobileNavigation = page.getByRole("navigation", { name: "Điều hướng chính trên di động" });
+  await expect(mobileNavigation.getByRole("link", { name: "Shop", exact: true })).toBeVisible();
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.keyboard.press("Tab");
+  const skipLink = page.getByRole("link", { name: "Bỏ qua đến nội dung chính" });
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeVisible();
+  const focusStyle = await skipLink.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  expect(focusStyle.outlineStyle).not.toBe("none");
+  expect(focusStyle.outlineWidth).not.toBe("0px");
+  await expectRuntimePageClean(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByRole("navigation", { name: "Điều hướng chính" })).toBeVisible();
+  await expect(page.locator(".mobile-nav")).toBeHidden();
+  await expectRuntimePageClean(page);
+
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
+test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Shop edit" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
@@ -180,7 +236,17 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
   await expect(page.getByText("A study in quiet utility.")).toBeVisible();
   await expectRuntimePageClean(page);
+});
 
-  expect(browserErrors).toEqual([]);
-  expect(failedResponses).toEqual([]);
+test("P8 homepage empty state uses the shared semantic state pattern", async ({ page }) => {
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  const emptyState = page.locator('[data-ui-state="empty"]');
+  await expect(emptyState).toBeVisible();
+  await expect(
+    emptyState.getByRole("heading", { level: 2, name: "The current edit is being prepared." }),
+  ).toBeVisible();
+  await expectRuntimePageClean(page);
 });
