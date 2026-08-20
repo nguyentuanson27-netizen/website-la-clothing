@@ -598,6 +598,14 @@ body {
   padding-block: var(--space-4);
 }
 
+.mobile-nav details:not([open]) .mobile-menu {
+  display: none;
+}
+
+.mobile-nav details[open] .mobile-menu {
+  display: grid;
+}
+
 .site-footer {
   width: min(100%, var(--shell-max));
   margin-inline: auto;
