@@ -1,6 +1,6 @@
-# P6 product slug lifecycle — persistence/admin half
+# P6 product slug lifecycle
 
-Status: **P6a implemented on `build/p6-slug-lifecycle`; P6 HTTP redirect resolution remains a separate P6b slice and human merge approval is still required.**
+Status: **P6a persistence/admin lifecycle is merged; P6b HTTP resolution is implemented and verified on PR #79, with human review/merge approval still required.**
 
 This document records the website-owned URL identity contract introduced by FINAL PLAN V2 Task P6 without enabling search indexing or changing the P12 domain gate.
 
@@ -66,7 +66,7 @@ Rolling/rollback implications:
 - if old runtime creates a new `p-<20hex>` row after the migration but before all instances are upgraded, the new runtime detects that exact legacy pattern on the next catalog sync, reserves the old slug in history and assigns the deterministic readable slug atomically under the shared slug advisory lock;
 - already-readable existing slugs are never recomputed from later Pancake names;
 - older storefront reads still use `ProductMirror.slug`, so a code rollback can continue serving the new readable current slug;
-- do not drop `ProductSlugHistory` in the same rollout because it is required by the later redirect slice;
+- do not drop `ProductSlugHistory` in the same rollout because public historical redirects depend on it;
 - migration rollback must restore current slugs from history before dropping the table if a true data rollback is ever required.
 
 ## Explicit ADMIN change
@@ -95,6 +95,20 @@ Catalog sync still owns Pancake source facts such as name, source description, m
 
 Sync and explicit admin slug mutations share a PostgreSQL advisory-lock namespace around slug ownership so bootstrap/healing cannot race with a history reservation. For all already-readable existing products, sync updates source fields while intentionally omitting `slug` from the update set.
 
+## Public HTTP resolution
+
+Next.js Proxy resolves `/shop/:slug` before the PDP can enter streamed rendering:
+
+- current visible/active slug in the configured Pancake shop → pass through to the PDP → **200**;
+- historical slug for a visible/active product in that shop → exact **301** to the current canonical product path;
+- unknown, malformed, inactive, stale or wrong-shop slug → direct **404**.
+
+Historical redirect construction never derives canonical identity from request `Host` or request origin. The Proxy constructs a Next-compatible absolute destination from validated server-owned `APP_DOMAIN`, while the framework may serialize that same-site response as a relative `Location: /shop/<current-slug>` on the wire. The HTTP regression sends a real raw request with `Host: attacker.example` and proves the resulting 301 still targets only the exact current product path and never contains the hostile host.
+
+`APP_DOMAIN` is deployment configuration, not P12 indexing state. Public hostnames resolve to HTTPS; only `localhost` and `127.0.0.1` may use an explicit HTTP port for local verification. Release preflight fails closed when `APP_DOMAIN` is missing or malformed. This does not enable canonicals or indexing: `la.lanadesign.vn` remains temporary non-indexable staging, and the dedicated LA Clothing domain is still required only before enabling indexing/final canonicals and release preflight for that launch state.
+
+Direct 301/404 responses retain the existing global security headers, including `X-Content-Type-Options` and `X-Frame-Options`.
+
 ## Verification contract
 
 P6a is covered by:
@@ -105,22 +119,27 @@ P6a is covered by:
 - a migration test applying the real SQL to pre-P6 opaque rows;
 - the real admin browser/Axe/VoiceOver suite, which changes a slug through the UI, verifies current slug + history persistence, then continues the existing P5 editorial workflow regression.
 
-RED evidence:
+P6b is covered by:
+
+- repository tests for current/history/unknown resolution and fail-closed inactive/stale/wrong-shop/malformed cases;
+- a real Next.js HTTP smoke proving historical=301, current=200 and unknown=404;
+- a hostile-Host regression using raw `node:http` transport;
+- security-header assertions on direct Proxy responses;
+- release-readiness tests for the server-owned storefront origin;
+- VPS container verification for release preflight, migrations, production image and runtime health.
+
+RED/review evidence:
 
 - CI #899 failed only because the new P6 test imported the not-yet-existing `src/commerce/product-slug.ts`; the preceding 112 database tests were green. Production implementation was added only after that RED was observed.
 - CI #912 reproduced the rolling-deploy compatibility defect: 120/121 database tests passed and the new legacy-healing regression alone failed because the existing `p-<digest>` row remained opaque. The compatibility healing patch was added only after that RED was observed.
+- Review 4984937534 reported two Required findings: the first P6b Proxy returned a relative `Location` that Next rejected with `ERR_INVALID_URL`, and the smoke did not actually send a hostile `Host`.
+- CI #930 reproduced the first finding as historical **500** instead of 301.
+- CI #931 repeated that RED with an actual `Host: attacker.example` request before the production fix.
+- CI #940 proved the production fix reached **301** under the hostile request; its only failure was an overly strict test expectation that required an absolute wire `Location` although Next serialized the trusted same-site destination as a relative path.
+- Behavior candidate `a51f9a4c8f62a0db600f2fefafd692015602839b` passed CI #941 verify + admin-a11y and VPS #172 before this documentation-only update.
 
-## P6b remains required
-
-P6a stores the information required for redirects but does **not** yet change public route resolution. A separate dependent P6b slice must still prove:
-
-- old historical slug → exact permanent **301** to the current canonical slug;
-- current slug → 200;
-- unknown slug → 404;
-- redirect behavior does not trust request Host for canonical identity.
-
-This split follows FINAL PLAN V2's instruction to split P6 persistence and HTTP redirect behavior when the change exceeds a small file set. P6 is not complete until P6b is accepted and merged.
+P6 is not considered merged-complete on the planning branch until PR #79 receives human review approval and is merged.
 
 ## Non-goals
 
-P6a does not implement P7, P9, P10 or P12 behavior; it does not enable indexing, select the dedicated production domain, add metadata/canonicals, or change product editorial publication semantics.
+P6 does not implement P7, P9, P10 or P12 behavior; it does not enable indexing, select the dedicated production domain, add metadata/canonicals, or change product editorial publication semantics.

@@ -106,6 +106,7 @@ jobs:
             -e BETTER_AUTH_IP_HEADER \
             -e PANCAKE_API_KEY \
             -e PANCAKE_SHOP_ID \
+            -e APP_DOMAIN=shop.example.test \
             -e BETTER_AUTH_URL=https://shop.example.test \
             la-clothing:vps-ops-ci \
             sh -lc 'pnpm release:check && pnpm prisma:migrate:deploy'
@@ -123,6 +124,7 @@ jobs:
             -e BETTER_AUTH_IP_HEADER \
             -e PANCAKE_API_KEY \
             -e PANCAKE_SHOP_ID \
+            -e APP_DOMAIN=127.0.0.1:3000 \
             -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
             la-clothing:vps-runtime-ci
 
