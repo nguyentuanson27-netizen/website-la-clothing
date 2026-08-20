@@ -4,7 +4,7 @@ const contentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""};
   style-src 'self' 'unsafe-inline';
-  img-src 'self' blob: data:;
+  img-src 'self' blob: data: https://content.pancake.vn;
   font-src 'self';
   connect-src 'self'${isDevelopment ? " ws: wss:" : ""};
   object-src 'none';
@@ -45,6 +45,16 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpg",
+      },
+    ],
+  },
   async headers() {
     return [
       {

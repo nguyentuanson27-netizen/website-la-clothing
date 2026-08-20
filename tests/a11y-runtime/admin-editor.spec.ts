@@ -198,6 +198,7 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
       const successStatus = page.getByRole("status");
       await expect(successStatus).toContainText("Đã lưu nội dung biên tập.");
       await expect(successStatus).toBeFocused();
+      await delay(500);
     },
     { capture: true },
   );

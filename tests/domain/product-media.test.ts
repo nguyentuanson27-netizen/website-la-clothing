@@ -10,8 +10,7 @@ import {
 test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs", () => {
   const validUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpg",
-    "https://content.pancake.vn/images/1/2/3/shirt.JPG",
-    "https://content.pancake.vn/web_media/12/34/56/SHIRT.JPG",
+    "https://content.pancake.vn/web_media/12/34/56/shirt.jpg",
     "https://content.pancake.vn/images/999/888/777/product-photo_123.jpg",
   ];
 
@@ -21,11 +20,13 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs", 
   }
 });
 
-test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .png, .webp, .svg, etc.)", () => {
+test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .png, .webp, .svg, uppercase .JPG, etc.)", () => {
   const unreviewedExtensionUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpeg",
     "https://content.pancake.vn/images/1/2/3/shirt.png",
     "https://content.pancake.vn/images/1/2/3/shirt.webp",
+    "https://content.pancake.vn/images/1/2/3/shirt.JPG",
+    "https://content.pancake.vn/images/1/2/3/SHIRT.JPG",
     "https://content.pancake.vn/images/1/2/3/vector.svg",
     "https://content.pancake.vn/images/1/2/3/script.js",
     "https://content.pancake.vn/images/1/2/3/doc.html",
