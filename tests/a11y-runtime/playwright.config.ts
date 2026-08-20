@@ -5,6 +5,7 @@ export default defineConfig({
   ...screenReaderConfig,
   testDir: ".",
   testMatch: [
+    "admin-collections.spec.ts",
     "admin-editor.spec.ts",
     "checkout.spec.ts",
     "discovery.spec.ts",
