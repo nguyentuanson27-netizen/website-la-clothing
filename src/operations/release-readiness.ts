@@ -1,11 +1,13 @@
 import { readAuthServerConfig } from "../auth/config.ts";
 import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import { readStorefrontOrigin } from "../commerce/storefront-origin.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 
 type ReleaseEnvironment = Readonly<Record<string, string | undefined>>;
 
 export type ReleaseReadinessSummary = Readonly<{
   databaseConfigured: true;
+  storefrontOriginConfigured: true;
   authConfigured: true;
   trustedIpHeaderConfigured: boolean;
   pancakeConfigured: true;
@@ -38,12 +40,14 @@ export function validateReleaseEnvironment(
   env: ReleaseEnvironment = process.env,
 ): ReleaseReadinessSummary {
   validateDatabaseUrl(env.DATABASE_URL);
+  readStorefrontOrigin(env);
   const auth = readAuthServerConfig(env);
   const pancake = readPancakeConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
 
   return {
     databaseConfigured: true,
+    storefrontOriginConfigured: true,
     authConfigured: true,
     trustedIpHeaderConfigured: auth.ipAddressHeader !== undefined,
     pancakeConfigured: true,
