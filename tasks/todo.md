@@ -77,18 +77,18 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] DB/catalog sync regression passes
 
 ### Checkpoint A — source trust boundary
-- [ ] P0-P2 review: 0 Critical / 0 Required
-- [ ] private `note` cannot reach storefront/admin public output
-- [ ] website-owned content proven sync-safe
+- [x] P0-P2 review: 0 Critical / 0 Required
+- [x] private `note` cannot reach storefront/admin public output
+- [x] website-owned content proven sync-safe
 
 ## P3 — Trusted product-image contract
-- [ ] validate HTTPS only
-- [ ] allow only exact reviewed origin/path patterns from P0
-- [ ] reject credential-bearing/malformed/unreviewed URLs
-- [ ] deterministic primary/gallery selection from product + variation media
-- [ ] deterministic dedupe/order
-- [ ] no arbitrary server-side image proxy/fetcher
-- [ ] RED/GREEN security/domain tests
+- [x] validate HTTPS only
+- [x] allow only exact reviewed origin/path patterns from P0
+- [x] reject credential-bearing/malformed/unreviewed URLs
+- [x] deterministic primary/gallery selection from product + variation media
+- [x] deterministic dedupe/order
+- [x] no arbitrary server-side image proxy/fetcher
+- [x] RED/GREEN security/domain tests
 
 ## P4 — Real PLP/PDP media
 - [ ] narrow Next `images.remotePatterns`
