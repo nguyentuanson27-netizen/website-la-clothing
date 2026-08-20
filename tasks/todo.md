@@ -69,12 +69,12 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [ ] reviewed live contract verifier remains green
 
 ## P2 — Persist Pancake source content/media safely
-- [ ] add mirror persistence for source description and product primary-image URI
-- [ ] migration-from-empty passes
-- [ ] repeated sync converges idempotently
-- [ ] source changes do not overwrite `ProductContent`
-- [ ] stale/deactivated mirror semantics remain unchanged
-- [ ] DB/catalog sync regression passes
+- [x] add mirror persistence for source description and product primary-image URI
+- [x] migration-from-empty passes
+- [x] repeated sync converges idempotently
+- [x] source changes do not overwrite `ProductContent`
+- [x] stale/deactivated mirror semantics remain unchanged
+- [x] DB/catalog sync regression passes
 
 ### Checkpoint A — source trust boundary
 - [ ] P0-P2 review: 0 Critical / 0 Required

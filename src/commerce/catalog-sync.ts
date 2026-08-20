@@ -1,4 +1,4 @@
-import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
+import type { PancakeParsedCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
 import { fetchAllPancakeCatalogVariations } from "../integrations/pancake/catalog-pages.ts";
 
 type QueryValue = string | number | boolean;
@@ -9,7 +9,7 @@ type CatalogClient = {
 type CatalogMirrorWriter = {
   syncSnapshot(input: {
     shopId: number;
-    variations: readonly PancakeCatalogVariation[];
+    variations: readonly PancakeParsedCatalogVariation[];
     syncedAt: Date;
   }): Promise<{ products: number; variations: number }>;
 };
