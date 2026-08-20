@@ -1,27 +1,71 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { connection } from "next/server";
+
+import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
+import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
   title: "Collections",
-  description: "Seasonal collections from LA Clothing.",
+  description: "Published collections from LA Clothing.",
 };
 
-export default function CollectionsPage() {
+const repository = createCollectionDefinitionRepository(prisma);
+
+export default async function CollectionsPage() {
+  await connection();
+  const publishedCollections = await repository.listPublished(50);
+
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Archive / Collections</p>
+      <p className="eyebrow">LA Clothing / Collections</p>
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         COLLECTIONS
       </h1>
-      <div className="mt-12 grid gap-px border border-black/20 bg-black/20 md:grid-cols-2">
-        <article className="min-h-72 bg-[var(--paper)] p-8 md:p-12">
-          <p className="eyebrow">Fall / Winter 2026</p>
-          <h2 className="mt-6 max-w-md font-serif text-4xl leading-none md:text-6xl">QUIET FORM</h2>
-        </article>
-        <article className="min-h-72 bg-[var(--paper)] p-8 md:p-12">
-          <p className="eyebrow">Core / Permanent</p>
-          <h2 className="mt-6 max-w-md font-serif text-4xl leading-none md:text-6xl">EVERYDAY UNIFORM</h2>
-        </article>
-      </div>
+      {publishedCollections.length > 0 ? (
+        <div className="mt-12 grid gap-px border border-black/20 bg-black/20 md:grid-cols-2">
+          {publishedCollections.map((collection) => (
+            <article
+              key={collection.slug}
+              className="flex min-h-72 flex-col justify-between bg-[var(--paper)] p-8 md:p-12"
+            >
+              <div>
+                <p className="eyebrow">Collection</p>
+                <h2 className="mt-4 max-w-md font-serif text-3xl leading-tight md:text-5xl">
+                  {collection.title}
+                </h2>
+                {collection.description ? (
+                  <p className="mt-4 max-w-lg text-sm leading-6 text-black/65">
+                    {collection.description}
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-8">
+                <Link
+                  className="text-link"
+                  href={`/collections/${collection.slug}`}
+                >
+                  Explore collection ↗
+                </Link>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <section
+          aria-labelledby="collections-empty-title"
+          className="ui-state ui-state--empty mt-12"
+          data-ui-state="empty"
+        >
+          <p className="eyebrow">Current collections</p>
+          <h2 id="collections-empty-title" className="ui-state__title">
+            Collections are being prepared.
+          </h2>
+          <p className="ui-state__copy">
+            Published collections will appear here as they become available.
+          </p>
+        </section>
+      )}
     </div>
   );
 }

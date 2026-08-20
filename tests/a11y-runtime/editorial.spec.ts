@@ -147,6 +147,11 @@ async function expectVisualFoundationTokens(page: import("@playwright/test").Pag
   expect(primitives.skeletonImage).toContain("gradient");
 }
 
+const TINY_JPEG_BUFFER = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64",
+);
+
 test.beforeAll(async () => {
   await cleanup();
   const product = await prisma.productMirror.create({
@@ -188,6 +193,23 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "essential-outerwear" },
+    create: {
+      slug: "essential-outerwear",
+      title: "Essential Outerwear",
+      description: "Functional outerwear designed for transition and movement.",
+      seoTitle: "Essential Outerwear — LA Clothing",
+      seoDescription: "Modern outerwear from LA Clothing.",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: {
+      isPublished: true,
+      title: "Essential Outerwear",
+      description: "Functional outerwear designed for transition and movement.",
+    },
+  });
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -211,6 +233,16 @@ test.afterAll(async () => {
   await stopServer();
   await cleanup();
   await prisma.$disconnect();
+});
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
 });
 
 test("P8 storefront shell exposes responsive navigation, shared tokens, focus treatment and semantic footer", async ({
@@ -266,22 +298,9 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   expect(failedResponses).toEqual([]);
 });
 
-const TINY_JPEG_BUFFER = Buffer.from(
-  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
-  "base64",
-);
-
 test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
   page,
 }) => {
-  await page.route("**/_next/image**", (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: "image/jpeg",
-      body: TINY_JPEG_BUFFER,
-    });
-  });
-
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
@@ -326,6 +345,22 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     "href",
     "/shop",
   );
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "COLLECTIONS" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Essential Outerwear" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore collection ↗" })).toHaveAttribute(
+    "href",
+    "/collections/essential-outerwear",
+  );
+  await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
+  await expect(page.getByText("EVERYDAY UNIFORM")).toHaveCount(0);
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/collections/essential-outerwear`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expectRuntimePageClean(page);
 });
 

@@ -15,6 +15,10 @@ const STOREFRONT_SOURCES = [
     url: new URL("../../src/app/lookbook/page.tsx", import.meta.url),
   },
   {
+    name: "collections",
+    url: new URL("../../src/app/collections/page.tsx", import.meta.url),
+  },
+  {
     name: "header",
     url: new URL("../../src/components/layout/site-header.tsx", import.meta.url),
   },
@@ -28,9 +32,14 @@ const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;
 type RouteExists = (pathname: string) => Promise<boolean>;
 
 async function routeExists(pathname: string): Promise<boolean> {
-  const routeDirectory = pathname === "/"
+  const segments = pathname.split("/").filter(Boolean);
+  const normalizedSegments = segments.map((segment) =>
+    segment.startsWith("${") && segment.endsWith("}") ? "[slug]" : segment,
+  );
+
+  const routeDirectory = normalizedSegments.length === 0
     ? APP_DIRECTORY
-    : join(APP_DIRECTORY, ...pathname.split("/").filter(Boolean));
+    : join(APP_DIRECTORY, ...normalizedSegments);
 
   try {
     await access(join(routeDirectory, "page.tsx"));
@@ -52,7 +61,8 @@ async function findMissingInternalLinks(
 
   const missing: string[] = [];
   for (const href of hrefs) {
-    const pathname = new URL(href, "https://storefront.invalid").pathname;
+    const rawPathname = new URL(href, "https://storefront.invalid").pathname;
+    const pathname = decodeURIComponent(rawPathname);
     if (!(await exists(pathname))) {
       missing.push(href);
     }
