@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import http from "node:http";
 import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -33,32 +32,13 @@ function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-16_000);
 }
 
-function requestPath(
-  path: string,
-): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
-  return new Promise((resolveRequest, rejectRequest) => {
-    const request = http.request(
-      {
-        hostname: HOST,
-        port: PORT,
-        path,
-        method: "GET",
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-        response.on("end", () => {
-          resolveRequest({
-            status: response.statusCode ?? 0,
-            headers: response.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-          });
-        });
-      },
-    );
-    request.on("error", rejectRequest);
-    request.end();
-  });
+async function requestPath(path: string) {
+  const response = await fetch(`${BASE_URL}${path}`, { redirect: "manual" });
+  return {
+    status: response.status,
+    location: response.headers.get("location"),
+    body: await response.text(),
+  };
 }
 
 async function waitForServer(): Promise<void> {
@@ -154,7 +134,7 @@ try {
     `historical slug must return exact 301, received ${historicalResponse.status}\n${serverOutput}`,
   );
   assert.equal(
-    historicalResponse.headers.location,
+    historicalResponse.location,
     `/shop/${currentSlug}`,
     "historical slug redirect must use an exact relative site-owned Location; relative Location prevents request Host from influencing canonical identity",
   );
