@@ -72,13 +72,20 @@ function parsePancakeCategoryIds(value: unknown): number[] {
   return [...new Set(ids)].sort((left, right) => left - right);
 }
 
+export function parseCollectionSlug(value: unknown): string {
+  const slug = parseRequiredText(value, COLLECTION_DEFINITION_LIMITS.slug, "collection-slug");
+  if (!COLLECTION_SLUG_PATTERN.test(slug)) {
+    throw new CollectionDefinitionError("collection-slug");
+  }
+  return slug;
+}
+
 export function parseCollectionDefinition(input: unknown): CollectionDefinition {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new CollectionDefinitionError("collection-shape");
   }
   const record = input as Record<string, unknown>;
-  const slug = parseRequiredText(record.slug, COLLECTION_DEFINITION_LIMITS.slug, "collection-slug");
-  if (!COLLECTION_SLUG_PATTERN.test(slug)) throw new CollectionDefinitionError("collection-slug");
+  const slug = parseCollectionSlug(record.slug);
 
   const title = parseRequiredText(record.title, COLLECTION_DEFINITION_LIMITS.title, "collection-title");
   const description = parseOptionalText(record.description, COLLECTION_DEFINITION_LIMITS.description, "collection-description");
