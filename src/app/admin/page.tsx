@@ -29,6 +29,15 @@ export default async function AdminProductsPage() {
         </p>
       </div>
 
+      <nav className="flex flex-wrap gap-3 border-b border-black/20 py-6" aria-label="Quản trị nội dung">
+        <Link
+          className="inline-flex min-h-11 items-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
+          href="/admin/collections"
+        >
+          Quản lý collections
+        </Link>
+      </nav>
+
       {products.length === 0 ? (
         <section className="py-16" aria-labelledby="empty-admin-products-title">
           <p className="eyebrow">Chưa có dữ liệu</p>

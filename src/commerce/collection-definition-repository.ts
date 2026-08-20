@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import {
+  CollectionDefinitionError,
   parseCollectionDefinition,
   parseCollectionSlug,
   type CollectionDefinition,
@@ -24,6 +25,21 @@ function parseCollectionListLimit(limit: number): number {
   return limit;
 }
 
+function parseMutableDefinition(
+  targetSlug: unknown,
+  input: unknown,
+): CollectionDefinition {
+  const slug = parseCollectionSlug(targetSlug);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new CollectionDefinitionError("collection-shape");
+  }
+
+  return parseCollectionDefinition({
+    ...(input as Record<string, unknown>),
+    slug,
+  });
+}
+
 export function createCollectionDefinitionRepository(client: PrismaClient) {
   async function saveDefinition(input: unknown): Promise<CollectionDefinition> {
     const definition = parseCollectionDefinition(input);
@@ -35,6 +51,30 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
       update: fields,
       select: collectionSelect,
     });
+  }
+
+  async function createDefinition(input: unknown): Promise<CollectionDefinition | null> {
+    const definition = parseCollectionDefinition(input);
+    const result = await client.collectionDefinition.createMany({
+      data: [definition],
+      skipDuplicates: true,
+    });
+
+    return result.count === 1 ? definition : null;
+  }
+
+  async function updateExistingDefinition(
+    targetSlug: unknown,
+    input: unknown,
+  ): Promise<CollectionDefinition | null> {
+    const definition = parseMutableDefinition(targetSlug, input);
+    const { slug, ...fields } = definition;
+    const result = await client.collectionDefinition.updateMany({
+      where: { slug },
+      data: fields,
+    });
+
+    return result.count === 1 ? definition : null;
   }
 
   async function listForAdmin(limit: number) {
@@ -89,6 +129,8 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
 
   return {
     saveDefinition,
+    createDefinition,
+    updateExistingDefinition,
     listForAdmin,
     listPublished,
     findPublishedBySlug,
