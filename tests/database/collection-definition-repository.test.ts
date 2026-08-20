@@ -133,7 +133,7 @@ test("P7 repository rejects malformed definitions before persistence", async () 
   );
 });
 
-test("P7 public repository reads expose only published definitions", async () => {
+test("P7 public repository reads expose only published allowlisted definition fields", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-draft",
     title: "Draft",
@@ -150,6 +150,7 @@ test("P7 public repository reads expose only published definitions", async () =>
     title: "Public A",
     description: "Public A copy.",
     isPublished: true,
+    pancakeCategoryIds: [77],
   });
 
   const published = await repository.listPublished(100);
@@ -159,7 +160,13 @@ test("P7 public repository reads expose only published definitions", async () =>
   );
 
   assert.equal(await repository.findPublishedBySlug("p7-repo-draft"), null);
-  assert.equal((await repository.findPublishedBySlug("p7-repo-public-a"))?.title, "Public A");
+  assert.deepEqual(await repository.findPublishedBySlug("p7-repo-public-a"), {
+    slug: "p7-repo-public-a",
+    title: "Public A",
+    description: "Public A copy.",
+    seoTitle: null,
+    seoDescription: null,
+  });
 });
 
 test("P7 membership resolver returns deterministic canonical slugs and fails closed for stale membership", async () => {
