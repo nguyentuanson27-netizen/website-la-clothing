@@ -159,12 +159,10 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
   await requireCurrentAdminPage();
   const collections = await repository.listForAdmin(100);
 
-  async function saveCollection(formData: FormData) {
-    "use server";
-
+  async function persistCollection(slug: unknown, formData: FormData) {
     const adminSession = await requireCurrentAdmin();
     const result = await adminService.save(adminSession, {
-      slug: formData.get("slug"),
+      slug,
       title: formData.get("title"),
       description: formData.get("description"),
       seoTitle: formData.get("seoTitle"),
@@ -180,6 +178,18 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
     revalidatePath("/admin/collections");
     revalidatePath("/admin");
     redirect("/admin/collections?saved=1");
+  }
+
+  async function createCollection(formData: FormData) {
+    "use server";
+
+    await persistCollection(formData.get("slug"), formData);
+  }
+
+  async function updateCollection(originalSlug: string, formData: FormData) {
+    "use server";
+
+    await persistCollection(originalSlug, formData);
   }
 
   const query = await searchParams;
@@ -215,7 +225,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
           Collection mới
         </h2>
         <div className="mt-8 border-t border-black/20 pt-8">
-          <CollectionForm key={`new-${formStatus ?? "idle"}`} action={saveCollection} />
+          <CollectionForm key={`new-${formStatus ?? "idle"}`} action={createCollection} />
         </div>
       </section>
 
@@ -239,7 +249,10 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
                     {definition.isPublished ? "Published" : "Draft"}
                   </span>
                 </div>
-                <CollectionForm action={saveCollection} definition={definition} />
+                <CollectionForm
+                  action={updateCollection.bind(null, definition.slug)}
+                  definition={definition}
+                />
               </article>
             ))}
           </div>
