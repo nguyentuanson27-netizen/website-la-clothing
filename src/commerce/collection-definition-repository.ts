@@ -18,6 +18,14 @@ const collectionSelect = {
   pancakeCategoryIds: true,
 } as const;
 
+const publicCollectionSelect = {
+  slug: true,
+  title: true,
+  description: true,
+  seoTitle: true,
+  seoDescription: true,
+} as const;
+
 function parseCollectionListLimit(limit: number): number {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_COLLECTION_LIST) {
     throw new RangeError(`Collection list limit must be between 1 and ${MAX_COLLECTION_LIST}`);
@@ -90,7 +98,7 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
       where: { isPublished: true },
       take: parseCollectionListLimit(limit),
       orderBy: { slug: "asc" },
-      select: collectionSelect,
+      select: publicCollectionSelect,
     });
   }
 
@@ -101,7 +109,7 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
         slug: parsedSlug,
         isPublished: true,
       },
-      select: collectionSelect,
+      select: publicCollectionSelect,
     });
   }
 
