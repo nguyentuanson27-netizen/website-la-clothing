@@ -9,6 +9,9 @@ export const PRODUCT_CONTENT_LIMITS = {
   collectionSlug: 48,
 } as const;
 
+export const PRODUCT_CONTENT_STATUSES = ["DRAFT", "REVIEWED", "PUBLISHED"] as const;
+export type ProductContentStatus = (typeof PRODUCT_CONTENT_STATUSES)[number];
+
 const COLLECTION_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 type AdminSessionCandidate =
@@ -26,6 +29,7 @@ type AdminSessionCandidate =
 
 export type ProductContentSnapshot = {
   productId: string;
+  status: ProductContentStatus;
   editorialDescription: string | null;
   careInstructions: string | null;
   sizeGuide: string | null;
@@ -76,6 +80,12 @@ function parseCollectionSlugs(value: unknown): ParsedCollectionSlugs {
   return { ok: true, value: rawSlugs };
 }
 
+function parseStatus(value: unknown): ProductContentStatus | null {
+  if (value === undefined || value === null) return "DRAFT";
+  if (typeof value !== "string") return null;
+  return PRODUCT_CONTENT_STATUSES.find((status) => status === value) ?? null;
+}
+
 function parseProductContentInput(input: unknown): ProductContentSnapshot | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return null;
@@ -92,6 +102,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
     return null;
   }
 
+  const status = parseStatus(record.status);
   const editorialDescription = parseTextField(
     record.editorialDescription,
     PRODUCT_CONTENT_LIMITS.editorialField,
@@ -109,6 +120,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
   const collectionSlugs = parseCollectionSlugs(record.collectionSlugs);
 
   if (
+    status === null ||
     !editorialDescription.ok ||
     !careInstructions.ok ||
     !sizeGuide.ok ||
@@ -121,6 +133,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
 
   return {
     productId,
+    status,
     editorialDescription: editorialDescription.value,
     careInstructions: careInstructions.value,
     sizeGuide: sizeGuide.value,
