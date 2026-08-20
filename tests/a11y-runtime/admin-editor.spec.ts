@@ -171,7 +171,8 @@ test("admin editor keeps Pancake source read-only and announces publication save
   await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeVisible();
   await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
   await expect(page.locator('[name="sourceDescription"]')).toHaveCount(0);
-  await expect(page.getByLabel("Slug sản phẩm")).toHaveValue(productSlug);
+  const slugTextbox = page.getByRole("textbox", { name: "Slug sản phẩm", exact: true });
+  await expect(slugTextbox).toHaveValue(productSlug);
   await expect(page.getByRole("button", { name: "Lưu slug" })).toBeVisible();
   await expect(page.getByLabel("Trạng thái xuất bản")).toHaveValue("DRAFT");
   await expect(page.getByRole("button", { name: "Lưu nội dung" })).toBeVisible();
@@ -191,13 +192,15 @@ test("admin editor keeps Pancake source read-only and announces publication save
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 
-  await page.getByLabel("Slug sản phẩm").fill(`  Áo Sơ Mi Admin ${runId}  `);
+  await slugTextbox.fill(`  Áo Sơ Mi Admin ${runId}  `);
   await page.getByRole("button", { name: "Lưu slug" }).click();
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("slugSaved") === "1",
   );
   await expect(page.getByRole("status").filter({ hasText: "Đã lưu slug sản phẩm." })).toBeVisible();
-  await expect(page.getByLabel("Slug sản phẩm")).toHaveValue(editedProductSlug);
+  await expect(page.getByRole("textbox", { name: "Slug sản phẩm", exact: true })).toHaveValue(
+    editedProductSlug,
+  );
 
   const persistedSlug = await prisma.productMirror.findUniqueOrThrow({
     where: { id: productId },
