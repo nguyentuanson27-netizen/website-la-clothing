@@ -90,8 +90,8 @@ model Verification {
   identifier String
   value      String
   expiresAt  DateTime
-  createdAt  DateTime?
-  updatedAt  DateTime?
+  createdAt DateTime?
+  updatedAt DateTime?
 
   @@map("verification")
 }
@@ -123,22 +123,32 @@ model Address {
 }
 
 model ProductMirror {
-  id                String          @id @default(cuid())
-  pancakeShopId     Int             @default(0)
-  pancakeProductId  String          @unique
-  slug              String          @unique
+  id                String               @id @default(cuid())
+  pancakeShopId     Int                  @default(0)
+  pancakeProductId  String               @unique
+  slug              String               @unique
   name              String
   sourceDescription String?
   primaryImageUrl   String?
-  isPresent         Boolean         @default(true)
-  isActive          Boolean         @default(true)
+  isPresent         Boolean              @default(true)
+  isActive          Boolean              @default(true)
   syncedAt          DateTime
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   variants          VariantMirror[]
   content           ProductContent?
+  slugHistory       ProductSlugHistory[]
 
   @@index([pancakeShopId, isPresent])
+}
+
+model ProductSlugHistory {
+  slug      String        @id
+  productId String
+  createdAt DateTime      @default(now())
+  product   ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
 
 model ProductContent {
