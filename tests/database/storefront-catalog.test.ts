@@ -42,6 +42,7 @@ test("storefront catalog exposes only present active products for the configured
       syncedAt,
       content: {
         create: {
+          status: "PUBLISHED",
           editorialDescription: "Relaxed tailoring for everyday wear.",
           careInstructions: "Cold wash.",
           sizeGuide: "Relaxed fit.",
@@ -161,6 +162,71 @@ test("storefront catalog exposes only present active products for the configured
     await repository.getProductBySlug({ shopId: otherShopId, slug: "storefront-visible-product" }),
     null,
   );
+});
+
+test("storefront catalog exposes website editorial and SEO fields only when content is PUBLISHED", async () => {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "storefront-editorial-state-product",
+      slug: "storefront-editorial-state-product",
+      name: "Editorial State Product",
+      sourceDescription: "Pancake source context must never become storefront editorial copy.",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "DRAFT",
+          editorialDescription: "Website draft copy.",
+          careInstructions: "Draft care copy.",
+          sizeGuide: "Draft size copy.",
+          seoTitle: "Draft SEO title",
+          seoDescription: "Draft SEO description",
+        },
+      },
+    },
+  });
+
+  for (const status of ["DRAFT", "REVIEWED"] as const) {
+    await prisma.productContent.update({
+      where: { productId: product.id },
+      data: { status },
+    });
+
+    const detail = await repository.getProductBySlug({
+      shopId,
+      slug: "storefront-editorial-state-product",
+    });
+
+    assert.ok(detail);
+    assert.equal(detail.editorialDescription, null);
+    assert.equal(detail.careInstructions, null);
+    assert.equal(detail.sizeGuide, null);
+    assert.equal(detail.seoTitle, null);
+    assert.equal(detail.seoDescription, null);
+    assert.equal("sourceDescription" in detail, false);
+    assert.equal(
+      JSON.stringify(detail).includes("Pancake source context must never become storefront editorial copy."),
+      false,
+    );
+  }
+
+  await prisma.productContent.update({
+    where: { productId: product.id },
+    data: { status: "PUBLISHED" },
+  });
+  const published = await repository.getProductBySlug({
+    shopId,
+    slug: "storefront-editorial-state-product",
+  });
+
+  assert.equal(published?.editorialDescription, "Website draft copy.");
+  assert.equal(published?.careInstructions, "Draft care copy.");
+  assert.equal(published?.sizeGuide, "Draft size copy.");
+  assert.equal(published?.seoTitle, "Draft SEO title");
+  assert.equal(published?.seoDescription, "Draft SEO description");
+  assert.equal(published ? "sourceDescription" in published : true, false);
 });
 
 test("storefront catalog rejects unbounded list requests", async () => {
