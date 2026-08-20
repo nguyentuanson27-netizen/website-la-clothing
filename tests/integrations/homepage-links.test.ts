@@ -11,6 +11,10 @@ const STOREFRONT_SOURCES = [
     url: new URL("../../src/app/page.tsx", import.meta.url),
   },
   {
+    name: "header",
+    url: new URL("../../src/components/layout/site-header.tsx", import.meta.url),
+  },
+  {
     name: "footer",
     url: new URL("../../src/components/layout/site-footer.tsx", import.meta.url),
   },
