@@ -312,4 +312,4 @@ For every behavior-changing slice:
 - [ ] final dedicated domain choice
 - [ ] final launch approval
 
-**Next `/build` entry point after P5 merge approval: P6 — stable readable product slug lifecycle. Do not start P12 before the dedicated canonical domain is explicitly chosen.**
+**Next `/build` entry point after P5 merge approval: P6 — stable readable product slug lifecycle. P12 may begin after P6 + P7 while staging remains non-indexable; indexing=true and final-domain canonicals stay blocked until the dedicated-domain gate is satisfied.**
