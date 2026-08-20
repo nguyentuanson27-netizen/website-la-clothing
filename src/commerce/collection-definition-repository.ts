@@ -53,6 +53,16 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     });
   }
 
+  async function createDefinition(input: unknown): Promise<CollectionDefinition | null> {
+    const definition = parseCollectionDefinition(input);
+    const result = await client.collectionDefinition.createMany({
+      data: [definition],
+      skipDuplicates: true,
+    });
+
+    return result.count === 1 ? definition : null;
+  }
+
   async function updateExistingDefinition(
     targetSlug: unknown,
     input: unknown,
@@ -119,6 +129,7 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
 
   return {
     saveDefinition,
+    createDefinition,
     updateExistingDefinition,
     listForAdmin,
     listPublished,
