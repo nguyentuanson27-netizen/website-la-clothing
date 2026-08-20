@@ -285,6 +285,12 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("heading", { level: 2, name: "MORNING / TRANSIT" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
   await expect(page.getByText("A study in quiet utility.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Featured pieces" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
+  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
+    "href",
+    `/shop/${productSlug}`,
+  );
   await expectRuntimePageClean(page);
 });
 
