@@ -141,12 +141,12 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] mobile/desktop/a11y shell evidence
 
 ## P9 — Homepage + Lookbook
-- [ ] remove fake silhouettes/placeholders where real media is available
-- [ ] approved real imagery or deliberate fallback
-- [ ] real featured products
-- [ ] real collection/PDP crawlable links
-- [ ] factual campaign/editorial copy only
-- [ ] visual/a11y regression
+- [x] remove fake silhouettes/placeholders where real media is available
+- [x] approved real imagery or deliberate fallback
+- [x] real featured products
+- [x] real collection/PDP crawlable links
+- [x] factual campaign/editorial copy only
+- [x] visual/a11y regression
 
 ## P10 — Shop + Collections + PDP productization
 - [ ] polished product discovery

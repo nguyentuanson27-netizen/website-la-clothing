@@ -71,9 +71,29 @@ async function cleanup() {
 }
 
 async function expectRuntimePageClean(page: import("@playwright/test").Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
-  );
+  const overflow = await page.evaluate(() => {
+    const scrollWidth = document.documentElement.scrollWidth;
+    const innerWidth = window.innerWidth;
+    if (scrollWidth <= innerWidth) return null;
+
+    const overflowingElements: Array<{ tag: string; className: string; text: string; right: number; width: number }> = [];
+    document.querySelectorAll("*").forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.right > innerWidth + 1 || rect.left < -1) {
+        overflowingElements.push({
+          tag: el.tagName,
+          className: el.className,
+          text: (el.textContent || "").slice(0, 50).trim(),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width),
+        });
+      }
+    });
+
+    return { scrollWidth, innerWidth, overflowingElements };
+  });
+
+  expect(overflow).toBeNull();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
@@ -147,6 +167,11 @@ async function expectVisualFoundationTokens(page: import("@playwright/test").Pag
   expect(primitives.skeletonImage).toContain("gradient");
 }
 
+const TINY_JPEG_BUFFER = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64",
+);
+
 test.beforeAll(async () => {
   await cleanup();
   const product = await prisma.productMirror.create({
@@ -155,6 +180,7 @@ test.beforeAll(async () => {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: productName,
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/editorial-jacket.jpg",
       isPresent: true,
       isActive: true,
       syncedAt,
@@ -162,6 +188,7 @@ test.beforeAll(async () => {
         create: {
           status: "PUBLISHED",
           editorialDescription: "Runtime editorial layer for the city uniform.",
+          collectionSlugs: ["essential-outerwear"],
         },
       },
     },
@@ -187,6 +214,23 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "essential-outerwear" },
+    create: {
+      slug: "essential-outerwear",
+      title: "Essential Outerwear",
+      description: "Functional outerwear designed for transition and movement.",
+      seoTitle: "Essential Outerwear — LA Clothing",
+      seoDescription: "Modern outerwear from LA Clothing.",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: {
+      isPublished: true,
+      title: "Essential Outerwear",
+      description: "Functional outerwear designed for transition and movement.",
+    },
+  });
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -210,6 +254,16 @@ test.afterAll(async () => {
   await stopServer();
   await cleanup();
   await prisma.$disconnect();
+});
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
 });
 
 test("P8 storefront shell exposes responsive navigation, shared tokens, focus treatment and semantic footer", async ({
@@ -271,6 +325,15 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
+  await expect(page.locator(".campaign-visual img")).toBeVisible();
+  await expect(page.locator(".lookbook-panel--large img")).toBeVisible();
+  await expect(page.locator(".lookbook-panel--small img")).toBeVisible();
+  await expect(page.locator(".campaign-figure")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View collections ↗" })).toHaveAttribute(
+    "href",
+    "/collections",
+  );
   await expect(page.getByRole("heading", { level: 2, name: "Shop edit" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
@@ -278,18 +341,53 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     `/shop/${productSlug}`,
   );
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
+  await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
   await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
+  const metaDescription = page.locator('meta[name="description"]');
+  await expect(metaDescription).toHaveAttribute("content", /city uniform/);
+  await expect(metaDescription).not.toHaveAttribute("content", /seasonal/i);
   await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
+  await expect(page.locator(".lookbook-panel img").first()).toBeVisible();
+  await expect(page.locator(".lookbook-panel img").nth(1)).toBeVisible();
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "MORNING / TRANSIT" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
   await expect(page.getByText("A study in quiet utility.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Featured pieces" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
+  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
+    "href",
+    `/shop/${productSlug}`,
+  );
+  await expect(page.getByRole("link", { name: "Shop collection ↗" })).toHaveAttribute(
+    "href",
+    "/shop",
+  );
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "COLLECTIONS" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Essential Outerwear" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore collection ↗" })).toHaveAttribute(
+    "href",
+    "/collections/essential-outerwear",
+  );
+  await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
+  await expect(page.getByText("EVERYDAY UNIFORM")).toHaveCount(0);
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/collections/essential-outerwear`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expectRuntimePageClean(page);
 });
 
-test("P8 homepage empty state uses the shared semantic state pattern", async ({ page }) => {
+test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({
+  page,
+}) => {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -299,5 +397,15 @@ test("P8 homepage empty state uses the shared semantic state pattern", async ({ 
   await expect(
     emptyState.getByRole("heading", { level: 2, name: "The current edit is being prepared." }),
   ).toBeVisible();
+  await expect(page.locator(".campaign-visual img")).toHaveCount(0);
+  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
+  await expect(page.locator(".campaign-figure")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
+  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
   await expectRuntimePageClean(page);
 });

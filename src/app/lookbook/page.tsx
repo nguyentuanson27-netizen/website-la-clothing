@@ -1,16 +1,41 @@
+import Image from "next/image";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
+
+import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { PancakeConfigError } from "@/integrations/pancake/config";
 
 export const metadata: Metadata = {
   title: "Lookbook",
-  description: "LA Clothing seasonal editorial and styling stories.",
+  description: "LA Clothing editorial and styling stories for the city uniform.",
 };
 
-export default function LookbookPage() {
+const tones = ["stone", "ink", "olive", "sand"] as const;
+
+async function loadLookbookProducts() {
+  try {
+    return await listConfiguredStorefrontProducts(4);
+  } catch (error) {
+    if (error instanceof PancakeConfigError) return [];
+    throw error;
+  }
+}
+
+export default async function LookbookPage() {
+  await connection();
+  const featuredProducts = await loadLookbookProducts();
+  const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
+  const chapter1Product = productsWithMedia[0];
+  const chapter1Image = chapter1Product?.media?.primary ?? null;
+  const chapter2Product = productsWithMedia[1] ?? productsWithMedia[0];
+  const chapter2Image = chapter2Product?.media?.primary ?? null;
+
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-16 md:py-24">
       <header className="border-b border-black/20 pb-12 md:pb-16">
-        <p className="eyebrow">Editorial / 02 · Fall / Winter 2026</p>
+        <p className="eyebrow">Editorial / 02 · Permanent Edition</p>
         <h1 className="mt-4 max-w-6xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           CITY UNIFORM
         </h1>
@@ -19,24 +44,35 @@ export default function LookbookPage() {
             A study in quiet utility.
           </p>
           <p className="max-w-lg text-sm leading-6 text-black/65 md:justify-self-end">
-            Soft tailoring, practical layers and measured proportions for moving through the city without changing
-            character between morning and night.
+            Practical layers and measured proportions for moving through the city with ease.
           </p>
         </div>
       </header>
 
       <section className="grid border-b border-black/20 md:grid-cols-[1.35fr_0.65fr]" aria-labelledby="morning-transit-title">
-        <div className="lookbook-panel min-h-[62vh] md:min-h-[760px]" aria-hidden="true">
-          <span className="lookbook-figure" />
-        </div>
+        {chapter1Image ? (
+          <div className="lookbook-panel relative min-h-[62vh] overflow-hidden md:min-h-[760px]">
+            <Image
+              src={chapter1Image.url}
+              alt={chapter1Image.alt || chapter1Product?.name || "LA Clothing Lookbook Chapter 1"}
+              fill
+              sizes="(min-width: 768px) 65vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--stone)] md:min-h-[760px]"
+            aria-hidden="true"
+          />
+        )}
         <div className="flex flex-col justify-end py-12 md:px-10 md:py-16">
           <p className="eyebrow">Chapter / 01 · 07:40</p>
           <h2 id="morning-transit-title" className="mt-4 font-serif text-[clamp(2.8rem,6vw,6rem)] leading-[0.9] tracking-[-0.045em]">
             MORNING / TRANSIT
           </h2>
           <p className="mt-6 max-w-md font-serif text-xl leading-relaxed text-black/75 md:text-2xl">
-            A relaxed jacket over a clean base layer. Enough structure for the first meeting, enough room for the
-            train across town.
+            Structured layering and clean proportions for morning movement and daylong wear.
           </p>
         </div>
       </section>
@@ -48,14 +84,55 @@ export default function LookbookPage() {
             LATE / RETURN
           </h2>
           <p className="mt-6 max-w-md font-serif text-xl leading-relaxed text-black/75 md:text-2xl">
-            The same uniform after dark: softer at the edges, still deliberate. Layers come off; proportion does the
-            rest.
+            The uniform transitions into evening: relaxed silhouettes and deliberate structure.
           </p>
         </div>
-        <div className="lookbook-panel min-h-[62vh] bg-[var(--olive)] md:min-h-[760px]" aria-hidden="true">
-          <span className="lookbook-figure lookbook-figure--small" />
-        </div>
+        {chapter2Image ? (
+          <div className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]">
+            <Image
+              src={chapter2Image.url}
+              alt={chapter2Image.alt || chapter2Product?.name || "LA Clothing Lookbook Chapter 2"}
+              fill
+              sizes="(min-width: 768px) 65vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]"
+            aria-hidden="true"
+          />
+        )}
       </section>
+
+      {featuredProducts.length > 0 ? (
+        <section className="border-b border-black/20 py-16 md:py-24" aria-labelledby="featured-pieces-title">
+          <div className="section-heading-row mb-10">
+            <div>
+              <p className="eyebrow">Lookbook edit</p>
+              <h2 id="featured-pieces-title" className="mt-2 text-xl font-semibold uppercase tracking-[0.08em]">
+                Featured pieces
+              </h2>
+            </div>
+            <Link className="text-link" href="/shop">
+              Shop collection ↗
+            </Link>
+          </div>
+          <div className="product-grid">
+            {featuredProducts.map((product, index) => (
+              <StorefrontProductCard
+                key={product.id}
+                slug={product.slug}
+                name={product.name}
+                media={product.media}
+                editorialDescription={product.editorialDescription}
+                variants={product.variants}
+                tone={tones[index % tones.length]!}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-8 py-16 md:grid-cols-[1fr_auto] md:items-end md:py-24" aria-labelledby="lookbook-close-title">
         <div>
