@@ -5,6 +5,7 @@ import { validateReleaseEnvironment } from "../../src/operations/release-readine
 
 const validEnvironment = {
   DATABASE_URL: "postgresql://release_user:super-secret-password@db.internal:5432/la_clothing",
+  APP_DOMAIN: "shop.example.com",
   BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
   BETTER_AUTH_URL: "https://shop.example.com",
   BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
@@ -20,6 +21,7 @@ test("release preflight validates required server configuration without returnin
 
   assert.deepEqual(result, {
     databaseConfigured: true,
+    storefrontOriginConfigured: true,
     authConfigured: true,
     trustedIpHeaderConfigured: true,
     pancakeConfigured: true,
@@ -56,6 +58,24 @@ test("release preflight rejects missing or non-PostgreSQL database URLs without 
     const message = error instanceof Error ? error.message : String(error);
     assert.match(message, /DATABASE_URL must use PostgreSQL/);
     assert.equal(message.includes("should-never-leak"), false);
+  }
+});
+
+test("release preflight requires a safe server-owned storefront origin", () => {
+  assert.throws(
+    () => validateReleaseEnvironment({ ...validEnvironment, APP_DOMAIN: undefined }),
+    /APP_DOMAIN must be configured/,
+  );
+
+  const hostileDomain = "attacker.example/path?token=should-not-leak";
+  try {
+    validateReleaseEnvironment({ ...validEnvironment, APP_DOMAIN: hostileDomain });
+    assert.fail("expected invalid APP_DOMAIN to fail");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    assert.match(message, /APP_DOMAIN/);
+    assert.equal(message.includes(hostileDomain), false);
+    assert.equal(message.includes("should-not-leak"), false);
   }
 });
 
