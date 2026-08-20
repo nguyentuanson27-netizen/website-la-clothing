@@ -149,3 +149,54 @@ test("collection admin collapses domain validation failures to a safe form resul
   });
   assert.equal(saves, 1);
 });
+
+test("collection admin update treats the target as untrusted and never falls back to create", async () => {
+  const creates: string[] = [];
+  const updates: Array<{ targetSlug: string; title: string }> = [];
+  const service = createCollectionDefinitionAdminService(
+    {
+      async createDefinition(definition: { slug: string }) {
+        creates.push(definition.slug);
+        return definition;
+      },
+      async updateExistingDefinition(
+        targetSlug: string,
+        fields: { title: string },
+      ) {
+        updates.push({ targetSlug, title: fields.title });
+        if (targetSlug === "missing-target") return null;
+        return { slug: targetSlug, ...fields };
+      },
+    } as never,
+  );
+  const update = Reflect.get(service, "update") as
+    | ((session: typeof adminSession, targetSlug: unknown, input: unknown) => Promise<unknown>)
+    | undefined;
+
+  assert.equal(typeof update, "function");
+  if (!update) return;
+
+  const normal = await update(adminSession, "city-uniform", {
+    ...validInput(),
+    slug: "forged-visible-slug",
+  });
+  assert.deepEqual(normal, {
+    ok: true,
+    definition: {
+      slug: "city-uniform",
+      title: "City Uniform",
+      description: "Daily tailoring and essentials.",
+      seoTitle: "City Uniform | LA Clothing",
+      seoDescription: "Everyday menswear essentials.",
+      isPublished: true,
+      pancakeCategoryIds: [7, 42],
+    },
+  });
+  assert.deepEqual(updates, [{ targetSlug: "city-uniform", title: "City Uniform" }]);
+
+  assert.deepEqual(await update(adminSession, "missing-target", validInput()), {
+    ok: false,
+    reason: "INVALID_INPUT",
+  });
+  assert.deepEqual(creates, []);
+});
