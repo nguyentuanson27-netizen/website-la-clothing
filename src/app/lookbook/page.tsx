@@ -1,12 +1,31 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
+
+import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { PancakeConfigError } from "@/integrations/pancake/config";
 
 export const metadata: Metadata = {
   title: "Lookbook",
   description: "LA Clothing seasonal editorial and styling stories.",
 };
 
-export default function LookbookPage() {
+const tones = ["stone", "ink", "olive", "sand"] as const;
+
+async function loadLookbookProducts() {
+  try {
+    return await listConfiguredStorefrontProducts(4);
+  } catch (error) {
+    if (error instanceof PancakeConfigError) return [];
+    throw error;
+  }
+}
+
+export default async function LookbookPage() {
+  await connection();
+  const featuredProducts = await loadLookbookProducts();
+
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-16 md:py-24">
       <header className="border-b border-black/20 pb-12 md:pb-16">
@@ -56,6 +75,35 @@ export default function LookbookPage() {
           <span className="lookbook-figure lookbook-figure--small" />
         </div>
       </section>
+
+      {featuredProducts.length > 0 ? (
+        <section className="border-b border-black/20 py-16 md:py-24" aria-labelledby="featured-pieces-title">
+          <div className="section-heading-row mb-10">
+            <div>
+              <p className="eyebrow">Lookbook edit</p>
+              <h2 id="featured-pieces-title" className="mt-2 text-xl font-semibold uppercase tracking-[0.08em]">
+                Featured pieces
+              </h2>
+            </div>
+            <Link className="text-link" href="/shop">
+              Shop collection ↗
+            </Link>
+          </div>
+          <div className="product-grid">
+            {featuredProducts.map((product, index) => (
+              <StorefrontProductCard
+                key={product.id}
+                slug={product.slug}
+                name={product.name}
+                media={product.media}
+                editorialDescription={product.editorialDescription}
+                variants={product.variants}
+                tone={tones[index % tones.length]!}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-8 py-16 md:grid-cols-[1fr_auto] md:items-end md:py-24" aria-labelledby="lookbook-close-title">
         <div>
