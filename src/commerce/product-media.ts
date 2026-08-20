@@ -81,7 +81,7 @@ export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.jpg$/i;
+  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.jpg$/;
 
 function isValidReviewedMediaPath(pathname: string): boolean {
   if (!PANCAKE_MEDIA_PATH_REGEX.test(pathname) || pathname.includes("..")) {
@@ -100,7 +100,7 @@ function isValidReviewedMediaPath(pathname: string): boolean {
     return false;
   }
 
-  const extension = filename.slice(lastDotIndex).toLowerCase();
+  const extension = filename.slice(lastDotIndex);
   return ALLOWED_IMAGE_EXTENSIONS.has(extension);
 }
 
