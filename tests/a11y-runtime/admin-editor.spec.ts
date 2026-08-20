@@ -22,6 +22,7 @@ const password = "admin-a11y-runtime-password-123";
 const productExternalId = `admin-a11y-product-${runId}`;
 const productSlug = `admin-a11y-product-${runId}`;
 const productName = `Admin A11y Product ${runId}`;
+const sourceDescription = "Read-only Pancake source context for editorial decisions.";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -102,6 +103,7 @@ test.beforeAll(async () => {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: productName,
+      sourceDescription,
       syncedAt: new Date(),
     },
   });
@@ -140,7 +142,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("admin editor is mobile-accessible and announces redirect success/error with VoiceOver", async ({
+test("admin editor keeps Pancake source read-only and announces publication save/error with VoiceOver", async ({
   page,
   context,
   voiceOver,
@@ -165,6 +167,10 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeVisible();
+  await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
+  await expect(page.locator('[name="sourceDescription"]')).toHaveCount(0);
+  await expect(page.getByLabel("Trạng thái xuất bản")).toHaveValue("DRAFT");
   await expect(page.getByRole("button", { name: "Lưu nội dung" })).toBeVisible();
   await expect(page.getByLabel("Mô tả biên tập")).toBeVisible();
   await expect(page.getByLabel("SEO title")).toBeVisible();
@@ -182,6 +188,7 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 
+  await page.getByLabel("Trạng thái xuất bản").selectOption("PUBLISHED");
   await page.getByLabel("Mô tả biên tập").fill("Editorial content verified in a real browser.");
   await page.getByLabel("Hướng dẫn bảo quản").fill("Cold wash. Dry in shade.");
   await page.getByLabel("Size guide").fill("Relaxed fit. Choose your normal size.");
@@ -210,12 +217,18 @@ test("admin editor is mobile-accessible and announces redirect success/error wit
 
   const persisted = await prisma.productContent.findUnique({
     where: { productId },
-    select: { editorialDescription: true, seoTitle: true },
+    select: { status: true, editorialDescription: true, seoTitle: true },
   });
   expect(persisted).toEqual({
+    status: "PUBLISHED",
     editorialDescription: "Editorial content verified in a real browser.",
     seoTitle: "Accessible admin editor",
   });
+  const sourceAfterSave = await prisma.productMirror.findUnique({
+    where: { id: productId },
+    select: { sourceDescription: true },
+  });
+  expect(sourceAfterSave?.sourceDescription).toBe(sourceDescription);
 
   const seoTitle = page.getByLabel("SEO title");
   await seoTitle.evaluate((element) => {

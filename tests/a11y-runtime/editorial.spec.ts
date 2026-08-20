@@ -160,6 +160,7 @@ test.beforeAll(async () => {
       syncedAt,
       content: {
         create: {
+          status: "PUBLISHED",
           editorialDescription: "Runtime editorial layer for the city uniform.",
         },
       },

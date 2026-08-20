@@ -28,6 +28,7 @@ export function createProductContentRepository(client: PrismaClient) {
       update: fields,
       select: {
         productId: true,
+        status: true,
         editorialDescription: true,
         careInstructions: true,
         sizeGuide: true,
@@ -45,9 +46,11 @@ export function createProductContentRepository(client: PrismaClient) {
         id: true,
         name: true,
         slug: true,
+        sourceDescription: true,
         isActive: true,
         content: {
           select: {
+            status: true,
             editorialDescription: true,
             careInstructions: true,
             sizeGuide: true,
@@ -73,6 +76,7 @@ export function createProductContentRepository(client: PrismaClient) {
         syncedAt: true,
         content: {
           select: {
+            status: true,
             updatedAt: true,
           },
         },
