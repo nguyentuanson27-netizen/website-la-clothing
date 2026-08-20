@@ -37,8 +37,15 @@ async function requestPath(path: string) {
   return {
     status: response.status,
     location: response.headers.get("location"),
+    xContentTypeOptions: response.headers.get("x-content-type-options"),
+    xFrameOptions: response.headers.get("x-frame-options"),
     body: await response.text(),
   };
+}
+
+function assertSecurityHeaders(response: Awaited<ReturnType<typeof requestPath>>, label: string) {
+  assert.equal(response.xContentTypeOptions, "nosniff", `${label} must preserve X-Content-Type-Options`);
+  assert.equal(response.xFrameOptions, "DENY", `${label} must preserve X-Frame-Options`);
 }
 
 async function waitForServer(): Promise<void> {
@@ -138,6 +145,7 @@ try {
     `/shop/${currentSlug}`,
     "historical slug redirect must use an exact relative site-owned Location; relative Location prevents request Host from influencing canonical identity",
   );
+  assertSecurityHeaders(historicalResponse, "historical slug 301");
 
   const currentResponse = await requestPath(`/shop/${currentSlug}`);
   assert.equal(currentResponse.status, 200, `current slug must render 200, received ${currentResponse.status}`);
@@ -145,9 +153,10 @@ try {
 
   const unknownResponse = await requestPath(`/shop/${unknownSlug}`);
   assert.equal(unknownResponse.status, 404, `unknown slug must return 404, received ${unknownResponse.status}`);
+  assertSecurityHeaders(unknownResponse, "unknown slug 404");
 
   console.log(
-    "Product slug HTTP smoke passed: historical slug 301s to relative canonical path, current slug is 200, unknown slug is 404.",
+    "Product slug HTTP smoke passed: historical slug 301s to relative canonical path, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
   );
 } finally {
   await stopServer();
