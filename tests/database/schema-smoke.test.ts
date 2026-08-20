@@ -109,3 +109,20 @@ test("deployed auth schema includes Better Auth database rate-limit storage", as
     { column_name: "lastRequest", data_type: "bigint" },
   ]);
 });
+
+test("deployed catalog schema includes ProductMirror source content and media columns", async () => {
+  const columns = await prisma.$queryRaw<Array<{ column_name: string; data_type: string; is_nullable: string }>>`
+    SELECT column_name, data_type, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'ProductMirror'
+      AND column_name IN ('sourceDescription', 'primaryImageUrl')
+    ORDER BY column_name ASC
+  `;
+
+  assert.deepEqual(columns, [
+    { column_name: "primaryImageUrl", data_type: "text", is_nullable: "YES" },
+    { column_name: "sourceDescription", data_type: "text", is_nullable: "YES" },
+  ]);
+});
+

@@ -7,7 +7,7 @@ import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type {
   PancakeCatalogField,
-  PancakeCatalogVariation,
+  PancakeParsedCatalogVariation,
 } from "../../src/integrations/pancake/catalog-contract.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -29,6 +29,8 @@ const defaultFields: PancakeCatalogField[] = [
 function variation({
   id,
   productName = "Mirror Product",
+  sourceDescription = null,
+  primaryImageUrl = null,
   displayId,
   barcode,
   fields = defaultFields,
@@ -38,13 +40,15 @@ function variation({
 }: {
   id: string;
   productName?: string;
+  sourceDescription?: string | null;
+  primaryImageUrl?: string | null;
   displayId: string;
   barcode: string;
   fields?: PancakeCatalogField[];
   retailPrice?: number;
   retailPriceAfterDiscount?: number;
   stocks: Array<{ warehouseId: string; remainQuantity: number }>;
-}): PancakeCatalogVariation {
+}): PancakeParsedCatalogVariation {
   return {
     id,
     productId: "mirror-product-1",
@@ -56,7 +60,7 @@ function variation({
     isLocked: false,
     retailPrice,
     retailPriceAfterDiscount,
-    product: { id: "mirror-product-1", name: productName },
+    product: { id: "mirror-product-1", name: productName, sourceDescription, primaryImageUrl },
     warehouseStocks: stocks,
     sellableStock: stocks.reduce((total, stock) => total + stock.remainQuantity, 0),
   };
@@ -236,3 +240,262 @@ test("catalog mirror rejects shop ids outside the PostgreSQL INTEGER range befor
   );
   assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
 });
+
+test("catalog mirror sync persists sourceDescription and primaryImageUrl idempotently", async () => {
+  const syncedAt = new Date("2026-08-20T03:00:00.000Z");
+  const snapshot = [
+    variation({
+      id: "mirror-variation-source-1",
+      productName: "Source Content Shirt",
+      sourceDescription: "100% Premium Cotton, regular fit.",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/shirt.jpg",
+      displayId: "DISPLAY-SRC-1",
+      barcode: "BAR-SRC-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 5 }],
+    }),
+  ];
+
+  await repository.syncSnapshot({ shopId, variations: snapshot, syncedAt });
+  await repository.syncSnapshot({ shopId, variations: snapshot, syncedAt });
+
+  const products = await repository.listPresentProducts({ shopId, limit: 10 });
+  assert.equal(products.length, 1);
+  assert.equal(products[0]?.name, "Source Content Shirt");
+  assert.equal(products[0]?.sourceDescription, "100% Premium Cotton, regular fit.");
+  assert.equal(products[0]?.primaryImageUrl, "https://content.pancake.vn/images/1/2/3/shirt.jpg");
+
+  const productInDb = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+  });
+  assert.equal(productInDb.sourceDescription, "100% Premium Cotton, regular fit.");
+  assert.equal(productInDb.primaryImageUrl, "https://content.pancake.vn/images/1/2/3/shirt.jpg");
+});
+
+test("Pancake source changes update ProductMirror source fields without overwriting website-owned ProductContent", async () => {
+  const firstSyncAt = new Date("2026-08-20T03:00:00.000Z");
+  const secondSyncAt = new Date("2026-08-20T04:00:00.000Z");
+
+  const initialSnapshot = [
+    variation({
+      id: "mirror-variation-isolation-1",
+      productName: "Initial Product Name",
+      sourceDescription: "Initial source description from Pancake note_product.",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/initial.jpg",
+      displayId: "DISPLAY-ISO-1",
+      barcode: "BAR-ISO-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 3 }],
+    }),
+  ];
+
+  await repository.syncSnapshot({ shopId, variations: initialSnapshot, syncedAt: firstSyncAt });
+
+  const mirroredProduct = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+  });
+
+  // Website-owned ProductContent is authored by editorial team
+  await prisma.productContent.create({
+    data: {
+      productId: mirroredProduct.id,
+      editorialDescription: "Carefully curated menswear essential. Website editorial authority.",
+      careInstructions: "Machine wash cold inside out.",
+      sizeGuide: "Model is 180cm wearing size L.",
+      seoTitle: "Source Content Shirt | LA Clothing",
+      seoDescription: "Shop the finest cotton shirt from LA Clothing.",
+      collectionSlugs: ["essential-tops", "new-arrivals"],
+    },
+  });
+
+  // Sync subsequent Pancake update with changed sourceDescription, primaryImageUrl, and name
+  const updatedSnapshot = [
+    variation({
+      id: "mirror-variation-isolation-1",
+      productName: "Updated Product Name",
+      sourceDescription: "Updated source note from POS seller.",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/updated.jpg",
+      displayId: "DISPLAY-ISO-1",
+      barcode: "BAR-ISO-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 4 }],
+    }),
+  ];
+
+  await repository.syncSnapshot({ shopId, variations: updatedSnapshot, syncedAt: secondSyncAt });
+
+  // Verify ProductMirror was updated with the fresh Pancake source facts
+  const updatedProduct = await prisma.productMirror.findUniqueOrThrow({
+    where: { id: mirroredProduct.id },
+    include: { content: true },
+  });
+
+  assert.equal(updatedProduct.name, "Updated Product Name");
+  assert.equal(updatedProduct.sourceDescription, "Updated source note from POS seller.");
+  assert.equal(updatedProduct.primaryImageUrl, "https://content.pancake.vn/images/1/2/3/updated.jpg");
+
+  // Verify ProductContent was completely preserved and NOT overwritten
+  assert.ok(updatedProduct.content);
+  assert.equal(
+    updatedProduct.content.editorialDescription,
+    "Carefully curated menswear essential. Website editorial authority.",
+  );
+  assert.equal(updatedProduct.content.careInstructions, "Machine wash cold inside out.");
+  assert.equal(updatedProduct.content.sizeGuide, "Model is 180cm wearing size L.");
+  assert.equal(updatedProduct.content.seoTitle, "Source Content Shirt | LA Clothing");
+  assert.equal(updatedProduct.content.seoDescription, "Shop the finest cotton shirt from LA Clothing.");
+  assert.deepEqual(updatedProduct.content.collectionSlugs, ["essential-tops", "new-arrivals"]);
+});
+
+test("catalog mirror rejects inconsistent sourceDescription or primaryImageUrl among variants of the same product", async () => {
+  const variantA = variation({
+    id: "variation-diff-desc-a",
+    displayId: "DISPLAY-A",
+    barcode: "BAR-A",
+    sourceDescription: "Description A",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/img.jpg",
+    stocks: [],
+  });
+  const variantB = variation({
+    id: "variation-diff-desc-b",
+    displayId: "DISPLAY-B",
+    barcode: "BAR-B",
+    sourceDescription: "Description B",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/img.jpg",
+    stocks: [],
+  });
+
+  await assert.rejects(
+    () =>
+      repository.syncSnapshot({
+        shopId,
+        variations: [variantA, variantB],
+        syncedAt: new Date("2026-08-20T03:00:00.000Z"),
+      }),
+    /inconsistent product presentation/i,
+  );
+
+  const variantC = variation({
+    id: "variation-diff-img-c",
+    displayId: "DISPLAY-C",
+    barcode: "BAR-C",
+    sourceDescription: "Same Description",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/img-1.jpg",
+    stocks: [],
+  });
+  const variantD = variation({
+    id: "variation-diff-img-d",
+    displayId: "DISPLAY-D",
+    barcode: "BAR-D",
+    sourceDescription: "Same Description",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/img-2.jpg",
+    stocks: [],
+  });
+
+  await assert.rejects(
+    () =>
+      repository.syncSnapshot({
+        shopId,
+        variations: [variantC, variantD],
+        syncedAt: new Date("2026-08-20T03:00:00.000Z"),
+      }),
+    /inconsistent product presentation/i,
+  );
+});
+
+test("catalog mirror allows clearing sourceDescription and primaryImageUrl when removed in Pancake", async () => {
+  const initial = [
+    variation({
+      id: "mirror-variation-clear-1",
+      sourceDescription: "Present description",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/img.jpg",
+      displayId: "DISPLAY-CLR-1",
+      barcode: "BAR-CLR-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 1 }],
+    }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: initial,
+    syncedAt: new Date("2026-08-20T03:00:00.000Z"),
+  });
+
+  const cleared = [
+    variation({
+      id: "mirror-variation-clear-1",
+      sourceDescription: null,
+      primaryImageUrl: null,
+      displayId: "DISPLAY-CLR-1",
+      barcode: "BAR-CLR-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 1 }],
+    }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: cleared,
+    syncedAt: new Date("2026-08-20T04:00:00.000Z"),
+  });
+
+  const read = await repository.listPresentProducts({ shopId, limit: 10 });
+  assert.equal(read[0]?.sourceDescription, null);
+  assert.equal(read[0]?.primaryImageUrl, null);
+});
+
+test("omitting an entire product marks mirror and variants as not present/inactive while preserving source fields and ProductContent", async () => {
+  const firstSyncAt = new Date("2026-08-20T03:00:00.000Z");
+  const secondSyncAt = new Date("2026-08-20T04:00:00.000Z");
+
+  const initialSnapshot = [
+    variation({
+      id: "mirror-variation-stale-prod-1",
+      productName: "Stale Candidate Product",
+      sourceDescription: "Original source description from Pancake.",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/stale-prod.jpg",
+      displayId: "DISPLAY-STALE-1",
+      barcode: "BAR-STALE-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 5 }],
+    }),
+  ];
+
+  await repository.syncSnapshot({ shopId, variations: initialSnapshot, syncedAt: firstSyncAt });
+
+  const mirroredProduct = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+  });
+
+  await prisma.productContent.create({
+    data: {
+      productId: mirroredProduct.id,
+      editorialDescription: "Authoritative editorial copy.",
+      careInstructions: "Dry clean only.",
+      sizeGuide: "Standard sizing.",
+      seoTitle: "Stale Product Title",
+      seoDescription: "Stale Product Meta Description",
+      collectionSlugs: ["heritage-line"],
+    },
+  });
+
+  // Next sync snapshot completely omits this product
+  await repository.syncSnapshot({ shopId, variations: [], syncedAt: secondSyncAt });
+
+  const staleProduct = await prisma.productMirror.findUniqueOrThrow({
+    where: { id: mirroredProduct.id },
+    include: { content: true, variants: true },
+  });
+
+  assert.equal(staleProduct.isPresent, false);
+  assert.equal(staleProduct.isActive, false);
+  assert.equal(staleProduct.sourceDescription, "Original source description from Pancake.");
+  assert.equal(staleProduct.primaryImageUrl, "https://content.pancake.vn/images/1/2/3/stale-prod.jpg");
+
+  assert.equal(staleProduct.variants.length, 1);
+  assert.equal(staleProduct.variants[0]?.isPresent, false);
+  assert.equal(staleProduct.variants[0]?.isActive, false);
+
+  assert.ok(staleProduct.content);
+  assert.equal(staleProduct.content.editorialDescription, "Authoritative editorial copy.");
+  assert.equal(staleProduct.content.careInstructions, "Dry clean only.");
+  assert.equal(staleProduct.content.sizeGuide, "Standard sizing.");
+  assert.equal(staleProduct.content.seoTitle, "Stale Product Title");
+  assert.equal(staleProduct.content.seoDescription, "Stale Product Meta Description");
+  assert.deepEqual(staleProduct.content.collectionSlugs, ["heritage-line"]);
+});
+
+

@@ -5,7 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
-import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
+import type { PancakeParsedCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -14,7 +14,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const repository = createCatalogMirrorRepository(prisma);
 const shopId = 910_040;
 
-function snapshot(productName: string): PancakeCatalogVariation[] {
+function snapshot(productName: string): PancakeParsedCatalogVariation[] {
   return [{
     id: "ordering-variation",
     productId: "ordering-product",
@@ -26,7 +26,12 @@ function snapshot(productName: string): PancakeCatalogVariation[] {
     isLocked: false,
     retailPrice: 100,
     retailPriceAfterDiscount: 100,
-    product: { id: "ordering-product", name: productName },
+    product: {
+      id: "ordering-product",
+      name: productName,
+      sourceDescription: null,
+      primaryImageUrl: null,
+    },
     warehouseStocks: [],
     sellableStock: 0,
   }];
