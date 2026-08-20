@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
@@ -19,16 +20,42 @@ async function loadHomepageProductEdit() {
 export default async function HomePage() {
   await connection();
   const featuredProducts = await loadHomepageProductEdit();
+  const heroProduct = featuredProducts[0];
+  const heroImage = heroProduct?.media?.primary ?? null;
+  const lookbookLargeProduct = featuredProducts[1] ?? featuredProducts[0];
+  const lookbookLargeImage = lookbookLargeProduct?.media?.primary ?? null;
+  const lookbookSmallProduct = featuredProducts[2] ?? featuredProducts[1];
+  const lookbookSmallImage = lookbookSmallProduct?.media?.primary ?? null;
 
   return (
     <>
       <section className="campaign-hero" aria-labelledby="campaign-title">
-        <div className="campaign-visual" aria-hidden="true">
-          <span className="campaign-figure campaign-figure--one" />
-          <span className="campaign-figure campaign-figure--two" />
-        </div>
+        {heroImage ? (
+          <div className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]">
+            <Image
+              src={heroImage.url}
+              alt={heroImage.alt || heroProduct?.name || "LA Clothing Campaign"}
+              fill
+              preload
+              sizes="(min-width: 900px) 60vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="campaign-visual relative flex min-h-[620px] items-center justify-center overflow-hidden bg-[var(--stone)] p-8 text-center"
+            aria-hidden="true"
+          >
+            <div>
+              <p className="eyebrow text-black/50">LA Clothing</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.14em] text-black/40">
+                Visual edit in preparation
+              </p>
+            </div>
+          </div>
+        )}
         <div className="campaign-copy">
-          <p className="eyebrow">Fall / Winter 2026</p>
+          <p className="eyebrow">LA Clothing / Campaign</p>
           <h1 id="campaign-title">QUIET FORM.</h1>
           <p className="campaign-intro">
             Clean lines, relaxed proportions and a muted palette designed for everyday movement.
@@ -42,10 +69,15 @@ export default async function HomePage() {
       <section className="collection-intro" aria-labelledby="new-collection-title">
         <p className="eyebrow">Collection / 01</p>
         <h2 id="new-collection-title">ESSENTIALS FOR THE IN-BETWEEN.</h2>
-        <p>
-          Shirts, trousers and layers built around proportion rather than noise — simple enough to wear every day,
-          distinct enough to feel considered.
-        </p>
+        <div>
+          <p>
+            Shirts, trousers and layers built around proportion rather than noise — simple enough to wear every day,
+            distinct enough to feel considered.
+          </p>
+          <Link className="text-link mt-4 inline-block" href="/collections">
+            View collections ↗
+          </Link>
+        </div>
       </section>
 
       <section className="product-section" aria-labelledby="shop-edit-title">
@@ -85,18 +117,48 @@ export default async function HomePage() {
       </section>
 
       <section className="lookbook-grid" aria-labelledby="lookbook-title">
-        <div className="lookbook-panel lookbook-panel--large" aria-hidden="true">
-          <span className="lookbook-figure" />
-        </div>
+        {lookbookLargeImage ? (
+          <div className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]">
+            <Image
+              src={lookbookLargeImage.url}
+              alt={lookbookLargeImage.alt || lookbookLargeProduct?.name || "LA Clothing Lookbook"}
+              fill
+              sizes="(min-width: 900px) 50vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="lookbook-panel lookbook-panel--large relative flex min-h-[68vh] items-center justify-center overflow-hidden bg-[#b9b2a4] p-8 text-center md:min-h-[780px]"
+            aria-hidden="true"
+          >
+            <p className="eyebrow text-black/40">LA Clothing Editorial</p>
+          </div>
+        )}
         <div className="lookbook-copy">
           <p className="eyebrow">Editorial / 02</p>
           <h2 id="lookbook-title">CITY UNIFORM</h2>
-          <p>Soft tailoring and utility pieces for long days, late evenings and everything between.</p>
+          <p>Measured proportions and functional utility for moving through the everyday.</p>
           <Link className="text-link" href="/lookbook">View lookbook ↗</Link>
         </div>
-        <div className="lookbook-panel lookbook-panel--small" aria-hidden="true">
-          <span className="lookbook-figure lookbook-figure--small" />
-        </div>
+        {lookbookSmallImage ? (
+          <div className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]">
+            <Image
+              src={lookbookSmallImage.url}
+              alt={lookbookSmallImage.alt || lookbookSmallProduct?.name || "LA Clothing Detail"}
+              fill
+              sizes="(min-width: 900px) 25vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="lookbook-panel lookbook-panel--small relative flex min-h-[55vh] items-center justify-center overflow-hidden bg-[var(--olive)] p-8 text-center"
+            aria-hidden="true"
+          >
+            <p className="eyebrow text-white/50">LA Clothing</p>
+          </div>
+        )}
       </section>
 
       <section className="category-strip" aria-labelledby="categories-title">

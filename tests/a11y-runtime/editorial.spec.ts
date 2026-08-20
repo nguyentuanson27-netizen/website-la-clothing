@@ -155,12 +155,14 @@ test.beforeAll(async () => {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: productName,
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/editorial-jacket.jpg",
       isPresent: true,
       isActive: true,
       syncedAt,
       content: {
         create: {
           editorialDescription: "Runtime editorial layer for the city uniform.",
+          collectionSlugs: ["essential-outerwear"],
         },
       },
     },
@@ -264,12 +266,31 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   expect(failedResponses).toEqual([]);
 });
 
+const TINY_JPEG_BUFFER = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64",
+);
+
 test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
   page,
 }) => {
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
+  await expect(page.locator(".campaign-visual img")).toBeVisible();
+  await expect(page.locator(".campaign-figure")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View collections ↗" })).toHaveAttribute(
+    "href",
+    "/collections",
+  );
   await expect(page.getByRole("heading", { level: 2, name: "Shop edit" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
@@ -277,11 +298,14 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     `/shop/${productSlug}`,
   );
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
+  await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
   await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
+  await expect(page.locator(".lookbook-panel img").first()).toBeVisible();
+  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "MORNING / TRANSIT" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
   await expect(page.getByText("A study in quiet utility.")).toBeVisible();
@@ -290,6 +314,10 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
     "href",
     `/shop/${productSlug}`,
+  );
+  await expect(page.getByRole("link", { name: "Shop collection ↗" })).toHaveAttribute(
+    "href",
+    "/shop",
   );
   await expectRuntimePageClean(page);
 });
