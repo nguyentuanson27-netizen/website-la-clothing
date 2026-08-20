@@ -22,8 +22,12 @@ function validInput() {
     sizeGuide: " ",
     seoTitle: "  Relaxed Oxford Shirt  ",
     seoDescription: " Editorial menswear shirt. ",
-    collectionSlugs: " city-uniform, essentials ",
+    collectionSlugs: " essentials, city-uniform ",
   };
+}
+
+function passThroughCollections(collectionSlugs: string[]) {
+  return Promise.resolve([...collectionSlugs].sort());
 }
 
 test("product editorial updates require ADMIN before reading or writing content", async () => {
@@ -32,6 +36,10 @@ test("product editorial updates require ADMIN before reading or writing content"
     async productExists() {
       dependencyCalls += 1;
       return true;
+    },
+    async resolveCollectionSlugs() {
+      dependencyCalls += 1;
+      return [];
     },
     async saveContent() {
       dependencyCalls += 1;
@@ -57,6 +65,10 @@ test("product editorial updates reject malformed browser input before database a
       dependencyCalls += 1;
       return true;
     },
+    async resolveCollectionSlugs() {
+      dependencyCalls += 1;
+      return [];
+    },
     async saveContent() {
       dependencyCalls += 1;
       throw new Error("must not write");
@@ -79,11 +91,16 @@ test("product editorial updates reject malformed browser input before database a
 });
 
 test("product editorial updates fail closed when the mirrored product does not exist", async () => {
+  let collectionCalls = 0;
   let saveCalls = 0;
   const service = createProductContentAdminService({
     async productExists(productId) {
       assert.equal(productId, "product-1");
       return false;
+    },
+    async resolveCollectionSlugs() {
+      collectionCalls += 1;
+      return [];
     },
     async saveContent() {
       saveCalls += 1;
@@ -95,14 +112,43 @@ test("product editorial updates fail closed when the mirrored product does not e
     ok: false,
     reason: "PRODUCT_NOT_FOUND",
   });
+  assert.equal(collectionCalls, 0);
+  assert.equal(saveCalls, 0);
+});
+
+test("product editorial updates fail closed when collection membership is stale or unknown", async () => {
+  let saveCalls = 0;
+  const service = createProductContentAdminService({
+    async productExists() {
+      return true;
+    },
+    async resolveCollectionSlugs(collectionSlugs) {
+      assert.deepEqual(collectionSlugs, ["essentials", "city-uniform"]);
+      return null;
+    },
+    async saveContent() {
+      saveCalls += 1;
+      throw new Error("must not write");
+    },
+  });
+
+  assert.deepEqual(await service.update(adminSession, validInput()), {
+    ok: false,
+    reason: "COLLECTION_NOT_FOUND",
+  });
   assert.equal(saveCalls, 0);
 });
 
 test("product editorial updates preserve old form submissions with no collection field", async () => {
   const writes: unknown[] = [];
+  let collectionCalls = 0;
   const service = createProductContentAdminService({
     async productExists() {
       return true;
+    },
+    async resolveCollectionSlugs(collectionSlugs) {
+      collectionCalls += 1;
+      return passThroughCollections(collectionSlugs);
     },
     async saveContent(content) {
       writes.push(content);
@@ -119,18 +165,23 @@ test("product editorial updates preserve old form submissions with no collection
     assert.equal(result.ok, true);
   }
 
+  assert.equal(collectionCalls, 0);
   assert.deepEqual(
     writes.map((write) => (write as { collectionSlugs: string[] }).collectionSlugs),
     [[], []],
   );
 });
 
-test("product editorial updates normalize the full editor snapshot before persistence", async () => {
+test("product editorial updates persist canonical collection membership returned by the resolver", async () => {
   const writes: unknown[] = [];
   const service = createProductContentAdminService({
     async productExists(productId) {
       assert.equal(productId, "product-1");
       return true;
+    },
+    async resolveCollectionSlugs(collectionSlugs) {
+      assert.deepEqual(collectionSlugs, ["essentials", "city-uniform"]);
+      return passThroughCollections(collectionSlugs);
     },
     async saveContent(content) {
       writes.push(content);

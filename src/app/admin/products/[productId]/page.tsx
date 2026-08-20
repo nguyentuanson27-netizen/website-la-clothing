@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 
 import { requireCurrentAdmin, requireCurrentAdminPage } from "@/auth/current-admin";
+import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import {
   createProductContentAdminService,
   PRODUCT_CONTENT_LIMITS,
@@ -17,7 +18,12 @@ export const metadata: Metadata = {
 };
 
 const repository = createProductContentRepository(prisma);
-const adminService = createProductContentAdminService(repository);
+const collectionRepository = createCollectionDefinitionRepository(prisma);
+const adminService = createProductContentAdminService({
+  productExists: repository.productExists,
+  resolveCollectionSlugs: collectionRepository.resolveMembershipSlugs,
+  saveContent: repository.saveContent,
+});
 
 const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
