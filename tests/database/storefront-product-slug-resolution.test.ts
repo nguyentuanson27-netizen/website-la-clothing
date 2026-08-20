@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
+import { createStorefrontProductSlugResolver } from "../../src/commerce/storefront-product-slug-resolution.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -15,7 +15,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
-const repository = createStorefrontCatalogRepository(prisma);
+const resolveProductSlug = createStorefrontProductSlugResolver(prisma);
 const shopId = 910_060;
 const otherShopId = 910_061;
 const syncedAt = new Date("2026-08-20T15:00:00.000Z");
@@ -53,18 +53,16 @@ test("storefront slug resolution distinguishes current, historical and unknown s
     },
   });
 
-  assert.deepEqual(
-    await repository.resolveProductSlug({ shopId, slug: "p6b-visible-current" }),
-    { kind: "CURRENT" },
-  );
-  assert.deepEqual(
-    await repository.resolveProductSlug({ shopId, slug: "p6b-visible-old" }),
-    { kind: "HISTORICAL", currentSlug: "p6b-visible-current" },
-  );
-  assert.deepEqual(
-    await repository.resolveProductSlug({ shopId, slug: "p6b-does-not-exist" }),
-    { kind: "UNKNOWN" },
-  );
+  assert.deepEqual(await resolveProductSlug({ shopId, slug: "p6b-visible-current" }), {
+    kind: "CURRENT",
+  });
+  assert.deepEqual(await resolveProductSlug({ shopId, slug: "p6b-visible-old" }), {
+    kind: "HISTORICAL",
+    currentSlug: "p6b-visible-current",
+  });
+  assert.deepEqual(await resolveProductSlug({ shopId, slug: "p6b-does-not-exist" }), {
+    kind: "UNKNOWN",
+  });
 });
 
 test("historical redirects stay scoped to visible active products in the configured shop", async () => {
@@ -115,16 +113,13 @@ test("historical redirects stay scoped to visible active products in the configu
   });
 
   for (const slug of ["p6b-inactive-old", "p6b-stale-old", "p6b-other-shop-old"]) {
-    assert.deepEqual(await repository.resolveProductSlug({ shopId, slug }), { kind: "UNKNOWN" });
+    assert.deepEqual(await resolveProductSlug({ shopId, slug }), { kind: "UNKNOWN" });
   }
 });
 
 test("slug resolution treats malformed public slugs as unknown without masking invalid shop configuration", async () => {
-  assert.deepEqual(await repository.resolveProductSlug({ shopId, slug: "x".repeat(161) }), {
+  assert.deepEqual(await resolveProductSlug({ shopId, slug: "x".repeat(161) }), {
     kind: "UNKNOWN",
   });
-  await assert.rejects(
-    () => repository.resolveProductSlug({ shopId: 0, slug: "p6b-anything" }),
-    RangeError,
-  );
+  await assert.rejects(() => resolveProductSlug({ shopId: 0, slug: "p6b-anything" }), RangeError);
 });
