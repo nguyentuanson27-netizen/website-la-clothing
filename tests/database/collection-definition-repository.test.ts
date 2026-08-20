@@ -105,6 +105,35 @@ test("P7 public repository reads expose only published definitions", async () =>
   assert.equal((await repository.findPublishedBySlug("p7-repo-public-a"))?.title, "Public A");
 });
 
+test("P7 membership resolver returns deterministic canonical slugs and fails closed for stale membership", async () => {
+  await repository.saveDefinition({
+    slug: "p7-repo-membership-b",
+    title: "Membership B",
+    description: "Draft membership B.",
+  });
+  await repository.saveDefinition({
+    slug: "p7-repo-membership-a",
+    title: "Membership A",
+    description: "Draft membership A.",
+  });
+
+  assert.deepEqual(
+    await repository.resolveMembershipSlugs([
+      "p7-repo-membership-b",
+      "p7-repo-membership-a",
+    ]),
+    ["p7-repo-membership-a", "p7-repo-membership-b"],
+  );
+  assert.equal(
+    await repository.resolveMembershipSlugs([
+      "p7-repo-membership-a",
+      "p7-repo-membership-missing",
+    ]),
+    null,
+  );
+  assert.deepEqual(await repository.resolveMembershipSlugs([]), []);
+});
+
 test("P7 repository bounds collection list reads", async () => {
   await assert.rejects(() => repository.listPublished(0), RangeError);
   await assert.rejects(() => repository.listForAdmin(101), RangeError);

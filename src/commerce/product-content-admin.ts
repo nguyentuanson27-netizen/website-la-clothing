@@ -36,6 +36,7 @@ export type ProductContentSnapshot = {
 
 type ProductContentAdminDependencies = {
   productExists(productId: string): Promise<boolean>;
+  resolveCollectionSlugs(collectionSlugs: string[]): Promise<string[] | null>;
   saveContent(content: ProductContentSnapshot): Promise<ProductContentSnapshot>;
 };
 
@@ -131,6 +132,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
 
 export function createProductContentAdminService({
   productExists,
+  resolveCollectionSlugs,
   saveContent,
 }: ProductContentAdminDependencies) {
   async function update(session: AdminSessionCandidate, input: unknown) {
@@ -145,9 +147,20 @@ export function createProductContentAdminService({
       return { ok: false, reason: "PRODUCT_NOT_FOUND" } as const;
     }
 
+    const resolvedCollectionSlugs =
+      content.collectionSlugs.length === 0
+        ? []
+        : await resolveCollectionSlugs(content.collectionSlugs);
+    if (resolvedCollectionSlugs === null) {
+      return { ok: false, reason: "COLLECTION_NOT_FOUND" } as const;
+    }
+
     return {
       ok: true,
-      content: await saveContent(content),
+      content: await saveContent({
+        ...content,
+        collectionSlugs: resolvedCollectionSlugs,
+      }),
     } as const;
   }
 

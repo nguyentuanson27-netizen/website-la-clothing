@@ -65,10 +65,33 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     });
   }
 
+  async function resolveMembershipSlugs(slugs: string[]): Promise<string[] | null> {
+    if (slugs.length === 0) return [];
+    if (slugs.length > MAX_COLLECTION_LIST) {
+      throw new RangeError(`Collection membership cannot exceed ${MAX_COLLECTION_LIST} entries`);
+    }
+
+    const parsed = slugs.map((slug) => parseCollectionSlug(slug));
+    const unique = new Set(parsed);
+    if (unique.size !== parsed.length) {
+      return null;
+    }
+    const canonical = [...unique].sort();
+    const existing = await client.collectionDefinition.findMany({
+      where: { slug: { in: canonical } },
+      select: { slug: true },
+      orderBy: { slug: "asc" },
+    });
+
+    if (existing.length !== canonical.length) return null;
+    return existing.map(({ slug }) => slug);
+  }
+
   return {
     saveDefinition,
     listForAdmin,
     listPublished,
     findPublishedBySlug,
+    resolveMembershipSlugs,
   };
 }
