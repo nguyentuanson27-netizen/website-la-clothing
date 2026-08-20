@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import type {
   PancakeCatalogField,
-  PancakeCatalogVariation,
+  PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
 
 const MAX_READ_PRODUCTS = 100;
@@ -14,6 +14,8 @@ const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 type CatalogProductSnapshot = {
   pancakeProductId: string;
   name: string;
+  sourceDescription: string | null;
+  primaryImageUrl: string | null;
 };
 
 type VariantOptionMapping = {
@@ -50,7 +52,7 @@ function stableMirrorSlug(shopId: number, pancakeProductId: string): string {
   return `p-${digest}`;
 }
 
-function validateSnapshot(variations: readonly PancakeCatalogVariation[]) {
+export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalogVariation[]) {
   const productByExternalId = new Map<string, CatalogProductSnapshot>();
   const variationIds = new Set<string>();
 
@@ -64,13 +66,22 @@ function validateSnapshot(variations: readonly PancakeCatalogVariation[]) {
       throw new Error("Catalog mirror snapshot contains inconsistent canonical product identity");
     }
 
+    const { sourceDescription, primaryImageUrl } = variation.product;
+
     const existingProduct = productByExternalId.get(variation.productId);
-    if (existingProduct && existingProduct.name !== variation.product.name) {
+    if (
+      existingProduct &&
+      (existingProduct.name !== variation.product.name ||
+        existingProduct.sourceDescription !== sourceDescription ||
+        existingProduct.primaryImageUrl !== primaryImageUrl)
+    ) {
       throw new Error("Catalog mirror snapshot contains inconsistent product presentation");
     }
     productByExternalId.set(variation.productId, {
       pancakeProductId: variation.productId,
       name: variation.product.name,
+      sourceDescription,
+      primaryImageUrl,
     });
 
     const warehouseIds = new Set<string>();
@@ -136,12 +147,12 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
     syncedAt,
   }: {
     shopId: number;
-    variations: readonly PancakeCatalogVariation[];
+    variations: readonly PancakeParsedCatalogVariation[];
     syncedAt: Date;
   }) {
     const safeShopId = requireShopId(shopId);
     const safeSyncedAt = requireSyncedAt(syncedAt);
-    const { productByExternalId, variationIds } = validateSnapshot(variations);
+    const { productByExternalId, variationIds } = validateCatalogSnapshot(variations);
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
 
@@ -175,6 +186,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
               pancakeProductId: product.pancakeProductId,
               slug: stableMirrorSlug(safeShopId, product.pancakeProductId),
               name: product.name,
+              sourceDescription: product.sourceDescription,
+              primaryImageUrl: product.primaryImageUrl,
               isPresent: true,
               isActive: false,
               syncedAt: safeSyncedAt,
@@ -182,6 +195,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
             update: {
               pancakeShopId: safeShopId,
               name: product.name,
+              sourceDescription: product.sourceDescription,
+              primaryImageUrl: product.primaryImageUrl,
               isPresent: true,
               syncedAt: safeSyncedAt,
             },
@@ -333,6 +348,8 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
         pancakeProductId: true,
         slug: true,
         name: true,
+        sourceDescription: true,
+        primaryImageUrl: true,
         isActive: true,
         syncedAt: true,
         variants: {

@@ -5,6 +5,7 @@ out/
 !.env.example
 src/generated/prisma/
 *.log
+*.tsbuildinfo
 .DS_Store
 coverage/
 playwright-report/

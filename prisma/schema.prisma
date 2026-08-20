@@ -117,18 +117,20 @@ model Address {
 }
 
 model ProductMirror {
-  id               String          @id @default(cuid())
-  pancakeShopId    Int             @default(0)
-  pancakeProductId String          @unique
-  slug             String          @unique
-  name             String
-  isPresent        Boolean         @default(true)
-  isActive         Boolean         @default(true)
-  syncedAt         DateTime
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  variants         VariantMirror[]
-  content          ProductContent?
+  id                String          @id @default(cuid())
+  pancakeShopId     Int             @default(0)
+  pancakeProductId  String          @unique
+  slug              String          @unique
+  name              String
+  sourceDescription String?
+  primaryImageUrl   String?
+  isPresent         Boolean         @default(true)
+  isActive          Boolean         @default(true)
+  syncedAt          DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  variants          VariantMirror[]
+  content           ProductContent?
 
   @@index([pancakeShopId, isPresent])
 }
