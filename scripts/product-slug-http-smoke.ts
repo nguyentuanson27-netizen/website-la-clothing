@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { rm } from "node:fs/promises";
+import http from "node:http";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -12,6 +13,7 @@ const HOST = "127.0.0.1";
 const PORT = 3213;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_007;
+const HOSTILE_HOST = "attacker.example";
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
 const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
@@ -28,11 +30,19 @@ const productName = `Áo sơ mi HTTP ${runId}`;
 let server: ChildProcess | undefined;
 let serverOutput = "";
 
+type HttpResponse = {
+  status: number;
+  location: string | null;
+  xContentTypeOptions: string | null;
+  xFrameOptions: string | null;
+  body: string;
+};
+
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-16_000);
 }
 
-async function requestPath(path: string) {
+async function requestPath(path: string): Promise<HttpResponse> {
   const response = await fetch(`${BASE_URL}${path}`, { redirect: "manual" });
   return {
     status: response.status,
@@ -43,7 +53,42 @@ async function requestPath(path: string) {
   };
 }
 
-function assertSecurityHeaders(response: Awaited<ReturnType<typeof requestPath>>, label: string) {
+async function requestPathWithHost(path: string, hostHeader: string): Promise<HttpResponse> {
+  return new Promise((resolveRequest, rejectRequest) => {
+    const request = http.request(
+      {
+        hostname: HOST,
+        port: PORT,
+        path,
+        method: "GET",
+        headers: { Host: hostHeader },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          resolveRequest({
+            status: response.statusCode ?? 0,
+            location: typeof response.headers.location === "string" ? response.headers.location : null,
+            xContentTypeOptions:
+              typeof response.headers["x-content-type-options"] === "string"
+                ? response.headers["x-content-type-options"]
+                : null,
+            xFrameOptions:
+              typeof response.headers["x-frame-options"] === "string"
+                ? response.headers["x-frame-options"]
+                : null,
+            body: Buffer.concat(chunks).toString(),
+          });
+        });
+      },
+    );
+    request.on("error", rejectRequest);
+    request.end();
+  });
+}
+
+function assertSecurityHeaders(response: HttpResponse, label: string) {
   assert.equal(response.xContentTypeOptions, "nosniff", `${label} must preserve X-Content-Type-Options`);
   assert.equal(response.xFrameOptions, "DENY", `${label} must preserve X-Frame-Options`);
 }
@@ -124,7 +169,11 @@ try {
     process.execPath,
     [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)],
     {
-      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+      env: {
+        ...process.env,
+        APP_DOMAIN: `${HOST}:${PORT}`,
+        NEXT_TELEMETRY_DISABLED: "1",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -134,7 +183,7 @@ try {
 
   await waitForServer();
 
-  const historicalResponse = await requestPath(`/shop/${historicalSlug}`);
+  const historicalResponse = await requestPathWithHost(`/shop/${historicalSlug}`, HOSTILE_HOST);
   assert.equal(
     historicalResponse.status,
     301,
@@ -142,8 +191,8 @@ try {
   );
   assert.equal(
     historicalResponse.location,
-    `/shop/${currentSlug}`,
-    "historical slug redirect must use an exact relative site-owned Location; relative Location prevents request Host from influencing canonical identity",
+    `${BASE_URL}/shop/${currentSlug}`,
+    "historical redirect must use the server-owned storefront origin even when the request Host is hostile",
   );
   assertSecurityHeaders(historicalResponse, "historical slug 301");
 
@@ -156,7 +205,7 @@ try {
   assertSecurityHeaders(unknownResponse, "unknown slug 404");
 
   console.log(
-    "Product slug HTTP smoke passed: historical slug 301s to relative canonical path, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
+    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 destination, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
   );
 } finally {
   await stopServer();
