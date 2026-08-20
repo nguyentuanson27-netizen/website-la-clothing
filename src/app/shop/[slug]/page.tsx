@@ -61,15 +61,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
             {product.name}
           </h1>
 
-          {product.collectionSlugs && product.collectionSlugs.length > 0 ? (
+          {product.collections.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2">
-              {product.collectionSlugs.map((colSlug) => (
+              {product.collections.map((collection) => (
                 <Link
-                  key={colSlug}
-                  href={`/collections/${colSlug}`}
+                  key={collection.slug}
+                  href={`/collections/${collection.slug}`}
                   className="badge badge--stone transition-colors hover:border-black"
                 >
-                  {colSlug.replace(/-/g, " ")}
+                  {collection.title}
                 </Link>
               ))}
             </div>

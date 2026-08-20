@@ -188,7 +188,7 @@ test.beforeAll(async () => {
         create: {
           status: "PUBLISHED",
           editorialDescription: "Runtime editorial layer for the city uniform.",
-          collectionSlugs: ["essential-outerwear"],
+          collectionSlugs: ["essential-outerwear", "draft-capsule"],
         },
       },
     },
@@ -229,6 +229,23 @@ test.beforeAll(async () => {
       isPublished: true,
       title: "Essential Outerwear",
       description: "Functional outerwear designed for transition and movement.",
+    },
+  });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "draft-capsule" },
+    create: {
+      slug: "draft-capsule",
+      title: "Draft Capsule",
+      description: "Unpublished internal capsule.",
+      seoTitle: "Draft Capsule — LA Clothing",
+      seoDescription: "Unpublished.",
+      isPublished: false,
+      pancakeCategoryIds: [],
+    },
+    update: {
+      isPublished: false,
+      title: "Draft Capsule",
+      description: "Unpublished internal capsule.",
     },
   });
 
@@ -387,17 +404,28 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: "essential outerwear" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveAttribute(
     "href",
     "/collections/essential-outerwear",
   );
+  await expect(page.getByRole("link", { name: /draft capsule/i })).toHaveCount(0);
+  await expect(page.getByText("Draft Capsule")).toHaveCount(0);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeDisabled();
 
-  await page.getByRole("radio", { name: "M" }).click();
-  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeEnabled();
-  await page.getByRole("button", { name: "Add to Bag" }).click();
+  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  await expect(addToBag).toBeDisabled();
+
+  await page.getByText("Ink", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Ink" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
+  await expect(addToBag).toBeEnabled();
+  await addToBag.click();
   await expect(page.getByText("Đã thêm sản phẩm vào túi.")).toBeVisible();
+
+  await page.getByRole("link", { name: "Essential Outerwear" }).click();
+  await page.waitForURL("**/collections/essential-outerwear");
+  await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
   await expectRuntimePageClean(page);
 });
 

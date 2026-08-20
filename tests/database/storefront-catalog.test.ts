@@ -233,3 +233,89 @@ test("storefront catalog rejects unbounded list requests", async () => {
   await assert.rejects(() => repository.listProducts({ shopId, limit: 0 }), /limit/i);
   await assert.rejects(() => repository.listProducts({ shopId, limit: 49 }), /limit/i);
 });
+
+test("storefront catalog resolves only published collections for product detail and facets", async () => {
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "published-collection" },
+    create: {
+      slug: "published-collection",
+      title: "Published Collection",
+      description: "A published collection.",
+      seoTitle: "Published Collection",
+      seoDescription: "Published collection description",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: true, title: "Published Collection" },
+  });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "draft-collection" },
+    create: {
+      slug: "draft-collection",
+      title: "Draft Collection",
+      description: "A draft collection.",
+      seoTitle: "Draft Collection",
+      seoDescription: "Draft collection description",
+      isPublished: false,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: false, title: "Draft Collection" },
+  });
+
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "storefront-collection-test-product",
+      slug: "storefront-collection-test-product",
+      name: "Collection Test Product",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "PUBLISHED",
+          editorialDescription: "Product with published and draft collections.",
+          collectionSlugs: ["published-collection", "draft-collection"],
+        },
+      },
+      variants: {
+        create: {
+          pancakeVariationId: "storefront-collection-test-variant",
+          color: "Ink",
+          size: "M",
+          isPresent: true,
+          isActive: true,
+          pancakeRetailPrice: 650_000,
+          pancakeRetailPriceAfterDiscount: 650_000,
+          syncedAt,
+          warehouseStocks: {
+            create: {
+              pancakeWarehouseId: "storefront-col-wh",
+              quantity: 5,
+              syncedAt,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const detail = await repository.getProductBySlug({
+    shopId,
+    slug: "storefront-collection-test-product",
+  });
+
+  assert.ok(detail);
+  assert.deepEqual(detail.collections, [
+    { slug: "published-collection", title: "Published Collection" },
+  ]);
+
+  const facets = await repository.listDiscoveryFacets({ shopId });
+  assert.ok(facets.collections.includes("published-collection"));
+  assert.equal(facets.collections.includes("draft-collection"), false);
+
+  await prisma.productMirror.delete({ where: { id: product.id } });
+  await prisma.collectionDefinition.deleteMany({
+    where: { slug: { in: ["published-collection", "draft-collection"] } },
+  });
+});
