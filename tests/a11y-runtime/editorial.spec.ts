@@ -74,6 +74,8 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
