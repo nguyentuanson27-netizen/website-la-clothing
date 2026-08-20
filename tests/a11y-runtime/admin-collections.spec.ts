@@ -178,7 +178,9 @@ test("admin can maintain canonical collections with accessible success and error
       await page.waitForURL(
         (url) => url.pathname === collectionsPath && url.searchParams.get("error") === "invalid",
       );
-      const errorStatus = page.getByRole("alert");
+      const errorStatus = page
+        .getByRole("alert")
+        .filter({ hasText: "Không thể lưu collection." });
       await expect(errorStatus).toContainText("Không thể lưu collection.");
       await expect(errorStatus).toBeFocused();
     },
