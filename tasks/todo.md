@@ -109,11 +109,11 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] admin auth/input/DB tests
 
 ## P6 — Stable readable product slug lifecycle
-- [ ] replace existing `p-<digest>` public slugs before indexing
-- [ ] deterministic Vietnamese-friendly slug normalization
-- [ ] deterministic collision handling
-- [ ] freeze published slug across Pancake name changes
-- [ ] explicit slug change creates old-slug history
+- [x] replace existing `p-<digest>` public slugs before indexing
+- [x] deterministic Vietnamese-friendly slug normalization
+- [x] deterministic collision handling
+- [x] freeze published slug across Pancake name changes
+- [x] explicit slug change creates old-slug history
 - [ ] old slug → 301 canonical slug
 - [ ] unknown slug → 404
 - [ ] migration + HTTP redirect tests
@@ -269,7 +269,7 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 
 ## SEO naming rules
 - [x] Source-code filenames (`page.tsx`, component names) are not renamed for SEO
-- [ ] Product slug format: meaningful lowercase hyphenated Vietnamese-friendly slug
+- [x] Product slug format: meaningful lowercase hyphenated Vietnamese-friendly slug
 - [ ] Collection slug format: meaningful canonical category/collection slug
 - [ ] H1/title/meta/alt use natural factual language, not keyword stuffing
 - [ ] Website-owned media/OG filenames may use semantic names
@@ -312,4 +312,4 @@ For every behavior-changing slice:
 - [ ] final dedicated domain choice
 - [ ] final launch approval
 
-**Next `/build` entry point after P5 merge approval: P6 — stable readable product slug lifecycle. P12 may begin after P6 + P7 while staging remains non-indexable; indexing=true and final-domain canonicals stay blocked until the dedicated-domain gate is satisfied.**
+**Current `/build`: P6a — readable slug persistence/admin lifecycle. After P6a merge approval, continue P6b — historical slug 301/current 200/unknown 404 HTTP resolution. P12 may begin only after full P6 + P7 while staging remains non-indexable; indexing=true and final-domain canonicals stay blocked until the dedicated-domain gate is satisfied.**
