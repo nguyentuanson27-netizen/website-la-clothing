@@ -40,5 +40,6 @@ test("Next.js applies the storefront security-header baseline to every route", a
   assert.match(csp, /form-action 'self'/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.match(csp, /upgrade-insecure-requests/);
+  assert.match(csp, /img-src\s+[^;]*https:\/\/content\.pancake\.vn/);
   assert.doesNotMatch(csp, /'unsafe-eval'/);
 });
