@@ -36,6 +36,7 @@ const INDEXABLE_PAGINATION_PATH_PATTERNS = [
 ] as const;
 
 const MAX_INDEXABLE_CATALOG_PAGE = 10_000;
+const CANONICAL_CATALOG_PAGINATION_SEARCH = /^\?page=((?:[2-9])|(?:[1-9]\d+))$/;
 
 function isBlockedIndexingOrigin(origin: string): boolean {
   return BLOCKED_INDEXING_HOSTS.has(new URL(origin).hostname.toLowerCase());
@@ -54,16 +55,11 @@ export function isCanonicalCatalogPaginationRequest(
   if (!INDEXABLE_PAGINATION_PATH_PATTERNS.some((pattern) => pattern.test(pathname))) {
     return false;
   }
-  if (!search.startsWith("?")) return false;
 
-  const params = new URLSearchParams(search.slice(1));
-  const entries = [...params.entries()];
-  if (entries.length !== 1 || entries[0]?.[0] !== "page") return false;
+  const match = CANONICAL_CATALOG_PAGINATION_SEARCH.exec(search);
+  if (!match) return false;
 
-  const rawPage = entries[0][1];
-  if (!/^(?:[2-9]|[1-9]\d+)$/.test(rawPage)) return false;
-
-  const page = Number(rawPage);
+  const page = Number(match[1]);
   return Number.isSafeInteger(page) && page <= MAX_INDEXABLE_CATALOG_PAGE;
 }
 
