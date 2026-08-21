@@ -124,6 +124,11 @@ function assertNoIndexHeader(response: HttpResponse, label: string) {
   assert.equal(response.xRobotsTag, "noindex, nofollow", `${label} must emit X-Robots-Tag noindex, nofollow`);
 }
 
+function assertRobotsRule(body: string, rule: string, expected: boolean, label: string) {
+  const lines = body.split(/\r?\n/).map((line) => line.trim());
+  assert.equal(lines.includes(rule), expected, `${label}: expected ${rule} presence to be ${expected}`);
+}
+
 try {
   await cleanupDatabase();
 
@@ -174,7 +179,9 @@ try {
 
   const disabledRobots = await requestPath("/robots.txt");
   assert.equal(disabledRobots.status, 200, `disabled robots.txt must return 200\n${serverOutput}`);
-  assert.ok(disabledRobots.body.includes("Disallow: /"), "disabled robots.txt must disallow the whole site");
+  assertRobotsRule(disabledRobots.body, "Allow: /", true, "disabled robots.txt must keep HTML crawlable for noindex");
+  assertRobotsRule(disabledRobots.body, "Disallow: /", false, "disabled robots.txt must not hide global noindex");
+  assertRobotsRule(disabledRobots.body, "Disallow: /api", true, "disabled robots.txt may crawl-block API surfaces");
   assert.equal(disabledRobots.body.includes("Sitemap:"), false, "disabled robots.txt must not advertise a sitemap");
 
   const disabledSitemap = await requestPath("/sitemap.xml");
@@ -196,11 +203,14 @@ try {
 
   const enabledRobots = await requestPath("/robots.txt");
   assert.equal(enabledRobots.status, 200, "enabled robots.txt must return 200");
-  assert.ok(enabledRobots.body.includes("Allow: /"), "enabled robots.txt must allow the public site");
-  for (const privatePath of ["/admin", "/api", "/account", "/cart", "/checkout", "/search", "/track-order"]) {
-    assert.ok(
-      enabledRobots.body.includes(`Disallow: ${privatePath}`),
-      `enabled robots.txt must disallow ${privatePath}`,
+  assertRobotsRule(enabledRobots.body, "Allow: /", true, "enabled robots.txt must allow the public site");
+  assertRobotsRule(enabledRobots.body, "Disallow: /api", true, "enabled robots.txt may crawl-block API surfaces");
+  for (const htmlPath of ["/admin", "/account", "/cart", "/checkout", "/search", "/track-order"]) {
+    assertRobotsRule(
+      enabledRobots.body,
+      `Disallow: ${htmlPath}`,
+      false,
+      `enabled robots.txt must keep ${htmlPath} crawlable so noindex is observable`,
     );
   }
   assert.ok(
@@ -241,8 +251,31 @@ try {
   assert.equal(utilityPage.status, 200, "non-launch editorial utility page must remain browseable");
   assertNoIndexHeader(utilityPage, "non-launch editorial utility page");
 
+  const cartPage = await requestPath("/cart");
+  assert.equal(cartPage.status, 200, "cart must remain browseable while excluded from indexing");
+  assertNoIndexHeader(cartPage, "cart page");
+
+  await restartServer({
+    APP_DOMAIN: "la.lanadesign.vn",
+    SEARCH_INDEXING_ENABLED: "false",
+  });
+
+  const rollbackRobots = await requestPath("/robots.txt");
+  assertRobotsRule(rollbackRobots.body, "Allow: /", true, "rollback robots.txt must keep HTML crawlable for noindex");
+  assertRobotsRule(rollbackRobots.body, "Disallow: /", false, "rollback must not strand prior indexable URLs behind robots.txt");
+  assertRobotsRule(rollbackRobots.body, "Disallow: /api", true, "rollback may continue crawl-blocking API surfaces");
+  assert.equal(rollbackRobots.body.includes("Sitemap:"), false, "rollback robots.txt must stop advertising the sitemap");
+
+  const rollbackPage = await requestPath("/lookbook");
+  assert.equal(rollbackPage.status, 200, "rollback public page must remain crawlable");
+  assertNoIndexHeader(rollbackPage, "rollback public page");
+  assert.ok(
+    rollbackPage.body.includes('name="robots"') && rollbackPage.body.includes("noindex"),
+    "rollback HTML metadata must restore robots noindex",
+  );
+
   console.log(
-    "Search exposure HTTP smoke passed: staging is globally noindex, enabled robots/sitemap use server-owned canonical origin, sitemap excludes noncanonical state, and query/utility surfaces stay noindex.",
+    "Search exposure HTTP smoke passed: staging/rollback remain crawlable-noindex, enabled robots/sitemap use server-owned canonical origin, API stays crawl-blocked, and HTML utility/query surfaces remain noindex.",
   );
 } finally {
   await stopServer();
