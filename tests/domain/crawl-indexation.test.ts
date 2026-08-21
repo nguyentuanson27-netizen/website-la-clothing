@@ -25,6 +25,8 @@ test("P15 allows only canonical pure pagination query states for catalog listing
     ["/shop", "?page=2&page=3"],
     ["/shop", "?page=2&sort=name-asc"],
     ["/shop", "?q=shirt&page=2"],
+    ["/shop", "?%70age=2"],
+    ["/shop", "?page=%32"],
     ["/shop/current-product", "?page=2"],
     ["/collections/summer-shirts", "?page=2&color=black"],
     ["/collections", "?page=2"],
