@@ -184,15 +184,15 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] HTTP disabled/enabled indexing smoke
 
 ## P13 — PDP metadata + media SEO
-- [ ] dynamic SEO title
-- [ ] dynamic meta description
-- [ ] canonical URL
-- [ ] Open Graph/Twitter metadata
-- [ ] trusted product social image + branded fallback
-- [ ] descriptive non-stuffed alt conventions
-- [ ] semantic filenames only for website-owned assets/media
-- [ ] do not rewrite remote Pancake filenames through unsafe proxy/storage
-- [ ] metadata/head tests
+- [x] dynamic SEO title
+- [x] dynamic meta description
+- [x] canonical URL
+- [x] Open Graph/Twitter metadata
+- [x] trusted product social image + branded fallback
+- [x] descriptive non-stuffed alt conventions
+- [x] semantic filenames only for website-owned assets/media
+- [x] do not rewrite remote Pancake filenames through unsafe proxy/storage
+- [x] metadata/head tests
 
 ## P14 — Structured data + breadcrumbs
 - [ ] Product/Offer facts match visible server-authoritative data
