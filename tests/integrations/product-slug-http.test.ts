@@ -20,3 +20,7 @@ test("historical product slug returns exact 301 while current/unknown remain 200
 test("search exposure HTTP policy is fail-closed on staging and canonical when explicitly enabled", async () => {
   await import("../../scripts/search-exposure-http-smoke.ts");
 });
+
+test("P13 PDP metadata renders canonical social head tags with a working branded fallback image", async () => {
+  await import("../../scripts/product-metadata-http-smoke.ts");
+});

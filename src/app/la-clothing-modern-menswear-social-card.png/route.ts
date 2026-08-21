@@ -1,0 +1,65 @@
+import { ImageResponse } from "next/og";
+import { createElement } from "react";
+
+export const dynamic = "force-static";
+
+const CARD_SIZE = { width: 1200, height: 630 } as const;
+
+export function GET() {
+  return new ImageResponse(
+    createElement(
+      "div",
+      {
+        style: {
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          background: "#f4f0e8",
+          color: "#111111",
+          padding: "72px 80px",
+        },
+      },
+      createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            fontSize: 34,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+          },
+        },
+        "LA Clothing",
+      ),
+      createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            maxWidth: 900,
+            fontSize: 92,
+            fontWeight: 700,
+            lineHeight: 0.96,
+            letterSpacing: "-0.04em",
+          },
+        },
+        "Modern Menswear",
+      ),
+      createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            fontSize: 24,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          },
+        },
+        "Official product social preview",
+      ),
+    ),
+    CARD_SIZE,
+  );
+}
