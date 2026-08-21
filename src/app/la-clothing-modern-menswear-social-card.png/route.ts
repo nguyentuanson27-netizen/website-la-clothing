@@ -1,6 +1,8 @@
 import { ImageResponse } from "next/og";
 import { createElement } from "react";
 
+export const dynamic = "force-static";
+
 const CARD_SIZE = { width: 1200, height: 630 } as const;
 
 export function GET() {
