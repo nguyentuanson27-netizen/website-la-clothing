@@ -1,6 +1,6 @@
 # P13 — PDP metadata and media SEO
 
-Status: implemented in PR #82 and pending final exact-head verification + human merge approval.
+Status: implemented in PR #82; human merge approval pending.
 
 ## Scope
 
