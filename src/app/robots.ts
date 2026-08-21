@@ -1,37 +1,23 @@
 import type { MetadataRoute } from "next";
 import { connection } from "next/server";
 
-import { readSearchExposure } from "@/seo/search-exposure";
-
-const PRIVATE_CRAWL_PATHS = [
-  "/admin",
-  "/api",
-  "/account",
-  "/cart",
-  "/checkout",
-  "/search",
-  "/track-order",
-] as const;
+import { CRAWL_BLOCKED_PATHS, readSearchExposure } from "@/seo/search-exposure";
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   await connection();
   const exposure = readSearchExposure();
+  const rules = {
+    userAgent: "*",
+    allow: "/",
+    disallow: [...CRAWL_BLOCKED_PATHS],
+  } as const;
 
   if (!exposure.indexingEnabled) {
-    return {
-      rules: {
-        userAgent: "*",
-        disallow: "/",
-      },
-    };
+    return { rules };
   }
 
   return {
-    rules: {
-      userAgent: "*",
-      allow: "/",
-      disallow: [...PRIVATE_CRAWL_PATHS],
-    },
+    rules,
     sitemap: new URL("/sitemap.xml", exposure.origin).href,
   };
 }
