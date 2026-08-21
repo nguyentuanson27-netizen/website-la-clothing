@@ -23,11 +23,15 @@ type ProductMetadataInput = Readonly<{
   }>;
 }>;
 
-function buildFallbackTitle(product: ProductMetadataInput["product"]): string {
-  return `${product.name} — ${product.slug}`;
+function buildProductTitle(product: ProductMetadataInput["product"]): string {
+  return `${product.seoTitle ?? product.name} — ${product.slug}`;
 }
 
-function buildFallbackDescription(product: ProductMetadataInput["product"]): string {
+function buildProductDescription(product: ProductMetadataInput["product"]): string {
+  if (product.seoDescription) {
+    return `${product.seoDescription} — /shop/${product.slug}.`;
+  }
+
   return `Thông tin sản phẩm ${product.name} tại LA Clothing — /shop/${product.slug}.`;
 }
 
@@ -36,8 +40,8 @@ export function buildStorefrontProductMetadata({
   indexingEnabled,
   product,
 }: ProductMetadataInput): Metadata {
-  const title = product.seoTitle ?? buildFallbackTitle(product);
-  const description = product.seoDescription ?? buildFallbackDescription(product);
+  const title = buildProductTitle(product);
+  const description = buildProductDescription(product);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
   const image = product.media.primary
     ? {
