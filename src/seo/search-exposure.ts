@@ -19,6 +19,8 @@ const BLOCKED_INDEXING_HOSTS = new Set([
   "127.0.0.1",
 ]);
 
+export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
+
 const INDEXABLE_PATH_PATTERNS = [
   /^\/$/,
   /^\/shop$/,
@@ -30,6 +32,12 @@ const INDEXABLE_PATH_PATTERNS = [
 
 function isBlockedIndexingOrigin(origin: string): boolean {
   return BLOCKED_INDEXING_HOSTS.has(new URL(origin).hostname.toLowerCase());
+}
+
+function isCrawlBlockedPath(pathname: string): boolean {
+  return CRAWL_BLOCKED_PATHS.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }
 
 export function readSearchExposure(
@@ -65,6 +73,7 @@ export function shouldNoIndexRequest({
   pathname,
   search,
 }: SearchRequestPolicyInput): boolean {
+  if (isCrawlBlockedPath(pathname)) return false;
   if (!indexingEnabled) return true;
   if (search.length > 0) return true;
 
