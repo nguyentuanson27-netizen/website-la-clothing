@@ -314,3 +314,71 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
+
+test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart, and verifies checkout and tracking layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  // 1. PDP selection at 1440px
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await assertPageQuality(page);
+
+  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  await expect(addToBag).toBeDisabled();
+  await page.getByText("Black", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
+  await expect(addToBag).toBeEnabled();
+  await addToBag.click();
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+
+  // 2. Cart page & quantity update at 1440px
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  const cartLine = page.getByRole("article");
+  await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
+  await expect(cartLine.getByText("Black / M")).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+  await assertPageQuality(page);
+
+  const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("2");
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.getByRole("status")).toContainText("Đã cập nhật số lượng.");
+  await expect(quantity).toHaveValue("2");
+
+  // 3. Checkout page at 1440px
+  const checkoutLink = page.getByRole("link", { name: "Tiến hành đặt hàng" });
+  await expect(checkoutLink).toBeVisible();
+  await checkoutLink.click();
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await assertPageQuality(page);
+
+  // 4. Order tracking page at 1440px
+  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "TRA CỨU ĐƠN HÀNG" })).toBeVisible();
+  await assertPageQuality(page);
+
+  // 5. Checkout success page at 1440px
+  await page.goto(`${BASE_URL}/checkout/success`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await assertPageQuality(page);
+
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
