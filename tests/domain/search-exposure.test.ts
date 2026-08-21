@@ -101,13 +101,25 @@ test("release search exposure accepts explicit true on a non-staging public orig
   });
 });
 
-test("noindex policy is global while indexing is disabled", () => {
-  for (const pathname of ["/", "/shop", "/shop/current-product", "/collections", "/lookbook"]) {
+test("noindex policy is global for HTML surfaces while indexing is disabled", () => {
+  for (const pathname of ["/", "/shop", "/shop/current-product", "/collections", "/lookbook", "/cart"]) {
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: false, pathname, search: "" }),
       true,
       `${pathname} must be noindex while search exposure is disabled`,
     );
+  }
+});
+
+test("crawl-blocked API surfaces are outside the page-level noindex policy", () => {
+  for (const indexingEnabled of [false, true]) {
+    for (const pathname of ["/api", "/api/auth/session"]) {
+      assert.equal(
+        shouldNoIndexRequest({ indexingEnabled, pathname, search: "" }),
+        false,
+        `${pathname} must use robots crawl blocking instead of an unreachable noindex directive`,
+      );
+    }
   }
 });
 
@@ -136,7 +148,6 @@ test("enabled noindex policy allows only explicit public routes without query st
     "/track-order",
     "/search",
     "/new-arrivals",
-    "/api",
     "/unexpected",
     "/shop/a/nested-path",
     "/collections/a/nested-path",
