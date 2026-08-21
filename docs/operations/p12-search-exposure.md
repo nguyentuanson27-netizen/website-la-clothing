@@ -14,18 +14,20 @@ P12 is implemented as a fail-closed search-exposure boundary. It does **not** ch
 
 The server-owned `APP_DOMAIN` is the only canonical origin input. The request `Host` header is not canonical authority.
 
+HTML routes that must stay out of search remain crawlable so crawlers can observe their `noindex` directives. `robots.txt` crawl blocking is reserved for non-HTML API surfaces; do not add an HTML route to `Disallow` merely because it is noindex.
+
 When indexing is disabled:
 
 - root metadata emits `noindex, nofollow`;
 - response policy emits `X-Robots-Tag: noindex, nofollow` on application pages;
-- `/robots.txt` disallows the whole site and does not advertise a sitemap;
+- `/robots.txt` allows HTML crawling, disallows `/api`, and does not advertise a sitemap;
 - `/sitemap.xml` returns no canonical URLs.
 
 When indexing is explicitly enabled on an eligible public origin:
 
 - canonical public routes can be indexed only without query state;
-- utility/private/search/faceted/query-state routes remain noindex;
-- `/robots.txt` allows the public site while disallowing private/utility prefixes and advertises the canonical sitemap;
+- utility/private/search/faceted/query-state HTML routes remain crawlable with `noindex` response policy;
+- `/robots.txt` allows the site, disallows `/api`, and advertises the canonical sitemap;
 - `/sitemap.xml` contains only reviewed static public paths, current visible active product slugs for the configured Pancake shop, and published website-owned collections;
 - historical product slugs, inactive/stale/wrong-shop products, draft collections, and private/query URLs are excluded.
 
@@ -50,4 +52,4 @@ If any item is missing, keep `SEARCH_INDEXING_ENABLED=false`.
 
 ## Rollback / containment
 
-Search exposure is independently containable: set `SEARCH_INDEXING_ENABLED=false` and redeploy the approved configuration to restore global noindex/robots blocking without changing product, collection, checkout, or Pancake data. Application rollback remains governed by `docs/operations/release-and-rollback.md`.
+Search exposure is independently containable: set `SEARCH_INDEXING_ENABLED=false` and redeploy the approved configuration. This restores global HTML `noindex`, removes sitemap advertising/URLs, and keeps `/api` crawl-blocked without hiding HTML noindex directives behind `robots.txt`. Product, collection, checkout, and Pancake data are unchanged. Application rollback remains governed by `docs/operations/release-and-rollback.md`.
