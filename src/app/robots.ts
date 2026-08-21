@@ -10,7 +10,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     userAgent: "*",
     allow: "/",
     disallow: [...CRAWL_BLOCKED_PATHS],
-  } as const;
+  };
 
   if (!exposure.indexingEnabled) {
     return { rules };
