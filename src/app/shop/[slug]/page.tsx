@@ -9,6 +9,8 @@ import {
 } from "@/commerce/storefront-product";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
+import { readSearchExposure } from "@/seo/search-exposure";
+import { buildProductStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
 type ProductPageProps = {
   params: Promise<{ slug: string }>;
@@ -29,9 +31,18 @@ export default async function ProductPage({ params }: ProductPageProps) {
   if (!product) notFound();
 
   const options = toStorefrontSelectableOptions(buildStorefrontVariantOptions(product.variants));
+  const structuredData = buildProductStructuredData({
+    origin: readSearchExposure().origin,
+    product,
+    variantOptions: options,
+  });
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
+      />
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li>

@@ -24,3 +24,7 @@ test("search exposure HTTP policy is fail-closed on staging and canonical when e
 test("P13 PDP metadata renders canonical social head tags with a working branded fallback image", async () => {
   await import("../../scripts/product-metadata-http-smoke.ts");
 });
+
+test("P14 PDP renders factual site, product, offer, and breadcrumb JSON-LD", async () => {
+  await import("../../scripts/structured-data-http-smoke.ts");
+});
