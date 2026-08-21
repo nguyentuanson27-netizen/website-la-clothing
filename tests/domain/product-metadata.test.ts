@@ -57,27 +57,55 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
   });
 });
 
-test("P13 falls back to factual product identity and a semantic website-owned social card", () => {
-  const metadata = buildStorefrontProductMetadata({
+test("P13 fallback metadata stays factual and unique for distinct slugs sharing the same product name", () => {
+  const first = buildStorefrontProductMetadata({
     origin: "https://shop.example.com",
     indexingEnabled: true,
     product: {
       ...baseProduct,
+      slug: "ao-oxford-relaxed-den",
+      seoTitle: null,
+      seoDescription: null,
+      media: { primary: null },
+    },
+  });
+  const second = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      slug: "ao-oxford-relaxed-trang",
       seoTitle: null,
       seoDescription: null,
       media: { primary: null },
     },
   });
 
-  assert.equal(metadata.title, "Áo Oxford Relaxed");
-  assert.equal(metadata.description, "Khám phá Áo Oxford Relaxed từ LA Clothing.");
-  assert.deepEqual(metadata.openGraph?.images, [
+  assert.equal(first.title, "Áo Oxford Relaxed — ao-oxford-relaxed-den");
+  assert.equal(
+    first.description,
+    "Thông tin sản phẩm Áo Oxford Relaxed tại LA Clothing — /shop/ao-oxford-relaxed-den.",
+  );
+  assert.equal(second.title, "Áo Oxford Relaxed — ao-oxford-relaxed-trang");
+  assert.equal(
+    second.description,
+    "Thông tin sản phẩm Áo Oxford Relaxed tại LA Clothing — /shop/ao-oxford-relaxed-trang.",
+  );
+  assert.notEqual(first.title, second.title);
+  assert.notEqual(first.description, second.description);
+  assert.deepEqual(first.alternates, {
+    canonical: "https://shop.example.com/shop/ao-oxford-relaxed-den",
+  });
+  assert.deepEqual(second.alternates, {
+    canonical: "https://shop.example.com/shop/ao-oxford-relaxed-trang",
+  });
+  assert.deepEqual(first.openGraph?.images, [
     {
       url: "https://shop.example.com/la-clothing-modern-menswear-social-card.png",
       alt: "LA Clothing — Modern Menswear",
     },
   ]);
-  assert.deepEqual(metadata.twitter?.images, [
+  assert.deepEqual(first.twitter?.images, [
     {
       url: "https://shop.example.com/la-clothing-modern-menswear-social-card.png",
       alt: "LA Clothing — Modern Menswear",
@@ -92,12 +120,18 @@ test("P13 never rewrites trusted remote Pancake media through a website proxy or
     product: baseProduct,
   });
 
-  const openGraphImages = metadata.openGraph?.images;
-  const twitterImages = metadata.twitter?.images;
-  assert.ok(Array.isArray(openGraphImages));
-  assert.ok(Array.isArray(twitterImages));
-  assert.equal(openGraphImages[0]?.url, trustedPrimary.url);
-  assert.equal(twitterImages[0]?.url, trustedPrimary.url);
+  assert.deepEqual(metadata.openGraph?.images, [
+    {
+      url: trustedPrimary.url,
+      alt: trustedPrimary.alt,
+    },
+  ]);
+  assert.deepEqual(metadata.twitter?.images, [
+    {
+      url: trustedPrimary.url,
+      alt: trustedPrimary.alt,
+    },
+  ]);
 });
 
 test("P13 withholds the canonical tag while search indexing is disabled", () => {
