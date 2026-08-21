@@ -63,6 +63,7 @@ test("cart lines expose current storefront price and availability without exact 
       price: 590_000,
       available: true,
       unavailableReason: null,
+      media: { primary: null, gallery: [] },
     },
     {
       variantId: "sold-out",
@@ -74,6 +75,7 @@ test("cart lines expose current storefront price and availability without exact 
       price: 590_000,
       available: false,
       unavailableReason: "OUT_OF_STOCK",
+      media: { primary: null, gallery: [] },
     },
     {
       variantId: "inactive-variant",
@@ -85,6 +87,7 @@ test("cart lines expose current storefront price and availability without exact 
       price: null,
       available: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
+      media: { primary: null, gallery: [] },
     },
   ]);
 
@@ -109,6 +112,7 @@ test("cart line fails closed when its requested quantity exceeds current sellabl
     price: 590_000,
     available: false,
     unavailableReason: "INSUFFICIENT_STOCK",
+    media: { primary: null, gallery: [] },
   });
   assert.equal("sellableStock" in line!, false);
 });
@@ -151,6 +155,7 @@ test("cart lines fail closed when the product or variant cannot be resolved for 
     price: null,
     available: false,
     unavailableReason: "PRODUCT_UNAVAILABLE",
+    media: { primary: null, gallery: [] },
   });
   assert.deepEqual(lines[1], {
     variantId: "unknown-variant",
@@ -162,5 +167,38 @@ test("cart lines fail closed when the product or variant cannot be resolved for 
     price: null,
     available: false,
     unavailableReason: "VARIANT_UNAVAILABLE",
+    media: { primary: null, gallery: [] },
   });
+});
+
+test("cart lines resolve and expose trusted product media when present", () => {
+  const productWithMedia = {
+    slug: "linen-jacket",
+    name: "Linen Jacket",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/jacket-main.jpg",
+    isPresent: true,
+    isActive: true,
+    variants: [
+      {
+        id: "var-1",
+        isPresent: true,
+        isActive: true,
+        color: "Ink",
+        size: "M",
+        sellableStock: 5,
+        retailPrice: 990_000,
+        retailPriceAfterDiscount: 990_000,
+        imageUrls: ["https://content.pancake.vn/images/1/2/3/jacket-ink.jpg"],
+      },
+    ],
+  };
+
+  const [line] = buildStorefrontCartLines({
+    items: [{ variantId: "var-1", quantity: 1 }],
+    products: [productWithMedia],
+  });
+
+  assert.equal(line?.media.primary?.url, "https://content.pancake.vn/images/1/2/3/jacket-main.jpg");
+  assert.equal(line?.media.primary?.alt, "Linen Jacket");
+  assert.equal(line?.media.gallery.length, 2);
 });

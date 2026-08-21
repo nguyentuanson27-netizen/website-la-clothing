@@ -39,9 +39,17 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+function parseJsonStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 const productSelection = {
   slug: true,
   name: true,
+  primaryImageUrl: true,
   isPresent: true,
   isActive: true,
   variants: {
@@ -54,6 +62,7 @@ const productSelection = {
       size: true,
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
+      pancakeImageUrls: true,
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" as const }],
         select: { quantity: true },
@@ -68,6 +77,7 @@ function toCartProduct(product: SelectedProduct) {
   return {
     slug: product.slug,
     name: product.name,
+    primaryImageUrl: product.primaryImageUrl,
     isPresent: product.isPresent,
     isActive: product.isActive,
     variants: product.variants.map((variant) => ({
@@ -79,6 +89,7 @@ function toCartProduct(product: SelectedProduct) {
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
+      imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
     })),
   };
 }

@@ -73,38 +73,47 @@ export function GuestOrderTrackingForm() {
         <button
           type="submit"
           disabled={isPending}
-          className="min-h-12 border border-black bg-black px-6 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-white hover:bg-transparent hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn btn--primary"
         >
           {isPending ? "Đang tra cứu…" : "Tra cứu đơn hàng"}
         </button>
       </form>
 
       {state?.ok ? (
-        <section className="border-t border-black/20 pt-6" role="status" aria-live="polite">
+        <section
+          className="border-t border-black/20 pt-6"
+          role="status"
+          aria-live="polite"
+          data-ui-state="success"
+        >
           <p className="eyebrow">Trạng thái đơn hàng</p>
           <p className="mt-3 font-serif text-3xl">{statusLabels[state.order.status]}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
             <div>
-              <dt className="text-black/55">Mã đơn</dt>
+              <dt className="text-black/75">Mã đơn</dt>
               <dd className="mt-1 font-semibold break-all">{state.order.orderCode}</dd>
             </div>
             <div>
-              <dt className="text-black/55">Thời điểm tạo</dt>
+              <dt className="text-black/75">Thời điểm tạo</dt>
               <dd className="mt-1 font-semibold">{formatDate(state.order.createdAt)}</dd>
             </div>
             <div>
-              <dt className="text-black/55">Tổng tiền</dt>
+              <dt className="text-black/75">Tổng tiền</dt>
               <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
             </div>
           </dl>
           {state.order.status === "CHECKING" ? (
-            <p className="mt-5 text-sm leading-6 text-black/60">
+            <p className="mt-5 text-sm leading-6 text-black/75">
               Hệ thống đang kiểm tra lại kết quả đồng bộ. Vui lòng không gửi lại đơn chỉ vì trạng thái này.
             </p>
           ) : null}
         </section>
       ) : state ? (
-        <div className="border border-black/25 p-4 text-sm leading-6" role="alert">
+        <div
+          className="border border-black/25 p-4 text-sm leading-6"
+          role="alert"
+          data-ui-state="empty"
+        >
           {state.reason === "NOT_FOUND"
             ? "Không tìm thấy đơn hàng khớp với thông tin đã nhập."
             : "Chưa thể tra cứu lúc này. Vui lòng thử lại sau."}

@@ -33,6 +33,8 @@ function queryMatches(url, expected) {
   );
 }
 
+let nextOrderId = 987654321;
+
 async function pancakeResponse(url, init) {
   if (url.pathname === `${API_PREFIX}/geo/provinces`) {
     if (!queryMatches(url, { country_code: "84", all: "true" })) {
@@ -179,7 +181,7 @@ async function pancakeResponse(url, init) {
     ) {
       return json({ error: "unexpected create-order body" }, 400);
     }
-    return json({ id: 987654321 });
+    return json({ id: nextOrderId++ });
   }
 
   return json({ error: "unhandled Pancake fixture request" }, 500);

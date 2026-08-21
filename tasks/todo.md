@@ -159,11 +159,11 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] mobile/desktop/a11y/purchase-flow evidence
 
 ## P11 — Cart + Checkout + Tracking polish
-- [ ] consistent launch visual system
-- [ ] explicit empty/error/loading/processing states
-- [ ] no browser authority over price/stock/shipping/order/Pancake IDs
-- [ ] full mobile/desktop buyer-flow regression
-- [ ] existing security/DB/action tests remain green
+- [x] consistent launch visual system
+- [x] explicit empty/error/loading/processing states
+- [x] no browser authority over price/stock/shipping/order/Pancake IDs
+- [x] full mobile/desktop buyer-flow regression
+- [x] existing security/DB/action tests remain green
 
 ### Checkpoint C — storefront product quality
 - [ ] human review with representative real products/media
@@ -171,17 +171,17 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [ ] no placeholder-only visual sign-off
 
 ## P12 — Fail-closed domain/search exposure + technical SEO
-- [ ] explicit canonical site origin
-- [ ] explicit `SEARCH_INDEXING_ENABLED`-style gate or equivalent
-- [ ] `la.lanadesign.vn` defaults non-indexable
-- [ ] dedicated domain required before indexing=true
-- [ ] `metadataBase`/canonical policy
-- [ ] `robots.ts`
-- [ ] `sitemap.ts`
-- [ ] noindex utility/private/search/faceted surfaces
-- [ ] sitemap contains canonical public URLs only
-- [ ] release preflight fails closed on bad domain/index config
-- [ ] HTTP disabled/enabled indexing smoke
+- [x] explicit canonical site origin
+- [x] explicit `SEARCH_INDEXING_ENABLED`-style gate or equivalent
+- [x] `la.lanadesign.vn` defaults non-indexable
+- [x] dedicated domain required before indexing=true
+- [x] `metadataBase`/canonical policy
+- [x] `robots.ts`
+- [x] `sitemap.ts`
+- [x] noindex utility/private/search/faceted surfaces
+- [x] sitemap contains canonical public URLs only
+- [x] release preflight fails closed on bad domain/index config
+- [x] HTTP disabled/enabled indexing smoke
 
 ## P13 — PDP metadata + media SEO
 - [ ] dynamic SEO title
