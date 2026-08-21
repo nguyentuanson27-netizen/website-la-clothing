@@ -315,7 +315,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   expect(failedResponses).toEqual([]);
 });
 
-test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart, and verifies checkout and tracking layouts", async ({
+test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart, and reaches checkout", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -368,17 +368,8 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
   await assertPageQuality(page);
 
-  // 4. Order tracking page at 1440px
-  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "TRA CỨU ĐƠN HÀNG" })).toBeVisible();
-  await assertPageQuality(page);
-
-  // 5. Checkout success page at 1440px
-  await page.goto(`${BASE_URL}/checkout/success`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await assertPageQuality(page);
-
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
+
 

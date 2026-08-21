@@ -35,6 +35,7 @@ const productSlug = `checkout-a11y-product-${runId}`;
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let cartId = "";
+let testVariantId = "";
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -130,6 +131,22 @@ async function cleanupDatabase() {
     where: { pancakeProductId: productExternalId },
   });
   await cleanupRateLimits();
+}
+
+async function createTestCart(): Promise<string> {
+  const cart = await prisma.cart.create({
+    data: {
+      expiresAt: new Date(Date.now() + 10 * 60_000),
+      items: {
+        create: {
+          variantId: testVariantId,
+          quantity: 1,
+        },
+      },
+    },
+  });
+  cartId = cart.id;
+  return cart.id;
 }
 
 async function prepareBrowser(context: BrowserContext) {
@@ -229,19 +246,9 @@ test.beforeAll(async () => {
   });
   const variantId = product.variants[0]?.id;
   expect(variantId).toBeTruthy();
+  testVariantId = variantId!;
 
-  const cart = await prisma.cart.create({
-    data: {
-      expiresAt: new Date(Date.now() + 10 * 60_000),
-      items: {
-        create: {
-          variantId: variantId!,
-          quantity: 1,
-        },
-      },
-    },
-  });
-  cartId = cart.id;
+  await createTestCart();
 });
 
 test.afterEach(async () => {
@@ -260,6 +267,7 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
   context,
 }) => {
   await startServer({ apiKey: "", mockPancake: false });
+  await createTestCart();
   await prepareBrowser(context);
   const { browserErrors, failedResponses } = captureBrowserFailures(page);
 
@@ -290,99 +298,122 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
   expect(failedResponses).toEqual([]);
 });
 
-test("guest checkout cascades both geo datasets, ignores stale children, and submits a confirmed COD order", async ({
-  page,
-  context,
-}) => {
-  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
-  await prepareBrowser(context);
-  const { browserErrors, failedResponses } = captureBrowserFailures(page);
+for (const { name, viewport } of [
+  { name: "mobile (390px)", viewport: { width: 390, height: 844 } },
+  { name: "desktop (1440px)", viewport: { width: 1440, height: 900 } },
+]) {
+  test(`guest checkout (${name}) cascades geo, submits confirmed COD order, and tracks order`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize(viewport);
+    await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+    await createTestCart();
+    await prepareBrowser(context);
+    const { browserErrors, failedResponses } = captureBrowserFailures(page);
 
-  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
-  const province = page.getByLabel("Tỉnh / Thành phố");
-  const district = page.getByLabel("Quận / Huyện");
-  const commune = page.getByLabel("Phường / Xã");
-  const submit = page.getByRole("button", { name: "Đặt hàng COD" });
+    const province = page.getByLabel("Tỉnh / Thành phố");
+    const district = page.getByLabel("Quận / Huyện");
+    const commune = page.getByLabel("Phường / Xã");
+    const submit = page.getByRole("button", { name: "Đặt hàng COD" });
 
-  await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
-  await expect(
-    page.getByText("Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake."),
-  ).toBeVisible();
-  await expect(province.locator(`option[value="${PROVINCE_LEGACY}"]`)).toHaveText("Tỉnh Legacy");
-  await expect(province.locator(`option[value="${PROVINCE_CURRENT}"]`)).toHaveText("Tỉnh Current");
+    await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
+    await expect(
+      page.getByText("Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake."),
+    ).toBeVisible();
+    await expect(province.locator(`option[value="${PROVINCE_LEGACY}"]`)).toHaveText("Tỉnh Legacy");
+    await expect(province.locator(`option[value="${PROVINCE_CURRENT}"]`)).toHaveText("Tỉnh Current");
 
-  await province.selectOption(PROVINCE_LEGACY);
-  await expect(district.locator(`option[value="${DISTRICT_LEGACY}"]`)).toHaveText("Huyện Legacy");
-  await district.selectOption(DISTRICT_LEGACY);
-  await expect(commune.locator(`option[value="${COMMUNE_LEGACY}"]`)).toHaveText("Xã Legacy");
-  await commune.selectOption(COMMUNE_LEGACY);
+    await province.selectOption(PROVINCE_LEGACY);
+    await expect(district.locator(`option[value="${DISTRICT_LEGACY}"]`)).toHaveText("Huyện Legacy");
+    await district.selectOption(DISTRICT_LEGACY);
+    await expect(commune.locator(`option[value="${COMMUNE_LEGACY}"]`)).toHaveText("Xã Legacy");
+    await commune.selectOption(COMMUNE_LEGACY);
 
-  await province.selectOption(PROVINCE_CURRENT);
-  await expect(district).toHaveValue("");
-  await expect(commune).toHaveValue("");
-  await expect(commune).toBeDisabled();
-  await expect(district.locator(`option[value="${DISTRICT_SLOW}"]`)).toHaveText("Quận Chậm");
-  await expect(district.locator(`option[value="${DISTRICT_CURRENT}"]`)).toHaveText("Quận Current");
+    await province.selectOption(PROVINCE_CURRENT);
+    await expect(district).toHaveValue("");
+    await expect(commune).toHaveValue("");
+    await expect(commune).toBeDisabled();
+    await expect(district.locator(`option[value="${DISTRICT_SLOW}"]`)).toHaveText("Quận Chậm");
+    await expect(district.locator(`option[value="${DISTRICT_CURRENT}"]`)).toHaveText("Quận Current");
 
-  await district.selectOption(DISTRICT_SLOW);
-  await district.selectOption(DISTRICT_CURRENT);
-  await expect(commune.locator(`option[value="${COMMUNE_CURRENT}"]`)).toHaveText("Phường Current");
-  await page.waitForTimeout(350);
-  await expect(commune.locator(`option[value="${COMMUNE_STALE}"]`)).toHaveCount(0);
-  await commune.selectOption(COMMUNE_CURRENT);
+    await district.selectOption(DISTRICT_SLOW);
+    await district.selectOption(DISTRICT_CURRENT);
+    await expect(commune.locator(`option[value="${COMMUNE_CURRENT}"]`)).toHaveText("Phường Current");
+    await page.waitForTimeout(350);
+    await expect(commune.locator(`option[value="${COMMUNE_STALE}"]`)).toHaveCount(0);
+    await commune.selectOption(COMMUNE_CURRENT);
 
-  await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
-  await page.getByLabel("Số điện thoại").fill("0901234567");
-  await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
-  await expect(submit).toBeEnabled();
+    await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
+    await page.getByLabel("Số điện thoại").fill("0901234567");
+    await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
+    await expect(submit).toBeEnabled();
 
-  await submit.click();
-  await page.waitForURL((url) => {
-    return url.pathname === "/checkout/success" && Boolean(url.searchParams.get("order"));
+    await assertCheckoutAccessibility(page);
+
+    await submit.click();
+    await page.waitForURL((url) => {
+      return url.pathname === "/checkout/success" && Boolean(url.searchParams.get("order"));
+    });
+    await waitForConfirmedOrder();
+
+    await expect(page.getByRole("heading", { level: 1, name: "ĐẶT HÀNG THÀNH CÔNG" })).toBeVisible();
+    const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn bạn đã đặt hàng." });
+    await expect(successStatus).toContainText("Mã đơn LA-");
+    expect((await context.cookies(BASE_URL)).some(({ name }) => name === "la_cart")).toBe(false);
+
+    const confirmed = await prisma.orderMirror.findFirstOrThrow({
+      where: { sourceCartId: cartId, state: "CONFIRMED" },
+      select: {
+        publicCode: true,
+        pancakeOrderId: true,
+        provinceRef: true,
+        districtRef: true,
+        communeRef: true,
+        guestName: true,
+        guestPhone: true,
+        addressDetail: true,
+      },
+    });
+    expect(confirmed.pancakeOrderId).toBe("987654321");
+    expect(confirmed.provinceRef).toBe(PROVINCE_CURRENT);
+    expect(confirmed.districtRef).toBe(DISTRICT_CURRENT);
+    expect(confirmed.communeRef).toBe(COMMUNE_CURRENT);
+    expect(confirmed.guestName).toBe("Nguyễn Văn A");
+    expect(confirmed.guestPhone).toBe("0901234567");
+    expect(confirmed.addressDetail).toBe("12 Đường A");
+    expect(confirmed.publicCode).toMatch(/^LA-/);
+
+    await assertCheckoutAccessibility(page);
+
+    // Follow through to order tracking using the confirmed order code
+    const trackOrderLink = page.getByRole("link", { name: "Tra cứu đơn hàng" });
+    await expect(trackOrderLink).toBeVisible();
+    await trackOrderLink.click();
+    await expect(page).toHaveURL(`${BASE_URL}/track-order`);
+    await expect(page.getByRole("heading", { level: 1, name: "TRA CỨU ĐƠN HÀNG" })).toBeVisible();
+    await assertCheckoutAccessibility(page);
+
+    await page.getByLabel("Mã đơn hàng").fill(confirmed.publicCode);
+    await page.getByLabel("Số điện thoại").fill("0901234567");
+    await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
+
+    const trackingStatus = page.locator('[data-ui-state="success"]');
+    await expect(trackingStatus).toBeVisible();
+    await expect(trackingStatus.getByText(confirmed.publicCode)).toBeVisible();
+    await expect(trackingStatus.getByText(/500\.000.*₫|530\.000.*₫/)).toBeVisible();
+    await assertCheckoutAccessibility(page);
+
+    expect(
+      browserErrors,
+      `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,
+    ).toEqual([]);
+    expect(failedResponses).toEqual([]);
   });
-  await waitForConfirmedOrder();
-
-  await expect(page.getByRole("heading", { level: 1, name: "ĐẶT HÀNG THÀNH CÔNG" })).toBeVisible();
-  const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn bạn đã đặt hàng." });
-  await expect(successStatus).toContainText("Mã đơn LA-");
-  expect((await context.cookies(BASE_URL)).some(({ name }) => name === "la_cart")).toBe(false);
-
-  const confirmed = await prisma.orderMirror.findFirstOrThrow({
-    where: { sourceCartId: cartId, state: "CONFIRMED" },
-    select: {
-      pancakeOrderId: true,
-      provinceRef: true,
-      districtRef: true,
-      communeRef: true,
-      guestName: true,
-      guestPhone: true,
-      addressDetail: true,
-    },
-  });
-  expect(confirmed).toEqual({
-    pancakeOrderId: "987654321",
-    provinceRef: PROVINCE_CURRENT,
-    districtRef: DISTRICT_CURRENT,
-    communeRef: COMMUNE_CURRENT,
-    guestName: "Nguyễn Văn A",
-    guestPhone: "0901234567",
-    addressDetail: "12 Đường A",
-  });
-
-  expect(
-    await prisma.rateLimit.count({
-      where: { id: { startsWith: "checkout-geo-client:" } },
-    }),
-  ).toBe(1);
-
-  await assertCheckoutAccessibility(page);
-  expect(
-    browserErrors,
-    `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,
-  ).toEqual([]);
-  expect(failedResponses).toEqual([]);
-});
+}
 
 test("empty bag and empty checkout states render accessible empty UI and breadcrumb links", async ({
   page,

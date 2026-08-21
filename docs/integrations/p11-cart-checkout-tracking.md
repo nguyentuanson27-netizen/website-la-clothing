@@ -38,7 +38,8 @@ Task P11 polishes the buyer-facing shopping cart, guest COD checkout, checkout s
 
 - `tests/domain/storefront-cart.test.ts`: PASS (verifies trusted product media resolution and server-authoritative cart line building).
 - `tests/database/storefront-cart.test.ts`: PASS (verifies database mirror product media retrieval and stock boundary constraints).
-- `tests/a11y-runtime/checkout.spec.ts`: PASS (verifies geo cascading, COD order submission, empty state rendering, and WCAG 2.1 AA accessibility).
+- `tests/a11y-runtime/checkout.spec.ts`: PASS (verifies geo cascading, server-authoritative COD order placement, confirmation code generation, follow-through tracking lookup, empty bag/checkout states, and WCAG 2.1 AA accessibility on both 390px mobile and 1440px desktop viewports).
 - `tests/a11y-runtime/tracking.spec.ts`: PASS (verifies secure order lookup without PII leakage, rate limiting, and WCAG 2.1 AA compliance).
-- `tests/a11y-runtime/storefront-commerce.spec.ts`: PASS (verifies end-to-end buyer journey: PDP selection → Bag update → Checkout navigation across both 390px mobile and 1440px desktop viewports, with full PDP/Cart/Checkout/Success/Tracking layout verification, 0 Axe violations, and 0 horizontal overflow).
+- `tests/a11y-runtime/storefront-commerce.spec.ts`: PASS (verifies catalog buyer journey: PDP selection → Bag update → Checkout navigation across both 390px mobile and 1440px desktop viewports with 0 Axe violations and 0 horizontal overflow).
+
 
