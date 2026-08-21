@@ -5,6 +5,7 @@ import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-b
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { readSearchExposure } from "@/seo/search-exposure";
+import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
 import "./globals.css";
 
@@ -28,10 +29,20 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  await connection();
+  const exposure = readSearchExposure();
+  const siteStructuredData = buildSiteStructuredData({ origin: exposure.origin });
+
   return (
     <html lang="vi">
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData) }}
+        />
         <ShippingPromotionBar />
         <SiteHeader />
         <main id="main-content">{children}</main>
