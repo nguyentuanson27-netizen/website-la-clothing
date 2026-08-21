@@ -73,7 +73,7 @@ export function GuestOrderTrackingForm() {
         <button
           type="submit"
           disabled={isPending}
-          className="min-h-12 border border-black bg-black px-6 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45"
+          className="btn btn--primary"
         >
           {isPending ? "Đang tra cứu…" : "Tra cứu đơn hàng"}
         </button>
