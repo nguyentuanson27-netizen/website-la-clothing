@@ -57,7 +57,7 @@ export default async function CartPage() {
   if (lines.length === 0) {
     return (
       <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
               <Link
@@ -78,7 +78,7 @@ export default async function CartPage() {
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
           <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
-          <p className="mt-4 text-sm leading-6 text-black/60">
+          <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>
           <Link className="text-link mt-6 inline-block" href="/shop">
@@ -94,7 +94,7 @@ export default async function CartPage() {
 
   return (
     <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
             <Link
@@ -114,7 +114,7 @@ export default async function CartPage() {
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           YOUR BAG
         </h1>
-        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/55">
+        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">
           {lines.length} {lines.length === 1 ? "sản phẩm" : "sản phẩm"}
         </p>
       </div>
@@ -140,7 +140,7 @@ export default async function CartPage() {
                   />
                 ) : (
                   <div
-                    className="flex h-full w-full items-center justify-center p-4 text-center text-xs font-semibold uppercase tracking-[0.1em] text-black/40"
+                    className="flex h-full w-full items-center justify-center p-4 text-center text-xs font-semibold uppercase tracking-[0.1em] text-black/75"
                     aria-hidden="true"
                   >
                     LA Clothing
@@ -185,7 +185,7 @@ export default async function CartPage() {
                           {productName}
                         </h2>
                       )}
-                      <p className="mt-2 text-sm text-black/60">
+                      <p className="mt-2 text-sm text-black/75">
                         {[line.color, line.size].filter(Boolean).join(" / ") || "Color / Size unavailable"}
                       </p>
                     </div>
@@ -196,7 +196,7 @@ export default async function CartPage() {
                       </p>
                       <p
                         className={`mt-1 text-xs uppercase tracking-[0.12em] ${
-                          line.available ? "text-black/55" : "font-semibold text-black"
+                          line.available ? "text-black/70" : "font-semibold text-black"
                         }`}
                       >
                         {line.available ? "Có thể mua" : unavailableLabel(line)}
@@ -218,7 +218,7 @@ export default async function CartPage() {
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
           <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
-            <span className="text-sm text-black/65">
+            <span className="text-sm text-black/75">
               {hasUnavailableLines ? "Tạm tính khả dụng" : "Tạm tính"}
             </span>
             <strong className="text-xl font-medium tracking-[-0.02em]">
@@ -226,11 +226,11 @@ export default async function CartPage() {
             </strong>
           </div>
           {hasUnavailableLines ? (
-            <p className="mt-4 text-sm leading-6 text-black/60">
+            <p className="mt-4 text-sm leading-6 text-black/75">
               Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi túi.
             </p>
           ) : null}
-          <p className="mt-4 text-sm leading-6 text-black/60">
+          <p className="mt-4 text-sm leading-6 text-black/75">
             Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.
           </p>
           {!hasUnavailableLines && subtotal !== null ? (
@@ -241,7 +241,7 @@ export default async function CartPage() {
               Tiến hành đặt hàng
             </Link>
           ) : (
-            <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/60">
+            <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
               Hãy xử lý các dòng chưa khả dụng trước khi thanh toán.
             </p>
           )}

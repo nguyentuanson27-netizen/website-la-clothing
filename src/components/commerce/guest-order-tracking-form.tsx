@@ -90,20 +90,20 @@ export function GuestOrderTrackingForm() {
           <p className="mt-3 font-serif text-3xl">{statusLabels[state.order.status]}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
             <div>
-              <dt className="text-black/55">Mã đơn</dt>
+              <dt className="text-black/75">Mã đơn</dt>
               <dd className="mt-1 font-semibold break-all">{state.order.orderCode}</dd>
             </div>
             <div>
-              <dt className="text-black/55">Thời điểm tạo</dt>
+              <dt className="text-black/75">Thời điểm tạo</dt>
               <dd className="mt-1 font-semibold">{formatDate(state.order.createdAt)}</dd>
             </div>
             <div>
-              <dt className="text-black/55">Tổng tiền</dt>
+              <dt className="text-black/75">Tổng tiền</dt>
               <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
             </div>
           </dl>
           {state.order.status === "CHECKING" ? (
-            <p className="mt-5 text-sm leading-6 text-black/60">
+            <p className="mt-5 text-sm leading-6 text-black/75">
               Hệ thống đang kiểm tra lại kết quả đồng bộ. Vui lòng không gửi lại đơn chỉ vì trạng thái này.
             </p>
           ) : null}

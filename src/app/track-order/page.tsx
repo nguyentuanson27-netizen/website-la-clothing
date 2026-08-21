@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function TrackOrderPage() {
   return (
     <main id="main-content" className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
             <Link
@@ -36,7 +36,7 @@ export default function TrackOrderPage() {
           <p className="font-serif text-2xl md:text-3xl">
             Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
           </p>
-          <p className="mt-4 text-sm leading-6 text-black/60">
+          <p className="mt-4 text-sm leading-6 text-black/75">
             Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn COD. LA Clothing không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
           </p>
         </div>

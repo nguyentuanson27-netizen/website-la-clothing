@@ -60,7 +60,7 @@ export default async function CheckoutPage() {
   if (lines.length === 0) {
     return (
       <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
               <Link
@@ -102,7 +102,7 @@ export default async function CheckoutPage() {
   if (!totals) {
     return (
       <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
               <Link
@@ -132,7 +132,7 @@ export default async function CheckoutPage() {
         </h1>
         <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
           <p className="font-serif text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
-          <p className="mt-4 text-sm leading-6 text-black/60">
+          <p className="mt-4 text-sm leading-6 text-black/75">
             Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
           </p>
           <Link className="text-link mt-6 inline-block" href="/cart">
@@ -145,7 +145,7 @@ export default async function CheckoutPage() {
 
   return (
     <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
             <Link
@@ -174,7 +174,7 @@ export default async function CheckoutPage() {
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           CHECKOUT
         </h1>
-        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/55">Thanh toán khi nhận hàng</p>
+        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
       </div>
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
@@ -207,7 +207,7 @@ export default async function CheckoutPage() {
                       />
                     ) : (
                       <div
-                        className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase tracking-wider text-black/40"
+                        className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase tracking-wider text-black/75"
                         aria-hidden="true"
                       >
                         LA
@@ -218,7 +218,7 @@ export default async function CheckoutPage() {
                     <p className="text-sm font-semibold uppercase tracking-[0.05em]">
                       {line.productName}
                     </p>
-                    <p className="mt-1 text-xs leading-5 text-black/55">
+                    <p className="mt-1 text-xs leading-5 text-black/75">
                       {[line.color, line.size].filter(Boolean).join(" / ") || "Biến thể"} · SL {line.quantity}
                     </p>
                   </div>
@@ -232,11 +232,11 @@ export default async function CheckoutPage() {
 
           <dl className="mt-5 space-y-3 text-sm">
             <div className="flex justify-between gap-5">
-              <dt className="text-black/60">Tạm tính</dt>
+              <dt className="text-black/75">Tạm tính</dt>
               <dd>{currency.format(totals.subtotalVnd)}</dd>
             </div>
             <div className="flex justify-between gap-5">
-              <dt className="text-black/60">Phí vận chuyển</dt>
+              <dt className="text-black/75">Phí vận chuyển</dt>
               <dd>{totals.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(totals.shippingFeeVnd)}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
@@ -245,7 +245,7 @@ export default async function CheckoutPage() {
             </div>
           </dl>
 
-          <p className="mt-5 text-xs leading-5 text-black/60">
+          <p className="mt-5 text-xs leading-5 text-black/75">
             Đây là số tiền dự kiến. Máy chủ sẽ kiểm tra lại giá, tồn kho và phí vận chuyển khi bạn đặt hàng.
           </p>
         </aside>
