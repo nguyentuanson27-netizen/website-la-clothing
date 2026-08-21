@@ -24,9 +24,11 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
     indexingEnabled: true,
     product: baseProduct,
   });
+  const title = `${baseProduct.seoTitle} — ${baseProduct.slug}`;
+  const description = `${baseProduct.seoDescription} — /shop/${baseProduct.slug}.`;
 
-  assert.equal(metadata.title, baseProduct.seoTitle);
-  assert.equal(metadata.description, baseProduct.seoDescription);
+  assert.equal(metadata.title, title);
+  assert.equal(metadata.description, description);
   assert.deepEqual(metadata.alternates, {
     canonical: "https://shop.example.com/shop/ao-oxford-relaxed",
   });
@@ -34,8 +36,8 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
     type: "website",
     locale: "vi_VN",
     siteName: "LA Clothing",
-    title: baseProduct.seoTitle,
-    description: baseProduct.seoDescription,
+    title,
+    description,
     url: "https://shop.example.com/shop/ao-oxford-relaxed",
     images: [
       {
@@ -46,8 +48,8 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
   });
   assert.deepEqual(metadata.twitter, {
     card: "summary_large_image",
-    title: baseProduct.seoTitle,
-    description: baseProduct.seoDescription,
+    title,
+    description,
     images: [
       {
         url: trustedPrimary.url,
