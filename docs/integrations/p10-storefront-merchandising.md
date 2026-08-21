@@ -28,10 +28,10 @@ Task P10 productizes the storefront discovery, collections landing pages, and pr
 
 - **Price & Stock**: Server-authoritative calculation; no client trust for retail price or exact stock quantities.
 - **Purchase Rules**: Mandatory Size selection before "Add to Bag" enables; server re-verifies inventory during mutation.
-- **Publication Boundary for Collections**:
-  - PDP collection badges only resolve and render published `CollectionDefinition` rows (`isPublished: true`) with website-owned authentic titles; draft/unpublished collections are omitted to prevent 404 links.
-  - Shop discovery facets only expose collection slugs that belong to published `CollectionDefinition` records and published `ProductContent`.
-  - Shop collection filter (`/shop?collection=...`) requires `pc.status = 'PUBLISHED'` and an existing published `CollectionDefinition` (`isPublished = TRUE`), guaranteeing draft memberships never affect public storefront discovery.
+- **Publication & Taxonomy Boundaries**:
+  - **Decoupled Taxonomy Membership**: Canonical `ProductContent` collection membership (`collectionSlugs`) is website-owned and independent of editorial publication status (may exist while editorial content is `DRAFT`/`REVIEWED`).
+  - **Collection Publication Authority**: A collection affects public PDP badges, shop discovery facets, and `/shop?collection=...` filtering only when its website-owned `CollectionDefinition.isPublished` is true. Unpublished/draft collection definitions are omitted from PDP badges and discovery facets, and filtering on unpublished collection slugs yields no products.
+  - **Editorial Copy Publication Boundary**: Editorial copy (`editorialDescription`, care instructions, size guide, and SEO metadata fields) remains strictly gated by `ProductContent.status === 'PUBLISHED'`.
 - **Links**: All internal links strictly guarded by `tests/integrations/homepage-links.test.ts`.
 
 ### 3. Verification Evidence
@@ -40,3 +40,4 @@ Task P10 productizes the storefront discovery, collections landing pages, and pr
 - `tests/database/storefront-discovery.test.ts`: PASS (verifies discovery search, same-variant filters, and publication-aware collection filtering).
 - `tests/integrations/homepage-links.test.ts`: PASS (100% internal links verified).
 - `tests/a11y-runtime/editorial.spec.ts`: PASS (Full flow: Homepage → Lookbook → Collections → Collection Landing → PDP → Add to Bag verified on 390px mobile and desktop with 0 Axe violations and 0 horizontal overflow).
+- `tests/a11y-runtime/discovery.spec.ts`: PASS (Mobile shop discovery filter flow verified with published CollectionDefinitions).
