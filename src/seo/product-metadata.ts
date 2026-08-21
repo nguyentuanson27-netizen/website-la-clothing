@@ -23,14 +23,21 @@ type ProductMetadataInput = Readonly<{
   }>;
 }>;
 
+function buildFallbackTitle(product: ProductMetadataInput["product"]): string {
+  return `${product.name} — ${product.slug}`;
+}
+
+function buildFallbackDescription(product: ProductMetadataInput["product"]): string {
+  return `Thông tin sản phẩm ${product.name} tại LA Clothing — /shop/${product.slug}.`;
+}
+
 export function buildStorefrontProductMetadata({
   origin,
   indexingEnabled,
   product,
 }: ProductMetadataInput): Metadata {
-  const title = product.seoTitle ?? product.name;
-  const description =
-    product.seoDescription ?? `Khám phá ${product.name} từ LA Clothing.`;
+  const title = product.seoTitle ?? buildFallbackTitle(product);
+  const description = product.seoDescription ?? buildFallbackDescription(product);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
   const image = product.media.primary
     ? {
