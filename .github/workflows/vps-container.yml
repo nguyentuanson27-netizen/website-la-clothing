@@ -56,6 +56,7 @@ jobs:
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
       PANCAKE_API_KEY: ci-only-pancake-placeholder
       PANCAKE_SHOP_ID: "920007"
+      SEARCH_INDEXING_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -106,6 +107,7 @@ jobs:
             -e BETTER_AUTH_IP_HEADER \
             -e PANCAKE_API_KEY \
             -e PANCAKE_SHOP_ID \
+            -e SEARCH_INDEXING_ENABLED \
             -e APP_DOMAIN=shop.example.test \
             -e BETTER_AUTH_URL=https://shop.example.test \
             la-clothing:vps-ops-ci \
@@ -124,6 +126,7 @@ jobs:
             -e BETTER_AUTH_IP_HEADER \
             -e PANCAKE_API_KEY \
             -e PANCAKE_SHOP_ID \
+            -e SEARCH_INDEXING_ENABLED \
             -e APP_DOMAIN=127.0.0.1:3000 \
             -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
             la-clothing:vps-runtime-ci
