@@ -15,16 +15,18 @@ P13 adds product-detail metadata without changing PDP commerce/UI behavior:
 
 P13 does **not** implement JSON-LD/breadcrumb schema (P14), crawl architecture (P15), a dedicated production domain, or indexing enablement. `la.lanadesign.vn` remains staging/non-indexable under the P12 gate.
 
-## Metadata ownership and fallback contract
+## Metadata ownership and uniqueness contract
 
-Published website-owned `ProductContent.seoTitle` and `ProductContent.seoDescription` remain the preferred public SEO fields. Draft/reviewed editorial content is not exposed by the storefront projection.
+Published website-owned `ProductContent.seoTitle` and `ProductContent.seoDescription` remain the preferred editorial SEO copy. Draft/reviewed editorial content is not exposed by the storefront projection.
 
-When either published SEO field is absent, the fallback stays factual and deterministic:
+`ProductContent` does not enforce cross-product uniqueness for those optional fields. Therefore the final public metadata keeps the published copy as its base and always adds a deterministic website-owned canonical discriminator:
 
-- title: `<product name> — <website-owned canonical slug>`;
-- description: `Thông tin sản phẩm <product name> tại LA Clothing — /shop/<slug>.`;
+- published title: `<published seoTitle> — <website-owned canonical slug>`;
+- published description: `<published seoDescription> — /shop/<slug>.`;
+- fallback title: `<product name> — <website-owned canonical slug>`;
+- fallback description: `Thông tin sản phẩm <product name> tại LA Clothing — /shop/<slug>.`.
 
-The canonical slug is the discriminator because `ProductMirror.name` is not unique. This keeps same-name products distinct without inventing material, fit, origin, ratings, discounts, or other unverified product facts.
+This guarantees distinct current product slugs produce distinct title/description metadata without inventing material, fit, origin, ratings, discounts, or other unverified product facts. P13 deliberately does not add a database uniqueness constraint or publication transaction because that would widen the website-owned editorial persistence model beyond this metadata slice.
 
 ## Canonical and staging behavior
 
@@ -60,14 +62,21 @@ If no trusted primary exists:
   - fallback title/description were not unique for same-name products;
   - branded fallback path had no resolving image/runtime proof;
   - exact-head CI #974 failed typecheck because the test read `.url` from the Next.js image union without narrowing.
-- Review fixes add a same-name/different-slug regression, complete-image-value assertions, a website-owned fallback PNG route, and real rendered-head/image-resolution HTTP coverage.
-- Candidate CI #984 on `b480d978293c7aa264e5e8eea16ca61b61892e51` passed typecheck, Domain HTTP regression, build, shipping policy, and release preflight; VPS #213 passed the full container gate. A later docs/performance commit changes the final SHA, so these runs are supporting evidence only, not the final exact-head authority.
+- Those fixes added same-name/different-slug regression coverage, complete image-value assertions, a website-owned fallback PNG route, and real rendered-head/image-resolution HTTP coverage.
+- Review ID **4990244046**: Request changes — 0 Critical / 1 Required / 0 Optional.
+  - published `seoTitle` / `seoDescription` could still collide across distinct products because the metadata builder used them verbatim and persistence does not prove uniqueness.
+- RED CI #989 on `05ae5293347ade2f28eb23ad3d7ae3d2d5f084fc` proved the new contract before the production fix:
+  - unit regression expected `Áo Oxford Relaxed nam — ao-oxford-relaxed-den` but received the undiscriminated published title;
+  - real Next head smoke likewise failed because the published title lacked its canonical slug discriminator;
+  - P6 and P12 HTTP regressions remained green.
+- GREEN candidate CI #992 on `85f8cd0d33d28da708f34c2038cc8000f1164fc8` passed the full verify job through Domain/runtime regression, build, release preflight, and production start; VPS #221 passed the full container gate. These are supporting behavior evidence because this documentation commit changes the final SHA.
 
 ## Runtime regression coverage
 
 The P13 HTTP smoke seeds real storefront rows and verifies through a real Next dev server:
 
-- published SEO title/description render in `<head>`;
+- two distinct PUBLISHED products sharing the same provided SEO title/description render unique slug-discriminated title/description metadata and slug-specific canonicals;
+- published website-owned SEO copy remains the base of title/description metadata;
 - canonical, `og:url`, `og:image`, and `twitter:image` use the server-owned public origin/trusted image;
 - trusted Pancake image URLs are not rewritten;
 - two products sharing the same name but different slugs render distinct fallback title/description and slug-specific canonicals;
@@ -77,4 +86,4 @@ The P13 HTTP smoke seeds real storefront rows and verifies through a real Next d
 
 ## Rollback
 
-P13 introduces no database migration and no new external dependency. Rollback is the code revert of the metadata layout/helper/social-image route. P12 search exposure remains independently fail-closed throughout rollback.
+P13 introduces no database migration and no new external dependency. Rollback is the code revert of the metadata layout/helper/social-image route and its uniqueness discriminator. P12 search exposure remains independently fail-closed throughout rollback.
