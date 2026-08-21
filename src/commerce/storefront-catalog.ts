@@ -148,8 +148,8 @@ function toStorefrontProduct(
     ),
   });
   const publishedContent = product.content?.status === "PUBLISHED" ? product.content : null;
-  const rawCollectionSlugs = publishedContent
-    ? parseJsonStringArray(publishedContent.collectionSlugs)
+  const rawCollectionSlugs = product.content
+    ? parseJsonStringArray(product.content.collectionSlugs)
     : [];
   const collections = collectionMap
     ? rawCollectionSlugs
@@ -261,8 +261,7 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
   }
   if (discovery.collection) {
     filters.push(Prisma.sql`
-      pc."status" = 'PUBLISHED'
-      AND ${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))
+      ${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))
       AND EXISTS (
         SELECT 1
         FROM "CollectionDefinition" cd
@@ -335,7 +334,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     });
 
     const allSlugs = products.flatMap((p) =>
-      p.content?.status === "PUBLISHED" ? parseJsonStringArray(p.content.collectionSlugs) : [],
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
@@ -366,7 +365,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     ]);
 
     const allSlugs = products.flatMap((p) =>
-      p.content?.status === "PUBLISHED" ? parseJsonStringArray(p.content.collectionSlugs) : [],
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
@@ -425,7 +424,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
           });
     const byId = new Map(products.map((product) => [product.id, product]));
     const allSlugs = products.flatMap((p) =>
-      p.content?.status === "PUBLISHED" ? parseJsonStringArray(p.content.collectionSlugs) : [],
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
@@ -484,7 +483,6 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
         WHERE p."pancakeShopId" = ${safeShopId}
           AND p."isPresent" = TRUE
           AND p."isActive" = TRUE
-          AND pc."status" = 'PUBLISHED'
         ORDER BY "value" ASC
       `),
     ]);
@@ -507,7 +505,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
 
     if (!product) return null;
 
-    const rawSlugs = product.content?.status === "PUBLISHED"
+    const rawSlugs = product.content
       ? parseJsonStringArray(product.content.collectionSlugs)
       : [];
     const collectionMap = await fetchPublishedCollectionMap(client, rawSlugs);

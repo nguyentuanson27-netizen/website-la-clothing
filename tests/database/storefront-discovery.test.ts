@@ -317,7 +317,7 @@ test("discovery facets stay scoped to visible products in the configured shop", 
   assert.deepEqual(facets.collections, ["city-uniform", "essentials"]);
 });
 
-test("discovery collection filter requires published ProductContent and published CollectionDefinition", async () => {
+test("discovery collection filter requires published CollectionDefinition while preserving draft content membership", async () => {
   await prisma.collectionDefinition.upsert({
     where: { slug: "unpub-col" },
     create: {
@@ -332,7 +332,7 @@ test("discovery collection filter requires published ProductContent and publishe
     update: { isPublished: false, title: "Unpublished Collection" },
   });
 
-  // (a) DRAFT ProductContent with valid published collection slug -> must not match
+  // (a) DRAFT ProductContent with valid published collection slug -> participates in collection membership
   await seedProduct({
     id: "draft-content-product",
     name: "Draft Content Product",
@@ -356,7 +356,7 @@ test("discovery collection filter requires published ProductContent and publishe
     stock: 2,
   });
 
-  // (a) check: draft content with published collection slug is excluded from collection filter
+  // (a) check: draft content with published collection slug is included in collection filter
   const cityFiltered = await repository.listDiscoveryPage({
     shopId,
     pageSize: 24,
@@ -364,14 +364,14 @@ test("discovery collection filter requires published ProductContent and publishe
   });
   assert.equal(
     cityFiltered.products.some(({ name }) => name === "Draft Content Product"),
-    false,
+    true,
   );
   assert.equal(
     cityFiltered.products.some(({ name }) => name === "Linen Overshirt"),
     true,
   );
 
-  // (b) check: published content referencing unpublished collection returns 0 products
+  // (b) check: content referencing unpublished collection returns 0 products and is omitted from facets
   const unpubFiltered = await repository.listDiscoveryPage({
     shopId,
     pageSize: 24,
@@ -380,7 +380,10 @@ test("discovery collection filter requires published ProductContent and publishe
   assert.equal(unpubFiltered.totalCount, 0);
   assert.equal(unpubFiltered.products.length, 0);
 
-  // (c) check: published content with published collection filters normally
+  const facets = await repository.listDiscoveryFacets({ shopId });
+  assert.equal(facets.collections.includes("unpub-col"), false);
+
+  // (c) check: published collection filters normally
   const essentialsFiltered = await repository.listDiscoveryPage({
     shopId,
     pageSize: 24,

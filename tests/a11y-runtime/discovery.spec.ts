@@ -63,6 +63,9 @@ async function stopServer() {
 
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+  await prisma.collectionDefinition.deleteMany({
+    where: { slug: { in: ["city-uniform", "essentials"] } },
+  });
 }
 
 async function seedProduct(input: {
@@ -118,6 +121,32 @@ async function seedProduct(input: {
 
 test.beforeAll(async () => {
   await cleanup();
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "city-uniform" },
+    create: {
+      slug: "city-uniform",
+      title: "City Uniform",
+      description: "City uniform collection.",
+      seoTitle: "City Uniform",
+      seoDescription: "City uniform",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: true, title: "City Uniform" },
+  });
+  await prisma.collectionDefinition.upsert({
+    where: { slug: "essentials" },
+    create: {
+      slug: "essentials",
+      title: "Essentials",
+      description: "Essentials collection.",
+      seoTitle: "Essentials",
+      seoDescription: "Essentials",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+    update: { isPublished: true, title: "Essentials" },
+  });
   await seedProduct({
     key: "coat",
     name: `Runtime City Coat ${runId}`,
