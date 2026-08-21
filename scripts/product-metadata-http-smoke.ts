@@ -22,13 +22,17 @@ const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist
 
 const runId = `${Date.now()}-${process.pid}`;
 const trustedProductId = `p13-http-trusted-${runId}`;
+const publishedDuplicateProductId = `p13-http-published-duplicate-${runId}`;
 const fallbackProductAId = `p13-http-fallback-a-${runId}`;
 const fallbackProductBId = `p13-http-fallback-b-${runId}`;
 const trustedSlug = `p13-trusted-${runId}`;
+const publishedDuplicateSlug = `p13-published-duplicate-${runId}`;
 const fallbackSlugA = `p13-fallback-a-${runId}`;
 const fallbackSlugB = `p13-fallback-b-${runId}`;
 const unknownSlug = `p13-unknown-${runId}`;
 const duplicateName = "P13 Same Name Product";
+const publishedSeoTitle = "P13 Published SEO Title";
+const publishedSeoDescription = "P13 published factual SEO description.";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -129,7 +133,12 @@ async function cleanupDatabase() {
   await prisma.productMirror.deleteMany({
     where: {
       pancakeProductId: {
-        in: [trustedProductId, fallbackProductAId, fallbackProductBId],
+        in: [
+          trustedProductId,
+          publishedDuplicateProductId,
+          fallbackProductAId,
+          fallbackProductBId,
+        ],
       },
     },
   });
@@ -159,8 +168,27 @@ try {
       content: {
         create: {
           status: "PUBLISHED",
-          seoTitle: "P13 Published SEO Title",
-          seoDescription: "P13 published factual SEO description.",
+          seoTitle: publishedSeoTitle,
+          seoDescription: publishedSeoDescription,
+        },
+      },
+    },
+  });
+
+  await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: publishedDuplicateProductId,
+      slug: publishedDuplicateSlug,
+      name: "P13 Published Duplicate Product",
+      isPresent: true,
+      isActive: true,
+      syncedAt: new Date(),
+      content: {
+        create: {
+          status: "PUBLISHED",
+          seoTitle: publishedSeoTitle,
+          seoDescription: publishedSeoDescription,
         },
       },
     },
@@ -190,14 +218,42 @@ try {
 
   const trustedPage = await requestPath(`/shop/${trustedSlug}`);
   assert.equal(trustedPage.status, 200, `trusted PDP must return 200\n${serverOutput}`);
-  assertContains(trustedPage.body, "<title>P13 Published SEO Title — LA Clothing</title>", "trusted PDP head");
-  assertContains(trustedPage.body, 'name="description" content="P13 published factual SEO description."', "trusted PDP head");
+  const trustedTitle = `${publishedSeoTitle} — ${trustedSlug}`;
+  const trustedDescription = `${publishedSeoDescription} — /shop/${trustedSlug}.`;
+  assertContains(trustedPage.body, `<title>${trustedTitle} — LA Clothing</title>`, "trusted PDP head");
+  assertContains(trustedPage.body, `name="description" content="${trustedDescription}"`, "trusted PDP head");
   assertContains(trustedPage.body, `rel="canonical" href="${PUBLIC_ORIGIN}/shop/${trustedSlug}"`, "trusted PDP head");
-  assertContains(trustedPage.body, 'property="og:title" content="P13 Published SEO Title"', "trusted PDP Open Graph");
+  assertContains(trustedPage.body, `property="og:title" content="${trustedTitle}"`, "trusted PDP Open Graph");
   assertContains(trustedPage.body, `property="og:url" content="${PUBLIC_ORIGIN}/shop/${trustedSlug}"`, "trusted PDP Open Graph");
   assertContains(trustedPage.body, `property="og:image" content="${TRUSTED_IMAGE_URL}"`, "trusted PDP Open Graph");
   assertContains(trustedPage.body, `name="twitter:image" content="${TRUSTED_IMAGE_URL}"`, "trusted PDP Twitter card");
   assertNotContains(trustedPage.body, PRODUCT_SOCIAL_FALLBACK_PATH, "trusted PDP social metadata");
+
+  const publishedDuplicatePage = await requestPath(`/shop/${publishedDuplicateSlug}`);
+  assert.equal(publishedDuplicatePage.status, 200, "published duplicate PDP must return 200");
+  const publishedDuplicateTitle = `${publishedSeoTitle} — ${publishedDuplicateSlug}`;
+  const publishedDuplicateDescription = `${publishedSeoDescription} — /shop/${publishedDuplicateSlug}.`;
+  assertContains(
+    publishedDuplicatePage.body,
+    `<title>${publishedDuplicateTitle} — LA Clothing</title>`,
+    "published duplicate PDP head",
+  );
+  assertContains(
+    publishedDuplicatePage.body,
+    `name="description" content="${publishedDuplicateDescription}"`,
+    "published duplicate PDP head",
+  );
+  assertContains(
+    publishedDuplicatePage.body,
+    `rel="canonical" href="${PUBLIC_ORIGIN}/shop/${publishedDuplicateSlug}"`,
+    "published duplicate canonical",
+  );
+  assert.notEqual(trustedTitle, publishedDuplicateTitle, "duplicate published SEO titles must remain unique");
+  assert.notEqual(
+    trustedDescription,
+    publishedDuplicateDescription,
+    "duplicate published SEO descriptions must remain unique",
+  );
 
   const fallbackPageA = await requestPath(`/shop/${fallbackSlugA}`);
   const fallbackPageB = await requestPath(`/shop/${fallbackSlugB}`);
@@ -241,7 +297,7 @@ try {
   assertContains(stagingPage.body, `property="og:url" content="${STAGING_ORIGIN}/shop/${fallbackSlugA}"`, "staging PDP Open Graph");
 
   console.log(
-    "P13 metadata HTTP smoke passed: published/fallback heads render, same-name fallback metadata stays slug-unique, trusted media is direct, fallback PNG resolves, unknown slug is 404, and staging withholds canonical under noindex.",
+    "P13 metadata HTTP smoke passed: published duplicate SEO and fallback heads stay slug-unique, trusted media is direct, fallback PNG resolves, unknown slug is 404, and staging withholds canonical under noindex.",
   );
 } finally {
   await stopServer();
