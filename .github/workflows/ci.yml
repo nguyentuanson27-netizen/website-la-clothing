@@ -37,6 +37,8 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
       BETTER_AUTH_URL: http://localhost:3000
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: localhost:3000
+      SEARCH_INDEXING_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -96,7 +98,9 @@ jobs:
 
       - name: Shipping promotion runtime policy smoke
         env:
+          APP_DOMAIN: 127.0.0.1:3218
           BETTER_AUTH_URL: http://127.0.0.1:3218
+          SEARCH_INDEXING_ENABLED: "false"
           LA_SHIPPING_FEE_VND: "25000"
           LA_FREE_SHIPPING_SUBTOTAL_VND: "750000"
           LA_FREE_SHIPPING_MIN_QUANTITY: "4"
@@ -149,6 +153,7 @@ jobs:
         env:
           APP_DOMAIN: shop.example.test
           BETTER_AUTH_URL: https://shop.example.test
+          SEARCH_INDEXING_ENABLED: "false"
           PANCAKE_API_KEY: ci-only-pancake-placeholder
           PANCAKE_SHOP_ID: "920007"
           LA_SHIPPING_FEE_VND: "30000"
@@ -158,7 +163,9 @@ jobs:
 
       - name: Production start smoke
         env:
+          APP_DOMAIN: 127.0.0.1:3219
           BETTER_AUTH_URL: http://127.0.0.1:3219
+          SEARCH_INDEXING_ENABLED: "false"
           PANCAKE_SHOP_ID: "920007"
           NEXT_TELEMETRY_DISABLED: "1"
         shell: bash
@@ -192,6 +199,8 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
       BETTER_AUTH_URL: http://127.0.0.1:3212
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: 127.0.0.1:3212
+      SEARCH_INDEXING_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5

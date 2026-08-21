@@ -6,6 +6,7 @@ import { validateReleaseEnvironment } from "../../src/operations/release-readine
 const validEnvironment = {
   DATABASE_URL: "postgresql://release_user:super-secret-password@db.internal:5432/la_clothing",
   APP_DOMAIN: "shop.example.com",
+  SEARCH_INDEXING_ENABLED: "false",
   BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
   BETTER_AUTH_URL: "https://shop.example.com",
   BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
@@ -22,6 +23,7 @@ test("release preflight validates required server configuration without returnin
   assert.deepEqual(result, {
     databaseConfigured: true,
     storefrontOriginConfigured: true,
+    searchIndexingEnabled: false,
     authConfigured: true,
     trustedIpHeaderConfigured: true,
     pancakeConfigured: true,
@@ -77,6 +79,41 @@ test("release preflight requires a safe server-owned storefront origin", () => {
     assert.equal(message.includes(hostileDomain), false);
     assert.equal(message.includes("should-not-leak"), false);
   }
+});
+
+test("release preflight requires explicit fail-closed search indexing configuration", () => {
+  assert.throws(
+    () => validateReleaseEnvironment({ ...validEnvironment, SEARCH_INDEXING_ENABLED: undefined }),
+    /SEARCH_INDEXING_ENABLED must be explicitly configured as true or false/,
+  );
+
+  const hostileFlag = "TRUE?token=should-not-leak";
+  try {
+    validateReleaseEnvironment({ ...validEnvironment, SEARCH_INDEXING_ENABLED: hostileFlag });
+    assert.fail("expected invalid SEARCH_INDEXING_ENABLED to fail");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    assert.match(message, /SEARCH_INDEXING_ENABLED/);
+    assert.equal(message.includes(hostileFlag), false);
+    assert.equal(message.includes("should-not-leak"), false);
+  }
+
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        APP_DOMAIN: "la.lanadesign.vn",
+        BETTER_AUTH_URL: "https://la.lanadesign.vn",
+        SEARCH_INDEXING_ENABLED: "true",
+      }),
+    /Search indexing cannot be enabled on staging or local storefront origins/,
+  );
+
+  const enabled = validateReleaseEnvironment({
+    ...validEnvironment,
+    SEARCH_INDEXING_ENABLED: "true",
+  });
+  assert.equal(enabled.searchIndexingEnabled, true);
 });
 
 test("release preflight delegates auth, Pancake and shipping validation fail closed", () => {

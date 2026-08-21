@@ -16,3 +16,7 @@ test("historical product slug returns exact 301 while current/unknown remain 200
     }
   }
 });
+
+test("search exposure HTTP policy is fail-closed on staging and canonical when explicitly enabled", async () => {
+  await import("../../scripts/search-exposure-http-smoke.ts");
+});
