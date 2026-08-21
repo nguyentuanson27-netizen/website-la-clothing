@@ -117,9 +117,7 @@ async function startServer({
 }
 
 async function cleanupRateLimits() {
-  await prisma.rateLimit.deleteMany({
-    where: { id: { startsWith: "checkout-geo-client:" } },
-  });
+  await prisma.rateLimit.deleteMany({});
 }
 
 async function cleanupDatabase() {
@@ -307,6 +305,7 @@ for (const { name, viewport } of [
     context,
   }) => {
     await page.setViewportSize(viewport);
+    await cleanupRateLimits();
     await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
     await createTestCart();
     await prepareBrowser(context);
