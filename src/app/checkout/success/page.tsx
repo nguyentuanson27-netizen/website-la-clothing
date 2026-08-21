@@ -33,7 +33,22 @@ export default async function CheckoutSuccessPage({
 
   return (
     <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Shopping / Checkout</p>
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <ol className="flex items-center gap-2">
+          <li>
+            <Link
+              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/"
+            >
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black font-medium">
+            Đặt hàng thành công
+          </li>
+        </ol>
+      </nav>
       <h1 className="mt-4 text-[clamp(3rem,9vw,8rem)] font-semibold leading-[0.9] tracking-[-0.05em]">
         {confirmed ? "ĐẶT HÀNG THÀNH CÔNG" : "CHƯA THỂ XÁC NHẬN"}
       </h1>
@@ -47,7 +62,7 @@ export default async function CheckoutSuccessPage({
             </p>
           </div>
         ) : (
-          <div role="alert">
+          <div role="alert" data-ui-state="empty">
             <p className="font-serif text-2xl md:text-3xl">Không tìm thấy đơn đã xác nhận.</p>
             <p className="mt-4 text-sm leading-6 text-black/60">
               Mã xác nhận không hợp lệ hoặc đơn chưa ở trạng thái hoàn tất. Nếu bạn vừa đặt hàng và chưa chắc trạng thái, vui lòng không gửi lại đơn ngay.
@@ -57,14 +72,23 @@ export default async function CheckoutSuccessPage({
 
         <div className="mt-8 flex flex-wrap gap-x-8 gap-y-4 text-sm font-semibold uppercase tracking-[0.1em]">
           {confirmed ? (
-            <Link className="underline underline-offset-4" href="/track-order">
+            <Link
+              className="inline-block border border-black bg-black px-6 py-3 text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/track-order"
+            >
               Tra cứu đơn hàng
             </Link>
           ) : null}
-          <Link className="underline underline-offset-4" href="/shop">
+          <Link
+            className="inline-block border border-black/20 px-6 py-3 text-black transition hover:border-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            href="/shop"
+          >
             Tiếp tục mua sắm
           </Link>
-          <Link className="underline underline-offset-4" href="/">
+          <Link
+            className="inline-block border border-transparent px-6 py-3 text-black/70 underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            href="/"
+          >
             Về trang chủ
           </Link>
         </div>

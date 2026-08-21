@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { GuestOrderTrackingForm } from "@/components/commerce/guest-order-tracking-form";
 
@@ -10,7 +11,22 @@ export const metadata: Metadata = {
 export default function TrackOrderPage() {
   return (
     <main id="main-content" className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Shopping / Order tracking</p>
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <ol className="flex items-center gap-2">
+          <li>
+            <Link
+              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/"
+            >
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black font-medium">
+            Tra cứu đơn hàng
+          </li>
+        </ol>
+      </nav>
       <h1 className="mt-4 text-[clamp(3rem,9vw,8rem)] font-semibold leading-[0.9] tracking-[-0.05em]">
         TRA CỨU ĐƠN HÀNG
       </h1>

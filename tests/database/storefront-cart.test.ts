@@ -127,6 +127,7 @@ test("storefront cart resolves current lines only from the configured shop and p
       price: 590_000,
       available: true,
       unavailableReason: null,
+      media: { primary: null, gallery: [] },
     },
     {
       variantId: stale.id,
@@ -138,6 +139,7 @@ test("storefront cart resolves current lines only from the configured shop and p
       price: null,
       available: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
+      media: { primary: null, gallery: [] },
     },
     {
       variantId: otherShopVariant.id,
@@ -149,8 +151,48 @@ test("storefront cart resolves current lines only from the configured shop and p
       price: null,
       available: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
+      media: { primary: null, gallery: [] },
     },
   ]);
+});
+
+test("storefront cart resolves trusted product media from database mirror", async () => {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "cart-media-product",
+      slug: "cart-media-product",
+      name: "Cart Media Product",
+      primaryImageUrl: "https://content.pancake.vn/images/1/2/3/cart-product.jpg",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "cart-media-variant",
+      productId: product.id,
+      color: "Ink",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 850_000,
+      pancakeRetailPriceAfterDiscount: 850_000,
+      pancakeImageUrls: ["https://content.pancake.vn/images/1/2/3/cart-variant.jpg"],
+      syncedAt,
+    },
+  });
+
+  const [line] = await repository.getLines({
+    shopId,
+    items: [{ variantId: variant.id, quantity: 1 }],
+  });
+
+  assert.equal(line?.media.primary?.url, "https://content.pancake.vn/images/1/2/3/cart-product.jpg");
+  assert.equal(line?.media.primary?.alt, "Cart Media Product");
+  assert.equal(line?.media.gallery.length, 2);
 });
 
 test("storefront cart read model rejects requests larger than the cart line ceiling", async () => {

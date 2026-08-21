@@ -1,14 +1,18 @@
 import {
+  resolveStorefrontProductMedia,
+  type StorefrontProductMedia,
+} from "./product-media.ts";
+import {
   buildStorefrontVariantOptions,
   type StorefrontVariantUnavailableReason,
 } from "./storefront-product.ts";
 
-type StorefrontCartItem = {
+export type StorefrontCartItem = {
   variantId: string;
   quantity: number;
 };
 
-type StorefrontCartVariant = {
+export type StorefrontCartVariant = {
   id: string;
   isPresent: boolean;
   isActive: boolean;
@@ -17,13 +21,15 @@ type StorefrontCartVariant = {
   sellableStock: number;
   retailPrice: number | null;
   retailPriceAfterDiscount: number | null;
+  imageUrls?: readonly string[];
 };
 
-type StorefrontCartProduct = {
+export type StorefrontCartProduct = {
   slug: string;
   name: string;
   isPresent: boolean;
   isActive: boolean;
+  primaryImageUrl?: string | null;
   variants: readonly StorefrontCartVariant[];
 };
 
@@ -43,6 +49,7 @@ export type StorefrontCartLine = {
   price: number | null;
   available: boolean;
   unavailableReason: StorefrontCartUnavailableReason | null;
+  media: StorefrontProductMedia;
 };
 
 function normalizedOptionValue(value: string | null): string | null {
@@ -50,6 +57,8 @@ function normalizedOptionValue(value: string | null): string | null {
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
 }
+
+const emptyMedia: StorefrontProductMedia = { primary: null, gallery: [] };
 
 export function buildStorefrontCartLines({
   items,
@@ -59,9 +68,17 @@ export function buildStorefrontCartLines({
   products: readonly StorefrontCartProduct[];
 }): StorefrontCartLine[] {
   const variantOwner = new Map<string, StorefrontCartProduct>();
+  const productMediaMap = new Map<string, StorefrontProductMedia>();
   const resolvedOptions = new Map<string, ReturnType<typeof buildStorefrontVariantOptions>[number]>();
 
   for (const product of products) {
+    const media = resolveStorefrontProductMedia({
+      productName: product.name,
+      primaryImageUrl: product.primaryImageUrl,
+      variantImageUrls: product.variants.map((variant) => variant.imageUrls ?? []),
+    });
+    productMediaMap.set(product.slug, media);
+
     for (const variant of product.variants) {
       variantOwner.set(variant.id, product);
     }
@@ -78,6 +95,8 @@ export function buildStorefrontCartLines({
 
   return items.map((item) => {
     const product = variantOwner.get(item.variantId);
+    const media = (product ? productMediaMap.get(product.slug) : null) ?? emptyMedia;
+
     if (!product) {
       return {
         variantId: item.variantId,
@@ -89,6 +108,7 @@ export function buildStorefrontCartLines({
         price: null,
         available: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
+        media,
       };
     }
 
@@ -104,6 +124,7 @@ export function buildStorefrontCartLines({
         price: null,
         available: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
+        media,
       };
     }
 
@@ -114,6 +135,7 @@ export function buildStorefrontCartLines({
       color: normalizedOptionValue(variant.color),
       size: normalizedOptionValue(variant.size),
       quantity: item.quantity,
+      media,
     };
 
     if (!product.isPresent || !product.isActive) {

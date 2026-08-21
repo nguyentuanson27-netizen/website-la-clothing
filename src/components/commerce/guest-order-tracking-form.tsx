@@ -73,14 +73,19 @@ export function GuestOrderTrackingForm() {
         <button
           type="submit"
           disabled={isPending}
-          className="min-h-12 border border-black bg-black px-6 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-white hover:bg-transparent hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-12 border border-black bg-black px-6 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45"
         >
           {isPending ? "Đang tra cứu…" : "Tra cứu đơn hàng"}
         </button>
       </form>
 
       {state?.ok ? (
-        <section className="border-t border-black/20 pt-6" role="status" aria-live="polite">
+        <section
+          className="border-t border-black/20 pt-6"
+          role="status"
+          aria-live="polite"
+          data-ui-state="success"
+        >
           <p className="eyebrow">Trạng thái đơn hàng</p>
           <p className="mt-3 font-serif text-3xl">{statusLabels[state.order.status]}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
@@ -104,7 +109,11 @@ export function GuestOrderTrackingForm() {
           ) : null}
         </section>
       ) : state ? (
-        <div className="border border-black/25 p-4 text-sm leading-6" role="alert">
+        <div
+          className="border border-black/25 p-4 text-sm leading-6"
+          role="alert"
+          data-ui-state="empty"
+        >
           {state.reason === "NOT_FOUND"
             ? "Không tìm thấy đơn hàng khớp với thông tin đã nhập."
             : "Chưa thể tra cứu lúc này. Vui lòng thử lại sau."}

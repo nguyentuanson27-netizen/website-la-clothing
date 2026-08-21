@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
@@ -7,8 +8,8 @@ import type { StorefrontCartLine } from "@/commerce/storefront-cart";
 import { CartLineControls } from "@/components/commerce/cart-line-controls";
 
 export const metadata: Metadata = {
-  title: "Bag",
-  description: "Your LA Clothing shopping bag.",
+  title: "Túi hàng",
+  description: "Túi hàng mua sắm tại LA Clothing.",
 };
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -55,18 +56,36 @@ export default async function CartPage() {
 
   if (lines.length === 0) {
     return (
-      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <p className="eyebrow">Shopping / Bag</p>
+      <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link
+                className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href="/"
+              >
+                Trang chủ
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-black font-medium">
+              Túi hàng
+            </li>
+          </ol>
+        </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           YOUR BAG
         </h1>
-        <div className="mt-12 border-t border-black/20 pt-8">
-          <p className="font-serif text-2xl md:text-3xl">Your bag is empty.</p>
+        <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
+          <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
+          <p className="mt-4 text-sm leading-6 text-black/60">
+            Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
+          </p>
           <Link className="text-link mt-6 inline-block" href="/shop">
-            Continue shopping ↗
+            Tiếp tục mua sắm ↗
           </Link>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -75,26 +94,58 @@ export default async function CartPage() {
 
   return (
     <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Shopping / Bag</p>
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <ol className="flex items-center gap-2">
+          <li>
+            <Link
+              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/"
+            >
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black font-medium">
+            Túi hàng
+          </li>
+        </ol>
+      </nav>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           YOUR BAG
         </h1>
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/55">
-          {lines.length} {lines.length === 1 ? "item" : "items"}
+          {lines.length} {lines.length === 1 ? "sản phẩm" : "sản phẩm"}
         </p>
       </div>
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="divide-y divide-black/15">
           {lines.map((line, index) => {
-            const tone = index % 2 === 0 ? "stone" : "sand";
             const productName = line.productName ?? "Sản phẩm không còn trong catalog";
             const canUpdate =
               line.available || line.unavailableReason === "INSUFFICIENT_STOCK";
+            const primaryImage = line.media.primary;
+
             const visual = (
-              <div className={`product-visual product-visual--${tone}`} aria-hidden="true">
-                <span className="garment-silhouette" />
+              <div className="relative aspect-[3/4] w-full overflow-hidden bg-black/[0.04]">
+                {primaryImage ? (
+                  <Image
+                    alt={primaryImage.alt}
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    fill
+                    priority={index === 0}
+                    sizes="(max-width: 640px) 144px, 176px"
+                    src={primaryImage.url}
+                  />
+                ) : (
+                  <div
+                    className="flex h-full w-full items-center justify-center p-4 text-center text-xs font-semibold uppercase tracking-[0.1em] text-black/40"
+                    aria-hidden="true"
+                  >
+                    LA Clothing
+                  </div>
+                )}
               </div>
             );
 
@@ -106,14 +157,16 @@ export default async function CartPage() {
                 <div>
                   {line.productSlug ? (
                     <Link
-                      className="product-visual-link block"
+                      className="group block overflow-hidden border border-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                       href={`/shop/${encodeURIComponent(line.productSlug)}`}
                       aria-label={`Xem ${productName}`}
                     >
                       {visual}
                     </Link>
                   ) : (
-                    visual
+                    <div className="overflow-hidden border border-black/10">
+                      {visual}
+                    </div>
                   )}
                 </div>
 
@@ -182,7 +235,7 @@ export default async function CartPage() {
           </p>
           {!hasUnavailableLines && subtotal !== null ? (
             <Link
-              className="checkout-cta mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] underline decoration-transparent underline-offset-4 hover:decoration-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              className="checkout-cta mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white underline decoration-transparent underline-offset-4 hover:bg-transparent hover:text-black hover:decoration-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               href="/checkout"
             >
               Tiến hành đặt hàng

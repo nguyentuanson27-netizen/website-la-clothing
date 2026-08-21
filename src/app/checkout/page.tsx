@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
@@ -7,8 +8,8 @@ import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtim
 import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 
 export const metadata: Metadata = {
-  title: "Checkout",
-  description: "Guest COD checkout for LA Clothing.",
+  title: "Thanh toán",
+  description: "Thanh toán COD không cần tài khoản tại LA Clothing.",
 };
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -22,7 +23,6 @@ function checkoutTotals(
 ) {
   let subtotalVnd = 0;
   let totalQuantity = 0;
-
   for (const line of lines) {
     if (!line.available || line.price === null) return null;
     const lineTotal = line.price * line.quantity;
@@ -60,11 +60,35 @@ export default async function CheckoutPage() {
   if (lines.length === 0) {
     return (
       <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <p className="eyebrow">Shopping / Checkout</p>
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link
+                className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href="/"
+              >
+                Trang chủ
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li>
+              <Link
+                className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href="/cart"
+              >
+                Túi hàng
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-black font-medium">
+              Thanh toán
+            </li>
+          </ol>
+        </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           CHECKOUT
         </h1>
-        <div className="mt-12 border-t border-black/20 pt-8">
+        <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
           <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">
             Tiếp tục mua sắm ↗
@@ -78,11 +102,35 @@ export default async function CheckoutPage() {
   if (!totals) {
     return (
       <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <p className="eyebrow">Shopping / Checkout</p>
+        <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link
+                className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href="/"
+              >
+                Trang chủ
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li>
+              <Link
+                className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href="/cart"
+              >
+                Túi hàng
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-black font-medium">
+              Thanh toán
+            </li>
+          </ol>
+        </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           CHECKOUT
         </h1>
-        <div className="mt-12 max-w-2xl border-t border-black/20 pt-8">
+        <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
           <p className="font-serif text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
           <p className="mt-4 text-sm leading-6 text-black/60">
             Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
@@ -97,7 +145,31 @@ export default async function CheckoutPage() {
 
   return (
     <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Shopping / Checkout</p>
+      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/55">
+        <ol className="flex items-center gap-2">
+          <li>
+            <Link
+              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/"
+            >
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <Link
+              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/cart"
+            >
+              Túi hàng
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black font-medium">
+            Thanh toán
+          </li>
+        </ol>
+      </nav>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
           CHECKOUT
@@ -111,27 +183,51 @@ export default async function CheckoutPage() {
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           <div className="flex items-baseline justify-between gap-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>
-            <Link className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4" href="/cart">
+            <Link
+              className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/cart"
+            >
               Sửa giỏ hàng
             </Link>
           </div>
 
           <div className="mt-6 divide-y divide-black/15 border-b border-black/15">
-            {lines.map((line) => (
-              <div className="flex items-start justify-between gap-5 py-4 first:pt-0" key={line.variantId}>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold uppercase tracking-[0.05em]">
-                    {line.productName}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-black/55">
-                    {[line.color, line.size].filter(Boolean).join(" / ") || "Biến thể"} · SL {line.quantity}
+            {lines.map((line) => {
+              const primaryImage = line.media.primary;
+              return (
+                <div className="flex items-start gap-4 py-4 first:pt-0" key={line.variantId}>
+                  <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden border border-black/10 bg-black/[0.04]">
+                    {primaryImage ? (
+                      <Image
+                        alt={primaryImage.alt}
+                        className="h-full w-full object-cover"
+                        fill
+                        sizes="56px"
+                        src={primaryImage.url}
+                      />
+                    ) : (
+                      <div
+                        className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase tracking-wider text-black/40"
+                        aria-hidden="true"
+                      >
+                        LA
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold uppercase tracking-[0.05em]">
+                      {line.productName}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-black/55">
+                      {[line.color, line.size].filter(Boolean).join(" / ") || "Biến thể"} · SL {line.quantity}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-medium">
+                    {currency.format((line.price ?? 0) * line.quantity)}
                   </p>
                 </div>
-                <p className="shrink-0 text-sm font-medium">
-                  {currency.format((line.price ?? 0) * line.quantity)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <dl className="mt-5 space-y-3 text-sm">
