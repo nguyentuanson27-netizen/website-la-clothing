@@ -57,6 +57,44 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
   });
 });
 
+test("P13 published SEO copy remains unique across distinct canonical product slugs", () => {
+  const first = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      slug: "ao-oxford-relaxed-den",
+    },
+  });
+  const second = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      slug: "ao-oxford-relaxed-trang",
+    },
+  });
+
+  assert.equal(first.title, `${baseProduct.seoTitle} — ao-oxford-relaxed-den`);
+  assert.equal(second.title, `${baseProduct.seoTitle} — ao-oxford-relaxed-trang`);
+  assert.equal(
+    first.description,
+    `${baseProduct.seoDescription} — /shop/ao-oxford-relaxed-den.`,
+  );
+  assert.equal(
+    second.description,
+    `${baseProduct.seoDescription} — /shop/ao-oxford-relaxed-trang.`,
+  );
+  assert.notEqual(first.title, second.title);
+  assert.notEqual(first.description, second.description);
+  assert.deepEqual(first.alternates, {
+    canonical: "https://shop.example.com/shop/ao-oxford-relaxed-den",
+  });
+  assert.deepEqual(second.alternates, {
+    canonical: "https://shop.example.com/shop/ao-oxford-relaxed-trang",
+  });
+});
+
 test("P13 fallback metadata stays factual and unique for distinct slugs sharing the same product name", () => {
   const first = buildStorefrontProductMetadata({
     origin: "https://shop.example.com",
