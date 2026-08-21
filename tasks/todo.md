@@ -149,14 +149,14 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [x] visual/a11y regression
 
 ## P10 — Shop + Collections + PDP productization
-- [ ] polished product discovery
-- [ ] collection landing routes work
-- [ ] PDP hierarchy uses real media + published content
-- [ ] Size mandatory
-- [ ] Color hidden when product has no color dimension
-- [ ] price/availability remain server-authoritative
-- [ ] breadcrumbs/internal links
-- [ ] mobile/desktop/a11y/purchase-flow evidence
+- [x] polished product discovery
+- [x] collection landing routes work
+- [x] PDP hierarchy uses real media + published content
+- [x] Size mandatory
+- [x] Color hidden when product has no color dimension
+- [x] price/availability remain server-authoritative
+- [x] breadcrumbs/internal links
+- [x] mobile/desktop/a11y/purchase-flow evidence
 
 ## P11 — Cart + Checkout + Tracking polish
 - [ ] consistent launch visual system

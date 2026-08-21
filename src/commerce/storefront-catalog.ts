@@ -69,16 +69,17 @@ const productSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
-  content: {
-    select: {
-      status: true,
-      editorialDescription: true,
-      careInstructions: true,
-      sizeGuide: true,
-      seoTitle: true,
-      seoDescription: true,
+    content: {
+      select: {
+        status: true,
+        editorialDescription: true,
+        careInstructions: true,
+        sizeGuide: true,
+        seoTitle: true,
+        seoDescription: true,
+        collectionSlugs: true,
+      },
     },
-  },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -98,6 +99,11 @@ const productSelection = {
   },
 } satisfies Prisma.ProductMirrorSelect;
 
+export type StorefrontProductCollection = {
+  slug: string;
+  title: string;
+};
+
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 type DiscoveryIdRow = { id: string; sortPrice: number | null };
 type DiscoveryCountRow = { count: bigint };
@@ -109,7 +115,31 @@ function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
     : [];
 }
 
-function toStorefrontProduct(product: SelectedProduct) {
+async function fetchPublishedCollectionMap(
+  client: PrismaClient,
+  slugs: readonly string[],
+): Promise<Map<string, StorefrontProductCollection>> {
+  const uniqueSlugs = [...new Set(slugs.filter(Boolean))];
+  if (uniqueSlugs.length === 0) return new Map();
+
+  const definitions = await client.collectionDefinition.findMany({
+    where: {
+      slug: { in: uniqueSlugs },
+      isPublished: true,
+    },
+    select: {
+      slug: true,
+      title: true,
+    },
+  });
+
+  return new Map(definitions.map((def) => [def.slug, { slug: def.slug, title: def.title }]));
+}
+
+function toStorefrontProduct(
+  product: SelectedProduct,
+  collectionMap?: ReadonlyMap<string, StorefrontProductCollection>,
+) {
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
@@ -118,6 +148,14 @@ function toStorefrontProduct(product: SelectedProduct) {
     ),
   });
   const publishedContent = product.content?.status === "PUBLISHED" ? product.content : null;
+  const rawCollectionSlugs = product.content
+    ? parseJsonStringArray(product.content.collectionSlugs)
+    : [];
+  const collections = collectionMap
+    ? rawCollectionSlugs
+        .map((slug) => collectionMap.get(slug))
+        .filter((col): col is StorefrontProductCollection => Boolean(col))
+    : [];
 
   return {
     id: product.id,
@@ -129,6 +167,7 @@ function toStorefrontProduct(product: SelectedProduct) {
     sizeGuide: publishedContent?.sizeGuide ?? null,
     seoTitle: publishedContent?.seoTitle ?? null,
     seoDescription: publishedContent?.seoDescription ?? null,
+    collections,
     variants: product.variants.map((variant) => ({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
@@ -221,9 +260,15 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
     filters.push(Prisma.sql`POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0`);
   }
   if (discovery.collection) {
-    filters.push(
-      Prisma.sql`${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))`,
-    );
+    filters.push(Prisma.sql`
+      ${discovery.collection} = ANY(COALESCE(pc."collectionSlugs", ARRAY[]::TEXT[]))
+      AND EXISTS (
+        SELECT 1
+        FROM "CollectionDefinition" cd
+        WHERE cd."slug" = ${discovery.collection}
+          AND cd."isPublished" = TRUE
+      )
+    `);
   }
 
   const variantFilters = buildVariantPredicate(discovery);
@@ -288,7 +333,12 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       select: productSelection,
     });
 
-    return products.map((product) => toStorefrontProduct(product));
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
+    return products.map((product) => toStorefrontProduct(product, collectionMap));
   }
 
   async function listProductPage({
@@ -314,8 +364,13 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       }),
     ]);
 
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
     return {
-      products: products.map((product) => toStorefrontProduct(product)),
+      products: products.map((product) => toStorefrontProduct(product, collectionMap)),
       page,
       pageSize: safePageSize,
       totalProducts,
@@ -368,10 +423,15 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
             select: productSelection,
           });
     const byId = new Map(products.map((product) => [product.id, product]));
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
     const orderedProducts = ids.map((id) => {
       const product = byId.get(id);
       if (!product) throw new Error("Storefront discovery result changed during read");
-      return toStorefrontProduct(product);
+      return toStorefrontProduct(product, collectionMap);
     });
 
     return {
@@ -415,14 +475,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
         ORDER BY "value" ASC
       `),
       client.$queryRaw<FacetRow[]>(Prisma.sql`
-        SELECT DISTINCT collection AS "value"
+        SELECT DISTINCT cd."slug" AS "value"
         FROM "ProductContent" pc
         INNER JOIN "ProductMirror" p ON p."id" = pc."productId"
         CROSS JOIN LATERAL UNNEST(pc."collectionSlugs") AS collection
+        INNER JOIN "CollectionDefinition" cd ON cd."slug" = collection AND cd."isPublished" = TRUE
         WHERE p."pancakeShopId" = ${safeShopId}
           AND p."isPresent" = TRUE
           AND p."isActive" = TRUE
-          AND collection <> ''
         ORDER BY "value" ASC
       `),
     ]);
@@ -443,7 +503,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       select: productSelection,
     });
 
-    return product ? toStorefrontProduct(product) : null;
+    if (!product) return null;
+
+    const rawSlugs = product.content
+      ? parseJsonStringArray(product.content.collectionSlugs)
+      : [];
+    const collectionMap = await fetchPublishedCollectionMap(client, rawSlugs);
+
+    return toStorefrontProduct(product, collectionMap);
   }
 
   return {

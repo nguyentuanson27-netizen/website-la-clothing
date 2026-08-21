@@ -32,12 +32,25 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
-      <Link
-        href="/shop"
-        className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-      >
-        ← Quay lại Shop
-      </Link>
+      <nav aria-label="Breadcrumb" className="mb-6">
+        <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
+          <li>
+            <Link className="hover:underline" href="/">
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <Link className="hover:underline" href="/shop">
+              Shop
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black">
+            {product.name}
+          </li>
+        </ol>
+      </nav>
 
       <div className="mt-7 grid min-w-0 gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-16">
         <ProductGallery media={product.media} productName={product.name} />
@@ -47,8 +60,23 @@ export default async function ProductPage({ params }: ProductPageProps) {
           <h1 className="mt-5 break-words text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
             {product.name}
           </h1>
+
+          {product.collections.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {product.collections.map((collection) => (
+                <Link
+                  key={collection.slug}
+                  href={`/collections/${collection.slug}`}
+                  className="badge badge--stone transition-colors hover:border-black"
+                >
+                  {collection.title}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+
           {product.editorialDescription ? (
-            <p className="mt-7 max-w-2xl font-serif text-2xl leading-snug text-black/80 md:text-3xl">
+            <p className="mt-7 max-w-2xl break-words font-serif text-2xl leading-snug text-black/80 md:text-3xl">
               {product.editorialDescription}
             </p>
           ) : (

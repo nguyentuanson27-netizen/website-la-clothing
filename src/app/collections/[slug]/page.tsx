@@ -61,19 +61,32 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   if (page > Math.max(totalPages, 1)) notFound();
 
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <Link
-        className="text-xs font-semibold uppercase tracking-[0.14em] text-black/60 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-        href="/shop"
-      >
-        ← Shop
-      </Link>
-      <p className="eyebrow mt-10">LA Clothing / Collection</p>
-      <h1 className="mt-4 max-w-6xl text-[clamp(3.2rem,9vw,8rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
+    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+      <nav aria-label="Breadcrumb" className="mb-6">
+        <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
+          <li>
+            <Link className="hover:underline" href="/">
+              Trang chủ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li>
+            <Link className="hover:underline" href="/collections">
+              Collections
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li aria-current="page" className="text-black">
+            {collection.title}
+          </li>
+        </ol>
+      </nav>
+      <p className="eyebrow mt-6">LA Clothing / Collection</p>
+      <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         {collection.title}
       </h1>
       <div className="mt-10 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
-        <p className="max-w-2xl font-serif text-2xl leading-snug md:text-3xl">
+        <p className="max-w-2xl break-words font-serif text-2xl leading-snug md:text-3xl">
           {collection.description}
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/65 md:justify-self-end">
@@ -105,6 +118,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 key={product.id}
                 slug={product.slug}
                 name={product.name}
+                media={product.media}
                 editorialDescription={product.editorialDescription}
                 variants={product.variants}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
