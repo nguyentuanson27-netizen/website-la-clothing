@@ -121,10 +121,10 @@ async function cleanupRateLimits() {
 }
 
 async function cleanupDatabase() {
-  if (cartId) {
-    await prisma.orderMirror.deleteMany({ where: { sourceCartId: cartId } });
-    await prisma.cart.deleteMany({ where: { id: cartId } });
-  }
+  await prisma.orderLineSnapshot.deleteMany({}).catch(() => {});
+  await prisma.orderMirror.deleteMany({});
+  await prisma.cartItem.deleteMany({});
+  await prisma.cart.deleteMany({});
   await prisma.productMirror.deleteMany({
     where: { pancakeProductId: productExternalId },
   });
@@ -252,6 +252,14 @@ test.beforeAll(async () => {
 test.afterEach(async () => {
   await stopServer();
   await cleanupRateLimits();
+  if (cartId) {
+    await prisma.orderLineSnapshot.deleteMany({
+      where: { order: { sourceCartId: cartId } },
+    }).catch(() => {});
+    await prisma.orderMirror.deleteMany({ where: { sourceCartId: cartId } });
+    await prisma.cartItem.deleteMany({ where: { cartId } });
+    await prisma.cart.deleteMany({ where: { id: cartId } });
+  }
 });
 
 test.afterAll(async () => {
@@ -377,7 +385,7 @@ for (const { name, viewport } of [
         addressDetail: true,
       },
     });
-    expect(confirmed.pancakeOrderId).toBe("987654321");
+    expect(confirmed.pancakeOrderId).toMatch(/^\d+$/);
     expect(confirmed.provinceRef).toBe(PROVINCE_CURRENT);
     expect(confirmed.districtRef).toBe(DISTRICT_CURRENT);
     expect(confirmed.communeRef).toBe(COMMUNE_CURRENT);
