@@ -14,12 +14,11 @@ import {
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
+import { readSearchExposure } from "@/seo/search-exposure";
 
-export const metadata: Metadata = {
-  title: "Shop",
-  description: "Khám phá thời trang nam LA Clothing đang có sẵn từ catalog cửa hàng.",
-};
-
+const SHOP_TITLE = "Shop";
+const SHOP_DESCRIPTION = "Khám phá thời trang nam LA Clothing đang có sẵn từ catalog cửa hàng.";
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
 const controlClassName =
@@ -28,6 +27,18 @@ const controlClassName =
 type ShopPageProps = {
   searchParams: Promise<StorefrontDiscoverySearchParams>;
 };
+
+export async function generateMetadata({ searchParams }: ShopPageProps): Promise<Metadata> {
+  const exposure = readSearchExposure();
+  return buildCatalogListingMetadata({
+    origin: exposure.origin,
+    indexingEnabled: exposure.indexingEnabled,
+    pathname: "/shop",
+    searchParams: await searchParams,
+    title: SHOP_TITLE,
+    description: SHOP_DESCRIPTION,
+  });
+}
 
 function hasActiveDiscovery(discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>) {
   return (

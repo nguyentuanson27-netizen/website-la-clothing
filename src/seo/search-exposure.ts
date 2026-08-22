@@ -30,6 +30,14 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/lookbook$/,
 ] as const;
 
+const INDEXABLE_PAGINATION_PATH_PATTERNS = [
+  /^\/shop$/,
+  /^\/collections\/[^/]+$/,
+] as const;
+
+const MAX_INDEXABLE_CATALOG_PAGE = 10_000;
+const CANONICAL_CATALOG_PAGINATION_SEARCH = /^\?page=((?:[2-9])|(?:[1-9]\d+))$/;
+
 function isBlockedIndexingOrigin(origin: string): boolean {
   return BLOCKED_INDEXING_HOSTS.has(new URL(origin).hostname.toLowerCase());
 }
@@ -38,6 +46,21 @@ function isCrawlBlockedPath(pathname: string): boolean {
   return CRAWL_BLOCKED_PATHS.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
+}
+
+export function isCanonicalCatalogPaginationRequest(
+  pathname: string,
+  search: string,
+): boolean {
+  if (!INDEXABLE_PAGINATION_PATH_PATTERNS.some((pattern) => pattern.test(pathname))) {
+    return false;
+  }
+
+  const match = CANONICAL_CATALOG_PAGINATION_SEARCH.exec(search);
+  if (!match) return false;
+
+  const page = Number(match[1]);
+  return Number.isSafeInteger(page) && page <= MAX_INDEXABLE_CATALOG_PAGE;
 }
 
 export function readSearchExposure(
@@ -75,7 +98,9 @@ export function shouldNoIndexRequest({
 }: SearchRequestPolicyInput): boolean {
   if (isCrawlBlockedPath(pathname)) return false;
   if (!indexingEnabled) return true;
-  if (search.length > 0) return true;
+  if (search.length > 0) {
+    return !isCanonicalCatalogPaginationRequest(pathname, search);
+  }
 
   return !INDEXABLE_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
 }
