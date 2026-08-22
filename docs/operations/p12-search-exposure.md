@@ -27,12 +27,13 @@ When indexing is disabled:
 When indexing is explicitly enabled on an eligible public origin:
 
 - canonical public routes without query state may be indexed;
-- P15 additionally permits only the exact pure pagination form `?page=N`, where `N` is an integer from 2 through 10000, on `/shop` and published `/collections/<slug>` listing pages;
+- P15 additionally permits only the exact raw pagination form `?page=N`, where `N` is an integer from 2 through 10000, on `/shop` and published `/collections/<slug>` listing pages;
 - each permitted pagination page emits a self-canonical URL including its own `?page=N` query;
-- explicit `?page=1`, leading-zero or encoded pagination aliases, duplicate parameters, mixed filter/search/sort/faceted state, PDP query state, and other query-state HTML remain crawlable with `noindex` and without catalog canonical metadata;
+- explicit `?page=1`, leading-zero or percent-encoded pagination aliases, duplicate parameters, mixed filter/search/sort/faceted state, PDP query state, and other query-state HTML fail closed with the response-level `noindex` policy;
+- catalog canonical metadata is withheld for explicit `?page=1`, leading-zero, duplicate, mixed filter/search/sort/faceted, and staging/indexing-disabled states; percent-encoded aliases are governed by the raw response-level `noindex` boundary because framework-parsed metadata search params may already be decoded;
 - `/robots.txt` allows the site, disallows `/api`, and advertises the canonical sitemap;
 - `/sitemap.xml` continues to contain only reviewed canonical base public paths, current visible active product slugs for the configured Pancake shop, and published website-owned collections; it does not enumerate pagination URLs;
-- historical product slugs, inactive/stale/wrong-shop products, draft collections, and private/query URLs outside the reviewed pagination exception are excluded.
+- historical product slugs, inactive/stale/wrong-shop products, draft collections, and private/query URLs outside the reviewed pagination exception are excluded from the sitemap and indexation targets.
 
 P6 remains the URL identity authority: current product slug returns 200, historical slug returns exact 301 to the current canonical slug, and unknown slug returns 404.
 
@@ -47,7 +48,7 @@ The dedicated `Catalog indexation runtime` workflow runs `scripts/catalog-indexa
 - explicit `?page=1` and a mixed paginated discovery state remain `noindex` without canonical metadata;
 - staging/indexing-disabled shop and collection pagination remain `noindex` without canonical metadata.
 
-This runtime smoke complements domain-level policy/metadata tests; neither replaces the existing CI, accessibility, build, release, or VPS gates.
+Domain-level crawl-policy tests additionally verify malformed, leading-zero, percent-encoded, duplicate, over-limit, PDP, and non-catalog pagination states fail closed. This runtime smoke complements domain-level policy/metadata tests; neither replaces the existing CI, accessibility, build, release, or VPS gates.
 
 ## Release preflight
 
@@ -61,7 +62,7 @@ Before a real deployment with indexing enabled, verify all of the following:
 2. `APP_DOMAIN` is that exact approved hostname;
 3. TLS/NPM/Caddy/app routing for that hostname is verified;
 4. exact-head CI, catalog-indexation runtime, accessibility, and VPS verification are green;
-5. `/robots.txt`, `/sitemap.xml`, base canonicals, page-2 self-canonicals, and noindex behavior for excluded query states are inspected on the approved domain;
+5. `/robots.txt`, `/sitemap.xml`, base canonicals, page-2 self-canonicals, response-level noindex for encoded aliases, and noindex/no-canonical behavior for explicit page-1 and mixed query states are inspected on the approved domain;
 6. final human launch approval explicitly includes changing `SEARCH_INDEXING_ENABLED=true`.
 
 If any item is missing, keep `SEARCH_INDEXING_ENABLED=false`.
