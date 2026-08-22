@@ -6,9 +6,16 @@ import {
   catalogAuditFailureMessage,
 } from "./pancake-catalog-audit.ts";
 
+type QueryValue = string | number | boolean;
+type CompositeParentCountClient = {
+  getJson(endpoint: string, query?: Readonly<Record<string, QueryValue>>): Promise<unknown>;
+};
+type JsonRecord = Record<string, unknown>;
+
 const CURRENT_SCOPE_LIMIT = 50_000;
 const GENERIC_FAILURE_MESSAGE =
   "P17 trusted live catalog acceptance failed without logging credentials or private Pancake payload values";
+const COMPOSITE_PARENT_COUNT_ERROR = "P17 composite parent count payload is malformed";
 
 // Repo-owned review state. Add only stable public product slugs whose intentional
 // fallback presentation has been explicitly human-approved and code-reviewed.
@@ -34,23 +41,81 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+function requireRecord(value: unknown): JsonRecord {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
+  }
+  return value as JsonRecord;
+}
+
+function requireNonNegativeSafeInteger(record: JsonRecord, key: string): number {
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
+  }
+  return value;
+}
+
+export async function readCompositeParentVariationCount(
+  client: CompositeParentCountClient,
+  shopId: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(shopId) || shopId <= 0) {
+    throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
+  }
+
+  const payload = requireRecord(
+    await client.getJson(`/shops/${shopId}/products/variations`, {
+      page_number: 1,
+      page_size: 1,
+      included_composite: "parent",
+    }),
+  );
+
+  if (payload.success !== true || !Array.isArray(payload.data) || payload.data.length > 1) {
+    throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
+  }
+
+  const pageNumber = requireNonNegativeSafeInteger(payload, "page_number");
+  const pageSize = requireNonNegativeSafeInteger(payload, "page_size");
+  const totalEntries = requireNonNegativeSafeInteger(payload, "total_entries");
+  const totalPages = requireNonNegativeSafeInteger(payload, "total_pages");
+
+  if (
+    pageNumber !== 1 ||
+    pageSize !== 1 ||
+    totalEntries > CURRENT_SCOPE_LIMIT ||
+    (totalEntries > 0 && totalPages < 1)
+  ) {
+    throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
+  }
+
+  return totalEntries;
+}
+
 async function runP17CatalogAcceptance(): Promise<void> {
   assertTrustedCatalogAuditEnvironment();
 
   const [
     { buildCatalogAcceptanceReport },
     { syncConfiguredPancakeCatalog },
+    { PancakeClient },
     { readPancakeConfig },
     { prisma },
   ] = await Promise.all([
     import("../src/commerce/catalog-acceptance.ts"),
     import("../src/commerce/catalog-sync-runtime.ts"),
+    import("../src/integrations/pancake/client.ts"),
     import("../src/integrations/pancake/config.ts"),
     import("../src/db/prisma.ts"),
   ]);
   const config = readPancakeConfig();
 
   try {
+    const compositeParentVariations = await readCompositeParentVariationCount(
+      new PancakeClient({ apiKey: config.apiKey }),
+      config.shopId,
+    );
     const syncResult = await syncConfiguredPancakeCatalog();
     const [products, publishedCollections] = await Promise.all([
       prisma.productMirror.findMany({
@@ -133,6 +198,10 @@ async function runP17CatalogAcceptance(): Promise<void> {
     const report = buildCatalogAcceptanceReport({
       products: acceptanceProducts,
       publishedCollectionSlugs: new Set(publishedCollections.map(({ slug }) => slug)),
+      sourceModel: {
+        compositeParentVariations,
+        compositeProjectionReady: false,
+      },
       approvedMediaFallbackSlugs: REVIEWED_MEDIA_FALLBACK_SLUGS,
     });
 
