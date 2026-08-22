@@ -3,11 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
-import { deriveStorefrontSelection } from "@/commerce/storefront-selection";
 import {
-  getStorefrontResolvedPriceRange,
-  type StorefrontSelectableOption,
-} from "@/commerce/storefront-product";
+  deriveStorefrontProjectionSelection,
+  type StorefrontProjectionOption,
+} from "@/commerce/storefront-projection";
+import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
 
 const currency = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -17,10 +17,10 @@ const currency = new Intl.NumberFormat("vi-VN", {
 
 type ProductPurchasePanelProps = {
   slug: string;
-  options: StorefrontSelectableOption[];
+  options: StorefrontProjectionOption[];
 };
 
-function defaultPriceLabel(options: readonly StorefrontSelectableOption[]): string {
+function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
   const range = getStorefrontResolvedPriceRange(options);
   if (!range) return "Giá đang cập nhật";
   return range.minimum === range.maximum
@@ -29,14 +29,15 @@ function defaultPriceLabel(options: readonly StorefrontSelectableOption[]): stri
 }
 
 export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProps) {
+  const [kindKey, setKindKey] = useState<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const [size, setSize] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const selection = useMemo(
-    () => deriveStorefrontSelection(options, { color, size }),
-    [color, options, size],
+    () => deriveStorefrontProjectionSelection(options, { kindKey, color, size }),
+    [color, kindKey, options, size],
   );
   const priceLabel =
     selection.selectedPrice === null
@@ -44,16 +45,28 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       : currency.format(selection.selectedPrice);
   const hasPurchasableVariant = options.some((option) => option.purchasable);
 
+  function chooseKind(value: string) {
+    setKindKey(value);
+    setSize(null);
+    setColor(null);
+    setMessage("");
+  }
+
   function chooseColor(value: string) {
-    const next = deriveStorefrontSelection(options, { color: value, size });
-    const currentSize = size === null ? null : next.sizes.find((choice) => choice.value === size);
     setColor(value);
-    if (currentSize?.disabled) setSize(null);
     setMessage("");
   }
 
   function chooseSize(value: string) {
+    const next = deriveStorefrontProjectionSelection(options, {
+      kindKey,
+      color,
+      size: value,
+    });
+    const currentColor =
+      color === null ? null : next.colors.find((choice) => choice.value === color);
     setSize(value);
+    if (currentColor?.disabled) setColor(null);
     setMessage("");
   }
 
@@ -76,70 +89,116 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
     });
   }
 
+  const kindFieldset = selection.hasKindOptions ? (
+    <fieldset className="mt-8">
+      <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Loại</legend>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {selection.kinds.map((choice) => (
+          <label
+            key={choice.key}
+            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
+          >
+            <input
+              className="peer sr-only"
+              type="radio"
+              name="storefront-kind"
+              value={choice.key}
+              checked={kindKey === choice.key}
+              disabled={choice.disabled || isPending}
+              onChange={() => chooseKind(choice.key)}
+            />
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+              {choice.label}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  ) : null;
+
+  const colorFieldset = selection.hasColorOptions ? (
+    <fieldset className="mt-7">
+      <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Màu</legend>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {selection.colors.map((choice) => (
+          <label
+            key={choice.value}
+            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
+          >
+            <input
+              className="peer sr-only"
+              type="radio"
+              name="storefront-color"
+              value={choice.value}
+              checked={color === choice.value}
+              disabled={choice.disabled || isPending}
+              onChange={() => chooseColor(choice.value)}
+            />
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+              {choice.value}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  ) : null;
+
+  const sizeFieldset = (
+    <fieldset className={selection.hasKindOptions ? "mt-7" : selection.hasColorOptions ? "mt-7" : "mt-8"}>
+      <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Kích cỡ</legend>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {selection.sizes.map((choice) => (
+          <label
+            key={choice.value}
+            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
+          >
+            <input
+              className="peer sr-only"
+              type="radio"
+              name="storefront-size"
+              value={choice.value}
+              checked={size === choice.value}
+              disabled={choice.disabled || isPending}
+              onChange={() => chooseSize(choice.value)}
+            />
+            <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+              {choice.value}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+
   return (
     <div className="border-t border-black/20 pt-6">
       <div className="flex items-baseline justify-between gap-6">
         <p className="text-xl font-medium tracking-[-0.02em]">{priceLabel}</p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/55">
           {hasPurchasableVariant
-            ? selection.hasColorOptions
-              ? "Chọn Color × Size"
-              : "Chọn Size"
+            ? selection.hasKindOptions
+              ? selection.hasColorOptions
+                ? "Chọn Loại × Size × Màu"
+                : "Chọn Loại × Size"
+              : selection.hasColorOptions
+                ? "Chọn Color × Size"
+                : "Chọn Size"
             : "Chưa thể mua online"}
         </p>
       </div>
 
-      {selection.hasColorOptions ? (
-        <fieldset className="mt-8">
-          <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Màu</legend>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {selection.colors.map((choice) => (
-              <label
-                key={choice.value}
-                className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
-              >
-                <input
-                  className="peer sr-only"
-                  type="radio"
-                  name="storefront-color"
-                  value={choice.value}
-                  checked={color === choice.value}
-                  disabled={choice.disabled || isPending}
-                  onChange={() => chooseColor(choice.value)}
-                />
-                <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-                  {choice.value}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      ) : null}
-
-      <fieldset className={selection.hasColorOptions ? "mt-7" : "mt-8"}>
-        <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Kích cỡ</legend>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {selection.sizes.map((choice) => (
-            <label
-              key={choice.value}
-              className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
-            >
-              <input
-                className="peer sr-only"
-                type="radio"
-                name="storefront-size"
-                value={choice.value}
-                checked={size === choice.value}
-                disabled={choice.disabled || isPending}
-                onChange={() => chooseSize(choice.value)}
-              />
-              <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-                {choice.value}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      {selection.hasKindOptions ? (
+        <>
+          {kindFieldset}
+          {sizeFieldset}
+          {colorFieldset}
+        </>
+      ) : (
+        <>
+          {colorFieldset}
+          {sizeFieldset}
+        </>
+      )}
 
       <button
         className="mt-8 min-h-12 w-full border border-black bg-black px-6 text-sm font-semibold uppercase tracking-[0.12em] text-white hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
@@ -153,9 +212,7 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
         {message ||
           (!hasPurchasableVariant
-            ? selection.hasColorOptions
-              ? "Không có Color × Size khả dụng ở thời điểm hiện tại."
-              : "Không có kích cỡ khả dụng ở thời điểm hiện tại."
+            ? "Không có lựa chọn khả dụng ở thời điểm hiện tại."
             : "")}
       </p>
     </div>

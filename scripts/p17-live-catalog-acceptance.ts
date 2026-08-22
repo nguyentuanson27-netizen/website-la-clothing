@@ -1,6 +1,8 @@
 import { pathToFileURL } from "node:url";
 
 import type { CatalogAcceptanceProduct } from "../src/commerce/catalog-acceptance.ts";
+import type { StorefrontCompositeComponentGroup } from "../src/commerce/storefront-projection.ts";
+import type { StorefrontVariantFacts } from "../src/commerce/storefront-product.ts";
 import {
   assertTrustedCatalogAuditEnvironment,
   catalogAuditFailureMessage,
@@ -108,12 +110,16 @@ async function runP17CatalogAcceptance(): Promise<void> {
   const [
     { buildCatalogAcceptanceReport },
     { syncConfiguredPancakeCatalog },
+    { buildStorefrontProductProjection },
+    { countProjectedCompositeParentVariations },
     { PancakeClient },
     { readPancakeConfig },
     { prisma },
   ] = await Promise.all([
     import("../src/commerce/catalog-acceptance.ts"),
     import("../src/commerce/catalog-sync-runtime.ts"),
+    import("../src/commerce/storefront-projection.ts"),
+    import("../src/commerce/storefront-product-detail.ts"),
     import("../src/integrations/pancake/client.ts"),
     import("../src/integrations/pancake/config.ts"),
     import("../src/db/prisma.ts"),
@@ -126,7 +132,7 @@ async function runP17CatalogAcceptance(): Promise<void> {
       config.shopId,
     );
     const syncResult = await syncConfiguredPancakeCatalog();
-    const [products, publishedCollections] = await Promise.all([
+    const [products, publishedCollections, projectedCompositeParentVariations] = await Promise.all([
       prisma.productMirror.findMany({
         where: {
           pancakeShopId: config.shopId,
@@ -163,6 +169,34 @@ async function runP17CatalogAcceptance(): Promise<void> {
                 orderBy: { pancakeWarehouseId: "asc" },
                 select: { quantity: true },
               },
+              compositeComponents: {
+                orderBy: { componentVariantId: "asc" },
+                select: {
+                  componentVariant: {
+                    select: {
+                      id: true,
+                      color: true,
+                      size: true,
+                      isPresent: true,
+                      isActive: true,
+                      pancakeRetailPrice: true,
+                      pancakeRetailPriceAfterDiscount: true,
+                      product: {
+                        select: {
+                          id: true,
+                          name: true,
+                          pancakeShopId: true,
+                          isPresent: true,
+                        },
+                      },
+                      warehouseStocks: {
+                        orderBy: { pancakeWarehouseId: "asc" },
+                        select: { quantity: true },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -173,27 +207,19 @@ async function runP17CatalogAcceptance(): Promise<void> {
         take: CURRENT_SCOPE_LIMIT + 1,
         select: { slug: true },
       }),
+      countProjectedCompositeParentVariations(prisma, config.shopId),
     ]);
 
-    if (products.length > CURRENT_SCOPE_LIMIT || publishedCollections.length > CURRENT_SCOPE_LIMIT) {
+    if (
+      products.length > CURRENT_SCOPE_LIMIT ||
+      publishedCollections.length > CURRENT_SCOPE_LIMIT ||
+      projectedCompositeParentVariations > CURRENT_SCOPE_LIMIT
+    ) {
       throw new Error(GENERIC_FAILURE_MESSAGE);
     }
 
-    const acceptanceProducts: CatalogAcceptanceProduct[] = products.map((product) => ({
-      slug: product.slug,
-      name: product.name,
-      sourceDescription: product.sourceDescription,
-      primaryImageUrl: product.primaryImageUrl,
-      content: product.content
-        ? {
-            status: product.content.status,
-            editorialDescription: product.content.editorialDescription,
-            seoTitle: product.content.seoTitle,
-            seoDescription: product.content.seoDescription,
-            collectionSlugs: product.content.collectionSlugs,
-          }
-        : null,
-      variants: product.variants.map((variant) => ({
+    const acceptanceProducts: CatalogAcceptanceProduct[] = products.map((product) => {
+      const parentVariants = product.variants.map((variant) => ({
         id: variant.id,
         color: variant.color,
         size: variant.size,
@@ -201,15 +227,78 @@ async function runP17CatalogAcceptance(): Promise<void> {
         retailPrice: variant.pancakeRetailPrice,
         retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
         imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
-      })),
-    }));
+      }));
+
+      const componentGroups = new Map<
+        string,
+        { label: string; variants: Map<string, StorefrontVariantFacts> }
+      >();
+      let hasCompositeGraph = false;
+
+      for (const parentVariant of product.variants) {
+        if (parentVariant.compositeComponents.length > 0) hasCompositeGraph = true;
+        for (const edge of parentVariant.compositeComponents) {
+          const component = edge.componentVariant;
+          if (
+            component.product.pancakeShopId !== config.shopId ||
+            !component.product.isPresent ||
+            !component.isPresent ||
+            !component.isActive
+          ) {
+            continue;
+          }
+
+          let group = componentGroups.get(component.product.id);
+          if (!group) {
+            group = { label: component.product.name, variants: new Map() };
+            componentGroups.set(component.product.id, group);
+          }
+          if (!group.variants.has(component.id)) {
+            group.variants.set(component.id, {
+              id: component.id,
+              color: component.color,
+              size: component.size,
+              sellableStock: sumWarehouseStocks(component.warehouseStocks),
+              retailPrice: component.pancakeRetailPrice,
+              retailPriceAfterDiscount: component.pancakeRetailPriceAfterDiscount,
+            });
+          }
+        }
+      }
+
+      const groups: StorefrontCompositeComponentGroup[] = [...componentGroups.values()]
+        .sort((left, right) => left.label.localeCompare(right.label, "vi"))
+        .map((group) => ({ label: group.label, variants: [...group.variants.values()] }));
+
+      return {
+        slug: product.slug,
+        name: product.name,
+        sourceDescription: product.sourceDescription,
+        primaryImageUrl: product.primaryImageUrl,
+        content: product.content
+          ? {
+              status: product.content.status,
+              editorialDescription: product.content.editorialDescription,
+              seoTitle: product.content.seoTitle,
+              seoDescription: product.content.seoDescription,
+              collectionSlugs: product.content.collectionSlugs,
+            }
+          : null,
+        variants: parentVariants,
+        projection: buildStorefrontProductProjection({
+          parentVariants,
+          componentGroups: groups,
+          hasCompositeGraph,
+        }),
+      };
+    });
 
     const report = buildCatalogAcceptanceReport({
       products: acceptanceProducts,
       publishedCollectionSlugs: new Set(publishedCollections.map(({ slug }) => slug)),
       sourceModel: {
         compositeParentVariations,
-        compositeProjectionReady: false,
+        projectedCompositeParentVariations,
       },
       approvedMediaFallbackSlugs: REVIEWED_MEDIA_FALLBACK_SLUGS,
     });

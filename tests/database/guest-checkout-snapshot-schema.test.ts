@@ -57,8 +57,12 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "totalVnd", data_type: "bigint" },
   ]);
 
-  const lineColumns = await prisma.$queryRaw<Array<{ column_name: string; data_type: string }>>`
-    SELECT column_name, data_type
+  const lineColumns = await prisma.$queryRaw<Array<{
+    column_name: string;
+    data_type: string;
+    is_nullable: string;
+  }>>`
+    SELECT column_name, data_type, is_nullable
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'OrderLineSnapshot'
@@ -66,16 +70,16 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
   `;
 
   assert.deepEqual(lineColumns, [
-    { column_name: "id", data_type: "text" },
-    { column_name: "orderId", data_type: "text" },
-    { column_name: "variantId", data_type: "text" },
-    { column_name: "pancakeVariationId", data_type: "text" },
-    { column_name: "productName", data_type: "text" },
-    { column_name: "color", data_type: "text" },
-    { column_name: "size", data_type: "text" },
-    { column_name: "quantity", data_type: "integer" },
-    { column_name: "unitPriceVnd", data_type: "bigint" },
-    { column_name: "lineTotalVnd", data_type: "bigint" },
-    { column_name: "createdAt", data_type: "timestamp without time zone" },
+    { column_name: "id", data_type: "text", is_nullable: "NO" },
+    { column_name: "orderId", data_type: "text", is_nullable: "NO" },
+    { column_name: "variantId", data_type: "text", is_nullable: "NO" },
+    { column_name: "pancakeVariationId", data_type: "text", is_nullable: "NO" },
+    { column_name: "productName", data_type: "text", is_nullable: "NO" },
+    { column_name: "color", data_type: "text", is_nullable: "YES" },
+    { column_name: "size", data_type: "text", is_nullable: "NO" },
+    { column_name: "quantity", data_type: "integer", is_nullable: "NO" },
+    { column_name: "unitPriceVnd", data_type: "bigint", is_nullable: "NO" },
+    { column_name: "lineTotalVnd", data_type: "bigint", is_nullable: "NO" },
+    { column_name: "createdAt", data_type: "timestamp without time zone", is_nullable: "NO" },
   ]);
 });

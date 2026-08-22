@@ -16,6 +16,7 @@ export type StorefrontCartVariant = {
   id: string;
   isPresent: boolean;
   isActive: boolean;
+  isCompositeComponentAvailable?: boolean;
   color: string | null;
   size: string | null;
   sellableStock: number;
@@ -58,6 +59,21 @@ function normalizedOptionValue(value: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function isPublicOwner(product: StorefrontCartProduct): boolean {
+  return product.isPresent && product.isActive;
+}
+
+function isCommerceEligibleVariant(
+  product: StorefrontCartProduct,
+  variant: StorefrontCartVariant,
+): boolean {
+  return (
+    variant.isPresent &&
+    variant.isActive &&
+    (isPublicOwner(product) || variant.isCompositeComponentAvailable === true)
+  );
+}
+
 const emptyMedia: StorefrontProductMedia = { primary: null, gallery: [] };
 
 export function buildStorefrontCartLines({
@@ -83,10 +99,8 @@ export function buildStorefrontCartLines({
       variantOwner.set(variant.id, product);
     }
 
-    if (!product.isPresent || !product.isActive) continue;
-
-    const currentVariants = product.variants.filter(
-      (variant) => variant.isPresent && variant.isActive,
+    const currentVariants = product.variants.filter((variant) =>
+      isCommerceEligibleVariant(product, variant),
     );
     for (const option of buildStorefrontVariantOptions(currentVariants)) {
       resolvedOptions.set(option.id, option);
@@ -116,7 +130,7 @@ export function buildStorefrontCartLines({
     if (!variant) {
       return {
         variantId: item.variantId,
-        productSlug: product.slug,
+        productSlug: isPublicOwner(product) ? product.slug : null,
         productName: product.name,
         color: null,
         size: null,
@@ -130,7 +144,7 @@ export function buildStorefrontCartLines({
 
     const base = {
       variantId: item.variantId,
-      productSlug: product.slug,
+      productSlug: isPublicOwner(product) ? product.slug : null,
       productName: product.name,
       color: normalizedOptionValue(variant.color),
       size: normalizedOptionValue(variant.size),
@@ -138,12 +152,12 @@ export function buildStorefrontCartLines({
       media,
     };
 
-    if (!product.isPresent || !product.isActive) {
+    if (!isPublicOwner(product) && variant.isCompositeComponentAvailable !== true) {
       return {
         ...base,
         price: null,
         available: false,
-        unavailableReason: "PRODUCT_UNAVAILABLE",
+        unavailableReason: "PRODUCT_UNAVAILABLE" as const,
       };
     }
 
@@ -152,7 +166,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
-        unavailableReason: "VARIANT_UNAVAILABLE",
+        unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
 
@@ -162,7 +176,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
-        unavailableReason: "VARIANT_UNAVAILABLE",
+        unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
 
@@ -171,7 +185,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: option.price,
         available: false,
-        unavailableReason: "INSUFFICIENT_STOCK",
+        unavailableReason: "INSUFFICIENT_STOCK" as const,
       };
     }
 

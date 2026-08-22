@@ -3,10 +3,6 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-catalog-runtime";
-import {
-  buildStorefrontVariantOptions,
-  toStorefrontSelectableOptions,
-} from "@/commerce/storefront-product";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 import { readSearchExposure } from "@/seo/search-exposure";
@@ -30,7 +26,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product) notFound();
 
-  const options = toStorefrontSelectableOptions(buildStorefrontVariantOptions(product.variants));
+  const options = product.projection.options;
   const structuredData = buildProductStructuredData({
     origin: readSearchExposure().origin,
     product,

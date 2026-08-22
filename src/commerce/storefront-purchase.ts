@@ -1,3 +1,4 @@
+import type { StorefrontProductProjection } from "./storefront-projection.ts";
 import {
   buildStorefrontVariantOptions,
   type StorefrontVariantFacts,
@@ -10,7 +11,13 @@ type StorefrontPurchaseCatalog = {
   getProductBySlug(input: {
     shopId: number;
     slug: string;
-  }): Promise<{ variants: StorefrontVariantFacts[] } | null>;
+  }): Promise<
+    | {
+        variants: StorefrontVariantFacts[];
+        projection?: StorefrontProductProjection;
+      }
+    | null
+  >;
 };
 
 type AddToCartInput = {
@@ -56,9 +63,11 @@ export function createStorefrontPurchaseService<TResult>({
       return { ok: false, reason: "VARIANT_UNAVAILABLE" };
     }
 
-    const selected = buildStorefrontVariantOptions(product.variants).find(
-      (variant) => variant.id === variantId,
-    );
+    const selected = product.projection
+      ? product.projection.options.find((option) => option.id === variantId)
+      : buildStorefrontVariantOptions(product.variants).find(
+          (variant) => variant.id === variantId,
+        );
     if (!selected?.purchasable) {
       return { ok: false, reason: "VARIANT_UNAVAILABLE" };
     }

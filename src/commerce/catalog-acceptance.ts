@@ -1,5 +1,6 @@
 import { resolveStorefrontProductMedia } from "./product-media.ts";
 import { isLegacyOpaqueProductSlug, normalizeProductSlug } from "./product-slug.ts";
+import type { StorefrontProductProjection } from "./storefront-projection.ts";
 import { buildStorefrontVariantOptions } from "./storefront-product.ts";
 
 type CatalogAcceptanceContent = Readonly<{
@@ -27,11 +28,13 @@ export type CatalogAcceptanceProduct = Readonly<{
   primaryImageUrl: string | null;
   content: CatalogAcceptanceContent | null;
   variants: readonly CatalogAcceptanceVariant[];
+  projection?: StorefrontProductProjection;
 }>;
 
 export type CatalogAcceptanceSourceModel = Readonly<{
   compositeParentVariations: number;
-  compositeProjectionReady: boolean;
+  compositeProjectionReady?: boolean;
+  projectedCompositeParentVariations?: number;
 }>;
 
 type AcceptanceIssueKey =
@@ -73,15 +76,43 @@ function assertReviewedMediaFallbackApprovals(approvedSlugs: ReadonlySet<string>
   }
 }
 
+function isBoundedCompositeCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= COMPOSITE_PARENT_VARIATION_LIMIT
+  );
+}
+
 function assertCatalogAcceptanceSourceModel(sourceModel: CatalogAcceptanceSourceModel): void {
+  const hasLegacyReadiness = sourceModel.compositeProjectionReady !== undefined;
+  const hasProjectedCount = sourceModel.projectedCompositeParentVariations !== undefined;
+
   if (
-    !Number.isSafeInteger(sourceModel.compositeParentVariations) ||
-    sourceModel.compositeParentVariations < 0 ||
-    sourceModel.compositeParentVariations > COMPOSITE_PARENT_VARIATION_LIMIT ||
-    typeof sourceModel.compositeProjectionReady !== "boolean"
+    !isBoundedCompositeCount(sourceModel.compositeParentVariations) ||
+    (hasLegacyReadiness && typeof sourceModel.compositeProjectionReady !== "boolean") ||
+    (hasProjectedCount &&
+      !isBoundedCompositeCount(sourceModel.projectedCompositeParentVariations)) ||
+    (!hasLegacyReadiness && !hasProjectedCount)
   ) {
     throw new TypeError("P17 source model is invalid");
   }
+
+  if (hasLegacyReadiness && hasProjectedCount) {
+    const countReady =
+      sourceModel.projectedCompositeParentVariations === sourceModel.compositeParentVariations;
+    if (sourceModel.compositeProjectionReady !== countReady) {
+      throw new TypeError("P17 source model projection evidence is contradictory");
+    }
+  }
+}
+
+function compositeProjectionRequired(sourceModel: CatalogAcceptanceSourceModel): boolean {
+  if (sourceModel.projectedCompositeParentVariations !== undefined) {
+    return sourceModel.projectedCompositeParentVariations !== sourceModel.compositeParentVariations;
+  }
+  return sourceModel.compositeParentVariations > 0 && sourceModel.compositeProjectionReady !== true;
 }
 
 export function buildCatalogAcceptanceReport({
@@ -114,8 +145,7 @@ export function buildCatalogAcceptanceReport({
     noPurchasableVariant: [],
   };
   const blockers = {
-    compositeProjectionRequired:
-      sourceModel.compositeParentVariations > 0 && !sourceModel.compositeProjectionReady,
+    compositeProjectionRequired: compositeProjectionRequired(sourceModel),
   };
   const summary = {
     products: products.length,
@@ -132,7 +162,7 @@ export function buildCatalogAcceptanceReport({
 
   for (const product of products) {
     const slug = product.slug;
-    const options = buildStorefrontVariantOptions(product.variants);
+    const options = product.projection?.options ?? buildStorefrontVariantOptions(product.variants);
     const mappingRequired = options.some(
       (option) => option.unavailableReason === "MAPPING_REQUIRED",
     );
