@@ -47,6 +47,14 @@ test("P17 composite parent preflight rejects contradictory count, page, and row 
       total_pages: 1,
       data: ["not-a-row-object"],
     },
+    {
+      success: true,
+      page_number: 1,
+      page_size: 1,
+      total_entries: 0,
+      total_pages: 2,
+      data: [],
+    },
   ];
 
   for (const payload of contradictoryPayloads) {
@@ -54,5 +62,23 @@ test("P17 composite parent preflight rejects contradictory count, page, and row 
       readCompositeParentVariationCount(clientWithPayload(payload), 47),
       MALFORMED_COUNT,
     );
+  }
+});
+
+test("P17 composite parent preflight accepts either reviewed empty-page convention", async () => {
+  for (const totalPages of [0, 1] as const) {
+    const count = await readCompositeParentVariationCount(
+      clientWithPayload({
+        success: true,
+        page_number: 1,
+        page_size: 1,
+        total_entries: 0,
+        total_pages: totalPages,
+        data: [],
+      }),
+      47,
+    );
+
+    assert.equal(count, 0);
   }
 });
