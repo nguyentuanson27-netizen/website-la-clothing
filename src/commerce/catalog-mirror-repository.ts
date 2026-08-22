@@ -286,6 +286,23 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
 
+        if (compositeSnapshot === undefined) {
+          const persistedComposite = await tx.compositeComponentMirror.findFirst({
+            where: {
+              OR: [
+                { parentVariant: { product: { pancakeShopId: safeShopId } } },
+                { componentVariant: { product: { pancakeShopId: safeShopId } } },
+              ],
+            },
+            select: { parentVariantId: true },
+          });
+          if (persistedComposite) {
+            throw new Error(
+              "Catalog composite snapshot is required for a shop with persisted composite relationships",
+            );
+          }
+        }
+
         // Product slug ownership spans the current-slug and history tables. Serialize
         // sync bootstrap/healing with explicit admin slug changes so a historical slug
         // cannot race back into use as a current slug.
