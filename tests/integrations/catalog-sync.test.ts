@@ -16,20 +16,54 @@ function catalogPage(pageNumber: number, totalPages: number) {
   };
 }
 
-test("catalog sync completes the full validated traversal before handing one snapshot to persistence", async () => {
+function emptyCompositePage() {
+  return {
+    success: true,
+    page_number: 1,
+    page_size: 100,
+    total_entries: 0,
+    total_pages: 0,
+    data: [],
+  };
+}
+
+test("catalog sync completes catalog and composite traversals before handing one snapshot to persistence", async () => {
   const events: string[] = [];
   const client = {
     async getJson(_endpoint: string, query: Query) {
+      const role = query.included_composite;
+      if (role === "parent" || role === "children") {
+        events.push(`composite:${role}`);
+        return emptyCompositePage();
+      }
       const page = Number(query.page_number);
       events.push(`fetch:${page}`);
       return catalogPage(page, 2);
     },
   };
   const repository = {
-    async syncSnapshot(input: { shopId: number; variations: readonly unknown[]; syncedAt: Date }) {
+    async syncSnapshot(input: {
+      shopId: number;
+      variations: readonly unknown[];
+      compositeSnapshot: {
+        parentVariationIds: readonly string[];
+        componentVariationIds: readonly string[];
+        parentIdentities: readonly unknown[];
+        componentIdentities: readonly unknown[];
+        edges: readonly unknown[];
+      };
+      syncedAt: Date;
+    }) {
       events.push("persist");
       assert.equal(input.shopId, 123);
       assert.deepEqual(input.variations, []);
+      assert.deepEqual(input.compositeSnapshot, {
+        parentVariationIds: [],
+        componentVariationIds: [],
+        parentIdentities: [],
+        componentIdentities: [],
+        edges: [],
+      });
       assert.deepEqual(input.syncedAt, new Date("2026-08-11T00:00:00.000Z"));
       return { products: 0, variations: 0 };
     },
@@ -42,11 +76,17 @@ test("catalog sync completes the full validated traversal before handing one sna
     syncedAt: new Date("2026-08-11T00:00:00.000Z"),
   });
 
-  assert.deepEqual(events, ["fetch:1", "fetch:2", "persist"]);
+  assert.deepEqual(events, [
+    "fetch:1",
+    "fetch:2",
+    "composite:parent",
+    "composite:children",
+    "persist",
+  ]);
   assert.deepEqual(result, { products: 0, variations: 0 });
 });
 
-test("catalog sync never mutates the mirror when any remote page fails validation", async () => {
+test("catalog sync never mutates the mirror when any catalog page fails validation", async () => {
   let persisted = false;
   const client = {
     async getJson(_endpoint: string, query: Query) {
@@ -72,6 +112,37 @@ test("catalog sync never mutates the mirror when any remote page fails validatio
         syncedAt: new Date("2026-08-11T00:00:00.000Z"),
       }),
     /unsuccessful/i,
+  );
+  assert.equal(persisted, false);
+});
+
+test("catalog sync never mutates the mirror when the composite traversal fails validation", async () => {
+  let persisted = false;
+  const client = {
+    async getJson(_endpoint: string, query: Query) {
+      if (query.included_composite === "parent") {
+        return { ...emptyCompositePage(), total_entries: 0, data: [{}] };
+      }
+      if (query.included_composite === "children") return emptyCompositePage();
+      return catalogPage(1, 0);
+    },
+  };
+  const repository = {
+    async syncSnapshot() {
+      persisted = true;
+      return { products: 0, variations: 0 };
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      syncPancakeCatalog({
+        client,
+        repository,
+        shopId: 123,
+        syncedAt: new Date("2026-08-11T00:00:00.000Z"),
+      }),
+    /composite pagination/i,
   );
   assert.equal(persisted, false);
 });

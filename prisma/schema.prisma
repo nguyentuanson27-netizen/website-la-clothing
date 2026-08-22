@@ -180,8 +180,8 @@ model CollectionDefinition {
 }
 
 model VariantMirror {
-  id                              String           @id @default(cuid())
-  pancakeVariationId              String           @unique
+  id                              String                     @id @default(cuid())
+  pancakeVariationId              String                     @unique
   productId                       String
   pancakeDisplayId                String?
   pancakeBarcode                  String?
@@ -194,18 +194,32 @@ model VariantMirror {
   sku                             String?
   color                           String?
   size                            String?
-  isPresent                       Boolean          @default(true)
-  isActive                        Boolean          @default(true)
+  isPresent                       Boolean                    @default(true)
+  isActive                        Boolean                    @default(true)
   syncedAt                        DateTime
-  createdAt                       DateTime         @default(now())
-  updatedAt                       DateTime         @updatedAt
-  product                         ProductMirror    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt                       DateTime                   @default(now())
+  updatedAt                       DateTime                   @updatedAt
+  product                         ProductMirror              @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouseStocks                 WarehouseStock[]
   cartItems                       CartItem[]
+  compositeComponents             CompositeComponentMirror[] @relation("CompositeParent")
+  compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
 
   @@index([productId])
   @@index([sku])
   @@index([isPresent])
+}
+
+model CompositeComponentMirror {
+  parentVariantId    String
+  componentVariantId String
+  quantity           Int
+  syncedAt           DateTime
+  parentVariant      VariantMirror @relation("CompositeParent", fields: [parentVariantId], references: [id], onDelete: Cascade)
+  componentVariant   VariantMirror @relation("CompositeComponent", fields: [componentVariantId], references: [id], onDelete: Cascade)
+
+  @@id([parentVariantId, componentVariantId])
+  @@index([componentVariantId])
 }
 
 model WarehouseStock {

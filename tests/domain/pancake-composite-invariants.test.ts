@@ -1,0 +1,113 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  assertTrustedCompositeInvariantEnvironment,
+  buildCompositeInvariantReport,
+  compositeInvariantFailureMessage,
+} from "../../scripts/pancake-composite-invariants.ts";
+
+const snapshot = {
+  parentVariationIds: ["private-parent-id"],
+  componentVariationIds: ["private-shirt-id", "private-pants-id"],
+  parentIdentities: [
+    { variationId: "private-parent-id", productId: "private-parent-product-id" },
+  ],
+  componentIdentities: [
+    { variationId: "private-shirt-id", productId: "private-shirt-product-id" },
+    { variationId: "private-pants-id", productId: "private-pants-product-id" },
+  ],
+  edges: [
+    { parentVariationId: "private-parent-id", componentVariationId: "private-shirt-id", quantity: 1 },
+    { parentVariationId: "private-parent-id", componentVariationId: "private-pants-id", quantity: 2 },
+  ],
+} as const;
+
+const flatCatalogIdentities = [
+  { id: "private-parent-id", productId: "private-parent-product-id" },
+  { id: "private-shirt-id", productId: "private-shirt-product-id" },
+  { id: "private-pants-id", productId: "private-pants-product-id" },
+] as const;
+
+test("trusted composite invariant probe refuses CI before live dependencies are needed", () => {
+  assert.throws(
+    () => assertTrustedCompositeInvariantEnvironment({ CI: "true" }),
+    /refuses CI execution/i,
+  );
+  assert.throws(
+    () => assertTrustedCompositeInvariantEnvironment({ GITHUB_ACTIONS: "1" }),
+    /refuses CI execution/i,
+  );
+});
+
+test("composite invariant report cross-checks flat catalog identity and exposes only aggregate output", () => {
+  const report = buildCompositeInvariantReport(snapshot, flatCatalogIdentities);
+
+  assert.deepEqual(report.counts, {
+    parentVariations: 1,
+    componentVariations: 2,
+    edges: 2,
+  });
+  assert.deepEqual(report.invariants, {
+    parentIdentityConsistent: true,
+    componentIdentityConsistent: true,
+    configuredShopConsistent: true,
+    directComponentsOnly: true,
+    positiveIntegerQuantities: true,
+    duplicateParentComponentPairs: false,
+    unresolvedComponents: false,
+    overlappingParentChildRoles: false,
+  });
+
+  const serialized = JSON.stringify(report);
+  for (const privateValue of [
+    "private-parent-id",
+    "private-shirt-id",
+    "private-pants-id",
+    "private-parent-product-id",
+    "private-shirt-product-id",
+    "private-pants-product-id",
+  ]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
+  assert.equal(serialized.includes("\"quantity\""), false);
+});
+
+test("composite invariant report marks parent identity inconsistent when flat catalog disagrees", () => {
+  const report = buildCompositeInvariantReport(snapshot, [
+    { id: "private-parent-id", productId: "different-parent-product" },
+    ...flatCatalogIdentities.slice(1),
+  ]);
+
+  assert.equal(report.invariants.parentIdentityConsistent, false);
+  assert.equal(report.invariants.componentIdentityConsistent, true);
+});
+
+test("composite invariant report marks component identity inconsistent when flat catalog disagrees", () => {
+  const report = buildCompositeInvariantReport(snapshot, [
+    flatCatalogIdentities[0],
+    { id: "private-shirt-id", productId: "different-shirt-product" },
+    flatCatalogIdentities[2],
+  ]);
+
+  assert.equal(report.invariants.parentIdentityConsistent, true);
+  assert.equal(report.invariants.componentIdentityConsistent, false);
+});
+
+test("composite invariant report fails closed on missing or duplicate relevant flat identities", () => {
+  const missing = buildCompositeInvariantReport(snapshot, flatCatalogIdentities.slice(0, 2));
+  assert.equal(missing.invariants.componentIdentityConsistent, false);
+
+  const duplicate = buildCompositeInvariantReport(snapshot, [
+    ...flatCatalogIdentities,
+    { id: "private-shirt-id", productId: "private-shirt-product-id" },
+  ]);
+  assert.equal(duplicate.invariants.componentIdentityConsistent, false);
+});
+
+test("composite invariant failures collapse to a fixed generic message", () => {
+  const secret = "secret-upstream-value";
+  const message = compositeInvariantFailureMessage(new Error(secret));
+  assert.match(message, /failed without logging external scalar values/i);
+  assert.equal(message.includes(secret), false);
+});
