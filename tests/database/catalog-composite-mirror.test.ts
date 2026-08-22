@@ -226,7 +226,7 @@ test("catalog sync rejects a composite component whose product identity contradi
   assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
 });
 
-test("omitting the composite snapshot preserves an already persisted composite graph", async () => {
+test("omitting the composite snapshot cannot mutate a shop after a composite graph has been persisted", async () => {
   const first = snapshot([
     { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
     { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
@@ -238,11 +238,14 @@ test("omitting the composite snapshot preserves an already persisted composite g
     syncedAt: new Date("2026-08-22T00:00:00.000Z"),
   });
 
-  await repository.syncSnapshot({
-    shopId,
-    variations,
-    syncedAt: new Date("2026-08-22T01:00:00.000Z"),
-  });
+  await assert.rejects(
+    repository.syncSnapshot({
+      shopId,
+      variations,
+      syncedAt: new Date("2026-08-22T01:00:00.000Z"),
+    }),
+    /composite snapshot/i,
+  );
 
   assert.equal(
     await prisma.compositeComponentMirror.count({
