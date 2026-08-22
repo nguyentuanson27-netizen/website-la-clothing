@@ -56,8 +56,7 @@ test("P14 builds factual Product, Offer, and BreadcrumbList from visible server-
         description: product.editorialDescription,
         image: product.media.gallery.map((item) => item.url),
         brand: {
-          "@type": "Brand",
-          name: "LA Clothing",
+          "@id": "https://shop.example.com/#organization",
         },
         offers: {
           "@type": "Offer",
