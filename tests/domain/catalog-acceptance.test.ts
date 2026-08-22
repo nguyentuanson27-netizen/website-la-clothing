@@ -268,9 +268,9 @@ test("P17 acceptance report surfaces mapping, media, slug, collection, editorial
 });
 
 test("P17 composite parent preflight uses the documented parent filter and fails closed on malformed counts", async () => {
-  const module = await import("../../scripts/p17-live-catalog-acceptance.ts");
+  const acceptanceScript = await import("../../scripts/p17-live-catalog-acceptance.ts");
   const readCompositeParentVariationCount = Reflect.get(
-    module,
+    acceptanceScript,
     "readCompositeParentVariationCount",
   ) as
     | ((
