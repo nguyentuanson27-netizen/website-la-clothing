@@ -37,18 +37,20 @@ When indexing is explicitly enabled on an eligible public origin:
 
 P6 remains the URL identity authority: current product slug returns 200, historical slug returns exact 301 to the current canonical slug, and unknown slug returns 404.
 
-P15 catalog discovery uses normal server-rendered links for products and previous/next pagination. Filters may remain useful for visitors without becoming additional indexable crawl targets.
+P15 catalog discovery uses normal server-rendered links for products and previous/next pagination. Product cards expose the visible product name inside the PDP anchor, so image-less cards still provide descriptive crawlable link text. Filters may remain useful for visitors without becoming additional indexable crawl targets.
 
 ## Verification
 
 The dedicated `Catalog indexation runtime` workflow runs `scripts/catalog-indexation-http-smoke.ts` against a real Next request path and a seeded two-page catalog. It verifies:
 
+- enabled `/shop` and a published collection base page expose visible crawlable links to their page-2 URL;
+- enabled page-2 shop and collection listings expose the visible product name inside a canonical PDP anchor, proving a page-1 → page-2 → PDP crawl chain even for products without trusted media;
 - enabled `/shop?page=2` is 200, has no `noindex`, and self-canonicalizes to page 2;
 - an enabled published `/collections/<slug>?page=2` does the same;
 - explicit `?page=1` and a mixed paginated discovery state remain `noindex` without canonical metadata;
 - staging/indexing-disabled shop and collection pagination remain `noindex` without canonical metadata.
 
-Domain-level crawl-policy tests additionally verify malformed, leading-zero, percent-encoded, duplicate, over-limit, PDP, and non-catalog pagination states fail closed. This runtime smoke complements domain-level policy/metadata tests; neither replaces the existing CI, accessibility, build, release, or VPS gates.
+Domain-level crawl-policy tests additionally verify malformed, leading-zero, percent-encoded, duplicate, over-limit, PDP, and non-catalog pagination states fail closed. Database sitemap tests verify only current visible active products in the configured shop and published website-owned collections are returned, excluding inactive, stale, wrong-shop, historical, and draft targets. These tests complement the existing CI, accessibility, build, release, and VPS gates rather than replacing them.
 
 ## Release preflight
 
