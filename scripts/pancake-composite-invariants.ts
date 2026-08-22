@@ -7,6 +7,8 @@ const CI_REFUSAL_MESSAGE = "Trusted Pancake composite invariant probe refuses CI
 const GENERIC_FAILURE_MESSAGE =
   "Trusted Pancake composite invariant probe failed without logging external scalar values";
 
+type Environment = Readonly<Record<string, string | undefined>>;
+
 function environmentFlagIsEnabled(value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
     return false;
@@ -15,7 +17,7 @@ function environmentFlagIsEnabled(value: string | undefined): boolean {
 }
 
 export function assertTrustedCompositeInvariantEnvironment(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Environment = process.env,
 ): void {
   if (environmentFlagIsEnabled(env.CI) || environmentFlagIsEnabled(env.GITHUB_ACTIONS)) {
     throw new Error(CI_REFUSAL_MESSAGE);
