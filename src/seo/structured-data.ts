@@ -42,8 +42,7 @@ type ProductNode = {
   name: string;
   url: string;
   brand: {
-    "@type": "Brand";
-    name: typeof SITE_NAME;
+    "@id": string;
   };
   description?: string;
   image?: string[];
@@ -100,6 +99,15 @@ export type SiteStructuredDataDocument = {
   "@graph": [OrganizationNode, WebSiteNode];
 };
 
+function buildSiteEntityIds(origin: string) {
+  const rootUrl = new URL("/", origin).href;
+  return {
+    rootUrl,
+    organizationId: `${rootUrl}#organization`,
+    websiteId: `${rootUrl}#website`,
+  };
+}
+
 function buildOffer(
   productUrl: string,
   variantOptions: readonly StructuredDataVariantOption[],
@@ -150,8 +158,8 @@ export function buildProductStructuredData({
   product: StructuredDataProduct;
   variantOptions: readonly StructuredDataVariantOption[];
 }>): ProductStructuredDataDocument {
+  const { rootUrl, organizationId } = buildSiteEntityIds(origin);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
-  const rootUrl = new URL("/", origin).href;
   const shopUrl = new URL("/shop", origin).href;
   const offer = buildOffer(productUrl, variantOptions);
   const images = product.media.gallery.map((item) => item.url);
@@ -162,8 +170,7 @@ export function buildProductStructuredData({
     name: product.name,
     url: productUrl,
     brand: {
-      "@type": "Brand",
-      name: SITE_NAME,
+      "@id": organizationId,
     },
   };
 
@@ -210,9 +217,7 @@ export function buildProductStructuredData({
 export function buildSiteStructuredData({
   origin,
 }: Readonly<{ origin: string }>): SiteStructuredDataDocument {
-  const rootUrl = new URL("/", origin).href;
-  const organizationId = `${rootUrl}#organization`;
-  const websiteId = `${rootUrl}#website`;
+  const { rootUrl, organizationId, websiteId } = buildSiteEntityIds(origin);
 
   return {
     "@context": SCHEMA_CONTEXT,
