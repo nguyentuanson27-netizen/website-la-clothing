@@ -208,6 +208,14 @@ function assertNoIndexWithoutCanonical(response: HttpResponse, label: string) {
   assert.equal(canonicalHref(response.body), null, `${label} must withhold canonical metadata`);
 }
 
+function assertPublicCrawlerPolicy(response: HttpResponse) {
+  assert.equal(response.status, 200, `public robots.txt must return 200\n${serverOutput}`);
+  assert.match(response.body, /User-Agent:\s*OAI-SearchBot/i);
+  assert.match(response.body, /Allow:\s*\//i);
+  assert.match(response.body, /Disallow:\s*\/api/i);
+  assert.match(response.body, /Sitemap:\s*https:\/\/shop\.example\.com\/sitemap\.xml/i);
+}
+
 try {
   await cleanupDatabase();
   await seedCatalog();
@@ -216,6 +224,9 @@ try {
     APP_DOMAIN: "shop.example.com",
     SEARCH_INDEXING_ENABLED: "true",
   });
+
+  const publicRobots = await requestPath("/robots.txt");
+  assertPublicCrawlerPolicy(publicRobots);
 
   const shopPageOne = await requestPath("/shop");
   assertIndexableCanonical(shopPageOne, `${PUBLIC_ORIGIN}/shop`, "enabled shop page 1");
@@ -300,7 +311,7 @@ try {
   );
 
   console.log(
-    "P15 catalog indexation HTTP smoke passed: enabled catalog pages expose a visible page-1 to page-2 to PDP link chain, pure page=2 listings self-canonicalize without noindex, explicit/mixed query aliases stay noindex without canonical, and staging pagination remains noindex without canonical.",
+    "P15/P16 catalog and crawler HTTP smoke passed: enabled catalog pages expose a visible page-1 to page-2 to PDP link chain, pure page=2 listings self-canonicalize without noindex, explicit/mixed query aliases stay noindex without canonical, public robots keep OAI-SearchBot on the reviewed crawl boundary, and staging pagination remains noindex without canonical.",
   );
 } finally {
   await stopServer();
