@@ -259,7 +259,7 @@ function assertPublicBrandContent(response: HttpResponse) {
     "Modern menswear for everyday movement.",
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
-    "Miễn phí vận chuyển.",
+    "Miễn phí vận chuyển",
     "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
     "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
   ]) {
