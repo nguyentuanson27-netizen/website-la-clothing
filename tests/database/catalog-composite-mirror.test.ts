@@ -6,7 +6,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeParsedCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
-import type { PancakeCompositeSnapshot } from "../../src/integrations/pancake/composite-contract.ts";
+import {
+  parsePancakeCompositeSnapshot,
+  type PancakeCompositeSnapshot,
+} from "../../src/integrations/pancake/composite-contract.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -53,6 +56,48 @@ function snapshot(edges: PancakeCompositeSnapshot["edges"]): PancakeCompositeSna
     componentVariationIds: ["pants-m", "shirt-m"],
     edges,
   };
+}
+
+function parsedSnapshot({
+  parentProductId = "set-product",
+  componentProductId = "shirt-product",
+}: {
+  parentProductId?: string;
+  componentProductId?: string;
+} = {}): PancakeCompositeSnapshot {
+  return parsePancakeCompositeSnapshot({
+    shopId,
+    parentEntries: [
+      {
+        id: "set-m",
+        product_id: parentProductId,
+        is_composite: true,
+        composite_products: [
+          {
+            id: "edge-shirt",
+            variation_id: "set-m",
+            component_id: "shirt-m",
+            quantity: 1,
+            shop_id: shopId,
+            measure_info: null,
+            component: {
+              id: "shirt-m",
+              product_id: componentProductId,
+              is_composite: false,
+            },
+          },
+        ],
+      },
+    ],
+    childEntries: [
+      {
+        id: "shirt-m",
+        product_id: componentProductId,
+        is_composite: false,
+        composite_products: [],
+      },
+    ],
+  });
 }
 
 async function cleanup() {
@@ -144,4 +189,68 @@ test("catalog sync rejects composite edges that are not present in the same cata
   );
 
   assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+});
+
+test("catalog sync rejects a composite parent whose product identity contradicts the flat catalog before writes", async () => {
+  await assert.rejects(
+    repository.syncSnapshot({
+      shopId,
+      variations,
+      compositeSnapshot: parsedSnapshot({ parentProductId: "different-set-product" }),
+      syncedAt: new Date("2026-08-22T00:00:00.000Z"),
+    }),
+    /composite snapshot/i,
+  );
+
+  assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+});
+
+test("catalog sync rejects a composite component whose product identity contradicts the flat catalog before writes", async () => {
+  await assert.rejects(
+    repository.syncSnapshot({
+      shopId,
+      variations,
+      compositeSnapshot: parsedSnapshot({ componentProductId: "different-shirt-product" }),
+      syncedAt: new Date("2026-08-22T00:00:00.000Z"),
+    }),
+    /composite snapshot/i,
+  );
+
+  assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+});
+
+test("omitting the composite snapshot cannot erase an already persisted composite graph", async () => {
+  const first = snapshot([
+    { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
+    { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
+  ]);
+  await repository.syncSnapshot({
+    shopId,
+    variations,
+    compositeSnapshot: first,
+    syncedAt: new Date("2026-08-22T00:00:00.000Z"),
+  });
+
+  const legacySyncSnapshot = repository.syncSnapshot as (input: {
+    shopId: number;
+    variations: readonly PancakeParsedCatalogVariation[];
+    compositeSnapshot?: PancakeCompositeSnapshot;
+    syncedAt: Date;
+  }) => Promise<unknown>;
+
+  await assert.rejects(
+    legacySyncSnapshot({
+      shopId,
+      variations,
+      syncedAt: new Date("2026-08-22T01:00:00.000Z"),
+    }),
+    /composite snapshot/i,
+  );
+
+  assert.equal(
+    await prisma.compositeComponentMirror.count({
+      where: { parentVariant: { product: { pancakeShopId: shopId } } },
+    }),
+    2,
+  );
 });
