@@ -3,14 +3,14 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
+import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-const repository = createStorefrontCatalogRepository(prisma);
+const repository = createStorefrontProductDetailRepository(prisma);
 const shopId = 910_060;
 const syncedAt = new Date("2026-08-22T16:00:00.000Z");
 
