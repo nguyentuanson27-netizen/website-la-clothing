@@ -9,19 +9,49 @@ import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-cat
 import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { prisma } from "@/db/prisma";
-
-export const metadata: Metadata = {
-  title: "Collection",
-};
+import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
+import { readSearchExposure } from "@/seo/search-exposure";
 
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
 const repository = createCollectionDefinitionRepository(prisma);
 
+type CollectionSearchParams = Readonly<Record<string, string | string[] | undefined>>;
+
 type CollectionPageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string | string[] }>;
+  searchParams: Promise<CollectionSearchParams>;
 };
+
+async function readPublishedCollection(slug: string) {
+  try {
+    return await repository.findPublishedBySlug(slug);
+  } catch (error) {
+    if (error instanceof CollectionDefinitionError) return null;
+    throw error;
+  }
+}
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: CollectionPageProps): Promise<Metadata> {
+  await connection();
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  const collection = await readPublishedCollection(slug);
+  const description = collection?.description?.trim();
+  if (!collection || !description) return {};
+
+  const exposure = readSearchExposure();
+  return buildCatalogListingMetadata({
+    origin: exposure.origin,
+    indexingEnabled: exposure.indexingEnabled,
+    pathname: `/collections/${collection.slug}`,
+    searchParams: query,
+    title: collection.seoTitle?.trim() || collection.title,
+    description: collection.seoDescription?.trim() || description,
+  });
+}
 
 function collectionPageHref(slug: string, page: number): string {
   return page === 1 ? `/collections/${slug}` : `/collections/${slug}?page=${page}`;
@@ -30,14 +60,7 @@ function collectionPageHref(slug: string, page: number): string {
 export default async function CollectionPage({ params, searchParams }: CollectionPageProps) {
   await connection();
   const { slug } = await params;
-
-  let collection: Awaited<ReturnType<typeof repository.findPublishedBySlug>>;
-  try {
-    collection = await repository.findPublishedBySlug(slug);
-  } catch (error) {
-    if (error instanceof CollectionDefinitionError) notFound();
-    throw error;
-  }
+  const collection = await readPublishedCollection(slug);
 
   if (!collection || !collection.description?.trim()) notFound();
 
