@@ -88,6 +88,11 @@ test("Pancake composite contract parses direct parent-to-component variation edg
   assert.deepEqual(snapshot, {
     parentVariationIds: ["set-m"],
     componentVariationIds: ["pants-m", "shirt-m"],
+    parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
+    componentIdentities: [
+      { variationId: "pants-m", productId: "pants-product" },
+      { variationId: "shirt-m", productId: "shirt-product" },
+    ],
     edges: [
       { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
       { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
