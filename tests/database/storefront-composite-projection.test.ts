@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
+import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -15,9 +16,12 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const repository = createStorefrontProductDetailRepository(prisma);
 const shopId = 910_060;
 const cartId = "projection-composite-cart";
+const publicCode = "projection-composite-order";
 const syncedAt = new Date("2026-08-22T16:00:00.000Z");
+const now = new Date("2026-08-23T00:00:00.000Z");
 
 async function cleanup() {
+  await prisma.orderMirror.deleteMany({ where: { publicCode } });
   await prisma.cart.deleteMany({ where: { id: cartId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: shopId } });
 }
@@ -26,7 +30,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(async () => prisma.$disconnect());
 
-test("parent PDP projects relation-linked active component variants without publishing the component product", async () => {
+test("parent PDP projects relation-linked active component variants through cart and size-only checkout without publishing the component product", async () => {
   const parent = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -127,7 +131,7 @@ test("parent PDP projects relation-linked active component variants without publ
     cartId,
     variantId: componentVariant.id,
     quantity: 1,
-    now: new Date("2026-08-23T00:00:00.000Z"),
+    now,
   });
   assert.equal(cartMutation.ok, true);
 
@@ -143,5 +147,48 @@ test("parent PDP projects relation-linked active component variants without publ
       price,
     })),
     [{ productSlug: null, productName: "Ao A", available: true, price: 390_000 }],
+  );
+
+  const checkout = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+  });
+  const checkoutResult = await checkout.create({
+    cartId,
+    shopId,
+    publicCode,
+    checkoutInput: {
+      name: "Nguyen Van A",
+      phone: "0901234567",
+      provinceRef: "province-01",
+      districtRef: "district-01",
+      communeRef: "commune-01",
+      detail: "12 Duong A",
+      note: "",
+    },
+    now,
+  });
+  assert.equal(checkoutResult.ok, true);
+
+  const order = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.deepEqual(
+    order.lines.map(({ pancakeVariationId, productName, color, size, unitPriceVnd }) => ({
+      pancakeVariationId,
+      productName,
+      color,
+      size,
+      unitPriceVnd,
+    })),
+    [
+      {
+        pancakeVariationId: "projection-component-m",
+        productName: "Ao A",
+        color: null,
+        size: "M",
+        unitPriceVnd: BigInt(390_000),
+      },
+    ],
   );
 });
