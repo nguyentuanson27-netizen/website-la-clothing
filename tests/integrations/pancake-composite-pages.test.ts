@@ -110,6 +110,12 @@ test("composite traversal requests documented parent/children roles and parses o
       query: { page_number: 1, page_size: 100, included_composite: "children" },
     },
   ]);
+  assert.deepEqual(snapshot.parentIdentities, [
+    { variationId: "set-m", productId: "set-product" },
+  ]);
+  assert.deepEqual(snapshot.componentIdentities, [
+    { variationId: "shirt-m", productId: "shirt-product" },
+  ]);
   assert.deepEqual(snapshot.edges, [
     { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
   ]);
@@ -169,5 +175,7 @@ test("composite traversal validates all pages and stable pagination before parsi
   const snapshot = await fetchPancakeCompositeSnapshot({ client, shopId: 47 });
   assert.equal(snapshot.parentVariationIds.length, 101);
   assert.equal(snapshot.componentVariationIds.length, 101);
+  assert.equal(snapshot.parentIdentities.length, 101);
+  assert.equal(snapshot.componentIdentities.length, 101);
   assert.equal(snapshot.edges.length, 101);
 });
