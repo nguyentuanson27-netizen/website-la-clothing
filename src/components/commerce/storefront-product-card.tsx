@@ -53,14 +53,11 @@ export function StorefrontProductCard({
 }: StorefrontProductCardProps) {
   const options = buildStorefrontVariantOptions(variants);
   const primaryImage = media?.primary ?? null;
+  const productHref = `/shop/${encodeURIComponent(slug)}`;
 
   return (
     <article className="group">
-      <Link
-        className="product-visual-link block"
-        href={`/shop/${encodeURIComponent(slug)}`}
-        aria-label={`Xem ${name}`}
-      >
+      <Link className="product-visual-link block" href={productHref}>
         <div
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
@@ -77,21 +74,21 @@ export function StorefrontProductCard({
             <span className="garment-silhouette" />
           )}
         </div>
+        <div className="product-meta">
+          <div className="min-w-0">
+            <h2 className="truncate uppercase tracking-[0.08em]">{name}</h2>
+            {editorialDescription ? (
+              <p className="mt-1 line-clamp-2 max-w-[32ch] text-black/60">{editorialDescription}</p>
+            ) : null}
+          </div>
+          <div className="shrink-0 text-right">
+            <p>{describePrice(options)}</p>
+            <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/60">
+              {describeAvailability(options)}
+            </p>
+          </div>
+        </div>
       </Link>
-      <div className="product-meta">
-        <div className="min-w-0">
-          <h2 className="truncate uppercase tracking-[0.08em]">{name}</h2>
-          {editorialDescription ? (
-            <p className="mt-1 line-clamp-2 max-w-[32ch] text-black/60">{editorialDescription}</p>
-          ) : null}
-        </div>
-        <div className="shrink-0 text-right">
-          <p>{describePrice(options)}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/60">
-            {describeAvailability(options)}
-          </p>
-        </div>
-      </div>
     </article>
   );
 }
