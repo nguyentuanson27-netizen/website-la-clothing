@@ -215,8 +215,7 @@ try {
     name: productName,
     url: `${PUBLIC_ORIGIN}/shop/${slug}`,
     brand: {
-      "@type": "Brand",
-      name: "LA Clothing",
+      "@id": `${PUBLIC_ORIGIN}/#organization`,
     },
     description: editorialDescription,
     image: [TRUSTED_IMAGE_URL],
@@ -277,7 +276,7 @@ try {
   );
 
   console.log(
-    "P14 structured-data HTTP smoke passed: initial HTML contains server-owned Organization/WebSite plus factual Product/Offer/Breadcrumb JSON-LD without unsupported variant or merchant claims, and unknown PDPs emit no Product graph.",
+    "P14/P16 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and Product brand, plus factual Product/Offer/Breadcrumb JSON-LD without unsupported variant or merchant claims, and unknown PDPs emit no Product graph.",
   );
 } finally {
   await stopServer();
