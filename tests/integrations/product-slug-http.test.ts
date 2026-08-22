@@ -28,3 +28,7 @@ test("P13 PDP metadata renders canonical social head tags with a working branded
 test("P14 PDP renders factual site, product, offer, and breadcrumb JSON-LD", async () => {
   await import("../../scripts/structured-data-http-smoke.ts");
 });
+
+test("P16C robots.txt keeps OAI-SearchBot on the reviewed public crawl boundary", async () => {
+  await import("../../scripts/oai-robots-http-smoke.ts");
+});
