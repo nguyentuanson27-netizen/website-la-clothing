@@ -54,6 +54,11 @@ function snapshot(edges: PancakeCompositeSnapshot["edges"]): PancakeCompositeSna
   return {
     parentVariationIds: ["set-m"],
     componentVariationIds: ["pants-m", "shirt-m"],
+    parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
+    componentIdentities: [
+      { variationId: "pants-m", productId: "pants-product" },
+      { variationId: "shirt-m", productId: "shirt-product" },
+    ],
     edges,
   };
 }
@@ -179,6 +184,8 @@ test("catalog sync rejects composite edges that are not present in the same cata
       compositeSnapshot: {
         parentVariationIds: ["set-m"],
         componentVariationIds: ["missing-m"],
+        parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
+        componentIdentities: [{ variationId: "missing-m", productId: "missing-product" }],
         edges: [
           { parentVariationId: "set-m", componentVariationId: "missing-m", quantity: 1 },
         ],
@@ -219,7 +226,7 @@ test("catalog sync rejects a composite component whose product identity contradi
   assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
 });
 
-test("omitting the composite snapshot cannot erase an already persisted composite graph", async () => {
+test("omitting the composite snapshot preserves an already persisted composite graph", async () => {
   const first = snapshot([
     { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
     { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
@@ -231,21 +238,11 @@ test("omitting the composite snapshot cannot erase an already persisted composit
     syncedAt: new Date("2026-08-22T00:00:00.000Z"),
   });
 
-  const legacySyncSnapshot = repository.syncSnapshot as (input: {
-    shopId: number;
-    variations: readonly PancakeParsedCatalogVariation[];
-    compositeSnapshot?: PancakeCompositeSnapshot;
-    syncedAt: Date;
-  }) => Promise<unknown>;
-
-  await assert.rejects(
-    legacySyncSnapshot({
-      shopId,
-      variations,
-      syncedAt: new Date("2026-08-22T01:00:00.000Z"),
-    }),
-    /composite snapshot/i,
-  );
+  await repository.syncSnapshot({
+    shopId,
+    variations,
+    syncedAt: new Date("2026-08-22T01:00:00.000Z"),
+  });
 
   assert.equal(
     await prisma.compositeComponentMirror.count({
