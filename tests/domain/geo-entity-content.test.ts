@@ -37,7 +37,7 @@ test("P16 public brand facts expose only approved identity and commerce facts", 
 
   assert.deepEqual(facts, {
     brandName: "LA Clothing",
-    brandSummary: "Modern menswear for everyday movement.",
+    brandSummary: "Minimal, modern menswear by LA Clothing.",
     paymentMethod: "Thanh toán khi nhận hàng (COD).",
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
