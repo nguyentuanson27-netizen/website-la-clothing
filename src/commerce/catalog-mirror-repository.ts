@@ -3,6 +3,7 @@ import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
+import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -11,8 +12,14 @@ import {
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
+const MAX_COMPOSITE_ENTRIES = 50_000;
 const SYNC_LOCK_NAMESPACE = 1_277_934_572;
 const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
+const EMPTY_COMPOSITE_SNAPSHOT: PancakeCompositeSnapshot = {
+  parentVariationIds: [],
+  componentVariationIds: [],
+  edges: [],
+};
 
 type CatalogProductSnapshot = {
   pancakeProductId: string;
@@ -102,6 +109,66 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
   return { productByExternalId, variationIds };
 }
 
+function validateCompositeSnapshotAgainstCatalog(
+  snapshot: PancakeCompositeSnapshot,
+  variationIds: ReadonlySet<string>,
+): void {
+  const fail = () => {
+    throw new Error("Catalog composite snapshot is invalid");
+  };
+  if (
+    snapshot.parentVariationIds.length > MAX_COMPOSITE_ENTRIES ||
+    snapshot.componentVariationIds.length > MAX_COMPOSITE_ENTRIES ||
+    snapshot.edges.length > MAX_COMPOSITE_ENTRIES
+  ) {
+    fail();
+  }
+
+  const parents = new Set<string>();
+  const components = new Set<string>();
+  for (const id of snapshot.parentVariationIds) {
+    if (typeof id !== "string" || id.length === 0 || parents.has(id) || !variationIds.has(id)) {
+      fail();
+    }
+    parents.add(id);
+  }
+  for (const id of snapshot.componentVariationIds) {
+    if (
+      typeof id !== "string" ||
+      id.length === 0 ||
+      components.has(id) ||
+      parents.has(id) ||
+      !variationIds.has(id)
+    ) {
+      fail();
+    }
+    components.add(id);
+  }
+
+  const pairs = new Set<string>();
+  const parentsWithEdges = new Set<string>();
+  for (const edge of snapshot.edges) {
+    if (
+      !parents.has(edge.parentVariationId) ||
+      !components.has(edge.componentVariationId) ||
+      edge.parentVariationId === edge.componentVariationId ||
+      !Number.isSafeInteger(edge.quantity) ||
+      edge.quantity <= 0 ||
+      edge.quantity > MAX_POSTGRES_INTEGER
+    ) {
+      fail();
+    }
+    const pair = `${edge.parentVariationId}\u0000${edge.componentVariationId}`;
+    if (pairs.has(pair)) fail();
+    pairs.add(pair);
+    parentsWithEdges.add(edge.parentVariationId);
+  }
+
+  for (const parentVariationId of parents) {
+    if (!parentsWithEdges.has(parentVariationId)) fail();
+  }
+}
+
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
   for (const stock of stocks) {
@@ -139,15 +206,18 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
   async function syncSnapshot({
     shopId,
     variations,
+    compositeSnapshot = EMPTY_COMPOSITE_SNAPSHOT,
     syncedAt,
   }: {
     shopId: number;
     variations: readonly PancakeParsedCatalogVariation[];
+    compositeSnapshot?: PancakeCompositeSnapshot;
     syncedAt: Date;
   }) {
     const safeShopId = requireShopId(shopId);
     const safeSyncedAt = requireSyncedAt(syncedAt);
     const { productByExternalId, variationIds } = validateCatalogSnapshot(variations);
+    validateCompositeSnapshotAgainstCatalog(compositeSnapshot, variationIds);
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
 
@@ -286,6 +356,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
           internalProductIds.set(product.pancakeProductId, mirrored.id);
         }
 
+        const internalVariantIds = new Map<string, string>();
         for (const variation of variations) {
           const internalProductId = internalProductIds.get(variation.productId);
           if (!internalProductId) {
@@ -329,6 +400,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
             },
             select: { id: true },
           });
+          internalVariantIds.set(variation.id, mirrored.id);
 
           const currentWarehouseIds = variation.warehouseStocks.map(({ warehouseId }) => warehouseId);
           await tx.warehouseStock.deleteMany({
@@ -360,6 +432,39 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
               },
             });
           }
+        }
+
+        const shopVariants = await tx.variantMirror.findMany({
+          where: { product: { pancakeShopId: safeShopId } },
+          select: { id: true },
+        });
+        const shopVariantIds = shopVariants.map(({ id }) => id);
+        if (shopVariantIds.length > 0) {
+          await tx.compositeComponentMirror.deleteMany({
+            where: {
+              OR: [
+                { parentVariantId: { in: shopVariantIds } },
+                { componentVariantId: { in: shopVariantIds } },
+              ],
+            },
+          });
+        }
+
+        if (compositeSnapshot.edges.length > 0) {
+          const edgeRows = compositeSnapshot.edges.map((edge) => {
+            const parentVariantId = internalVariantIds.get(edge.parentVariationId);
+            const componentVariantId = internalVariantIds.get(edge.componentVariationId);
+            if (!parentVariantId || !componentVariantId) {
+              throw new Error("Catalog composite snapshot identity could not be resolved");
+            }
+            return {
+              parentVariantId,
+              componentVariantId,
+              quantity: edge.quantity,
+              syncedAt: safeSyncedAt,
+            };
+          });
+          await tx.compositeComponentMirror.createMany({ data: edgeRows });
         }
 
         const shopProducts = await tx.productMirror.findMany({
