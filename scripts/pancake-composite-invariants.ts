@@ -1,6 +1,11 @@
 import { pathToFileURL } from "node:url";
 
-import type { PancakeCompositeSnapshot } from "../src/integrations/pancake/composite-contract.ts";
+import type { PancakeParsedCatalogVariation } from "../src/integrations/pancake/catalog-contract.ts";
+import { fetchAllPancakeCatalogVariations } from "../src/integrations/pancake/catalog-pages.ts";
+import type {
+  PancakeCompositeSnapshot,
+  PancakeCompositeVariationIdentity,
+} from "../src/integrations/pancake/composite-contract.ts";
 import { fetchPancakeCompositeSnapshot } from "../src/integrations/pancake/composite-pages.ts";
 
 const CI_REFUSAL_MESSAGE = "Trusted Pancake composite invariant probe refuses CI execution";
@@ -8,6 +13,7 @@ const GENERIC_FAILURE_MESSAGE =
   "Trusted Pancake composite invariant probe failed without logging external scalar values";
 
 type Environment = Readonly<Record<string, string | undefined>>;
+type CatalogIdentity = Readonly<Pick<PancakeParsedCatalogVariation, "id" | "productId">>;
 
 function environmentFlagIsEnabled(value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
@@ -31,7 +37,50 @@ export function compositeInvariantFailureMessage(error: unknown): string {
   return GENERIC_FAILURE_MESSAGE;
 }
 
-export function buildCompositeInvariantReport(snapshot: PancakeCompositeSnapshot) {
+function buildCatalogIdentityIndex(catalogIdentities: readonly CatalogIdentity[]) {
+  const productIdByVariationId = new Map<string, string>();
+  const duplicateVariationIds = new Set<string>();
+
+  for (const identity of catalogIdentities) {
+    if (productIdByVariationId.has(identity.id)) {
+      duplicateVariationIds.add(identity.id);
+      continue;
+    }
+    productIdByVariationId.set(identity.id, identity.productId);
+  }
+
+  return { productIdByVariationId, duplicateVariationIds };
+}
+
+function compositeIdentitiesMatchCatalog(
+  identities: readonly PancakeCompositeVariationIdentity[],
+  productIdByVariationId: ReadonlyMap<string, string>,
+  duplicateVariationIds: ReadonlySet<string>,
+): boolean {
+  return identities.every(
+    ({ variationId, productId }) =>
+      !duplicateVariationIds.has(variationId) &&
+      productIdByVariationId.get(variationId) === productId,
+  );
+}
+
+export function buildCompositeInvariantReport(
+  snapshot: PancakeCompositeSnapshot,
+  catalogIdentities: readonly CatalogIdentity[],
+) {
+  const { productIdByVariationId, duplicateVariationIds } =
+    buildCatalogIdentityIndex(catalogIdentities);
+  const parentIdentityConsistent = compositeIdentitiesMatchCatalog(
+    snapshot.parentIdentities,
+    productIdByVariationId,
+    duplicateVariationIds,
+  );
+  const componentIdentityConsistent = compositeIdentitiesMatchCatalog(
+    snapshot.componentIdentities,
+    productIdByVariationId,
+    duplicateVariationIds,
+  );
+
   return {
     format: "pancake-composite-invariants-v1" as const,
     complete: true,
@@ -41,8 +90,8 @@ export function buildCompositeInvariantReport(snapshot: PancakeCompositeSnapshot
       edges: snapshot.edges.length,
     },
     invariants: {
-      parentIdentityConsistent: true,
-      componentIdentityConsistent: true,
+      parentIdentityConsistent,
+      componentIdentityConsistent,
       configuredShopConsistent: true,
       directComponentsOnly: true,
       positiveIntegerQuantities: true,
@@ -53,6 +102,12 @@ export function buildCompositeInvariantReport(snapshot: PancakeCompositeSnapshot
   };
 }
 
+function reportIdentityReady(report: ReturnType<typeof buildCompositeInvariantReport>): boolean {
+  return (
+    report.invariants.parentIdentityConsistent && report.invariants.componentIdentityConsistent
+  );
+}
+
 async function runCompositeInvariantProbe(): Promise<void> {
   assertTrustedCompositeInvariantEnvironment();
 
@@ -61,15 +116,24 @@ async function runCompositeInvariantProbe(): Promise<void> {
     import("../src/integrations/pancake/config.ts"),
   ]);
   const config = readPancakeConfig();
-  const snapshot = await fetchPancakeCompositeSnapshot({
-    client: new PancakeClient({ apiKey: config.apiKey }),
+  const client = new PancakeClient({ apiKey: config.apiKey });
+  const catalogVariations = await fetchAllPancakeCatalogVariations({
+    client,
     shopId: config.shopId,
   });
-  const report = buildCompositeInvariantReport(snapshot);
+  const snapshot = await fetchPancakeCompositeSnapshot({
+    client,
+    shopId: config.shopId,
+  });
+  const report = buildCompositeInvariantReport(snapshot, catalogVariations);
 
   console.log("PANCAKE_COMPOSITE_INVARIANTS_BEGIN");
   console.log(JSON.stringify(report, null, 2));
   console.log("PANCAKE_COMPOSITE_INVARIANTS_END");
+
+  if (!reportIdentityReady(report)) {
+    process.exitCode = 1;
+  }
 }
 
 function isDirectExecution(): boolean {
