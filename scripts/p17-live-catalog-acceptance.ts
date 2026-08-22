@@ -85,12 +85,14 @@ export async function readCompositeParentVariationCount(
   const totalEntries = requireNonNegativeSafeInteger(payload, "total_entries");
   const totalPages = requireNonNegativeSafeInteger(payload, "total_pages");
   const expectedRowCount = totalEntries === 0 ? 0 : 1;
+  const paginationMatchesCount =
+    totalEntries === 0 ? totalPages === 0 || totalPages === 1 : totalPages === totalEntries;
 
   if (
     pageNumber !== 1 ||
     pageSize !== 1 ||
     totalEntries > CURRENT_SCOPE_LIMIT ||
-    totalPages !== totalEntries ||
+    !paginationMatchesCount ||
     payload.data.length !== expectedRowCount ||
     (expectedRowCount === 1 && !isRecord(payload.data[0]))
   ) {
