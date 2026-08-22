@@ -41,11 +41,15 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+function isRecord(value: unknown): value is JsonRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function requireRecord(value: unknown): JsonRecord {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
   }
-  return value as JsonRecord;
+  return value;
 }
 
 function requireNonNegativeSafeInteger(record: JsonRecord, key: string): number {
@@ -80,12 +84,15 @@ export async function readCompositeParentVariationCount(
   const pageSize = requireNonNegativeSafeInteger(payload, "page_size");
   const totalEntries = requireNonNegativeSafeInteger(payload, "total_entries");
   const totalPages = requireNonNegativeSafeInteger(payload, "total_pages");
+  const expectedRowCount = totalEntries === 0 ? 0 : 1;
 
   if (
     pageNumber !== 1 ||
     pageSize !== 1 ||
     totalEntries > CURRENT_SCOPE_LIMIT ||
-    (totalEntries > 0 && totalPages < 1)
+    totalPages !== totalEntries ||
+    payload.data.length !== expectedRowCount ||
+    (expectedRowCount === 1 && !isRecord(payload.data[0]))
   ) {
     throw new TypeError(COMPOSITE_PARENT_COUNT_ERROR);
   }
