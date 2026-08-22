@@ -45,7 +45,13 @@ test("catalog sync completes catalog and composite traversals before handing one
     async syncSnapshot(input: {
       shopId: number;
       variations: readonly unknown[];
-      compositeSnapshot: { parentVariationIds: readonly string[]; componentVariationIds: readonly string[]; edges: readonly unknown[] };
+      compositeSnapshot: {
+        parentVariationIds: readonly string[];
+        componentVariationIds: readonly string[];
+        parentIdentities: readonly unknown[];
+        componentIdentities: readonly unknown[];
+        edges: readonly unknown[];
+      };
       syncedAt: Date;
     }) {
       events.push("persist");
@@ -54,6 +60,8 @@ test("catalog sync completes catalog and composite traversals before handing one
       assert.deepEqual(input.compositeSnapshot, {
         parentVariationIds: [],
         componentVariationIds: [],
+        parentIdentities: [],
+        componentIdentities: [],
         edges: [],
       });
       assert.deepEqual(input.syncedAt, new Date("2026-08-11T00:00:00.000Z"));
