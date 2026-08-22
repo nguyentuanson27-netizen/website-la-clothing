@@ -61,3 +61,6 @@ jobs:
 
       - name: P15 catalog canonical/noindex HTTP regression
         run: node --experimental-strip-types scripts/catalog-indexation-http-smoke.ts
+
+      - name: P16A public brand content HTTP regression
+        run: node --experimental-strip-types scripts/public-brand-content-http-smoke.ts

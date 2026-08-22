@@ -3,7 +3,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
@@ -20,6 +22,7 @@ async function loadHomepageProductEdit() {
 export default async function HomePage() {
   await connection();
   const featuredProducts = await loadHomepageProductEdit();
+  const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
   const heroProduct = productsWithMedia[0];
   const heroImage = heroProduct?.media?.primary ?? null;
@@ -150,6 +153,37 @@ export default async function HomePage() {
             aria-hidden="true"
           />
         )}
+      </section>
+
+      <section className="collection-intro" aria-labelledby="brand-facts-title">
+        <p className="eyebrow">LA Clothing / About</p>
+        <h2 id="brand-facts-title">{brandFacts.brandName}</h2>
+        <div>
+          <p className="font-serif text-2xl leading-snug md:text-3xl">{brandFacts.brandSummary}</p>
+          <dl className="mt-8 space-y-5 text-sm leading-6">
+            <div>
+              <dt className="font-semibold uppercase tracking-[0.12em]">Thanh toán</dt>
+              <dd className="mt-1 text-black/70">
+                {brandFacts.paymentMethod} {brandFacts.checkoutAccount}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-[0.12em]">Vận chuyển</dt>
+              <dd className="mt-1 text-black/70">
+                {brandFacts.shipping.title}. {brandFacts.shipping.detail}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold uppercase tracking-[0.12em]">Xác nhận đơn hàng</dt>
+              <dd className="mt-1 text-black/70">{brandFacts.serverVerification}</dd>
+            </div>
+          </dl>
+          <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-3" aria-label="Tìm hiểu LA Clothing">
+            <Link className="text-link" href="/shop">Shop ↗</Link>
+            <Link className="text-link" href="/collections">Collections ↗</Link>
+            <Link className="text-link" href="/track-order">Tra cứu đơn ↗</Link>
+          </nav>
+        </div>
       </section>
 
       <section className="category-strip" aria-labelledby="categories-title">
