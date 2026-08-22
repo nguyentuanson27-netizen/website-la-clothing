@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
+import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -12,9 +14,11 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const repository = createStorefrontProductDetailRepository(prisma);
 const shopId = 910_060;
+const cartId = "projection-composite-cart";
 const syncedAt = new Date("2026-08-22T16:00:00.000Z");
 
 async function cleanup() {
+  await prisma.cart.deleteMany({ where: { id: cartId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: shopId } });
 }
 
@@ -62,6 +66,7 @@ test("parent PDP projects relation-linked active component variants without publ
     data: {
       pancakeVariationId: "projection-component-m",
       productId: component.id,
+      color: null,
       size: "M",
       isPresent: true,
       isActive: true,
@@ -106,9 +111,37 @@ test("parent PDP projects relation-linked active component variants without publ
       { id: componentVariant.id, kindLabel: "Ao A" },
     ],
   );
-
   assert.equal(
     await repository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
     null,
+  );
+
+  await prisma.cart.create({
+    data: {
+      id: cartId,
+      expiresAt: new Date("2026-08-24T00:00:00.000Z"),
+    },
+  });
+  const cartService = createAnonymousCartService(prisma);
+  const cartMutation = await cartService.setItemQuantity({
+    cartId,
+    variantId: componentVariant.id,
+    quantity: 1,
+    now: new Date("2026-08-23T00:00:00.000Z"),
+  });
+  assert.equal(cartMutation.ok, true);
+
+  const lines = await createStorefrontCartRepository(prisma).getLines({
+    shopId,
+    items: [{ variantId: componentVariant.id, quantity: 1 }],
+  });
+  assert.deepEqual(
+    lines.map(({ productSlug, productName, available, price }) => ({
+      productSlug,
+      productName,
+      available,
+      price,
+    })),
+    [{ productSlug: null, productName: "Ao A", available: true, price: 390_000 }],
   );
 });
