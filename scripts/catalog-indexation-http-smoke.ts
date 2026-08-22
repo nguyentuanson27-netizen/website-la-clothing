@@ -60,14 +60,49 @@ function hasNoIndexMeta(body: string): boolean {
   );
 }
 
+function visibleText(body: string): string {
+  return body
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function jsonLdDocuments(body: string): unknown[] {
+  const documents: unknown[] = [];
+  const pattern = /<script\b[^>]*type=(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script>/gi;
+  for (const match of body.matchAll(pattern)) {
+    if (!match[1]) continue;
+    documents.push(JSON.parse(match[1]));
+  }
+  return documents;
+}
+
+function findGraphNode(body: string, type: string): Record<string, unknown> | undefined {
+  for (const document of jsonLdDocuments(body)) {
+    if (!document || typeof document !== "object") continue;
+    const graph = (document as { "@graph"?: unknown })["@graph"];
+    if (!Array.isArray(graph)) continue;
+    const node = graph.find(
+      (candidate) =>
+        candidate &&
+        typeof candidate === "object" &&
+        (candidate as { "@type"?: unknown })["@type"] === type,
+    );
+    if (node && typeof node === "object") return node as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 function anchorHasVisibleText(body: string, href: string, text: string): boolean {
   const anchors = body.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
   return anchors.some((anchor) => {
     const hrefMatch = anchor.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
     const anchorHref = hrefMatch?.[1] ?? hrefMatch?.[2] ?? null;
     if (anchorHref !== href) return false;
-    const visibleText = anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    return visibleText.includes(text);
+    const anchorText = anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return anchorText.includes(text);
   });
 }
 
@@ -216,6 +251,30 @@ function assertPublicCrawlerPolicy(response: HttpResponse) {
   assert.match(response.body, /Sitemap:\s*https:\/\/shop\.example\.com\/sitemap\.xml/i);
 }
 
+function assertPublicBrandContent(response: HttpResponse) {
+  assert.equal(response.status, 200, `public homepage must return 200\n${serverOutput}`);
+  const text = visibleText(response.body);
+  for (const fact of [
+    "LA Clothing / About",
+    "Modern menswear for everyday movement.",
+    "Thanh toán khi nhận hàng (COD).",
+    "Không cần tài khoản để thanh toán.",
+    "Miễn phí vận chuyển.",
+    "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
+    "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
+  ]) {
+    assert.equal(text.includes(fact), true, `homepage must expose factual visible text: ${fact}`);
+  }
+  assert.equal(anchorHasVisibleText(response.body, "/shop", "Shop"), true);
+  assert.equal(anchorHasVisibleText(response.body, "/collections", "Collections"), true);
+  assert.equal(anchorHasVisibleText(response.body, "/track-order", "Tra cứu đơn"), true);
+
+  const organization = findGraphNode(response.body, "Organization");
+  const website = findGraphNode(response.body, "WebSite");
+  assert.equal(organization?.["@id"], `${PUBLIC_ORIGIN}/#organization`);
+  assert.deepEqual(website?.publisher, { "@id": `${PUBLIC_ORIGIN}/#organization` });
+}
+
 try {
   await cleanupDatabase();
   await seedCatalog();
@@ -227,6 +286,9 @@ try {
 
   const publicRobots = await requestPath("/robots.txt");
   assertPublicCrawlerPolicy(publicRobots);
+
+  const homepage = await requestPath("/");
+  assertPublicBrandContent(homepage);
 
   const shopPageOne = await requestPath("/shop");
   assertIndexableCanonical(shopPageOne, `${PUBLIC_ORIGIN}/shop`, "enabled shop page 1");
@@ -247,6 +309,11 @@ try {
     true,
     "shop page 2 must expose the product name as visible PDP anchor text",
   );
+
+  const productPage = await requestPath(`/shop/${pageTwoProductSlug}`);
+  assert.equal(productPage.status, 200, `enabled product page must return 200\n${serverOutput}`);
+  const productNode = findGraphNode(productPage.body, "Product");
+  assert.deepEqual(productNode?.brand, { "@id": `${PUBLIC_ORIGIN}/#organization` });
 
   const collectionPageOne = await requestPath(`/collections/${collectionSlug}`);
   assertIndexableCanonical(
@@ -311,7 +378,7 @@ try {
   );
 
   console.log(
-    "P15/P16 catalog and crawler HTTP smoke passed: enabled catalog pages expose a visible page-1 to page-2 to PDP link chain, pure page=2 listings self-canonicalize without noindex, explicit/mixed query aliases stay noindex without canonical, public robots keep OAI-SearchBot on the reviewed crawl boundary, and staging pagination remains noindex without canonical.",
+    "P15/P16 catalog, entity, content, and crawler HTTP smoke passed: public factual brand/commerce HTML and shared Organization relationships render, enabled catalog pages expose a visible page-1 to page-2 to PDP link chain, public robots keep OAI-SearchBot on the reviewed crawl boundary, explicit/mixed aliases stay noindex, and staging pagination remains noindex without canonical.",
   );
 } finally {
   await stopServer();
