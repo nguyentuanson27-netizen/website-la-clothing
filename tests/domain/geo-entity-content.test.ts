@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { describeGuestShippingPromotion } from "../../src/commerce/guest-shipping-policy.ts";
 import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
-import { buildRobotsDocument } from "../../src/app/robots.ts";
+import { buildRobotsDocument } from "../../src/seo/robots-policy.ts";
 import {
   buildProductStructuredData,
   buildSiteStructuredData,
