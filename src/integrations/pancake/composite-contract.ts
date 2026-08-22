@@ -8,6 +8,11 @@ type ParsedCompositeEdge = {
   quantity: number;
 };
 
+export type PancakeCompositeVariationIdentity = Readonly<{
+  variationId: string;
+  productId: string;
+}>;
+
 export type PancakeCompositeEdge = Readonly<{
   parentVariationId: string;
   componentVariationId: string;
@@ -17,6 +22,8 @@ export type PancakeCompositeEdge = Readonly<{
 export type PancakeCompositeSnapshot = Readonly<{
   parentVariationIds: readonly string[];
   componentVariationIds: readonly string[];
+  parentIdentities: readonly PancakeCompositeVariationIdentity[];
+  componentIdentities: readonly PancakeCompositeVariationIdentity[];
   edges: readonly PancakeCompositeEdge[];
 }>;
 
@@ -76,6 +83,21 @@ function compareEdges(left: PancakeCompositeEdge, right: PancakeCompositeEdge): 
   );
 }
 
+function compareIdentities(
+  left: PancakeCompositeVariationIdentity,
+  right: PancakeCompositeVariationIdentity,
+): number {
+  return compareStrings(left.variationId, right.variationId);
+}
+
+function identitiesFromMap(
+  productByVariationId: ReadonlyMap<string, string>,
+): PancakeCompositeVariationIdentity[] {
+  return [...productByVariationId.entries()]
+    .map(([variationId, productId]) => ({ variationId, productId }))
+    .sort(compareIdentities);
+}
+
 export function parsePancakeCompositeSnapshot({
   shopId,
   parentEntries,
@@ -93,7 +115,7 @@ export function parsePancakeCompositeSnapshot({
     fail();
   }
 
-  const parentVariationIds = new Set<string>();
+  const parentProductByVariationId = new Map<string, string>();
   const childProductByVariationId = new Map<string, string>();
   const edgeIds = new Set<string>();
   const edgePairs = new Set<string>();
@@ -102,10 +124,10 @@ export function parsePancakeCompositeSnapshot({
   for (const entryValue of parentEntries) {
     const entry = requireRecord(entryValue);
     const parentVariationId = requireIdentity(entry, "id");
-    requireIdentity(entry, "product_id");
+    const parentProductId = requireIdentity(entry, "product_id");
     if (entry.is_composite !== true || !Array.isArray(entry.composite_products)) fail();
-    if (parentVariationIds.has(parentVariationId)) fail();
-    parentVariationIds.add(parentVariationId);
+    if (parentProductByVariationId.has(parentVariationId)) fail();
+    parentProductByVariationId.set(parentVariationId, parentProductId);
 
     if (entry.composite_products.length === 0) fail();
     if (parsedEdges.length + entry.composite_products.length > MAX_COMPOSITE_ENTRIES) fail();
@@ -156,7 +178,7 @@ export function parsePancakeCompositeSnapshot({
       !Array.isArray(entry.composite_products) ||
       entry.composite_products.length !== 0 ||
       childProductByVariationId.has(componentVariationId) ||
-      parentVariationIds.has(componentVariationId)
+      parentProductByVariationId.has(componentVariationId)
     ) {
       fail();
     }
@@ -169,9 +191,14 @@ export function parsePancakeCompositeSnapshot({
     }
   }
 
+  const parentVariationIds = [...parentProductByVariationId.keys()].sort(compareStrings);
+  const componentVariationIds = [...childProductByVariationId.keys()].sort(compareStrings);
+
   return {
-    parentVariationIds: [...parentVariationIds].sort(compareStrings),
-    componentVariationIds: [...childProductByVariationId.keys()].sort(compareStrings),
+    parentVariationIds,
+    componentVariationIds,
+    parentIdentities: identitiesFromMap(parentProductByVariationId),
+    componentIdentities: identitiesFromMap(childProductByVariationId),
     edges: parsedEdges
       .map(({ parentVariationId, componentVariationId, quantity }) => ({
         parentVariationId,
