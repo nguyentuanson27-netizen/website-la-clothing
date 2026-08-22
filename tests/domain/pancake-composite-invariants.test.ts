@@ -22,6 +22,13 @@ test("composite invariant report exposes only aggregate counts and reviewed bool
   const report = buildCompositeInvariantReport({
     parentVariationIds: ["private-parent-id"],
     componentVariationIds: ["private-shirt-id", "private-pants-id"],
+    parentIdentities: [
+      { variationId: "private-parent-id", productId: "private-parent-product-id" },
+    ],
+    componentIdentities: [
+      { variationId: "private-shirt-id", productId: "private-shirt-product-id" },
+      { variationId: "private-pants-id", productId: "private-pants-product-id" },
+    ],
     edges: [
       { parentVariationId: "private-parent-id", componentVariationId: "private-shirt-id", quantity: 1 },
       { parentVariationId: "private-parent-id", componentVariationId: "private-pants-id", quantity: 2 },
@@ -45,9 +52,16 @@ test("composite invariant report exposes only aggregate counts and reviewed bool
   });
 
   const serialized = JSON.stringify(report);
-  assert.equal(serialized.includes("private-parent-id"), false);
-  assert.equal(serialized.includes("private-shirt-id"), false);
-  assert.equal(serialized.includes("private-pants-id"), false);
+  for (const privateValue of [
+    "private-parent-id",
+    "private-shirt-id",
+    "private-pants-id",
+    "private-parent-product-id",
+    "private-shirt-product-id",
+    "private-pants-product-id",
+  ]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
   assert.equal(serialized.includes("\"quantity\""), false);
 });
 
