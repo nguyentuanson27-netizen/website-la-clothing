@@ -256,7 +256,7 @@ function assertPublicBrandContent(response: HttpResponse) {
   const text = visibleText(response.body);
   for (const fact of [
     "LA Clothing / About",
-    "Modern menswear for everyday movement.",
+    "Minimal, modern menswear by LA Clothing.",
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
     "Miễn phí vận chuyển",
