@@ -156,10 +156,8 @@ export default async function HomePage() {
       </section>
 
       <section className="collection-intro" aria-labelledby="brand-facts-title">
-        <div>
-          <p className="eyebrow">LA Clothing / About</p>
-          <h2 id="brand-facts-title">{brandFacts.brandName}</h2>
-        </div>
+        <p className="eyebrow">LA Clothing / About</p>
+        <h2 id="brand-facts-title">{brandFacts.brandName}</h2>
         <div>
           <p className="font-serif text-2xl leading-snug md:text-3xl">{brandFacts.brandSummary}</p>
           <dl className="mt-8 space-y-5 text-sm leading-6">
