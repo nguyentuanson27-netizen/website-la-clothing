@@ -57,7 +57,11 @@ export function StorefrontProductCard({
 
   return (
     <article className="group">
-      <Link className="product-visual-link block" href={productHref}>
+      <Link
+        aria-label={`Xem ${name}`}
+        className="product-visual-link block"
+        href={productHref}
+      >
         <div
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
