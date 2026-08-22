@@ -29,6 +29,11 @@ export type CatalogAcceptanceProduct = Readonly<{
   variants: readonly CatalogAcceptanceVariant[];
 }>;
 
+export type CatalogAcceptanceSourceModel = Readonly<{
+  compositeParentVariations: number;
+  compositeProjectionReady: boolean;
+}>;
+
 type AcceptanceIssueKey =
   | "mappingRequired"
   | "ambiguousOption"
@@ -45,6 +50,7 @@ type AcceptanceObservationKey =
   | "noPurchasableVariant";
 
 const MEDIA_FALLBACK_APPROVAL_LIMIT = 100;
+const COMPOSITE_PARENT_VARIATION_LIMIT = 50_000;
 const EMPTY_MEDIA_FALLBACK_APPROVALS: ReadonlySet<string> = new Set();
 
 function hasText(value: string | null | undefined): boolean {
@@ -67,16 +73,30 @@ function assertReviewedMediaFallbackApprovals(approvedSlugs: ReadonlySet<string>
   }
 }
 
+function assertCatalogAcceptanceSourceModel(sourceModel: CatalogAcceptanceSourceModel): void {
+  if (
+    !Number.isSafeInteger(sourceModel.compositeParentVariations) ||
+    sourceModel.compositeParentVariations < 0 ||
+    sourceModel.compositeParentVariations > COMPOSITE_PARENT_VARIATION_LIMIT ||
+    typeof sourceModel.compositeProjectionReady !== "boolean"
+  ) {
+    throw new TypeError("P17 source model is invalid");
+  }
+}
+
 export function buildCatalogAcceptanceReport({
   products,
   publishedCollectionSlugs,
+  sourceModel,
   approvedMediaFallbackSlugs = EMPTY_MEDIA_FALLBACK_APPROVALS,
 }: Readonly<{
   products: readonly CatalogAcceptanceProduct[];
   publishedCollectionSlugs: ReadonlySet<string>;
+  sourceModel: CatalogAcceptanceSourceModel;
   approvedMediaFallbackSlugs?: ReadonlySet<string>;
 }>) {
   assertReviewedMediaFallbackApprovals(approvedMediaFallbackSlugs);
+  assertCatalogAcceptanceSourceModel(sourceModel);
 
   const issues: Record<AcceptanceIssueKey, string[]> = {
     mappingRequired: [],
@@ -92,6 +112,10 @@ export function buildCatalogAcceptanceReport({
     missingSourceDescription: [],
     noActiveVariants: [],
     noPurchasableVariant: [],
+  };
+  const blockers = {
+    compositeProjectionRequired:
+      sourceModel.compositeParentVariations > 0 && !sourceModel.compositeProjectionReady,
   };
   const summary = {
     products: products.length,
@@ -185,7 +209,11 @@ export function buildCatalogAcceptanceReport({
   for (const values of Object.values(observations)) sorted(values);
 
   return {
-    ready: Object.values(issues).every((values) => values.length === 0),
+    ready:
+      !blockers.compositeProjectionRequired &&
+      Object.values(issues).every((values) => values.length === 0),
+    sourceModel: { ...sourceModel },
+    blockers,
     summary,
     issues,
     observations,
