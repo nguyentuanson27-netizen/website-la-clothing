@@ -2,15 +2,11 @@ import type { Metadata } from "next";
 
 import { isCanonicalCatalogPaginationRequest } from "./search-exposure.ts";
 
-type CatalogListingSearchParams = Readonly<
-  Record<string, string | string[] | undefined>
->;
-
 type CatalogListingMetadataInput = Readonly<{
   origin: string;
   indexingEnabled: boolean;
   pathname: string;
-  searchParams: CatalogListingSearchParams;
+  searchParams: object;
   title: string;
   description?: string;
 }>;
@@ -24,10 +20,7 @@ function isCatalogListingPath(pathname: string): boolean {
   return CATALOG_LISTING_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
 }
 
-function canonicalSearch(
-  pathname: string,
-  searchParams: CatalogListingSearchParams,
-): string | null {
+function canonicalSearch(pathname: string, searchParams: object): string | null {
   const entries = Object.entries(searchParams).filter(([, value]) => value !== undefined);
   if (entries.length === 0) return "";
   if (entries.length !== 1) return null;
