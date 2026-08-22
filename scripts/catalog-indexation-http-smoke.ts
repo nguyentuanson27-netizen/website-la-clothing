@@ -24,6 +24,9 @@ const productIds = Array.from(
   { length: PRODUCT_COUNT },
   (_, index) => `p15-http-product-${runId}-${String(index + 1).padStart(2, "0")}`,
 );
+const pageTwoProductId = productIds[PRODUCT_COUNT - 1]!;
+const pageTwoProductSlug = `${pageTwoProductId}-slug`;
+const pageTwoProductName = `P15 HTTP Product ${String(PRODUCT_COUNT).padStart(2, "0")}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -55,6 +58,17 @@ function hasNoIndexMeta(body: string): boolean {
       /\bname=(?:"robots"|'robots')/i.test(tag) &&
       /\bcontent=(?:"[^"]*\bnoindex\b[^"]*"|'[^']*\bnoindex\b[^']*')/i.test(tag),
   );
+}
+
+function anchorHasVisibleText(body: string, href: string, text: string): boolean {
+  const anchors = body.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
+  return anchors.some((anchor) => {
+    const hrefMatch = anchor.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
+    const anchorHref = hrefMatch?.[1] ?? hrefMatch?.[2] ?? null;
+    if (anchorHref !== href) return false;
+    const visibleText = anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return visibleText.includes(text);
+  });
 }
 
 async function requestPath(path: string): Promise<HttpResponse> {
@@ -203,11 +217,40 @@ try {
     SEARCH_INDEXING_ENABLED: "true",
   });
 
+  const shopPageOne = await requestPath("/shop");
+  assertIndexableCanonical(shopPageOne, `${PUBLIC_ORIGIN}/shop`, "enabled shop page 1");
+  assert.equal(
+    anchorHasVisibleText(shopPageOne.body, "/shop?page=2", "Trang sau"),
+    true,
+    "shop page 1 must expose a visible crawlable link to page 2",
+  );
+
   const shopPageTwo = await requestPath("/shop?page=2");
   assertIndexableCanonical(
     shopPageTwo,
     `${PUBLIC_ORIGIN}/shop?page=2`,
     "enabled shop pagination page 2",
+  );
+  assert.equal(
+    anchorHasVisibleText(shopPageTwo.body, `/shop/${pageTwoProductSlug}`, pageTwoProductName),
+    true,
+    "shop page 2 must expose the product name as visible PDP anchor text",
+  );
+
+  const collectionPageOne = await requestPath(`/collections/${collectionSlug}`);
+  assertIndexableCanonical(
+    collectionPageOne,
+    `${PUBLIC_ORIGIN}/collections/${collectionSlug}`,
+    "enabled collection page 1",
+  );
+  assert.equal(
+    anchorHasVisibleText(
+      collectionPageOne.body,
+      `/collections/${collectionSlug}?page=2`,
+      "Trang sau",
+    ),
+    true,
+    "collection page 1 must expose a visible crawlable link to page 2",
   );
 
   const collectionPageTwo = await requestPath(`/collections/${collectionSlug}?page=2`);
@@ -215,6 +258,15 @@ try {
     collectionPageTwo,
     `${PUBLIC_ORIGIN}/collections/${collectionSlug}?page=2`,
     "enabled collection pagination page 2",
+  );
+  assert.equal(
+    anchorHasVisibleText(
+      collectionPageTwo.body,
+      `/shop/${pageTwoProductSlug}`,
+      pageTwoProductName,
+    ),
+    true,
+    "collection page 2 must expose the product name as visible PDP anchor text",
   );
 
   const explicitPageOne = await requestPath("/shop?page=1");
@@ -248,7 +300,7 @@ try {
   );
 
   console.log(
-    "P15 catalog indexation HTTP smoke passed: enabled pure page=2 listings self-canonicalize without noindex, explicit/mixed query aliases stay noindex without canonical, and staging pagination remains noindex without canonical.",
+    "P15 catalog indexation HTTP smoke passed: enabled catalog pages expose a visible page-1 to page-2 to PDP link chain, pure page=2 listings self-canonicalize without noindex, explicit/mixed query aliases stay noindex without canonical, and staging pagination remains noindex without canonical.",
   );
 } finally {
   await stopServer();
