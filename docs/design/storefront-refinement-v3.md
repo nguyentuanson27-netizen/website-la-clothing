@@ -146,12 +146,12 @@ For each support route that actually ships with approved factual content:
 - render a normal public HTML page reachable through crawlable internal links;
 - provide a unique factual title and description;
 - provide an explicit self-canonical URL derived from the server-owned storefront origin;
-- add the exact route to the indexable-path allowlist only when the page is ready for public search exposure;
+- add the exact route to the indexable-path allowlist only after that page's content has been explicitly approved for public search exposure;
 - add the exact route to the static canonical sitemap list in the same search-exposure slice;
 - keep staging/local behavior governed by the existing global `indexingEnabled` gate;
 - do not create faceted/query variants for these pages.
 
-A route that lacks approved content must not be added to the indexable allowlist or sitemap. It may remain unimplemented; do not publish placeholder SEO copy merely to occupy the URL.
+A route that lacks approved content must not be added to the indexable allowlist or sitemap. It may remain unimplemented; do not publish placeholder SEO copy merely to occupy the URL. Creating a route component alone is never sufficient to make it indexable.
 
 ## Navigation
 - Keep the current simple semantic navigation model unless real taxonomy size justifies a mega-menu.
