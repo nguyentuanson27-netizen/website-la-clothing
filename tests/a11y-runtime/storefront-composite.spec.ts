@@ -220,10 +220,14 @@ test("composite parent keeps parent-only schema while inactive component can be 
   await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
   await expect(page.getByRole("radio", { name: componentName })).toBeEnabled();
 
-  const jsonLd = await page.locator('script[type="application/ld+json"]').textContent();
-  expect(jsonLd).not.toBeNull();
-  const structured = JSON.parse(jsonLd!);
-  expect(structured["@graph"][0].offers).toEqual({
+  const structuredDocuments = (await page
+    .locator('script[type="application/ld+json"]')
+    .allTextContents()).map((value) => JSON.parse(value));
+  const productNode = structuredDocuments
+    .flatMap((document) => document["@graph"] ?? [])
+    .find((node) => node["@type"] === "Product");
+  expect(productNode).toBeDefined();
+  expect(productNode.offers).toEqual({
     "@type": "Offer",
     url: `${BASE_URL}/shop/${parentSlug}`,
     priceCurrency: "VND",
@@ -233,9 +237,11 @@ test("composite parent keeps parent-only schema while inactive component can be 
 
   const addToBag = page.getByRole("button", { name: "Add to Bag" });
   await expect(addToBag).toBeDisabled();
-  await page.getByRole("radio", { name: componentName }).check();
+  await page.getByText(componentName, { exact: true }).click();
+  await expect(page.getByRole("radio", { name: componentName })).toBeChecked();
   await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-  await page.getByRole("radio", { name: "M" }).check();
+  await page.getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await assertPageQuality(page);
 
