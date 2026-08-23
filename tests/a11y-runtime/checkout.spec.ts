@@ -171,6 +171,7 @@ function captureBrowserFailures(page: Page) {
 }
 
 async function assertCheckoutAccessibility(page: Page) {
+  await expect(page).toHaveTitle(/.+/);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
