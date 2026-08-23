@@ -176,14 +176,14 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
       {/* PANCAKE POS SYNCHRONIZED SOURCE DATA */}
       <section
-        aria-labelledby="pancake-data-heading"
+        aria-labelledby="source-description-heading"
         className="mt-8 border border-black/20 bg-black/[0.02] p-6 md:p-8"
       >
         <div className="flex flex-col justify-between gap-4 border-b border-black/15 pb-6 md:flex-row md:items-center">
           <div>
-            <p className="eyebrow">Dữ liệu nguồn Pancake POS · Chỉ đọc</p>
-            <h2 id="pancake-data-heading" className="mt-1 font-serif text-3xl tracking-[-0.03em]">
-              Thông tin đồng bộ từ Pancake
+            <p className="eyebrow">Nguồn Pancake · chỉ đọc</p>
+            <h2 id="source-description-heading" className="mt-1 font-serif text-3xl tracking-[-0.03em]">
+              Nguồn mô tả từ Pancake
             </h2>
           </div>
           <div className="flex flex-wrap gap-4 text-xs font-semibold uppercase tracking-[0.12em]">
@@ -200,6 +200,20 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
               <span className="text-black">{totalStock} cái</span>
             </div>
           </div>
+        </div>
+
+        {/* SOURCE DESCRIPTION */}
+        <div className="mt-6">
+          {product.sourceDescription ? (
+            <p className="whitespace-pre-wrap text-sm leading-7 text-black/75">
+              {product.sourceDescription}
+            </p>
+          ) : (
+            <p className="text-sm leading-7 text-black/55">Chưa có mô tả nguồn từ Pancake.</p>
+          )}
+          <p className="mt-3 max-w-3xl text-xs leading-5 text-black/55">
+            Dữ liệu này chỉ dùng làm ngữ cảnh đối chiếu. Đồng bộ Pancake không tự xuất bản và không ghi đè nội dung editorial hoặc SEO do website sở hữu.
+          </p>
         </div>
 
         {/* IMAGE GALLERY */}
@@ -289,22 +303,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
             </div>
           ) : (
             <p className="mt-2 text-sm text-black/50 italic">Chưa có biến thể nào.</p>
-          )}
-        </div>
-
-        {/* SOURCE DESCRIPTION */}
-        <div className="mt-8 border-t border-black/10 pt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/70">
-            Ghi chú / Mô tả nguồn từ Pancake
-          </h3>
-          {product.sourceDescription ? (
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-black/80">
-              {product.sourceDescription}
-            </p>
-          ) : (
-            <p className="mt-2 text-xs leading-5 text-black/50 italic">
-              Không có mô tả nguồn từ Pancake (ô ghi chú trên Pancake POS để trống).
-            </p>
           )}
         </div>
       </section>
