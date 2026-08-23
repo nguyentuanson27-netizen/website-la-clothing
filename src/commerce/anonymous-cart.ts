@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const ANONYMOUS_CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -64,6 +64,7 @@ type CreateWithItemResult =
 
 type RemoveItemResult = { ok: true } | { ok: false; reason: "CART_UNAVAILABLE" };
 type RawQueryClient = Pick<PrismaClient, "$queryRaw">;
+type VariantReadClient = Pick<Prisma.TransactionClient, "variantMirror">;
 
 function isPositiveDatabaseInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_INTEGER;
@@ -108,6 +109,43 @@ async function lockLiveAnonymousCart(
   return rows.length === 1;
 }
 
+async function isCommerceEligibleVariant(
+  client: VariantReadClient,
+  variantId: string,
+): Promise<boolean> {
+  const variant = await client.variantMirror.findFirst({
+    where: {
+      id: variantId,
+      isPresent: true,
+      isActive: true,
+      OR: [
+        {
+          product: {
+            isPresent: true,
+            isActive: true,
+          },
+        },
+        {
+          compositeParents: {
+            some: {
+              parentVariant: {
+                isPresent: true,
+                isActive: true,
+                product: {
+                  isPresent: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  return variant !== null;
+}
+
 export function createAnonymousCartService(client: PrismaClient) {
   async function findLiveAnonymousCart(cartId: string, now: Date) {
     return client.cart.findFirst({
@@ -140,15 +178,7 @@ export function createAnonymousCartService(client: PrismaClient) {
     }
 
     return client.$transaction(async (tx): Promise<CreateWithItemResult> => {
-      const variant = await tx.variantMirror.findUnique({
-        where: { id: variantId },
-        select: {
-          isActive: true,
-          product: { select: { isActive: true } },
-        },
-      });
-
-      if (!variant?.isActive || !variant.product.isActive) {
+      if (!(await isCommerceEligibleVariant(tx, variantId))) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
       }
 
@@ -192,17 +222,7 @@ export function createAnonymousCartService(client: PrismaClient) {
         return { ok: false, reason: "CART_UNAVAILABLE" };
       }
 
-      const variant = await tx.variantMirror.findUnique({
-        where: { id: variantId },
-        select: {
-          isActive: true,
-          product: {
-            select: { isActive: true },
-          },
-        },
-      });
-
-      if (!variant?.isActive || !variant.product.isActive) {
+      if (!(await isCommerceEligibleVariant(tx, variantId))) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
       }
 
@@ -272,17 +292,7 @@ export function createAnonymousCartService(client: PrismaClient) {
         return { ok: false, reason: "CART_ITEM_UNAVAILABLE" };
       }
 
-      const variant = await tx.variantMirror.findUnique({
-        where: { id: variantId },
-        select: {
-          isActive: true,
-          product: {
-            select: { isActive: true },
-          },
-        },
-      });
-
-      if (!variant?.isActive || !variant.product.isActive) {
+      if (!(await isCommerceEligibleVariant(tx, variantId))) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
       }
 

@@ -1,0 +1,2 @@
+ALTER TABLE "OrderLineSnapshot"
+ALTER COLUMN "color" DROP NOT NULL;

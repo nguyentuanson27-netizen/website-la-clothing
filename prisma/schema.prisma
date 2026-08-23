@@ -308,7 +308,7 @@ model OrderLineSnapshot {
   variantId          String
   pancakeVariationId String
   productName        String
-  color              String
+  color              String?
   size               String
   quantity           Int
   unitPriceVnd       BigInt

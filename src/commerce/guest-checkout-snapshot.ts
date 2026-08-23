@@ -72,6 +72,22 @@ const productSelection = {
         orderBy: [{ pancakeWarehouseId: "asc" as const }],
         select: { quantity: true },
       },
+      compositeParents: {
+        select: {
+          parentVariant: {
+            select: {
+              isPresent: true,
+              isActive: true,
+              product: {
+                select: {
+                  isPresent: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.ProductMirrorSelect;
@@ -234,6 +250,13 @@ function toStorefrontProduct(product: SelectedProduct) {
       id: variant.id,
       isPresent: variant.isPresent,
       isActive: variant.isActive,
+      isCompositeComponentAvailable: variant.compositeParents.some(
+        ({ parentVariant }) =>
+          parentVariant.isPresent &&
+          parentVariant.isActive &&
+          parentVariant.product.isPresent &&
+          parentVariant.product.isActive,
+      ),
       color: variant.color,
       size: variant.size,
       sellableStock,
@@ -352,7 +375,7 @@ export function createGuestCheckoutSnapshotService(
           variantId: string;
           pancakeVariationId: string;
           productName: string;
-          color: string;
+          color: string | null;
           size: string;
           quantity: number;
           unitPriceVnd: bigint;
@@ -367,7 +390,6 @@ export function createGuestCheckoutSnapshotService(
             !line.available ||
             line.price === null ||
             line.productName === null ||
-            line.color === null ||
             line.size === null ||
             !pancakeVariationId
           ) {

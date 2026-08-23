@@ -117,7 +117,7 @@ test("cart line fails closed when its requested quantity exceeds current sellabl
   assert.equal("sellableStock" in line!, false);
 });
 
-test("cart lines fail closed when the product or variant cannot be resolved for the storefront", () => {
+test("cart lines fail closed without linking unavailable product owners to dead PDPs", () => {
   const lines = buildStorefrontCartLines({
     items: [
       { variantId: "inactive-product-variant", quantity: 1 },
@@ -147,7 +147,7 @@ test("cart lines fail closed when the product or variant cannot be resolved for 
 
   assert.deepEqual(lines[0], {
     variantId: "inactive-product-variant",
-    productSlug: "archived-jacket",
+    productSlug: null,
     productName: "Archived Jacket",
     color: "Olive",
     size: "L",
