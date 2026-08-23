@@ -301,6 +301,8 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                 </tbody>
               </table>
             </div>
+          ) : (
+            <p className="mt-2 text-sm text-black/70 italic">Chưa có biến thể nào.</p>
           )}
         </div>
       </section>
