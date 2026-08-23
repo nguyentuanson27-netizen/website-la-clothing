@@ -7,20 +7,17 @@ Basis: `docs/design/storefront-refinement-v3.md` plus current `main` architectur
 ## Dependency graph
 
 ```text
-U1 language + buyer-copy cleanup
-  ↓
-U2 homepage collection merchandising
-  ↓
-U3 collection PLP filters + buyer copy
-  ↓
-U4 PDP related products + support hierarchy
-  ↓
-U5 trust/footer + public support pages
-  ↓
-U6 SEO/a11y/runtime regression gate
+                     ┌─→ U2 homepage collection merchandising ─┐
+U1 language/copy ────┼─→ U3 collection PLP filters ────────────┼─→ U6 SEO/a11y/runtime regression gate
+                     ├─→ U4 PDP related products ───────────────┤
+                     └─→ U5 trust/footer + support pages ───────┘
 ```
 
-U2 and U5 may partially overlap after copy/terminology decisions in U1 are stable. U3 and U4 can be developed independently if they do not change the same shared catalog projection at the same time.
+The graph is authoritative:
+- U1 establishes shared buyer terminology and copy boundaries.
+- U2, U3, U4, and U5 may proceed independently after U1, subject to their own content/merchandising approval gates.
+- U3 and U4 must coordinate only if both need to change the same shared catalog projection/repository contract.
+- U6 begins only after the accepted heads of U2–U5 are integrated; it is the convergence/release-quality gate.
 
 ## Task U1 — Normalize buyer language and remove technical copy
 
@@ -56,7 +53,7 @@ U2 and U5 may partially overlap after copy/terminology decisions in U1 are stabl
 - [ ] homepage link guard covers collection/PDP links;
 - [ ] mobile/desktop browser check: no overflow, no broken images, Axe clean.
 
-**Dependencies:** U1 terminology stable.
+**Dependencies:** U1 terminology stable; collection merchandising names/order approved.
 
 **Files likely touched:** homepage route, one collection-merchandising helper/repository boundary, product-card reuse, focused integration/browser tests.
 
@@ -96,7 +93,7 @@ U2 and U5 may partially overlap after copy/terminology decisions in U1 are stabl
 - [ ] PDP browser regression covers related-product links and fallback when none exist;
 - [ ] no change to Add-to-Bag/price/stock authority.
 
-**Dependencies:** Published collection membership already exists; U1 terminology.
+**Dependencies:** U1; existing published collection membership.
 
 **Files likely touched:** storefront catalog repository/runtime, PDP route/component, focused domain/database/integration/browser tests.
 
@@ -104,45 +101,69 @@ U2 and U5 may partially overlap after copy/terminology decisions in U1 are stabl
 
 ## Task U5 — Build factual trust/footer/support surfaces
 
-**Description:** Expand footer/support architecture using existing verified COD and shipping facts; create public support pages only for content that is approved and factual.
+**Description:** Expand footer/support architecture using existing verified COD and shipping facts. Create only support pages whose factual content is approved; route existence alone does not grant search exposure.
 
 **Acceptance criteria:**
 - [ ] footer exposes COD, shipping promotion and order tracking using existing policy helpers rather than duplicated constants;
-- [ ] `/about` and `/size-guide` can ship with approved factual content;
-- [ ] `/shipping-returns`, `/faq`, hotline or Zalo content remains blocked until the relevant policy/contact facts are approved.
+- [ ] `/about` and `/size-guide` ship only with approved factual content; `/shipping-returns` and `/faq` remain blocked until their policy/answer content is approved;
+- [ ] every shipped support page exports a unique factual title/description and an explicit self-canonical derived from the server-owned storefront origin;
+- [ ] support pages remain fail-closed under the current search allowlist until U6 intentionally exposes each approved route.
 
 **Verification:**
 - [ ] link-guard tests cover every new footer route;
 - [ ] support content tests prove shipping/COD values are derived from canonical helpers;
+- [ ] metadata assertions cover title/description/self-canonical for every shipped support route;
 - [ ] mobile/desktop accessibility regression passes.
 
 **Dependencies:** U1; approved content for each route.
 
-**Files likely touched:** footer, public content helper(s), support page routes, integration/browser tests.
+**Files likely touched:** footer, public content helper(s), support page routes, metadata/content integration tests.
 
 **Estimated scope:** Medium; one route/concern per PR if support content grows.
 
 ## Task U6 — SEO, structured-data, accessibility and release-quality regression gate
 
-**Description:** Close the refinement with collection BreadcrumbList structured data plus full regression evidence across metadata/indexing, accessibility and production build.
+**Description:** Integrate U2–U5, add collection BreadcrumbList structured data, explicitly expose approved support routes to search, and close the refinement with full metadata/indexing/accessibility/build evidence.
 
 **Acceptance criteria:**
 - [ ] collection BreadcrumbList mirrors the visible breadcrumb and uses canonical server-owned origin;
+- [ ] each support route that actually shipped with approved content is added to the exact indexable-path allowlist and static sitemap canonical list; unimplemented/unapproved support routes remain absent from both;
+- [ ] support-route base requests are indexable only when the global `indexingEnabled` gate permits it, use self-canonicals, and do not introduce query/faceted indexable states;
 - [ ] Product/Offer/Organization/WebSite structured data remains unchanged unless required by an explicit defect;
 - [ ] all refined public routes satisfy the project Definition of Done with 0 Critical / 0 Required review findings.
 
 **Verification:**
-- [ ] focused structured-data tests;
+- [ ] focused collection structured-data tests;
+- [ ] search-policy tests for each shipped support route in indexing-enabled and fail-closed staging/local configurations;
+- [ ] sitemap regression proves only shipped/approved support routes are emitted when indexing is enabled and sitemap stays empty when indexing is disabled;
+- [ ] canonical metadata/HTTP checks for every shipped support route;
 - [ ] `pnpm lint`, `pnpm typecheck`, relevant tests, `pnpm build`;
 - [ ] representative 390px + desktop browser/Axe/keyboard/overflow checks;
 - [ ] metadata/robots/sitemap/canonical HTTP regression;
 - [ ] final correctness → security → architecture → simplicity → performance review.
 
-**Dependencies:** U2–U5 accepted.
+**Dependencies:** U2, U3, U4, and U5 accepted and integrated.
 
-**Files likely touched:** structured-data helper/collection route, tests and existing runtime workflows only if coverage genuinely needs expansion.
+**Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, structured-data helper/collection route, support-route metadata/tests, existing runtime workflows only if coverage genuinely needs expansion.
 
-**Estimated scope:** Medium.
+**Estimated scope:** Medium; if exposing multiple support routes makes this exceed ~5 files, split support-route search exposure from the final regression-only PR while preserving this gate order.
+
+## Checkpoints
+
+### Checkpoint V3-A — after U1
+- buyer terminology approved;
+- technical public copy removed without weakening factual commerce statements;
+- U2–U5 may start independently.
+
+### Checkpoint V3-B — before U6 convergence
+- U2–U5 accepted independently;
+- only approved support content is public;
+- no support route has been silently made indexable by route creation alone.
+
+### Checkpoint V3-C — final gate
+- integrated head passes U6 verification;
+- 0 Critical / 0 Required findings;
+- human approval before merge/ship.
 
 ## Human checkpoints
 - Approve this V3 spec/plan before implementation.
@@ -150,6 +171,7 @@ U2 and U5 may partially overlap after copy/terminology decisions in U1 are stabl
 - Approve any new editorial hero asset.
 - Supply/approve actual return/exchange, hotline and Zalo facts before publishing them.
 - Approve structured size-table data model separately if free-form size guides are replaced.
+- Approve each support page's factual content before that route becomes eligible for search exposure/sitemap inclusion.
 
 ## Definition of Done overlay
 Every behavior-changing slice must satisfy the repository's standing Definition of Done: task acceptance, focused failing test before implementation, existing regressions green, runtime verification where relevant, no unrelated refactor, security/search boundaries preserved, documentation current, and human review before merge.
