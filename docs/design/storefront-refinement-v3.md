@@ -12,6 +12,7 @@ This is not a clone. Uniforme is a benchmark for product-first merchandising dis
 - Public storefront surfaces already include homepage, Shop, PDP, Collections, Lookbook, cart/checkout/tracking, search, and account/admin routes.
 - Product/Offer/Breadcrumb structured data exists on PDP; Organization/WebSite exists site-wide.
 - Search exposure is fail-closed: arbitrary query/faceted states are not indexable; only reviewed base/pure-pagination catalog states can become canonical/indexable when indexing is enabled.
+- The current static sitemap allowlist is `/`, `/shop`, `/collections`, and `/lookbook`; support routes are not yet included.
 - Product URLs use website-owned stable slugs; price/stock/Add-to-Bag authority remains server-side.
 - Product media is already resolved through the trusted-media boundary.
 - `ProductContent` currently owns `editorialDescription`, `careInstructions`, `sizeGuide`, SEO fields, and collection membership.
@@ -138,6 +139,20 @@ Footer should expose verified buyer trust information, not technical implementat
 - hotline/Zalo only when approved contact data exists;
 - return/exchange statements only when an approved policy exists.
 
+### Support-page publication and search contract
+Support pages are intended to serve both buyer trust and organic discovery, but they must remain fail-closed until their content is approved.
+
+For each support route that actually ships with approved factual content:
+- render a normal public HTML page reachable through crawlable internal links;
+- provide a unique factual title and description;
+- provide an explicit self-canonical URL derived from the server-owned storefront origin;
+- add the exact route to the indexable-path allowlist only when the page is ready for public search exposure;
+- add the exact route to the static canonical sitemap list in the same search-exposure slice;
+- keep staging/local behavior governed by the existing global `indexingEnabled` gate;
+- do not create faceted/query variants for these pages.
+
+A route that lacks approved content must not be added to the indexable allowlist or sitemap. It may remain unimplemented; do not publish placeholder SEO copy merely to occupy the URL.
+
 ## Navigation
 - Keep the current simple semantic navigation model unless real taxonomy size justifies a mega-menu.
 - Native `<details>` mobile navigation is not itself a defect; preserve accessible simplicity unless a tested replacement is materially better.
@@ -148,6 +163,7 @@ Footer should expose verified buyer trust information, not technical implementat
 - Preserve current noindex policy for mixed/filter/sort/search query states.
 - Preserve stable PDP slug/canonical metadata and Product/Offer JSON-LD.
 - Add collection BreadcrumbList JSON-LD when implementing collection refinement and ensure it matches visible breadcrumb content.
+- Apply the support-page publication/search contract above; support routes are not implicitly indexable merely because a page component exists.
 - Do not add ratings, GTIN, material, discount, shipping or return schema claims without verified source data.
 
 ## Accessibility and performance
@@ -164,6 +180,7 @@ Footer should expose verified buyer trust information, not technical implementat
 - PDP presents verified facts near purchase controls and has bounded deterministic related products.
 - Vietnamese-first buyer microcopy is consistent across header/PLP/PDP/footer/support flows.
 - Footer/support pages expose only approved factual trust information.
+- Every shipped support route has an explicit canonical/indexability/sitemap decision and remains fail-closed before approval.
 - Existing price/stock/order authority, media trust, stable URLs, metadata/indexing/schema and accessibility contracts do not regress.
 - Every behavior-changing slice follows RED/GREEN focused tests plus relevant browser/runtime verification.
 
