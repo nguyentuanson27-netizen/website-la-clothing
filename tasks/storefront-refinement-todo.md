@@ -2,6 +2,11 @@
 
 Status: **DRAFT — planning/review only**
 
+## Execution order
+- [ ] U1 completes first and locks shared buyer terminology/copy boundaries
+- [ ] U2, U3, U4, U5 may proceed independently after U1
+- [ ] U6 starts only after U2–U5 are accepted and integrated
+
 ## U1 — Language + buyer-copy cleanup
 - [ ] define Vietnamese-first buyer terminology
 - [ ] update header utility labels consistently
@@ -42,20 +47,31 @@ Status: **DRAFT — planning/review only**
 - [ ] footer derives COD facts from canonical public brand-facts logic
 - [ ] footer derives shipping promotion from existing shipping-policy helper
 - [ ] order tracking link remains prominent
-- [ ] `/about` factual page
-- [ ] `/size-guide` factual page
+- [ ] `/about` only with approved factual content
+- [ ] `/size-guide` only with approved factual content
 - [ ] `/shipping-returns` only after approved policy exists
 - [ ] `/faq` only after approved factual answers exist
+- [ ] each shipped support page has unique factual title + description
+- [ ] each shipped support page has explicit self-canonical from server-owned storefront origin
+- [ ] support routes remain fail-closed under current index allowlist until U6
 - [ ] hotline/Zalo only after approved contact data exists
 - [ ] no duplicated shipping thresholds/constants
-- [ ] link guard + accessibility regression
+- [ ] link guard + metadata + accessibility regression
 
 ## U6 — SEO/a11y/final regression
 - [ ] collection BreadcrumbList matches visible breadcrumb
 - [ ] canonical origin remains server-owned
+- [ ] every shipped/approved support route is explicitly added to the indexable-path allowlist
+- [ ] every shipped/approved support route is explicitly added to the static canonical sitemap list
+- [ ] unimplemented/unapproved support routes remain absent from index allowlist and sitemap
+- [ ] support routes remain noindex when global indexing is disabled
+- [ ] support routes expose only self-canonical base URLs; no new query/faceted indexable states
 - [ ] no ItemList JSON-LD required for launch
 - [ ] Product/Offer schema unchanged unless fixing a proven defect
 - [ ] arbitrary faceted/query states remain out of index
+- [ ] support-route indexing-enabled/fail-closed tests
+- [ ] sitemap enabled/disabled regression
+- [ ] canonical metadata/HTTP checks for shipped support pages
 - [ ] `pnpm lint`
 - [ ] `pnpm typecheck`
 - [ ] relevant tests
