@@ -1,0 +1,79 @@
+name: P18 final QA runtime
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  p18-final-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: la_clothing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d la_clothing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3221
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: 127.0.0.1:3221
+      SEARCH_INDEXING_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install application from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Install pinned P18 browser tooling
+        working-directory: tests/a11y-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: tests/a11y-runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Build production application
+        env:
+          LA_SHIPPING_FEE_VND: "17000"
+          LA_FREE_SHIPPING_SUBTOTAL_VND: "650000"
+          LA_FREE_SHIPPING_MIN_QUANTITY: "5"
+        run: pnpm build
+
+      - name: Run P18 production visual search and performance evidence
+        working-directory: tests/a11y-runtime
+        run: npx playwright test --config p18-playwright.config.ts
