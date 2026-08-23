@@ -146,7 +146,7 @@ The graph is authoritative:
 
 **Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, structured-data helper/collection route, support-route metadata/tests, existing runtime workflows only if coverage genuinely needs expansion.
 
-**Estimated scope:** Medium; if exposing multiple support routes makes this exceed ~5 files, split support-route search exposure from the final regression-only PR while preserving this gate order.
+**Estimated scope:** Medium for the convergence check itself. If support-route search exposure requires more than ~5 files, implement that as one or more focused U6a slices first, then run a docs/test-only U6b final convergence gate. U6 remains after U2–U5 either way.
 
 ## Checkpoints
 
