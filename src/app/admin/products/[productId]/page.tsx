@@ -188,15 +188,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           </div>
           <div className="flex flex-wrap gap-4 text-xs font-semibold uppercase tracking-[0.12em]">
             <div className="border border-black/20 bg-white px-4 py-2">
-              <span className="text-black/55">Giá bán: </span>
+              <span className="text-black/70">Giá bán: </span>
               <span className="text-black">{priceDisplay}</span>
             </div>
             <div className="border border-black/20 bg-white px-4 py-2">
-              <span className="text-black/55">Biến thể: </span>
+              <span className="text-black/70">Biến thể: </span>
               <span className="text-black">{product.variants.length} phân loại</span>
             </div>
             <div className="border border-black/20 bg-white px-4 py-2">
-              <span className="text-black/55">Tổng tồn kho: </span>
+              <span className="text-black/70">Tổng tồn kho: </span>
               <span className="text-black">{totalStock} cái</span>
             </div>
           </div>
@@ -205,20 +205,20 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         {/* SOURCE DESCRIPTION */}
         <div className="mt-6">
           {product.sourceDescription ? (
-            <p className="whitespace-pre-wrap text-sm leading-7 text-black/75">
+            <p className="whitespace-pre-wrap text-sm leading-7 text-black/80">
               {product.sourceDescription}
             </p>
           ) : (
-            <p className="text-sm leading-7 text-black/55">Chưa có mô tả nguồn từ Pancake.</p>
+            <p className="text-sm leading-7 text-black/70">Chưa có mô tả nguồn từ Pancake.</p>
           )}
-          <p className="mt-3 max-w-3xl text-xs leading-5 text-black/55">
+          <p className="mt-3 max-w-3xl text-xs leading-5 text-black/70">
             Dữ liệu này chỉ dùng làm ngữ cảnh đối chiếu. Đồng bộ Pancake không tự xuất bản và không ghi đè nội dung editorial hoặc SEO do website sở hữu.
           </p>
         </div>
 
         {/* IMAGE GALLERY */}
         <div className="mt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/70">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/80">
             Hình ảnh sản phẩm ({imageUrls.length} ảnh)
           </h3>
           {imageUrls.length > 0 ? (
@@ -240,7 +240,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
               ))}
             </div>
           ) : (
-            <p className="mt-2 text-sm text-black/50 italic">
+            <p className="mt-2 text-sm text-black/70 italic">
               Chưa có hình ảnh nào được tải lên Pancake cho sản phẩm này.
             </p>
           )}
@@ -248,21 +248,21 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
         {/* VARIANTS BREAKDOWN TABLE */}
         <div className="mt-8">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/70">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/80">
             Chi tiết các biến thể (Màu / Size / Giá / Kho)
           </h3>
           {product.variants.length > 0 ? (
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/70">
-                    <th className="px-3 py-2.5">SKU</th>
-                    <th className="px-3 py-2.5">Màu sắc</th>
-                    <th className="px-3 py-2.5">Kích cỡ</th>
-                    <th className="px-3 py-2.5">Giá niêm yết</th>
-                    <th className="px-3 py-2.5">Giá sau giảm</th>
-                    <th className="px-3 py-2.5">Tồn kho</th>
-                    <th className="px-3 py-2.5">Trạng thái</th>
+                  <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/80">
+                    <th scope="col" className="px-3 py-2.5">SKU</th>
+                    <th scope="col" className="px-3 py-2.5">Màu sắc</th>
+                    <th scope="col" className="px-3 py-2.5">Kích cỡ</th>
+                    <th scope="col" className="px-3 py-2.5">Giá niêm yết</th>
+                    <th scope="col" className="px-3 py-2.5">Giá sau giảm</th>
+                    <th scope="col" className="px-3 py-2.5">Tồn kho</th>
+                    <th scope="col" className="px-3 py-2.5">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
@@ -281,15 +281,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                         </td>
                         <td className="px-3 py-2.5 font-semibold">
                           {stock > 0 ? (
-                            <span className="text-emerald-700">{stock}</span>
+                            <span className="text-emerald-800">{stock}</span>
                           ) : (
-                            <span className="text-rose-600">Hết hàng</span>
+                            <span className="text-rose-700">Hết hàng</span>
                           )}
                         </td>
                         <td className="px-3 py-2.5">
                           <span
                             className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
-                              v.isActive ? "bg-emerald-100 text-emerald-800" : "bg-black/10 text-black/60"
+                              v.isActive ? "bg-emerald-100 text-emerald-900" : "bg-black/10 text-black/80"
                             }`}
                           >
                             {v.isActive ? "Hoạt động" : "Tắt"}
@@ -301,8 +301,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                 </tbody>
               </table>
             </div>
-          ) : (
-            <p className="mt-2 text-sm text-black/50 italic">Chưa có biến thể nào.</p>
           )}
         </div>
       </section>
