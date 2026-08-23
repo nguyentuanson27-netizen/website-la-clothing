@@ -180,6 +180,7 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      APP_DOMAIN: `${HOST}:${PORT}`,
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
