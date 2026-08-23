@@ -14,7 +14,7 @@ type SearchRequestPolicyInput = Readonly<{
 }>;
 
 const BLOCKED_INDEXING_HOSTS = new Set([
-  "la.lanadesign.vn",
+  "staging.lanadesign.vn",
   "localhost",
   "127.0.0.1",
 ]);

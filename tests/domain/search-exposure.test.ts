@@ -33,7 +33,7 @@ test("runtime search exposure defaults missing or malformed indexing requests to
 });
 
 test("runtime search exposure never enables staging or local origins", () => {
-  for (const appDomain of ["la.lanadesign.vn", "localhost:3000", "127.0.0.1:3000"]) {
+  for (const appDomain of ["staging.lanadesign.vn", "localhost:3000", "127.0.0.1:3000"]) {
     const exposure = readSearchExposure({
       APP_DOMAIN: appDomain,
       SEARCH_INDEXING_ENABLED: "true",
@@ -71,7 +71,7 @@ test("release search exposure requires an explicit canonical boolean flag withou
 });
 
 test("release search exposure blocks indexing on staging/local but accepts explicit false", () => {
-  for (const appDomain of ["la.lanadesign.vn", "localhost:3000", "127.0.0.1:3000"]) {
+  for (const appDomain of ["staging.lanadesign.vn", "localhost:3000", "127.0.0.1:3000"]) {
     assert.throws(
       () =>
         validateSearchExposureForRelease({
@@ -87,7 +87,7 @@ test("release search exposure blocks indexing on staging/local but accepts expli
         SEARCH_INDEXING_ENABLED: "false",
       }),
       {
-        origin: appDomain === "la.lanadesign.vn" ? "https://la.lanadesign.vn" : `http://${appDomain}`,
+        origin: appDomain === "staging.lanadesign.vn" ? "https://staging.lanadesign.vn" : `http://${appDomain}`,
         indexingEnabled: false,
       },
     );

@@ -102,8 +102,8 @@ test("release preflight requires explicit fail-closed search indexing configurat
     () =>
       validateReleaseEnvironment({
         ...validEnvironment,
-        APP_DOMAIN: "la.lanadesign.vn",
-        BETTER_AUTH_URL: "https://la.lanadesign.vn",
+        APP_DOMAIN: "staging.lanadesign.vn",
+        BETTER_AUTH_URL: "https://staging.lanadesign.vn",
         SEARCH_INDEXING_ENABLED: "true",
       }),
     /Search indexing cannot be enabled on staging or local storefront origins/,
