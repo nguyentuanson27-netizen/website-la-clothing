@@ -6,7 +6,8 @@ import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-cata
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 import { readSearchExposure } from "@/seo/search-exposure";
-import { buildProductStructuredData, serializeJsonLd } from "@/seo/structured-data";
+import { serializeJsonLd } from "@/seo/structured-data";
+import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-structured-data";
 
 type ProductPageProps = {
   params: Promise<{ slug: string }>;
@@ -27,10 +28,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
   if (!product) notFound();
 
   const options = product.projection.options;
-  const structuredData = buildProductStructuredData({
+  const structuredData = buildStorefrontProductStructuredData({
     origin: readSearchExposure().origin,
     product,
-    variantOptions: options,
   });
 
   return (
