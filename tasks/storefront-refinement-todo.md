@@ -66,6 +66,7 @@ Status: **DRAFT — planning/review only**
 - [ ] unimplemented/unapproved support routes remain absent from index allowlist and sitemap
 - [ ] support routes remain noindex when global indexing is disabled
 - [ ] support routes expose only self-canonical base URLs; no new query/faceted indexable states
+- [ ] if support-route exposure exceeds ~5 files, split focused U6a implementation slice(s) before U6b final convergence gate
 - [ ] no ItemList JSON-LD required for launch
 - [ ] Product/Offer schema unchanged unless fixing a proven defect
 - [ ] arbitrary faceted/query states remain out of index
