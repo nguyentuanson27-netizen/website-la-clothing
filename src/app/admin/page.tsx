@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { requireCurrentAdminPage } from "@/auth/current-admin";
@@ -10,6 +11,11 @@ export const metadata: Metadata = {
 };
 
 const repository = createProductContentRepository(prisma);
+
+function formatVnd(amount: number | null | undefined): string {
+  if (typeof amount !== "number" || Number.isNaN(amount)) return "—";
+  return new Intl.NumberFormat("vi-VN").format(amount) + " ₫";
+}
 
 export default async function AdminProductsPage() {
   await requireCurrentAdminPage();
@@ -50,28 +56,86 @@ export default async function AdminProductsPage() {
         </section>
       ) : (
         <div className="divide-y divide-black/20 border-b border-black/20">
-          {products.map((product) => (
-            <article key={product.id} className="grid gap-4 py-6 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <h2 className="font-serif text-2xl tracking-[-0.025em]">{product.name}</h2>
-                  <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
-                    {product.isActive ? "Đang hoạt động" : "Không hoạt động"}
-                  </span>
+          {products.map((product) => {
+            const prices = product.variants
+              .map((v) => v.pancakeRetailPriceAfterDiscount ?? v.pancakeRetailPrice)
+              .filter((p): p is number => typeof p === "number" && !Number.isNaN(p));
+            const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+            const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+            const priceDisplay =
+              minPrice !== null && maxPrice !== null
+                ? minPrice === maxPrice
+                  ? formatVnd(minPrice)
+                  : `${formatVnd(minPrice)} – ${formatVnd(maxPrice)}`
+                : null;
+
+            return (
+              <article key={product.id} className="grid gap-4 py-6 md:grid-cols-[auto_1fr_auto] md:items-center">
+                {product.primaryImageUrl ? (
+                  <div className="relative aspect-[3/4] w-20 shrink-0 overflow-hidden border border-black/20 bg-[var(--stone)] md:w-24">
+                    <Image
+                      src={product.primaryImageUrl}
+                      alt={product.name}
+                      fill
+                      sizes="96px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                ) : (
+                  <div className="flex aspect-[3/4] w-20 shrink-0 items-center justify-center border border-black/15 bg-black/5 text-[0.65rem] uppercase tracking-wider text-black/40 md:w-24">
+                    Không ảnh
+                  </div>
+                )}
+                <div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <h2 className="font-serif text-2xl tracking-[-0.025em]">{product.name}</h2>
+                    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
+                      {product.isActive ? "Đang hoạt động" : "Không hoạt động"}
+                    </span>
+                    {product.content?.status ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
+                          product.content.status === "PUBLISHED"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : product.content.status === "REVIEWED"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-black/10 text-black/60"
+                        }`}
+                      >
+                        {product.content.status}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-black/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-black/60">
+                        DRAFT
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-black/60">
+                    <p>/{product.slug}</p>
+                    {priceDisplay ? (
+                      <>
+                        <span>•</span>
+                        <span className="font-semibold text-black">{priceDisplay}</span>
+                      </>
+                    ) : null}
+                    {product.variants.length > 0 ? (
+                      <>
+                        <span>•</span>
+                        <span>{product.variants.length} biến thể</span>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-                <p className="mt-2 text-sm text-black/60">/{product.slug}</p>
-                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.13em]">
-                  {product.content ? "Đã có nội dung biên tập" : "Chưa có nội dung biên tập"}
-                </p>
-              </div>
-              <Link
-                className="inline-flex min-h-11 w-fit items-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
-                href={`/admin/products/${product.id}`}
-              >
-                Mở biên tập
-              </Link>
-            </article>
-          ))}
+                <Link
+                  className="inline-flex min-h-11 w-fit items-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
+                  href={`/admin/products/${product.id}`}
+                >
+                  Mở biên tập
+                </Link>
+              </article>
+            );
+          })}
         </div>
       )}
 

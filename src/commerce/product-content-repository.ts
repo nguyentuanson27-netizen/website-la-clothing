@@ -46,8 +46,27 @@ export function createProductContentRepository(client: PrismaClient) {
         id: true,
         name: true,
         slug: true,
+        primaryImageUrl: true,
         sourceDescription: true,
         isActive: true,
+        variants: {
+          orderBy: [{ color: "asc" }, { size: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            sku: true,
+            color: true,
+            size: true,
+            pancakeRetailPrice: true,
+            pancakeRetailPriceAfterDiscount: true,
+            pancakeImageUrls: true,
+            isActive: true,
+            warehouseStocks: {
+              select: {
+                quantity: true,
+              },
+            },
+          },
+        },
         content: {
           select: {
             status: true,
@@ -72,8 +91,17 @@ export function createProductContentRepository(client: PrismaClient) {
         id: true,
         name: true,
         slug: true,
+        primaryImageUrl: true,
         isActive: true,
         syncedAt: true,
+        variants: {
+          select: {
+            pancakeRetailPrice: true,
+            pancakeRetailPriceAfterDiscount: true,
+            size: true,
+            color: true,
+          },
+        },
         content: {
           select: {
             status: true,
