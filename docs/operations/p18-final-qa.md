@@ -11,7 +11,7 @@ The runtime verifies:
 - representative `/`, `/shop`, and `/shop/<slug>` production pages at 390×844 and 1440×900;
 - no horizontal overflow and no WCAG A/AA Axe violations on those pages;
 - keyboard focus can enter each representative page;
-- staging/local search exposure remains fail-closed (`noindex`, no canonical, no sitemap advertising/URLs);
+- indexing-disabled / staging search exposure remains fail-closed (`noindex`, no canonical, no sitemap advertising/URLs);
 - `robots.txt` keeps `/api` blocked and keeps `OAI-SearchBot` on the reviewed public crawl boundary;
 - the representative PDP emits factual parent Product/Offer JSON-LD;
 - production navigation timing evidence is emitted for home/PLP/PDP on mobile and desktop.

@@ -105,7 +105,7 @@ Next.js Proxy resolves `/shop/:slug` before the PDP can enter streamed rendering
 
 Historical redirect construction never derives canonical identity from request `Host` or request origin. The Proxy constructs a Next-compatible absolute destination from validated server-owned `APP_DOMAIN`, while the framework may serialize that same-site response as a relative `Location: /shop/<current-slug>` on the wire. The HTTP regression sends a real raw request with `Host: attacker.example` and proves the resulting 301 still targets only the exact current product path and never contains the hostile host.
 
-`APP_DOMAIN` is deployment configuration, not P12 indexing state. Public hostnames resolve to HTTPS; only `localhost` and `127.0.0.1` may use an explicit HTTP port for local verification. Release preflight fails closed when `APP_DOMAIN` is missing or malformed. This does not enable canonicals or indexing: `la.lanadesign.vn` remains temporary non-indexable staging, and the dedicated LA Clothing domain is still required only before enabling indexing/final canonicals and release preflight for that launch state.
+`APP_DOMAIN` is deployment configuration, not P12 indexing state. Public hostnames resolve to HTTPS; only `localhost` and `127.0.0.1` may use an explicit HTTP port for local verification. Release preflight fails closed when `APP_DOMAIN` is missing or malformed. Under ADR 0004, `la.lanadesign.vn` is approved as the temporary production domain with `SEARCH_INDEXING_ENABLED=false` (withholding public canonicals and indexing until permanent domain configuration and explicit human approval).
 
 Direct 301/404 responses retain the existing global security headers, including `X-Content-Type-Options` and `X-Frame-Options`.
 

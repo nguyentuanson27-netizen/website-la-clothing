@@ -32,7 +32,7 @@ Repository facts carried forward:
 6. **Product images are untrusted external URLs.** No wildcard image proxy/origin. Live LA Clothing image origins must be audited before `next/image`/CSP allowlisting.
 7. **Slug is website-owned and stable.** Product-name/Pancake changes do not silently change a published URL. Explicit slug changes create 301 history.
 8. **SEO taxonomy is website-owned.** Pancake categories may seed/match collections only after live evidence and explicit mapping; an empty/poor POS taxonomy does not block launch.
-9. **`la.lanadesign.vn` is staging/temporary.** It should remain non-indexable. Public SEO launch uses a dedicated LA Clothing domain; the exact domain may be chosen later, but must be fixed before indexing is enabled.
+9. **`la.lanadesign.vn` is temporary production with indexing disabled.** (ADR 0004) Under human approval, it serves real buyer traffic while keeping `SEARCH_INDEXING_ENABLED=false`. Public search indexing remains blocked until permanent domain configuration and explicit human launch approval.
 10. **Utility/faceted URLs are not SEO landing pages by default.** Stable homepage, collection/editorial pages, and public PDPs are the canonical indexable surfaces.
 11. **Deep SEO is factual, not keyword stuffing.** Titles, descriptions, headings, alt text, filenames for website-owned assets, schema, internal links, and copy must describe real content.
 12. **GEO uses the same public factual HTML and structured data as users/search engines.** No hidden AI-only copy and no special AI text file is required for launch.
@@ -74,7 +74,7 @@ P17 -> P18 final visual/search/E2E gate
 P18 -> P19 dedicated-domain cutover + ship
 ```
 
-P8 visual work can start after P3 is specified, but final sign-off must use real media. P12 can be built while still on `la.lanadesign.vn`, but indexing remains fail-closed until the dedicated domain is configured.
+P8 visual work can start after P3 is specified, but final sign-off must use real media. P12 can be built on temporary production / staging, but indexing remains fail-closed until permanent domain configuration and explicit approval.
 
 ## Parallel execution model — two workstreams
 
@@ -369,7 +369,7 @@ Before Deep SEO, human review confirms product slug examples, collection taxonom
 Human visual review must use representative real catalog/media and approve homepage → collection → PDP → cart → checkout before search launch work is called ready.
 
 ## Task P12 — Add fail-closed domain/search exposure and technical SEO foundation
-**Description:** Introduce explicit canonical origin + explicit indexing flag. `la.lanadesign.vn` remains staging/temporary and non-indexable. Add metadata base, robots/sitemap conventions, and utility-route noindex. Indexing can be enabled only when the dedicated LA Clothing domain is configured and release preflight passes.
+**Description:** Introduce explicit canonical origin + explicit indexing flag. Under ADR 0004, `la.lanadesign.vn` serves as temporary production with `SEARCH_INDEXING_ENABLED=false`. Add metadata base, robots/sitemap conventions, and utility-route noindex. Indexing can be enabled only when permanent domain configuration and explicit human launch approval are granted.
 
 **Indexable when enabled:** homepage, published collections/editorial pages, public active PDPs, deliberately indexable Shop pages.
 
@@ -481,8 +481,8 @@ Before GEO/content scale-up: verify final URL model, canonical/noindex behavior,
 
 **Estimated scope:** Verification gate.
 
-## Task P19 — Cut over dedicated LA Clothing domain and ship
-**Description:** Configure the chosen dedicated brand domain as the one canonical public origin, validate TLS/NPM/Caddy/app routing, enable indexing explicitly, submit/verify search surfaces, and retain `la.lanadesign.vn` as non-canonical staging or redirect it according to the approved hosting policy.
+## Task P19 — Cut over permanent brand domain and ship
+**Description:** Configure the chosen permanent brand domain as the canonical public origin, validate TLS/NPM/Caddy/app routing, enable indexing explicitly after human approval, submit/verify search surfaces, and transition `la.lanadesign.vn` according to the approved hosting policy.
 
 **Acceptance criteria:**
 - [ ] dedicated domain serves the exact approved release and is the only public canonical origin;

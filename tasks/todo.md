@@ -16,7 +16,7 @@ Status: **FINAL PLAN — ready for /build**
 - [x] Pancake API has no SEO slug field; slug is website-owned
 - [x] Remote image origins require live allowlist evidence; no wildcard proxy/origin
 - [x] Pancake categories are candidate source taxonomy only; SEO collections remain website-owned
-- [x] `la.lanadesign.vn` is staging/temporary and should remain non-indexable
+- [x] `la.lanadesign.vn` is approved as temporary production with indexing disabled (ADR 0004)
 - [x] Public SEO launch will use a dedicated LA Clothing domain; exact domain can be chosen later
 - [x] No AI auto-publish; missing facts stay missing
 - [x] No blind retry for ambiguous Pancake order writes
@@ -173,7 +173,7 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 ## P12 — Fail-closed domain/search exposure + technical SEO
 - [x] explicit canonical site origin
 - [x] explicit `SEARCH_INDEXING_ENABLED`-style gate or equivalent
-- [x] `la.lanadesign.vn` defaults non-indexable
+- [x] `la.lanadesign.vn` operates non-indexable under `SEARCH_INDEXING_ENABLED=false` (ADR 0004)
 - [x] dedicated domain required before indexing=true
 - [x] `metadataBase`/canonical policy
 - [x] `robots.ts`
@@ -259,7 +259,7 @@ P16 → P17 Live acceptance → P18 Final QA → P19 Dedicated-domain ship
 - [ ] exact approved release SHA deployed
 - [ ] indexing explicitly enabled only after all checks
 - [ ] canonical/OG/schema/sitemap URLs use final domain
-- [ ] `la.lanadesign.vn` remains non-canonical staging or approved redirect
+- [ ] transition `la.lanadesign.vn` according to approved hosting policy after permanent domain cutover
 - [ ] public commerce-route smoke
 - [ ] backup/restore gate closed
 - [ ] SSH hardening gate closed

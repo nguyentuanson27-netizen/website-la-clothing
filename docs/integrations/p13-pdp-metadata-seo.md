@@ -13,7 +13,7 @@ P13 adds product-detail metadata without changing PDP commerce/UI behavior:
 - website-owned branded fallback social PNG when trusted product media is absent;
 - rendered-head/runtime regression coverage.
 
-P13 does **not** implement JSON-LD/breadcrumb schema (P14), crawl architecture (P15), a dedicated production domain, or indexing enablement. `la.lanadesign.vn` remains staging/non-indexable under the P12 gate.
+P13 does **not** implement JSON-LD/breadcrumb schema (P14), crawl architecture (P15), or permanent-domain indexing enablement. Under ADR 0004, `la.lanadesign.vn` serves as temporary production with `SEARCH_INDEXING_ENABLED=false` under the P12 gate.
 
 ## Metadata ownership and uniqueness contract
 
@@ -28,14 +28,14 @@ Published website-owned `ProductContent.seoTitle` and `ProductContent.seoDescrip
 
 This guarantees distinct current product slugs produce distinct title/description metadata without inventing material, fit, origin, ratings, discounts, or other unverified product facts. P13 deliberately does not add a database uniqueness constraint or publication transaction because that would widen the website-owned editorial persistence model beyond this metadata slice.
 
-## Canonical and staging behavior
+## Canonical and indexing-disabled behavior
 
 P13 reuses P12 `readSearchExposure()` as the sole site-origin/indexing authority.
 
 - enabled public origin: emit exact canonical `/shop/<current-slug>`;
-- staging/local or disabled indexing: withhold the canonical tag;
+- staging/local or disabled indexing (including temporary production on `la.lanadesign.vn`): withhold the canonical tag;
 - Open Graph URL still describes the browsed product URL using the server-owned origin;
-- P12 root meta/X-Robots noindex remains authoritative on staging;
+- P12 root meta/X-Robots noindex remains authoritative while indexing is disabled;
 - unknown/historical/current slug HTTP behavior remains owned by P6 Proxy resolution.
 
 Request `Host` is never used to construct canonical/social URLs.

@@ -4,11 +4,12 @@ P12 is implemented as a fail-closed search-exposure boundary. P15 extends that b
 
 ## Locked launch rule
 
-- `la.lanadesign.vn` is temporary staging and remains non-indexable.
-- `SEARCH_INDEXING_ENABLED=false` is the safe default for local, staging, CI, and VPS verification.
-- P12 may be deployed while staging after P6 + P7.
-- A dedicated LA Clothing domain must be explicitly selected and approved before `SEARCH_INDEXING_ENABLED=true` is used for a real deployment.
-- Enabling indexing is a later launch/configuration decision; merging P12 or P15 does not enable indexing by itself.
+- `la.lanadesign.vn` is approved as the **TEMPORARY production domain** by human owner (ADR 0004) and serves real buyer traffic.
+- `staging.lanadesign.vn` is the dedicated staging hostname and indexing-blocked origin (`BLOCKED_INDEXING_HOSTS`).
+- `SEARCH_INDEXING_ENABLED=false` is the active production configuration for `la.lanadesign.vn`.
+- Runtime policy permits public hostnames (including `la.lanadesign.vn`), but enabling search indexing (`SEARCH_INDEXING_ENABLED=true`) is **NOT** approved by this temporary-domain decision.
+- Enabling search indexing requires a separate explicit human approval gate and permanent domain confirmation.
+- Until that separate approval: `noindex, nofollow`, no public canonical, and an empty non-advertised sitemap remain expected production behavior.
 
 ## Runtime policy
 
@@ -54,7 +55,7 @@ Domain-level crawl-policy tests additionally verify malformed, leading-zero, per
 
 ## Release preflight
 
-`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`. Missing or malformed values fail closed. `true` is rejected for `la.lanadesign.vn`, `localhost`, and `127.0.0.1` origins.
+`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`. Missing or malformed values fail closed. `true` is rejected for `staging.lanadesign.vn`, `localhost`, and `127.0.0.1` origins.
 
 The repository examples and CI/VPS verification use `false`. Do not weaken this validation to make a deployment pass.
 
