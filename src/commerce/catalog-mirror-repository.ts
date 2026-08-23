@@ -241,11 +241,18 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+function normalizedFieldDimension(name: string): "color" | "size" | null {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "size") return "size";
+  if (normalized === "color" || normalized === "màu") return "color";
+  return null;
+}
+
 function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" | "size"): string | null {
   const values = new Set<string>();
 
   for (const field of fields) {
-    if (field.keyValue.trim().toLowerCase() !== key) continue;
+    if (normalizedFieldDimension(field.name) !== key) continue;
     const value = field.value.trim();
     if (value.length > 0) values.add(value);
   }
