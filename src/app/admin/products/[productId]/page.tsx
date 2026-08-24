@@ -81,7 +81,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       sizeGuide: formData.get("sizeGuide"),
       seoTitle: formData.get("seoTitle"),
       seoDescription: formData.get("seoDescription"),
-      collectionSlugs: formData.get("collectionSlugs"),
+      // Checkbox group: the domain parser takes the same comma-separated contract as before.
+      collectionSlugs: formData
+        .getAll("collectionSlugs")
+        .filter((value): value is string => typeof value === "string")
+        .join(", "),
     });
 
     if (!result.ok) {
@@ -96,6 +100,24 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     revalidatePath("/shop");
     redirect(`${editorPath}?saved=1`);
   }
+
+  const definedCollections = await collectionRepository.listForAdmin(100);
+  const assignedSlugs = new Set(product.content?.collectionSlugs ?? []);
+  const definedSlugs = new Set(definedCollections.map((collection) => collection.slug));
+  const collectionChoices = [
+    ...definedCollections.map((collection) => ({
+      slug: collection.slug,
+      title: collection.title,
+      isPublished: collection.isPublished,
+      checked: assignedSlugs.has(collection.slug),
+      missing: false,
+    })),
+    // A slug saved earlier whose definition is gone stays visible and checked, so it is removed
+    // deliberately rather than silently dropped on the next save.
+    ...[...assignedSlugs]
+      .filter((slug) => !definedSlugs.has(slug))
+      .map((slug) => ({ slug, title: slug, isPublished: false, checked: true, missing: true })),
+  ];
 
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
@@ -381,25 +403,52 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
             <h2 id="collections-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
               Collections
             </h2>
-            <label className="mt-8 block">
-              <span className="text-xs font-semibold uppercase tracking-[0.13em]">
-                Collection slugs
-              </span>
-              <input
-                className={inputClassName}
-                defaultValue={product.content?.collectionSlugs.join(", ") ?? ""}
-                maxLength={
-                  PRODUCT_CONTENT_LIMITS.collectionCount *
-                  (PRODUCT_CONTENT_LIMITS.collectionSlug + 2)
-                }
-                name="collectionSlugs"
-                placeholder="city-uniform, essentials"
-                type="text"
-              />
-              <span className="mt-3 block text-xs leading-5 text-black/55">
-                Tối đa {PRODUCT_CONTENT_LIMITS.collectionCount} slug, phân cách bằng dấu phẩy; chỉ dùng chữ thường, số và dấu gạch ngang.
-              </span>
-            </label>
+            {collectionChoices.length === 0 ? (
+              <p className="mt-8 max-w-2xl text-sm leading-6 text-black/65">
+                Chưa có collection nào để gán.{" "}
+                <Link
+                  className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+                  href="/admin/collections"
+                >
+                  Tạo collection
+                </Link>{" "}
+                trước, sau đó quay lại gán sản phẩm.
+              </p>
+            ) : (
+              <fieldset className="mt-8">
+                <legend className="text-xs font-semibold uppercase tracking-[0.13em]">
+                  Thuộc collection
+                </legend>
+                <div className="mt-4 grid gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+                  {collectionChoices.map((choice) => (
+                    <label
+                      className="flex min-h-11 items-center gap-3 border-b border-black/10 py-2 text-sm"
+                      key={choice.slug}
+                    >
+                      <input
+                        className="size-5 shrink-0 accent-black focus-visible:outline-2 focus-visible:outline-offset-4"
+                        defaultChecked={choice.checked}
+                        name="collectionSlugs"
+                        type="checkbox"
+                        value={choice.slug}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate">{choice.title}</span>
+                        <span className="block truncate text-xs text-black/50">
+                          /{choice.slug}
+                          {choice.isPublished ? "" : " · draft"}
+                          {choice.missing ? " · không còn định nghĩa" : ""}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-4 max-w-2xl text-xs leading-5 text-black/55">
+                  Tối đa {PRODUCT_CONTENT_LIMITS.collectionCount} collection. Membership do website
+                  quản lý; bỏ chọn không xóa collection, chỉ gỡ sản phẩm khỏi collection đó.
+                </p>
+              </fieldset>
+            )}
           </section>
 
           <section aria-labelledby="seo-heading" className="border-t border-black/20 pt-10">
