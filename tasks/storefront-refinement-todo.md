@@ -7,6 +7,7 @@ Status: **DRAFT — planning/review only**
 - [ ] U2, U3, U4, U5 may proceed independently after U1
 - [ ] U5 owns `/size-guide` route + PDP link atomically
 - [ ] U6 starts only after U2–U5 are accepted and integrated
+- [ ] U6 owns support-route canonical + allowlist + sitemap atomically
 - [ ] U6 must not bypass ADR 0004 permanent-domain + explicit human indexing approval
 
 ## U1 — Language + buyer-copy cleanup
@@ -69,8 +70,8 @@ Status: **DRAFT — planning/review only**
 - [ ] `/faq` only after explicit factual-answer approval
 - [ ] no support route is presumed approved by this plan
 - [ ] each shipped support page has unique factual title + description
-- [ ] when indexing is disabled, support-page public canonical metadata is withheld
-- [ ] eligible indexing-enabled test mode emits self-canonical from server-owned origin
+- [ ] U5 does not add support-route self-canonical metadata before U6 search-exposure slice
+- [ ] when indexing is disabled, support-page public canonical metadata is absent
 - [ ] `/size-guide` route + PDP link land in the same accepted slice
 - [ ] support routes remain fail-closed under current production indexation config
 - [ ] hotline/Zalo only after approved contact data exists
@@ -81,9 +82,9 @@ Status: **DRAFT — planning/review only**
 - [ ] U6 is the sole owner of collection BreadcrumbList after U3 is accepted
 - [ ] collection BreadcrumbList matches visible breadcrumb
 - [ ] canonical origin remains server-owned
-- [ ] only shipped/approved support routes are eligible for indexable-path allowlist preparation
-- [ ] only shipped/approved support routes are eligible for static sitemap-path preparation
-- [ ] unimplemented/unapproved support routes remain absent from index allowlist and sitemap code
+- [ ] for each approved/shipped support route, self-canonical metadata + indexable-path allowlist + sitemap path are introduced in the same focused slice
+- [ ] no intermediate indexing-enabled state exposes canonical metadata while response policy still noindexes the same support route
+- [ ] unimplemented/unapproved support routes remain absent from canonical metadata preparation, index allowlist and sitemap code
 - [ ] current temporary production stays `SEARCH_INDEXING_ENABLED=false`
 - [ ] current temporary production support pages remain noindex/nofollow
 - [ ] current temporary production support pages withhold public canonicals
