@@ -150,14 +150,25 @@ function isEmbeddedBuyerLabelLine(line: string, label: string): boolean {
   if (label !== "Bag" && label !== "Cart") return false;
 
   const token = new RegExp("\\b" + label + "\\b");
-  const jsxText = line.match(/>([^<\\n]+)</)?.[1] ?? "";
-  if (token.test(jsxText)) return true;
+  const jsxStart = line.indexOf(">");
+  const jsxEnd = jsxStart >= 0 ? line.indexOf("<", jsxStart + 1) : -1;
+  if (jsxStart >= 0 && jsxEnd > jsxStart) {
+    const jsxText = line.slice(jsxStart + 1, jsxEnd);
+    if (token.test(jsxText)) return true;
+  }
 
-  const objectCopy = line.match(/(?:title|label|message|description)\\s*:\\s*["'`](.*?)["'`]/)?.[1] ?? "";
-  if (token.test(objectCopy)) return true;
+  const copyKeys = [
+    "title:",
+    "label:",
+    "message:",
+    "description:",
+    "placeholder=",
+    "aria-label=",
+  ];
+  if (!copyKeys.some((key) => line.includes(key))) return false;
 
-  const propCopy = line.match(/(?:placeholder|aria-label)\\s*=\\s*["'](.*?)["']/)?.[1] ?? "";
-  return token.test(propCopy);
+  const quotedSegments = line.match(/["'][^"']*["']/g) ?? [];
+  return quotedSegments.some((segment) => token.test(segment));
 }
 
 function findHits(path: string, source: string): InventoryHit[] {
