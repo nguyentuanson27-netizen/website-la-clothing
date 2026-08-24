@@ -23,7 +23,7 @@ const validInput = {
   isActive: true,
 } as const;
 
-test("composite component activation requires ADMIN before dependency access", async () => {
+test("composite component activation requires authentication and ADMIN before dependency access", async () => {
   let dependencyCalls = 0;
   const service = createCompositeComponentAdminService({
     async setLinkedVariantActivation() {
@@ -32,14 +32,19 @@ test("composite component activation requires ADMIN before dependency access", a
     },
   });
 
-  await assert.rejects(
-    () => service.setActivation(customerSession, validInput),
-    (error: unknown) => {
-      assert.ok(error instanceof AuthorizationError);
-      assert.equal(error.code, "FORBIDDEN");
-      return true;
-    },
-  );
+  for (const [session, expectedCode] of [
+    [null, "UNAUTHENTICATED"],
+    [customerSession, "FORBIDDEN"],
+  ] as const) {
+    await assert.rejects(
+      () => service.setActivation(session, validInput),
+      (error: unknown) => {
+        assert.ok(error instanceof AuthorizationError);
+        assert.equal(error.code, expectedCode);
+        return true;
+      },
+    );
+  }
   assert.equal(dependencyCalls, 0);
 });
 
