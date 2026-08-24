@@ -84,7 +84,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   if (page > Math.max(totalPages, 1)) notFound();
 
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li>
@@ -178,6 +178,6 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           ) : null}
         </section>
       )}
-    </main>
+    </div>
   );
 }
