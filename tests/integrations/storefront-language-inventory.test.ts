@@ -146,6 +146,20 @@ function isExactBuyerLabelLine(line: string, label: string): boolean {
   ).test(line);
 }
 
+function isEmbeddedBuyerLabelLine(line: string, label: string): boolean {
+  if (label !== "Bag" && label !== "Cart") return false;
+
+  const token = new RegExp("\\b" + label + "\\b");
+  const jsxText = line.match(/>([^<\\n]+)</)?.[1] ?? "";
+  if (token.test(jsxText)) return true;
+
+  const objectCopy = line.match(/(?:title|label|message|description)\\s*:\\s*["'`](.*?)["'`]/)?.[1] ?? "";
+  if (token.test(objectCopy)) return true;
+
+  const propCopy = line.match(/(?:placeholder|aria-label)\\s*=\\s*["'](.*?)["']/)?.[1] ?? "";
+  return token.test(propCopy);
+}
+
 function findHits(path: string, source: string): InventoryHit[] {
   const hits: InventoryHit[] = [];
 
@@ -168,7 +182,10 @@ function findHits(path: string, source: string): InventoryHit[] {
     }
 
     for (const label of EXACT_LABELS) {
-      if (isExactBuyerLabelLine(line, label)) {
+      if (
+        isExactBuyerLabelLine(line, label) ||
+        isEmbeddedBuyerLabelLine(line, label)
+      ) {
         hits.push({ path, line: index + 1, term: label, text: line.trim() });
       }
     }
@@ -176,6 +193,22 @@ function findHits(path: string, source: string): InventoryHit[] {
 
   return hits;
 }
+
+test("U1 inventory catches embedded buyer labels without matching technical identifiers", () => {
+  assert.deepEqual(
+    findHits("fixture.tsx", '<p className="eyebrow">Shopping / Bag</p>'),
+    [
+      {
+        path: "fixture.tsx",
+        line: 1,
+        term: "Bag",
+        text: '<p className="eyebrow">Shopping / Bag</p>',
+      },
+    ],
+  );
+  assert.deepEqual(findHits("fixture.ts", "class CartError extends Error {}"), []);
+  assert.deepEqual(findHits("fixture.ts", 'const query = "FROM \\"Cart\\"";'), []);
+});
 
 test("U1 inventory classifies every locked old buyer-copy literal before edits", async () => {
   const files = (
