@@ -10,6 +10,7 @@ import {
   type CollectionDefinition,
 } from "@/commerce/collection-definition";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
+import { createProductContentRepository } from "@/commerce/product-content-repository";
 import { CollectionAdminStatus } from "@/components/admin/collection-admin-status";
 import { prisma } from "@/db/prisma";
 
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
 };
 
 const repository = createCollectionDefinitionRepository(prisma);
+const productRepository = createProductContentRepository(prisma);
 const adminService = createCollectionDefinitionAdminService({
   createDefinition: repository.createDefinition,
   updateExistingDefinition: repository.updateExistingDefinition,
@@ -202,7 +204,10 @@ type AdminCollectionsPageProps = {
 
 export default async function AdminCollectionsPage({ searchParams }: AdminCollectionsPageProps) {
   await requireCurrentAdminPage();
-  const collections = await repository.listForAdmin(100);
+  const [collections, productCounts] = await Promise.all([
+    repository.listForAdmin(100),
+    productRepository.countProductsByCollectionSlug(),
+  ]);
 
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
@@ -252,13 +257,94 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
             Chưa có collection. Tạo definition đầu tiên ở form phía trên; hệ thống không tự sinh collection từ POS.
           </p>
         ) : (
-          <div className="mt-8 divide-y divide-black/20 border-y border-black/20">
+          <>
+            <div className="mt-8 overflow-x-auto border-y border-black/20">
+              <table className="w-full min-w-[44rem] border-collapse text-left">
+                <caption className="sr-only">
+                  Tổng quan collection với trạng thái publish và số sản phẩm đang thuộc về
+                </caption>
+                <thead>
+                  <tr className="border-b border-black/20 text-[0.65rem] uppercase tracking-[0.14em] text-black/60">
+                    <th className="py-3 pr-4 font-semibold" scope="col">
+                      Collection
+                    </th>
+                    <th className="py-3 pr-4 font-semibold" scope="col">
+                      Trạng thái
+                    </th>
+                    <th className="py-3 pr-4 font-semibold" scope="col">
+                      Mô tả
+                    </th>
+                    <th className="py-3 pr-4 font-semibold" scope="col">
+                      Sản phẩm
+                    </th>
+                    <th className="py-3 font-semibold" scope="col">
+                      <span className="sr-only">Hành động</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/12">
+                  {collections.map((definition) => {
+                    const count = productCounts.get(definition.slug) ?? 0;
+                    const hasDescription = (definition.description ?? "").trim().length > 0;
+
+                    return (
+                      <tr className="align-middle transition-colors hover:bg-black/[0.03]" key={definition.slug}>
+                        <td className="py-3 pr-4">
+                          <a
+                            className="font-serif text-lg leading-tight tracking-[-0.02em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+                            href={`#collection-${definition.slug}`}
+                          >
+                            {definition.title}
+                          </a>
+                          <p className="mt-1 text-xs text-black/55">/{definition.slug}</p>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
+                              definition.isPublished
+                                ? "bg-emerald-100 text-emerald-900"
+                                : "bg-black/10 text-black/70"
+                            }`}
+                          >
+                            {definition.isPublished ? "Published" : "Draft"}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 text-xs">
+                          {hasDescription ? (
+                            <span className="text-black/60">Có</span>
+                          ) : (
+                            <span className="font-semibold text-amber-800">
+                              Thiếu — không thể publish
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4 text-sm font-semibold">{count}</td>
+                        <td className="py-3">
+                          <Link
+                            className="inline-flex min-h-11 items-center border border-black/25 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4"
+                            href={`/admin?collection=${definition.slug}`}
+                          >
+                            Xem sản phẩm
+                            <span className="sr-only"> thuộc {definition.title}</span>
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-8 divide-y divide-black/20 border-y border-black/20">
             {collections.map((definition) => (
-              <article key={definition.slug} className="py-10">
+              <article key={definition.slug} className="py-10" id={`collection-${definition.slug}`}>
                 <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
                   <h3 className="font-serif text-2xl tracking-[-0.025em]">{definition.title}</h3>
                   <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
                     {definition.isPublished ? "Published" : "Draft"}
+                  </span>
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
+                    {productCounts.get(definition.slug) ?? 0} sản phẩm
                   </span>
                 </div>
                 <CollectionForm
@@ -267,7 +353,8 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
                 />
               </article>
             ))}
-          </div>
+            </div>
+          </>
         )}
 
         {collections.length === 100 ? (
