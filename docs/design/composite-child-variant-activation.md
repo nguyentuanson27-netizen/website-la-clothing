@@ -4,7 +4,7 @@ Status: **DRAFT SPEC — planning/review only. No production implementation unti
 
 This document defines the focused fix for the live composite-product gap discovered after PR #97 made persisted Pancake parent → child relationships visible in admin.
 
-After this spec/plan is approved, implementation will continue **on this same PR/branch**. Before the first production-code commit, the branch must be refreshed onto the then-current `main` so the completed V3 U0 accessibility work is included.
+This PR remains **planning-only**. After this spec/plan is approved, it must be refreshed onto the then-current `main` and merged as the reviewed planning source before production implementation starts. Implementation is then split across the focused PRs declared below; no production code lands on this planning PR.
 
 ## Objective
 
@@ -285,9 +285,15 @@ Create a real parent/child fixture where:
 - persisted composite edge exists;
 - stock/price/size resolve.
 
-RED baseline:
+**Baseline characterization is expected GREEN on current `main`:**
 
-- parent PDP projection has composite graph but omits the inactive child option.
+- parent PDP projection has a composite graph but omits the inactive child option;
+- direct child product lookup remains null/private;
+- the existing P17 regression with an already-active relation-linked component remains purchasable.
+
+These assertions describe the current failure precondition; they are **not** the RED for the new feature.
+
+**The first discriminating RED belongs to the missing admin/service mutation boundary:** a test must call the not-yet-implemented activation operation (or its reviewed public service contract), then expect the persisted state transition and downstream projection. That test must fail before production implementation because the activation operation does not exist.
 
 After admin activation:
 
@@ -328,17 +334,27 @@ Run focused and full relevant equivalents of:
 - storefront composite browser runtime;
 - catalog indexation/P18 workflows as CI provides them.
 
-## V3 coordination
+## V3 coordination and implementation PR strategy
 
 V3 U0 is currently finishing separately. This planning PR does not modify V3 U0.
 
-Implementation gate:
+The repository-wide V2 PR strategy is authoritative: prefer one focused PR per task or smaller, and split before implementation when a task would touch more than 5 files or cross two independent subsystems.
+
+Planning gate:
 
 1. human approves this composite spec/plan;
 2. V3 U0b.3 / PR #104 is either merged or its final disposition is known;
-3. update this branch from the then-current `main`;
+3. refresh this **planning-only** branch onto the then-current `main`;
 4. re-read any affected admin/a11y changes;
-5. begin RED → GREEN implementation on this same PR.
+5. merge the reviewed planning PR;
+6. create focused implementation branches/PRs from current `main`.
+
+Predeclared implementation PRs:
+
+- **Composite PR-A — activation boundary:** first discriminating RED plus ADMIN/input/relation/presence guards and the minimal `VariantMirror.isActive` repository mutation. Target ≤5 production/test files.
+- **Composite PR-B — admin ownership/status UI:** incoming-relation projection, child-variant activation control, parent readiness/status correction, and focused admin runtime verification. Target ≤5 production/test files; split B1/B2 before implementation if current-main wiring would exceed that bound.
+- **Composite PR-C — commerce proof/convergence:** extend existing DB/browser composite regressions to prove inactive → activate → parent purchase → cart/checkout → deactivate, without changing storefront/cart/checkout production code unless RED evidence identifies an independent defect. Primarily test-only.
+- **Composite final gate:** after A/B/C are accepted/merged, rerun the full DoD and trusted operational acceptance from current `main`; any discovered defect becomes its own focused fix PR.
 
 The composite fix should be green before U1b PDP/purchase-copy work is accepted, to avoid mixing commerce eligibility debugging with PDP copy changes.
 
