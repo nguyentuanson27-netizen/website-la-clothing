@@ -290,7 +290,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
             Chi tiết các biến thể (Màu / Size / Giá / Kho)
           </h3>
           {product.variants.length > 0 ? (
-            <div className="mt-3 overflow-x-auto">
+            <div
+              aria-label="Bảng biến thể sản phẩm, cuộn ngang khi cần"
+              className="mt-3 overflow-x-auto"
+              tabIndex={0}
+            >
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/80">
