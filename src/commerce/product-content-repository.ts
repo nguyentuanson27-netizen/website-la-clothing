@@ -270,29 +270,21 @@ export function createProductContentRepository(client: PrismaClient) {
   }
 
   /**
-   * Facet counts share the search/activity filter but ignore status and collection, so each
-   * chip reports how many products the operator would see by switching to it.
+   * Counts each facet against the exact query its own link opens, using the same `adminWhere`
+   * as `listDirectoryPage`. Callers pass the switch-to targets — see
+   * `buildAdminProductFacetTargets` — so a chip's count and its href cannot drift apart.
    */
-  async function countDirectoryFacets(query: AdminProductDirectoryQuery) {
-    const base = adminBaseConditions(query);
-    const withCondition = (condition: Prisma.ProductMirrorWhereInput | null) => {
-      const conditions = condition ? [...base, condition] : base;
-      return conditions.length > 0 ? { AND: conditions } : {};
-    };
-
-    const [all, draft, reviewed, published, uncategorized] = await Promise.all([
-      client.productMirror.count({ where: withCondition(null) }),
-      client.productMirror.count({ where: withCondition(adminStatusCondition("DRAFT")) }),
-      client.productMirror.count({ where: withCondition(adminStatusCondition("REVIEWED")) }),
-      client.productMirror.count({ where: withCondition(adminStatusCondition("PUBLISHED")) }),
-      client.productMirror.count({
-        where: withCondition(
-          adminCollectionCondition({ ...query, collection: null, uncategorized: true }),
-        ),
-      }),
-    ]);
-
-    return { all, draft, reviewed, published, uncategorized };
+  async function countDirectoryFacets<Key extends string>(
+    targets: Readonly<Record<Key, AdminProductDirectoryQuery>>,
+  ): Promise<Record<Key, number>> {
+    const entries = Object.entries(targets) as [Key, AdminProductDirectoryQuery][];
+    const counted = await Promise.all(
+      entries.map(
+        async ([key, target]) =>
+          [key, await client.productMirror.count({ where: adminWhere(target) })] as const,
+      ),
+    );
+    return Object.fromEntries(counted) as Record<Key, number>;
   }
 
   /**

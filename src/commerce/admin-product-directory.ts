@@ -136,6 +136,47 @@ export function buildAdminProductDirectoryHref(
 }
 
 /** Href for one facet toggle, keeping the search term but always returning to page 1. */
+export const ADMIN_PRODUCT_FACET_KEYS = [
+  "all",
+  "draft",
+  "reviewed",
+  "published",
+  "uncategorized",
+] as const;
+
+export type AdminProductFacetKey = (typeof ADMIN_PRODUCT_FACET_KEYS)[number];
+
+/**
+ * The switch-to target for every facet chip, and the single source both its link and its count
+ * are derived from — computing them separately is what lets a chip advertise a total that its
+ * own link does not open.
+ *
+ * Contract: a facet switches only its own dimension and retains every other active one. The
+ * facet row owns status and collection membership, so `all` clears exactly those two while
+ * retaining the search form's dimensions (`q`, `activity`). Every target returns to page 1.
+ *
+ * A facet always *selects* its own value rather than toggling it off when already active —
+ * `all` is the single way back. Toggling would make an active chip's count describe the
+ * deselected view, which reads as a wrong number even though it matches its link.
+ */
+export function buildAdminProductFacetTargets(
+  query: AdminProductDirectoryQuery,
+): Readonly<Record<AdminProductFacetKey, AdminProductDirectoryQuery>> {
+  const selectStatus = (status: AdminProductContentState): AdminProductDirectoryQuery => ({
+    ...query,
+    status,
+    page: 1,
+  });
+
+  return {
+    all: { ...query, status: null, collection: null, uncategorized: false, page: 1 },
+    draft: selectStatus("DRAFT"),
+    reviewed: selectStatus("REVIEWED"),
+    published: selectStatus("PUBLISHED"),
+    uncategorized: { ...query, collection: null, uncategorized: true, page: 1 },
+  };
+}
+
 export function buildAdminProductFacetHref(
   query: AdminProductDirectoryQuery,
   facet: Readonly<

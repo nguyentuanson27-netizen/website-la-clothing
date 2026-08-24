@@ -3,7 +3,10 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { parseAdminProductDirectorySearchParams } from "../../src/commerce/admin-product-directory.ts";
+import {
+  buildAdminProductFacetTargets,
+  parseAdminProductDirectorySearchParams,
+} from "../../src/commerce/admin-product-directory.ts";
 import { createProductContentRepository } from "../../src/commerce/product-content-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -226,14 +229,15 @@ test("directory pagination clamps out-of-range pages and honors the sort order",
   );
 });
 
-test("facet counts share the active search/activity filter but ignore status and collection", async () => {
+test("facet counts retain every active dimension except the one each facet switches", async () => {
   // Two "shirt" rows (one draft, one published) plus one unrelated "coat", all uniquely tokenized.
   const shirtToken = "admdirfacetshirt";
+  const citySlug = "admdirfacet-city";
   await seed({
     key: "shirt-draft",
     name: `${shirtToken} draft`,
     syncedAt: "2026-08-01T00:00:00.000Z",
-    content: { status: "DRAFT", collectionSlugs: ["admdirfacet-city"] },
+    content: { status: "DRAFT", collectionSlugs: [citySlug] },
   });
   await seed({
     key: "shirt-published",
@@ -248,16 +252,25 @@ test("facet counts share the active search/activity filter but ignore status and
     content: { status: "PUBLISHED", collectionSlugs: [] },
   });
 
-  // With the search term applied, "all" counts only the two shirts, and the status facets
-  // partition that same set — even though the active query is filtered to PUBLISHED.
-  const facets = await repository.countDirectoryFacets(
-    query({ q: shirtToken, status: "PUBLISHED" }),
+  // Search only: the status facets partition the searched set, and "all" is that whole set.
+  const searched = await repository.countDirectoryFacets(
+    buildAdminProductFacetTargets(query({ q: shirtToken, status: "PUBLISHED" })),
   );
-  assert.equal(facets.all, 2);
-  assert.equal(facets.draft, 1);
-  assert.equal(facets.published, 1);
-  assert.equal(facets.reviewed, 0);
-  assert.equal(facets.uncategorized, 1);
+  assert.equal(searched.all, 2);
+  assert.equal(searched.draft, 1);
+  assert.equal(searched.published, 1);
+  assert.equal(searched.reviewed, 0);
+  assert.equal(searched.uncategorized, 1);
+
+  // Collection active: a status facet keeps that collection, so only the row inside it counts.
+  // Under the previous behaviour this reported 1 while its own link opened a page of 0.
+  const withinCollection = await repository.countDirectoryFacets(
+    buildAdminProductFacetTargets(query({ q: shirtToken, collection: citySlug })),
+  );
+  assert.equal(withinCollection.draft, 1);
+  assert.equal(withinCollection.published, 0);
+  // "all" drops the collection the facet row owns, but keeps the search term.
+  assert.equal(withinCollection.all, 2);
 });
 
 test("countProductsByCollectionSlug tallies membership across the scalar slug list", async () => {

@@ -8,6 +8,7 @@ import {
   ADMIN_PRODUCT_UNCATEGORIZED,
   buildAdminProductDirectoryHref,
   buildAdminProductFacetHref,
+  buildAdminProductFacetTargets,
   hasActiveAdminProductFilters,
   parseAdminProductDirectorySearchParams,
 } from "@/commerce/admin-product-directory";
@@ -86,9 +87,12 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
     }
   }
 
+  // One source for both the chip links and their counts, so a chip cannot advertise a total
+  // that its own link does not open.
+  const facetTargets = buildAdminProductFacetTargets(query);
   const [directory, facets, collections] = await Promise.all([
     repository.listDirectoryPage({ query }),
-    repository.countDirectoryFacets(query),
+    repository.countDirectoryFacets(facetTargets),
     collectionRepository.listForAdmin(100),
   ]);
   const collectionCounts = await repository.countProductsByCollectionSlug();
@@ -99,46 +103,19 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
   const firstIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastIndex = Math.min(page * pageSize, totalCount);
 
-  const facetChips = [
-    { key: "all", label: "Tất cả", count: facets.all, active: !filtered, href: "/admin" },
-    {
-      key: "draft",
-      label: statusLabels.DRAFT,
-      count: facets.draft,
-      active: query.status === "DRAFT",
-      href: buildAdminProductFacetHref(query, {
-        status: query.status === "DRAFT" ? null : "DRAFT",
-      }),
-    },
-    {
-      key: "reviewed",
-      label: statusLabels.REVIEWED,
-      count: facets.reviewed,
-      active: query.status === "REVIEWED",
-      href: buildAdminProductFacetHref(query, {
-        status: query.status === "REVIEWED" ? null : "REVIEWED",
-      }),
-    },
-    {
-      key: "published",
-      label: statusLabels.PUBLISHED,
-      count: facets.published,
-      active: query.status === "PUBLISHED",
-      href: buildAdminProductFacetHref(query, {
-        status: query.status === "PUBLISHED" ? null : "PUBLISHED",
-      }),
-    },
-    {
-      key: "uncategorized",
-      label: "Chưa phân loại",
-      count: facets.uncategorized,
-      active: query.uncategorized,
-      href: buildAdminProductFacetHref(query, {
-        collection: null,
-        uncategorized: !query.uncategorized,
-      }),
-    },
-  ];
+  const facetChips = (
+    [
+      { key: "all", label: "Tất cả", active: query.status === null && !query.uncategorized && query.collection === null },
+      { key: "draft", label: statusLabels.DRAFT, active: query.status === "DRAFT" },
+      { key: "reviewed", label: statusLabels.REVIEWED, active: query.status === "REVIEWED" },
+      { key: "published", label: statusLabels.PUBLISHED, active: query.status === "PUBLISHED" },
+      { key: "uncategorized", label: "Chưa phân loại", active: query.uncategorized },
+    ] as const
+  ).map((chip) => ({
+    ...chip,
+    count: facets[chip.key],
+    href: buildAdminProductDirectoryHref(facetTargets[chip.key], 1),
+  }));
 
   return (
     <div className="mx-auto max-w-[1500px]">
