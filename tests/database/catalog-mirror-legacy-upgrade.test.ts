@@ -15,7 +15,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 const repository = createCatalogMirrorRepository(prisma);
-const shopId = 1_910_041_001;
+const shopId = 910_041;
 const legacyProductId = "legacy-product-before-c4";
 const legacyVariationId = "legacy-variation-before-c4";
 
