@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
 import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
 import type { ProductContentSnapshot } from "./product-content-admin.ts";
@@ -91,6 +91,16 @@ function adminOrderBy(
     default:
       return [{ name: "asc" }, { id: "asc" }];
   }
+}
+
+type CollectionMembershipRow = { slug: string; count: bigint };
+
+function membershipCountToNumber(value: bigint): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("Collection membership count is outside safe integer bounds");
+  }
+  return parsed;
 }
 
 export function createProductContentRepository(client: PrismaClient) {
@@ -288,18 +298,21 @@ export function createProductContentRepository(client: PrismaClient) {
   }
 
   /**
-   * `collectionSlugs` is a scalar list, so membership totals are tallied in application code
-   * rather than grouped in SQL. Bounded by the mirrored catalog size.
+   * `collectionSlugs` is a scalar list, so membership is unnested and grouped database-side. The
+   * result set is one row per slug actually in use, not one per product, so this stays bounded by
+   * the number of collections rather than by catalog size.
+   *
+   * A slug repeated inside one product's list counts once per occurrence, matching what the
+   * membership editor writes back.
    */
   async function countProductsByCollectionSlug(): Promise<ReadonlyMap<string, number>> {
-    const rows = await client.productContent.findMany({ select: { collectionSlugs: true } });
-    const counts = new Map<string, number>();
-    for (const row of rows) {
-      for (const slug of row.collectionSlugs) {
-        counts.set(slug, (counts.get(slug) ?? 0) + 1);
-      }
-    }
-    return counts;
+    const rows = await client.$queryRaw<CollectionMembershipRow[]>(Prisma.sql`
+      SELECT collection AS "slug", COUNT(*)::bigint AS "count"
+      FROM "ProductContent" pc
+      CROSS JOIN LATERAL UNNEST(pc."collectionSlugs") AS collection
+      GROUP BY collection
+    `);
+    return new Map(rows.map(({ slug, count }) => [slug, membershipCountToNumber(count)]));
   }
 
   return {
