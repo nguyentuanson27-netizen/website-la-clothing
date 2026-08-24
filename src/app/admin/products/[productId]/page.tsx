@@ -101,6 +101,22 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     redirect(`${editorPath}?saved=1`);
   }
 
+  // Parent variants that actually carry persisted composite edges. Standalone products and
+  // parents without edges produce an empty list, so the section below is not rendered at all.
+  const compositeParents = product.variants
+    .filter((variant) => variant.compositeComponents.length > 0)
+    .map((variant) => ({
+      id: variant.id,
+      sku: variant.sku,
+      color: variant.color,
+      size: variant.size,
+      components: variant.compositeComponents.map((edge) => ({
+        quantity: edge.quantity,
+        variant: edge.componentVariant,
+        stock: edge.componentVariant.warehouseStocks.reduce((acc, ws) => acc + ws.quantity, 0),
+      })),
+    }));
+
   const definedCollections = await collectionRepository.listForAdmin(100);
   const assignedSlugs = new Set(product.content?.collectionSlugs ?? []);
   const definedSlugs = new Set(definedCollections.map((collection) => collection.slug));
@@ -328,6 +344,113 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           )}
         </div>
       </section>
+
+      {compositeParents.length > 0 ? (
+        <section
+          aria-labelledby="composite-components-heading"
+          className="mt-8 border border-black/20 bg-black/[0.02] p-6 md:p-8"
+        >
+          <p className="eyebrow">Pancake composite</p>
+          <h2 id="composite-components-heading" className="mt-1 font-serif text-3xl tracking-[-0.03em]">
+            Thành phần sản phẩm / Sản phẩm con
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/70">
+            Quan hệ dưới đây đọc trực tiếp từ composite mirror đã đồng bộ, không suy luận theo tên,
+            SKU hay category. Chỉ để kiểm tra; chỉnh sửa cấu thành vẫn thuộc Pancake.
+          </p>
+
+          <div className="mt-6 space-y-8">
+            {compositeParents.map((parent) => (
+              <div key={parent.id}>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/80">
+                  Biến thể cha: {parent.sku || "—"}
+                  {parent.color || parent.size
+                    ? ` · ${[parent.color, parent.size].filter(Boolean).join(" / ")}`
+                    : ""}
+                </h3>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[48rem] text-left text-xs">
+                    <caption className="sr-only">
+                      Sản phẩm con cấu thành biến thể {parent.sku || parent.id}
+                    </caption>
+                    <thead>
+                      <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/80">
+                        <th className="px-3 py-2.5" scope="col">
+                          Sản phẩm con
+                        </th>
+                        <th className="px-3 py-2.5" scope="col">
+                          SKU
+                        </th>
+                        <th className="px-3 py-2.5" scope="col">
+                          Màu / Size
+                        </th>
+                        <th className="px-3 py-2.5" scope="col">
+                          Số lượng cấu thành
+                        </th>
+                        <th className="px-3 py-2.5" scope="col">
+                          Tồn kho
+                        </th>
+                        <th className="px-3 py-2.5" scope="col">
+                          Trạng thái
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/10">
+                      {parent.components.map((component) => {
+                        const child = component.variant;
+                        const inactive =
+                          !child.isActive ||
+                          !child.isPresent ||
+                          !child.product.isActive ||
+                          !child.product.isPresent;
+
+                        return (
+                          <tr className="hover:bg-black/[0.02]" key={`${parent.id}-${child.id}`}>
+                            <td className="px-3 py-2.5">
+                              <Link
+                                className="font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+                                href={`/admin/products/${child.product.id}`}
+                              >
+                                {child.product.name}
+                              </Link>
+                              <span className="mt-0.5 block text-black/50">
+                                /{child.product.slug}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 font-mono">{child.sku || "—"}</td>
+                            <td className="px-3 py-2.5 font-medium">
+                              {[child.color, child.size].filter(Boolean).join(" / ") || "—"}
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold">×{component.quantity}</td>
+                            <td className="px-3 py-2.5 font-semibold">
+                              {component.stock > 0 ? (
+                                <span className="text-emerald-800">{component.stock}</span>
+                              ) : (
+                                <span className="text-rose-700">Hết hàng</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span
+                                className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
+                                  inactive
+                                    ? "bg-black/10 text-black/80"
+                                    : "bg-emerald-100 text-emerald-900"
+                                }`}
+                              >
+                                {inactive ? "Không khả dụng" : "Hoạt động"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <form action={saveProductContent} className="mt-8 grid gap-12 lg:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-10">

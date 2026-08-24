@@ -148,6 +148,37 @@ export function createProductContentRepository(client: PrismaClient) {
                 quantity: true,
               },
             },
+            // Composite membership is read from the persisted P17 mirror only. The editor never
+            // infers a parent → child relation from names, SKUs or categories.
+            compositeComponents: {
+              orderBy: [{ componentVariantId: "asc" }],
+              select: {
+                quantity: true,
+                componentVariant: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    color: true,
+                    size: true,
+                    isPresent: true,
+                    isActive: true,
+                    warehouseStocks: {
+                      orderBy: [{ pancakeWarehouseId: "asc" }],
+                      select: { quantity: true },
+                    },
+                    product: {
+                      select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isPresent: true,
+                        isActive: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         content: {

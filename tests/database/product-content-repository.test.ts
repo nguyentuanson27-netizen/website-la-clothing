@@ -17,9 +17,12 @@ const prisma = new PrismaClient({
 const repository = createProductContentRepository(prisma);
 const testShopId = 920_004;
 const externalId = "product-content-repository-product";
+const componentExternalId = "product-content-repository-component";
 
 async function cleanup() {
-  await prisma.productMirror.deleteMany({ where: { pancakeProductId: externalId } });
+  await prisma.productMirror.deleteMany({
+    where: { pancakeProductId: { in: [externalId, componentExternalId] } },
+  });
 }
 
 test.beforeEach(cleanup);
@@ -106,4 +109,128 @@ test("ProductContent persistence defaults newly-created content to DRAFT when pu
   });
 
   assert.equal(content.status, "DRAFT");
+});
+
+test("admin editor projection reads persisted composite parent → child edges with quantity", async () => {
+  const syncedAt = new Date("2026-08-10T00:00:00.000Z");
+  const parent = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: testShopId,
+      pancakeProductId: externalId,
+      slug: externalId,
+      name: "Editorial Composite Parent",
+      syncedAt,
+    },
+  });
+  const child = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: testShopId,
+      pancakeProductId: componentExternalId,
+      slug: componentExternalId,
+      name: "Editorial Composite Child",
+      syncedAt,
+    },
+  });
+
+  const parentVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `${externalId}-parent-m`,
+      productId: parent.id,
+      sku: "SET-PARENT-M",
+      color: "Stone",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  const componentVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `${componentExternalId}-child-m`,
+      productId: child.id,
+      sku: "CHILD-M",
+      color: "Olive",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+
+  await prisma.warehouseStock.createMany({
+    data: [
+      {
+        variantId: componentVariant.id,
+        pancakeWarehouseId: `${componentExternalId}-warehouse-a`,
+        quantity: 4,
+        syncedAt,
+      },
+      {
+        variantId: componentVariant.id,
+        pancakeWarehouseId: `${componentExternalId}-warehouse-b`,
+        quantity: 3,
+        syncedAt,
+      },
+    ],
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parentVariant.id,
+      componentVariantId: componentVariant.id,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
+  const editorProduct = await repository.findForEditor(parent.id);
+  const projectedParent = editorProduct?.variants.find(({ id }) => id === parentVariant.id);
+  assert.equal(projectedParent?.compositeComponents.length, 1);
+
+  const edge = projectedParent?.compositeComponents[0];
+  assert.equal(edge?.quantity, 2);
+  assert.equal(edge?.componentVariant.id, componentVariant.id);
+  assert.equal(edge?.componentVariant.sku, "CHILD-M");
+  assert.equal(edge?.componentVariant.size, "M");
+  assert.equal(edge?.componentVariant.product.id, child.id);
+  assert.equal(edge?.componentVariant.product.name, "Editorial Composite Child");
+  assert.equal(edge?.componentVariant.product.slug, componentExternalId);
+  assert.equal(
+    edge?.componentVariant.warehouseStocks.reduce((total, stock) => total + stock.quantity, 0),
+    7,
+  );
+
+  // The child product itself carries no outgoing edge, so its editor renders no composite section.
+  const editorChild = await repository.findForEditor(child.id);
+  assert.deepEqual(
+    editorChild?.variants.map(({ compositeComponents }) => compositeComponents.length),
+    [0],
+  );
+});
+
+test("admin editor projection reports no composite edges for a standalone product", async () => {
+  const syncedAt = new Date("2026-08-10T00:00:00.000Z");
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: testShopId,
+      pancakeProductId: externalId,
+      slug: externalId,
+      name: "Editorial Standalone Product",
+      syncedAt,
+    },
+  });
+  await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `${externalId}-standalone-m`,
+      productId: product.id,
+      sku: "STANDALONE-M",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+
+  const editorProduct = await repository.findForEditor(product.id);
+  assert.equal(editorProduct?.variants.length, 1);
+  assert.deepEqual(editorProduct?.variants[0]?.compositeComponents, []);
 });
