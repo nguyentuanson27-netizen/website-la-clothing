@@ -6,14 +6,17 @@ Basis: `docs/design/storefront-refinement-v3.md` plus current `main` architectur
 
 ## Dependency graph
 
+Authoritative dependency edges:
+
 ```text
-                     ┌─→ U2 homepage collection merchandising ─┐
-U1 language/copy ────┼─→ U3 collection PLP filters ────────────┼─→ U6 SEO/a11y/runtime regression gate
-                     ├─→ U4 PDP related products ───────────────┤
-                     └─→ U5 trust/footer + support pages ───────┘
+U1 → U2
+U1 → U3
+U1 → U4
+U1 → U5
+U2 + U3 + U4 + U5 → U6
 ```
 
-The graph is authoritative:
+Rules:
 - U1 establishes shared buyer terminology and copy boundaries across the whole buyer flow.
 - U2, U3, U4, and U5 may proceed independently after U1, subject to their own content/merchandising approval gates.
 - U3 and U4 must coordinate only if both need to change the same shared catalog projection/repository contract.
@@ -35,36 +38,47 @@ The graph is authoritative:
 
 **Verification:**
 - [ ] focused integration/content assertions updated first (RED) then production copy (GREEN);
-- [ ] buyer-flow browser tests cover header → Shop/Collection/PDP → Cart → Checkout plus Search/footer navigation;
+- [ ] buyer-flow browser tests cover header → Shop/Collection/PDP → Cart → Checkout plus Search/New arrivals/footer navigation;
 - [ ] keyboard/focus semantics unchanged.
 
 **Dependencies:** None.
 
+**Mandatory implementation slices:**
+- **U1a — shell/discovery copy:** header, footer, Search, New arrivals, focused tests.
+- **U1b — commerce-flow copy:** Shop, Collection, PDP, Cart, Checkout, focused tests.
+
+U1 is not complete until both U1a and U1b satisfy the shared terminology checkpoint.
+
 **Files likely touched:** `src/components/layout/site-header.tsx`, `src/components/layout/site-footer.tsx`, `src/app/search/page.tsx`, `src/app/new-arrivals/page.tsx`, `src/app/shop/page.tsx`, `src/app/collections/[slug]/page.tsx`, `src/app/shop/[slug]/page.tsx`, `src/app/cart/page.tsx`, `src/app/checkout/page.tsx`, focused tests.
 
-**Estimated scope:** Medium/large for copy-only work. Implement as focused U1a/U1b slices (for example shell/discovery surfaces, then transactional/search surfaces) if needed; U1 is not complete until both slices satisfy the shared terminology checkpoint.
+**Estimated scope:** Two Medium slices; do not implement the entire file list as one oversized diff.
 
 ## Task U2 — Make homepage merchandising collection-driven
 
-**Description:** Replace the currently inert `/shop?category=...` homepage links with valid published website-owned collection navigation while preserving the existing Campaign and Lookbook identity.
+**Description:** Replace the currently inert `/shop?category=...` homepage links with valid published website-owned collection navigation while preserving the existing Campaign and Lookbook identity. Editorial hero asset work is optional and content-gated, not required for U2 completion.
 
 **Acceptance criteria:**
 - [ ] homepage renders curated published collection rail(s) with crawlable `/collections/{slug}` links;
 - [ ] **no** `/shop?category=...` link remains on the homepage after U2;
 - [ ] each old category-query destination is either replaced by an explicitly reviewed published collection mapping or removed when no truthful mapping exists;
-- [ ] hero uses website-owned editorial media when configured, with trusted catalog media as an intentional fallback.
+- [ ] current trusted catalog hero media remains a valid fallback; U2 does not invent a remote editorial-media origin, widen `remotePatterns`, or widen CSP merely to satisfy the visual benchmark;
+- [ ] absence of an approved editorial hero asset does **not** block U2.
+
+**Optional editorial-asset slice:**
+If the human supplies and approves a repository-owned editorial asset, add it as a separate focused same-origin content slice. The simplest acceptable mechanism is a local static asset path; no remote-origin expansion is part of V3 by default.
 
 **Verification:**
 - [ ] RED regression proves current category-query links do not produce category filtering and therefore must not survive the slice;
-- [ ] domain/integration test proves only published collections are eligible for the replacement navigation;
+- [ ] domain/integration test proves only published collections are eligible for replacement navigation;
 - [ ] homepage link guard covers every collection/PDP link and explicitly rejects `/shop?category=` destinations;
+- [ ] media-boundary regression proves U2 does not broaden remote media origins;
 - [ ] mobile/desktop browser check: no overflow, no broken images, Axe clean.
 
-**Dependencies:** U1 terminology stable; collection merchandising names/order approved.
+**Dependencies:** U1 terminology stable; collection merchandising names/order approved. Optional editorial asset slice additionally requires explicit asset approval/supply.
 
-**Files likely touched:** homepage route, one collection-merchandising helper/repository boundary if needed, product-card reuse, focused integration/browser tests.
+**Files likely touched:** homepage route, one collection-merchandising helper/repository boundary if needed, product-card reuse, focused integration/browser tests. Optional approved local asset may add a repository static-asset path.
 
-**Estimated scope:** Medium.
+**Estimated scope:** Medium. Keep optional asset delivery out of the core U2 diff unless an approved asset actually exists.
 
 ## Task U3 — Upgrade collection landing to full PLP using existing discovery/facet contracts
 
@@ -140,7 +154,7 @@ The graph is authoritative:
 
 **Files likely touched:** footer, public content helper(s), approved support page routes, PDP route only when adding the atomic `/size-guide` link, metadata/content integration tests.
 
-**Estimated scope:** Medium; one route/concern per PR if support content grows.
+**Estimated scope:** Medium; ship one support route/concern per focused slice if approvals arrive independently.
 
 ## Task U6 — SEO, structured-data, accessibility and release-quality regression gate
 
@@ -152,6 +166,7 @@ The graph is authoritative:
 - [ ] no intermediate merged state exists where a support page advertises canonical metadata while the response policy still treats that route as non-indexable under an otherwise indexing-enabled eligible origin;
 - [ ] adding an approved support path to code does **not** enable public indexing by itself: current temporary production remains `SEARCH_INDEXING_ENABLED=false`, noindex/nofollow, without public canonicals, and with an empty sitemap under ADR 0004;
 - [ ] actual support-route indexability/canonical/sitemap advertising is verified only in a test configuration representing an eligible permanent public origin with `indexingEnabled=true`; production enablement still requires separate permanent-domain confirmation and explicit human approval;
+- [ ] `/new-arrivals` remains outside V3 search-exposure promotion unless separately specified/approved;
 - [ ] support pages introduce no query/faceted indexable states;
 - [ ] Product/Offer/Organization/WebSite structured data remains unchanged unless required by an explicit defect;
 - [ ] all refined public routes satisfy the project Definition of Done with 0 Critical / 0 Required review findings.
@@ -187,6 +202,7 @@ The graph is authoritative:
 - collection route slug cannot be overridden by query state;
 - only approved support content is public;
 - no broken PDP → `/size-guide` link exists;
+- U2 did not widen remote media/CSP origins merely to add editorial imagery;
 - no support route has been silently made indexable by route creation alone.
 
 ### Checkpoint V3-C — final gate
@@ -198,7 +214,7 @@ The graph is authoritative:
 ## Human checkpoints
 - Approve this V3 spec/plan before implementation.
 - Approve collection merchandising names/order before U2 ships.
-- Approve any new editorial hero asset.
+- **Optional only:** supply/approve a dedicated editorial hero asset if the catalog-media fallback should be replaced. Absence of this asset does not block U2.
 - Approve the factual content of **each** support page independently before that page ships.
 - Supply/approve actual return/exchange, hotline and Zalo facts before publishing them.
 - Approve structured size-table data model separately if free-form size guides are replaced.
