@@ -161,6 +161,28 @@ test("repository atomically activates only a present variant owned by the child 
       isActive: true,
     },
   );
+
+  assert.deepEqual(
+    await repository.setRelationLinkedVariantActive({
+      productId: child.id,
+      variantId: linkedVariant.id,
+      isActive: false,
+    }),
+    {
+      productId: child.id,
+      variantId: linkedVariant.id,
+      isActive: false,
+    },
+  );
+  assert.equal(
+    (
+      await prisma.variantMirror.findUniqueOrThrow({
+        where: { id: linkedVariant.id },
+        select: { isActive: true },
+      })
+    ).isActive,
+    false,
+  );
 });
 
 test("repository rejects unlinked, cross-product, and stale component variants without changing activation", async () => {
