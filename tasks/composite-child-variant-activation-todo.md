@@ -21,7 +21,7 @@ PR #105 remained planning-only and was merged after approval. Composite PR-A/#10
 
 - [x] Review `docs/design/composite-child-variant-activation.md`
 - [x] Approve global `VariantMirror.isActive` as the existing activation truth
-- [x] Approve child-product variant table as mutation owner
+- [x] Approve child-product editor relation-linked variant controls as mutation owner
 - [x] Approve parent product/parent variant activation as out of scope
 - [x] Approve no-schema / no-new-dependency approach
 - [x] Before implementation, refresh #105 onto then-current `main`
@@ -89,7 +89,7 @@ PR #105 remained planning-only and was merged after approval. Composite PR-A/#10
 - [x] Show child variant activation truth
 - [x] Keep stock separate
 - [x] Do not claim final purchasability from activation alone
-- [x] Optionally expose parent inactive state as separate readiness blocker
+- [x] Keep parent activation/publication outside this fix; do not claim final purchasability from the child activation badge
 
 ### Verification
 
