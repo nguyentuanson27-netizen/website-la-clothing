@@ -13,9 +13,13 @@ This is not a clone. Uniforme is a benchmark for product-first merchandising dis
 - Product/Offer/Breadcrumb structured data exists on PDP; Organization/WebSite exists site-wide.
 - Search exposure is fail-closed: arbitrary query/faceted states are not indexable; only reviewed base/pure-pagination catalog states can become canonical/indexable when indexing is enabled.
 - The current static sitemap allowlist is `/`, `/shop`, `/collections`, and `/lookbook`; support routes are not yet included.
+- ADR 0004 keeps `la.lanadesign.vn` as temporary production with `SEARCH_INDEXING_ENABLED=false`; until a permanent domain and separate human indexing approval exist, HTML remains noindex/nofollow, public canonicals are withheld, and the sitemap is empty.
 - Product URLs use website-owned stable slugs; price/stock/Add-to-Bag authority remains server-side.
 - Product media is already resolved through the trusted-media boundary.
 - `ProductContent` currently owns `editorialDescription`, `careInstructions`, `sizeGuide`, SEO fields, and collection membership.
+- The homepage currently contains four `/shop?category=...` links, but `parseStorefrontDiscoverySearchParams` does not parse a `category` parameter. Those links therefore do not filter Shop and their query-state requests are noindex under the current search policy.
+- `buildStorefrontDiscoveryHref` is Shop-specific: it always returns `/shop` URLs and serializes collection as a query parameter. Collection PLP navigation must not call it directly unless the helper is deliberately generalized with regression coverage.
+- Discovery `sort` values are allowlisted; `size` is bounded normalized text. The current Shop UI derives selectable size values from discovery facets rather than a static size enum.
 
 ## Important correction from gap audit
 A published collection without `description` is not a valid public state today. The collection definition parser rejects `isPublished=true` when `description` is null, and the public collection route also fails closed when the description is missing. Therefore this is not currently treated as a production SEO bug; retain regression coverage rather than widening the model.
@@ -39,7 +43,8 @@ Campaign → curated collection → product → product facts → purchase → c
 - Stable product slug lifecycle and historical redirects.
 - Trusted product-media resolver and narrow image allowlist.
 - Existing Product/Offer/Breadcrumb/Organization/WebSite structured-data truth boundaries.
-- Fail-closed indexing policy for staging/private/faceted/query states.
+- Fail-closed indexing policy for temporary production, staging/private/faceted/query states.
+- ADR 0004's separate permanent-domain + human-approval gate before search indexing can be enabled.
 - Server-side Add-to-Bag validation.
 - Existing accessibility baseline: skip link, semantic navigation, focus-visible, runtime Axe/keyboard coverage.
 
@@ -54,14 +59,16 @@ Campaign → curated collection → product → product facts → purchase → c
 
 ## Language policy
 Use Vietnamese-first buyer UI:
-- navigation, utilities, filters, checkout, breadcrumb, policy/support microcopy: Vietnamese;
-- brand names, collection names, campaign titles may remain English when editorially intentional;
-- avoid accidental EN/VI mixing within one buyer flow.
+- navigation, utilities, filters, cart/checkout, breadcrumb, policy/support microcopy: Vietnamese;
+- brand names, collection names, campaign/editorial titles may remain English when editorially intentional;
+- one buyer concept uses one Vietnamese term across the entire purchase flow;
+- avoid accidental EN/VI mixing within one transactional flow.
 
-Examples:
+Locked commerce terminology for this refinement:
 - `Search` → `Tìm kiếm`
 - `Account` → `Tài khoản`
-- `Bag` → `Túi hàng`
+- `Bag` / `Cart` / `Giỏ hàng` → `Túi hàng`
+- cart and checkout empty/error/support wording must use the same `Túi hàng` terminology.
 
 ## Homepage specification
 Current homepage already has campaign hero, editorial blocks, a product grid, Lookbook, brand facts, and category links. Refine hierarchy rather than rebuild it.
@@ -84,7 +91,8 @@ Footer
 
 ### Homepage rules
 - Merchandising rails must be driven by website-owned **published collections** or an explicitly reviewed deterministic merchandising rule.
-- Replace hard-coded category query links as primary navigation with `/collections/{slug}` when a matching published collection exists.
+- The four inert `/shop?category=...` links must not remain after U2. Replace each with a valid published `/collections/{slug}` destination when a reviewed mapping exists; otherwise remove the link rather than preserving a dead query URL.
+- U2 cannot pass merely by making collection links “primary” while leaving inert category-query links live elsewhere on the homepage.
 - Hero should prefer a website-owned editorial/campaign asset. Trusted catalog product media may remain an intentional fallback until such an asset exists.
 - Keep existing real-product card/media fallback behavior.
 - Do not invent seasonal claims or collection names.
@@ -94,9 +102,12 @@ Collection pages become full buyer-facing PLPs using the existing discovery doma
 
 ### Required behavior
 - Keep visible collection title/description and crawlable product grid.
-- Add Sort and Size controls first; Color may follow using the same existing discovery contract.
-- Preserve collection identity in every filter request.
-- Faceted/sorted query states remain utility UX and noindex; base collection and reviewed pure pagination retain canonical/search authority.
+- Add Sort and Size controls first; Color may follow using the same discovery/facet model.
+- Sort options reuse the existing allowlist. Size UI options come from current discovery facets; raw URL size input remains governed by the existing bounded normalization contract rather than a nonexistent static enum.
+- The route slug is the only collection-identity authority. A user-supplied `?collection=` value must never change which collection's products are rendered under `/collections/{slug}`.
+- Construct collection discovery input from explicitly selected supported keys; do not spread arbitrary raw search params into the discovery query.
+- Collection filter/pagination URLs stay under `/collections/{slug}`. Do not call the current Shop-specific `buildStorefrontDiscoveryHref` directly unless it is generalized with tests that preserve both Shop and Collection behavior.
+- Faceted/sorted query states remain utility UX and noindex; base collection and reviewed pure pagination retain canonical/search authority when global indexing is approved and enabled.
 - Remove visible architecture copy such as “membership is managed by the website” or “catalog mirror validates price/stock”. Keep those truths in tests/docs, not buyer-facing merchandising.
 - Empty state should be buyer-facing and factual.
 
@@ -118,19 +129,24 @@ Complete the look
 ```
 
 ### Related products / “Complete the look”
-- Initial implementation should be deterministic and simple: same published collection(s), exclude current product, visible/active products only, bounded result (for example max 4).
+- Initial implementation is locked to a maximum of **4** products.
+- Selection is deterministic and simple: same published collection(s), exclude current product, visible/active products only.
 - Do not call a product relationship a “set” unless an explicit curated relationship exists.
 - No recommendation engine or new persistence model is required for the first slice.
 
 ### Size guide
-Current `sizeGuide` is free-form text. First refinement should improve presentation and link to a public `/size-guide` page. A structured per-product measurement table requires a separate data-model/spec decision and must not be inferred from prose.
+Current `sizeGuide` is free-form text. U4 may improve the presentation of trusted product-specific size-guide text but must not create a link to a route that does not exist.
+
+The public `/size-guide` route and the PDP support link to it are owned by U5 and must land atomically: the link is added only in the same accepted slice that creates the approved factual `/size-guide` page. A structured per-product measurement table requires a separate data-model/spec decision and must not be inferred from prose.
 
 ## Trust/content surfaces
-Add or prepare the following public support pages when approved factual content exists:
+Prepare the following public support routes only when each route's own factual content has been explicitly approved:
 - `/about`
 - `/size-guide`
 - `/shipping-returns`
 - `/faq`
+
+No route above is presumed approved merely because it is listed in this spec. `/shipping-returns` additionally requires an approved return/exchange policy; `/faq` requires approved answers; hotline/Zalo require approved contact data.
 
 Footer should expose verified buyer trust information, not technical implementation details:
 - COD / guest-checkout facts already owned by current public brand-facts logic;
@@ -140,16 +156,17 @@ Footer should expose verified buyer trust information, not technical implementat
 - return/exchange statements only when an approved policy exists.
 
 ### Support-page publication and search contract
-Support pages are intended to serve both buyer trust and organic discovery, but they must remain fail-closed until their content is approved.
+Content approval and search-indexing approval are separate gates.
 
 For each support route that actually ships with approved factual content:
 - render a normal public HTML page reachable through crawlable internal links;
 - provide a unique factual title and description;
-- provide an explicit self-canonical URL derived from the server-owned storefront origin;
-- add the exact route to the indexable-path allowlist only after that page's content has been explicitly approved for public search exposure;
-- add the exact route to the static canonical sitemap list in the same search-exposure slice;
-- keep staging/local behavior governed by the existing global `indexingEnabled` gate;
-- do not create faceted/query variants for these pages.
+- derive canonical origin only from the server-owned storefront origin;
+- when `indexingEnabled=false`, withhold public canonical metadata and keep the route noindex/nofollow under the existing response/root policy;
+- only after the route content is approved may its exact path be prepared in the indexable-path allowlist and static sitemap list;
+- actual public indexation/canonical/sitemap advertising still requires the separate ADR 0004 permanent-domain + explicit human indexing approval and `SEARCH_INDEXING_ENABLED=true`;
+- keep staging/local behavior governed by the existing fail-closed search-exposure boundary;
+- do not create faceted/query variants for support pages.
 
 A route that lacks approved content must not be added to the indexable allowlist or sitemap. It may remain unimplemented; do not publish placeholder SEO copy merely to occupy the URL. Creating a route component alone is never sufficient to make it indexable.
 
@@ -162,7 +179,7 @@ A route that lacks approved content must not be added to the indexable allowlist
 - Keep `/collections/{slug}` as the canonical taxonomy surface, not `/shop?category=...`.
 - Preserve current noindex policy for mixed/filter/sort/search query states.
 - Preserve stable PDP slug/canonical metadata and Product/Offer JSON-LD.
-- Add collection BreadcrumbList JSON-LD when implementing collection refinement and ensure it matches visible breadcrumb content.
+- Collection BreadcrumbList JSON-LD is owned by U6 after U3's visible collection behavior is accepted; it must mirror the visible breadcrumb content.
 - Apply the support-page publication/search contract above; support routes are not implicitly indexable merely because a page component exists.
 - Do not add ratings, GTIN, material, discount, shipping or return schema claims without verified source data.
 
@@ -174,13 +191,14 @@ A route that lacks approved content must not be added to the indexable allowlist
 - No new dependency is expected.
 
 ## Acceptance criteria for the refinement program
-- Homepage merchandising is collection-driven rather than generic/hard-coded category-query driven.
-- Collection PLP supports at least Sort + Size while preserving SEO query-state policy.
+- Homepage merchandising is collection-driven and no inert `/shop?category=...` links remain.
+- Collection PLP supports at least Sort + Size while preserving route-slug authority and SEO query-state policy.
 - Collection pages no longer expose internal architecture language to buyers.
-- PDP presents verified facts near purchase controls and has bounded deterministic related products.
-- Vietnamese-first buyer microcopy is consistent across header/PLP/PDP/footer/support flows.
+- PDP presents verified facts near purchase controls and has deterministic related products capped at 4.
+- PDP never links to `/size-guide` before that approved route exists.
+- Vietnamese-first buyer microcopy is consistent across header/search/new-arrivals/Shop/Collection/PDP/cart/checkout/footer/support flows, with `Túi hàng` as the single cart term.
 - Footer/support pages expose only approved factual trust information.
-- Every shipped support route has an explicit canonical/indexability/sitemap decision and remains fail-closed before approval.
+- Every shipped support route has an explicit metadata/indexability/sitemap decision; runtime canonical/indexing exposure remains blocked until ADR 0004's permanent-domain and human-approval gate is satisfied.
 - Existing price/stock/order authority, media trust, stable URLs, metadata/indexing/schema and accessibility contracts do not regress.
 - Every behavior-changing slice follows RED/GREEN focused tests plus relevant browser/runtime verification.
 
