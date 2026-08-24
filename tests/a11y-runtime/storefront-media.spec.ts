@@ -8,6 +8,7 @@ import { expect } from "@playwright/test";
 import { voiceOverTest as test } from "@guidepup/playwright";
 
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const HOST = "127.0.0.1";
 const PORT = 3219;
@@ -118,7 +119,7 @@ async function assertPageQuality(page: import("@playwright/test").Page) {
   ).toBeLessThanOrEqual(overflowReport.viewportWidth + 1);
 
   const accessibilityScan = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 }
