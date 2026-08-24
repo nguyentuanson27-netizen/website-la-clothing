@@ -10,6 +10,10 @@ const A11Y_DIRECTORY = fileURLToPath(new URL("../a11y-runtime/", import.meta.url
 const REQUIRED_BUYER_AXE_SPECS = new Set([
   "checkout.spec.ts",
   "collection-landing.spec.ts",
+  "discovery.spec.ts",
+  "editorial.spec.ts",
+  "storefront-commerce.spec.ts",
+  "storefront-composite.spec.ts",
   "tracking.spec.ts",
 ]);
 
@@ -42,7 +46,7 @@ test("buyer Axe tag set keeps WCAG coverage and opts into best-practice landmark
   ]);
 });
 
-test("U0b.1 required buyer Axe scans use the shared best-practice tag set", async () => {
+test("U0b.2 required buyer Axe scans use the shared best-practice tag set", async () => {
   const axeSpecs = await listAxeSpecs();
   const axeSpecsByName = new Map(axeSpecs.map((spec) => [spec.name, spec.source]));
   const offenders: string[] = [];
