@@ -1,10 +1,23 @@
 # Composite child-variant activation — admin-controlled commerce readiness
 
-Status: **DRAFT SPEC — planning/review only. No production implementation until explicit human approval.**
+Status: **IMPLEMENTED — PRs #106, #108 and #109 merged. Automated C4/DoD verification is green; trusted real-catalog acceptance remains pending.**
 
 This document defines the focused fix for the live composite-product gap discovered after PR #97 made persisted Pancake parent → child relationships visible in admin.
 
-This PR remains **planning-only**. After this spec/plan is approved, it must be refreshed onto the then-current `main` and merged as the reviewed planning source before production implementation starts. Implementation is then split across the focused PRs declared below; no production code lands on this planning PR.
+PR #105 was planning-only and merged after review. Implementation then landed in the approved focused slices: PR #106 (activation boundary), PR #108 (admin ownership/status UI), and PR #109 (commerce convergence proof). Current merged implementation is on `main@a0c362cb6d7dc50f2224db17f07ca7975c1f9a37`.
+
+## Implementation outcome
+
+Merged sequence:
+
+- **PR #105** — reviewed planning source, merge `e99025a3d0d18b1e7a46e7c7a0522c483eaf7fc9`.
+- **PR #106 / Composite PR-A** — ADMIN/input/relation/presence guarded `VariantMirror.isActive` mutation, merge `96fb83bc592193f32228168dc7430da98faa524c`.
+- **PR #108 / Composite PR-B** — child-editor Website commerce activation controls, incoming composite projection, accessible feedback, and corrected parent readiness semantics, merge `61c3135d03c0d62d2e036decb2f8cb2e01070ce4`.
+- **PR #109 / Composite PR-C** — test-only inactive → activate → parent PDP → cart → checkout → deactivate convergence proof, merge `a0c362cb6d7dc50f2224db17f07ca7975c1f9a37`.
+
+Each squash merge preserved the exact reviewed tree of its green PR head. No schema migration, new dependency, Pancake write, sync auto-activation, child-product auto-publication, relation inference, or per-edge activation model was introduced.
+
+Automated verification is complete. The only remaining operational item is the explicitly separate **trusted real-catalog acceptance** on an authorized environment with sanitized evidence.
 
 ## Objective
 
@@ -126,7 +139,7 @@ The UI must state this truth. It must not present activation as a property owned
 
 ### UI ownership
 
-The mutation control belongs on the **child product's own variant table**, where the global `VariantMirror.isActive` state is already displayed.
+The mutation control belongs on the **child product editor**, scoped to its own relation-linked variants in a dedicated **Website commerce** section. The state remains the global `VariantMirror.isActive` value; the UI does not pretend activation belongs to one parent edge.
 
 For a variant that has at least one incoming persisted `CompositeComponentMirror` edge:
 
@@ -344,10 +357,12 @@ Planning gate:
 
 1. human approves this composite spec/plan;
 2. V3 U0b.3 / PR #104 is either merged or its final disposition is known;
-3. refresh this **planning-only** branch onto the then-current `main`;
+3. refresh the **planning-only** branch onto the then-current `main`;
 4. re-read any affected admin/a11y changes;
 5. merge the reviewed planning PR;
 6. create focused implementation branches/PRs from current `main`.
+
+This sequence is now complete through Composite PR-C. C4 automated verification is green; trusted real-catalog acceptance remains pending.
 
 Predeclared implementation PRs:
 

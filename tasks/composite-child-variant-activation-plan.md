@@ -1,10 +1,25 @@
 # Composite child-variant activation — implementation plan
 
-Status: **DRAFT — planning/review only. Human approval required before production code.**
+Status: **IMPLEMENTED — Composite PR-A/B/C merged. Automated C4 convergence is green; trusted real-catalog acceptance remains pending.**
 
 Source of truth: `docs/design/composite-child-variant-activation.md`.
 
-PR #105 remains planning-only. After approval, refresh it onto the then-current `main`, recheck affected source, and merge the reviewed planning docs. Production implementation then proceeds in the predeclared focused implementation PRs below; no production code is added to #105.
+PR #105 remained planning-only and was merged after approval. Production implementation then landed in the predeclared focused slices: PR #106 (A), PR #108 (B), and PR #109 (C). Current merged implementation is on `main@a0c362cb6d7dc50f2224db17f07ca7975c1f9a37`.
+
+## Completion ledger
+
+| Slice | PR | Merge commit | Outcome |
+| --- | --- | --- | --- |
+| Planning | #105 | `e99025a3d0d18b1e7a46e7c7a0522c483eaf7fc9` | reviewed planning source merged |
+| Composite PR-A / C1 | #106 | `96fb83bc592193f32228168dc7430da98faa524c` | activation boundary merged |
+| Composite PR-B / C2 | #108 | `61c3135d03c0d62d2e036decb2f8cb2e01070ce4` | admin UI/status semantics merged |
+| Composite PR-C / C3 | #109 | `a0c362cb6d7dc50f2224db17f07ca7975c1f9a37` | commerce convergence tests merged |
+
+C4 automated evidence is green across DB, auth/security smoke, lint, typecheck, domain/integration, build/start, Playwright/VoiceOver, Catalog indexation, and P18 final QA. The reviewed PR heads and squash-merge commits have identical Git trees, so the green exact-head evidence applies to the merged code tree.
+
+No production defect was discovered by C3, so storefront/cart/checkout production code did not need a convergence fix.
+
+The remaining item is the separate trusted real-catalog acceptance on an authorized environment.
 
 ## Authoritative dependency graph
 
@@ -119,9 +134,9 @@ Names may change during implementation if an existing current-main pattern is cl
 
 ### Child editor
 
-Extend the editor projection so each variant can know whether it has incoming persisted composite parent relations.
+The editor projection exposes incoming persisted composite parent relations for the child product's variants.
 
-Only variants with at least one real incoming relation receive the composite-commerce activation control.
+Only variants with at least one real incoming relation receive the composite-commerce activation control, rendered in the child editor's dedicated **Website commerce** section.
 
 Buyer/admin copy must make global semantics explicit:
 
@@ -207,6 +222,9 @@ Do not rewrite storefront projection/cart/checkout merely because this test span
 ---
 
 ## C4 — Final verification, review, and rollout readiness
+
+> **C4 current status:** automated convergence and review are green on the merged code tree. Trusted real-catalog acceptance is still pending because no authorized live catalog/browser environment is available in this session. Do not misrepresent fixture/CI proof as live operational proof.
+
 
 **Execution:** after Composite PR-A/B/C are accepted and merged, run this convergence gate on current `main`. Any newly discovered production defect becomes a separate focused fix PR.
 
@@ -302,7 +320,7 @@ After C4:
 Approval should explicitly answer:
 
 1. Reuse global `VariantMirror.isActive` rather than add per-edge state? **Recommended: yes.**
-2. Put mutation control on the child variant owner page rather than parent edge row? **Recommended: yes.**
+2. Put mutation control on the child variant owner page rather than parent edge row? **Implemented: yes — in the child editor's Website commerce section.**
 3. Keep parent product/parent variant activation outside this fix? **Recommended: yes; show readiness blockers but do not auto-activate.**
 
 If any answer is no, update the spec/plan first.
