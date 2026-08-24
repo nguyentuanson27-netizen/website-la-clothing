@@ -2,7 +2,7 @@
 
 Status: **PLANNING / REVIEW ONLY**
 
-Implementation will continue on this same PR only after explicit human approval.
+PR #105 remains planning-only. After explicit human approval it is refreshed onto current `main` and merged; production work then proceeds in focused Composite PR-A/B/C branches from current `main`.
 
 ## Planning gate
 
@@ -11,23 +11,29 @@ Implementation will continue on this same PR only after explicit human approval.
 - [ ] Approve child-product variant table as mutation owner
 - [ ] Approve parent product/parent variant activation as out of scope
 - [ ] Approve no-schema / no-new-dependency approach
-- [ ] Before first code commit, refresh branch onto then-current `main`
-- [ ] Recheck V3 U0/a11y changes after branch refresh
+- [ ] Before implementation, refresh #105 onto then-current `main`
+- [ ] Recheck V3 U0/a11y changes after refresh
+- [ ] Merge approved planning-only #105 before production work
+- [ ] Predeclare Composite PR-A activation boundary (≤5 files)
+- [ ] Predeclare Composite PR-B admin ownership/status UI (≤5 files, or B1/B2 split before implementation)
+- [ ] Predeclare Composite PR-C commerce proof/convergence (≤5 files)
+- [ ] Create implementation branches from current `main`, not the mutable planning branch
 
-## C0 — RED failure contract
+## C0 — Baseline GREEN contract
 
-- [ ] Add live-shaped fixture: active parent product/variant
+- [ ] Characterize live-shaped fixture: active parent product/variant
 - [ ] Child product present but inactive
 - [ ] Child variant present but inactive
 - [ ] Persist real `CompositeComponentMirror` edge
 - [ ] Give child valid size/price/stock
-- [ ] RED proves child option is absent/unpurchasable before activation
-- [ ] Direct child PDP remains private
+- [ ] Baseline GREEN proves child option is absent/unpurchasable before activation
+- [ ] Baseline GREEN proves direct child PDP remains private
 - [ ] Existing active-component P17 regression remains green
-- [ ] Record exact RED command/head/result
+- [ ] Do not label these already-existing facts as RED
 
-## C1 — Authorized activation boundary
+## C1 / Composite PR-A — Authorized activation boundary
 
+- [ ] First discriminating RED calls the missing activation operation and fails before production implementation
 - [ ] Add focused admin service
 - [ ] Add focused Prisma repository
 - [ ] Require ADMIN session
@@ -47,7 +53,7 @@ Implementation will continue on this same PR only after explicit human approval.
 - [ ] DB RED/GREEN tests
 - [ ] Confirm no migration
 
-## C2 — Admin UI + status semantics
+## C2 / Composite PR-B — Admin UI + status semantics
 
 ### Child product variant table
 
@@ -81,7 +87,7 @@ Implementation will continue on this same PR only after explicit human approval.
 - [ ] No horizontal overflow
 - [ ] Forged non-component action rejected server-side
 
-## C3 — Commerce regression
+## C3 / Composite PR-C — Commerce regression
 
 - [ ] Before activation: child not enabled on parent
 - [ ] Activate via new service/admin path
@@ -98,7 +104,7 @@ Implementation will continue on this same PR only after explicit human approval.
 - [ ] Parent option closes/revalidation rejects it
 - [ ] Existing composite browser/DB regressions green
 
-## C4 — Final quality gate
+## C4 — Final convergence quality gate on current main
 
 - [ ] `pnpm lint`
 - [ ] `pnpm typecheck`
@@ -139,8 +145,10 @@ Implementation will continue on this same PR only after explicit human approval.
 - [ ] Deactivate and verify closure if safe for the chosen live variant
 - [ ] Never expose credentials/private Pancake payloads
 
-## Merge gate
+## Merge gates
 
-- [ ] Human approves completed implementation
-- [ ] Full DoD passes
-- [ ] Merge only after explicit human instruction
+- [ ] #105 remains planning-only and is merged only after plan approval
+- [ ] Each Composite PR-A/B/C receives its own human review before merge
+- [ ] Full final DoD passes after A/B/C converge on current `main`
+- [ ] Any production regression found at convergence becomes a focused fix PR
+- [ ] Merge each implementation PR only after explicit human instruction
