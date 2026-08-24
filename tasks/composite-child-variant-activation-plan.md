@@ -4,7 +4,7 @@ Status: **DRAFT — planning/review only. Human approval required before product
 
 Source of truth: `docs/design/composite-child-variant-activation.md`.
 
-After approval, implementation continues on this same branch/PR. Before the first implementation commit, refresh the branch onto the then-current `main` and recheck the affected source because V3 U0 is landing independently.
+PR #105 remains planning-only. After approval, refresh it onto the then-current `main`, recheck affected source, and merge the reviewed planning docs. Production implementation then proceeds in the predeclared focused implementation PRs below; no production code is added to #105.
 
 ## Authoritative dependency graph
 
@@ -12,64 +12,68 @@ After approval, implementation continues on this same branch/PR. Before the firs
 C0 → C1 → C2 → C3 → C4
 ```
 
-- C0 locks the failure and safety contract with RED tests.
-- C1 adds the smallest authorized mutation boundary.
+- C0 characterizes the already-existing inactive-component baseline and safety boundaries; it is expected GREEN on current `main` and is not mislabelled as RED.
+- C1 owns the **first discriminating RED** for the missing activation operation, then adds the smallest authorized mutation boundary.
 - C2 exposes the existing global variant state in the correct admin UI ownership location and fixes misleading parent status.
 - C3 proves storefront/cart/checkout behavior end-to-end without changing their architecture unless a real defect is discovered.
-- C4 is final verification/review/operational readiness.
+- C4 is final verification/review/operational readiness after the focused implementation PRs converge.
 
 No task may auto-activate from sync, publish the child product, infer relations, or add per-edge activation persistence.
 
-## Pre-implementation checkpoint — branch refresh
+## Planning closeout / implementation split checkpoint
 
-**Description:** Preserve the planning PR now, but start code only from current project truth.
+**Description:** Keep #105 planning-only and start production code only from current project truth in focused implementation PRs.
 
 **Acceptance criteria:**
 - [ ] human has approved the spec/plan;
-- [ ] branch is updated from current `main` after V3 U0's current review unit is resolved;
-- [ ] PR diff is re-audited before RED tests so no stale assumption from base `e2a14d6` remains;
+- [ ] #105 is updated from current `main` after V3 U0's current review unit is resolved;
+- [ ] #105 diff is re-audited so no stale assumption from base `e2a14d6` remains;
+- [ ] reviewed planning docs are merged before production implementation;
+- [ ] implementation PRs are predeclared and each obeys the V2 rule: split before implementation if >5 files or two independent subsystems;
 - [ ] production implementation still fits the no-schema/no-new-dependency plan.
 
 **Verification:**
-- [ ] record exact new base/main SHA in PR body;
+- [ ] record exact refreshed main SHA in #105 body before merge;
 - [ ] re-fetch `catalog-mirror-repository.ts`, `storefront-product-detail.ts`, `anonymous-cart.ts`, `guest-checkout-snapshot.ts`, `product-content-repository.ts`, and admin editor;
-- [ ] if any activation/commerce contract changed, stop and revise the spec before coding.
+- [ ] if any activation/commerce contract changed, stop and revise the plan before implementation;
+- [ ] create implementation branches from the then-current `main`, not from an unreviewed mutable planning branch.
 
 **Dependencies:** Human approval.
 
-**Files likely touched:** PR body/docs only.
+**Files likely touched:** #105 PR body/docs only.
 
 **Estimated scope:** XS.
 
 ---
 
-## C0 — Reproduce inactive-component failure and lock boundaries
+## C0 — Characterize the existing inactive-component baseline
 
-**Description:** Add tests first that model the real live state: persisted composite relation exists, stock exists, but the child variant remains locally inactive after sync. Prove the parent cannot offer that child until activation and lock the private-child boundary before writing mutation code.
+**Description:** Lock the real precondition without pretending it is new behavior. Current `main` already filters an inactive linked child variant from the parent projection and keeps an inactive child product private; those assertions are baseline GREEN.
 
 **Acceptance criteria:**
-- [ ] RED fixture has active/present parent product + parent variant, inactive-but-present child product, inactive-but-present child variant, real `CompositeComponentMirror` edge, valid size/price/stock;
-- [ ] RED proves the inactive child is omitted/unpurchasable from the parent projection even though the relation and stock exist;
-- [ ] regression explicitly proves direct child PDP remains unavailable while child product is inactive.
+- [ ] fixture has active/present parent product + parent variant, inactive-but-present child product, inactive-but-present child variant, real `CompositeComponentMirror` edge, valid size/price/stock;
+- [ ] baseline GREEN proves the inactive child is omitted/unpurchasable from the parent projection even though relation and stock exist;
+- [ ] baseline GREEN proves direct child PDP remains unavailable while child product is inactive;
+- [ ] existing P17 active relation-linked component regression remains green, proving the architecture works once `VariantMirror.isActive=true`.
 
 **Verification:**
-- [ ] focused DB test is executed on a test-only RED commit/head and fails for the expected missing activation workflow;
-- [ ] existing P17 active-component regression remains green, proving the architecture itself still works when `VariantMirror.isActive=true`;
-- [ ] no production file changes in the RED step.
+- [ ] execute/read the focused current-main regression and record it as baseline GREEN, not RED;
+- [ ] if a dedicated fixture is added, it must pass before the feature implementation;
+- [ ] no production implementation belongs to C0.
 
-**Dependencies:** Pre-implementation checkpoint.
+**Dependencies:** Planning closeout / implementation split checkpoint.
 
-**Files likely touched:**
-- `tests/database/storefront-composite-projection.test.ts`
-- optionally one focused new DB test file if keeping activation cases isolated
+**Files likely touched:** Prefer no new file if current P17 DB/browser regressions already characterize these facts; otherwise one focused test-only file.
 
-**Estimated scope:** Small.
+**Estimated scope:** XS/Small.
 
 ---
 
 ## C1 — Add authorized relation-linked variant activation service
 
-**Description:** Add a focused admin mutation boundary for the existing global `VariantMirror.isActive` state. The service must authorize the caller and the repository must prove the variant is a present component variant of the child product being edited before writing.
+**Implementation PR:** **Composite PR-A — activation boundary**, target ≤5 production/test files.
+
+**Description:** Add a focused admin mutation boundary for the existing global `VariantMirror.isActive` state. This task owns the **first true RED**: tests call the reviewed activation operation that does not yet exist, then expect authorized relation-linked state transition while forged/unrelated transitions fail. Only after that RED is observed does production mutation code land.
 
 ### Proposed module split
 
@@ -89,6 +93,7 @@ Names may change during implementation if an existing current-main pattern is cl
 - [ ] arbitrary/unlinked/cross-product variant ids cannot be toggled by crafted input.
 
 **Verification:**
+- [ ] first discriminating RED is observed before production code: the activation service/repository operation is missing or cannot perform the required safe transition;
 - [ ] RED/GREEN domain tests for unauthenticated, forbidden, malformed, unrelated, no-edge, stale, valid, and idempotent cases;
 - [ ] RED/GREEN DB tests prove persisted state and exact relation guard;
 - [ ] query/update stays bounded and transactionally revalidates current relation before write;
@@ -107,6 +112,8 @@ Names may change during implementation if an existing current-main pattern is cl
 ---
 
 ## C2 — Add child-editor activation control and correct parent status semantics
+
+**Implementation PR:** **Composite PR-B — admin ownership/status UI**, target ≤5 production/test files. If current-main wiring requires >5 files, split **B1 read projection/status** and **B2 mutation UI/runtime before implementation**.
 
 **Description:** Surface the existing global variant activation state where it belongs: on the child product's own variant rows that are actually used as composite components. Keep the parent composite section relationship-oriented and correct its misleading `child.product.isActive` status rule.
 
@@ -158,9 +165,7 @@ Instead:
 - `tests/database/product-content-repository.test.ts`
 - `tests/a11y-runtime/admin-editor.spec.ts`
 
-If server-action plumbing makes this exceed 5 files, split into:
-- C2a read projection/status;
-- C2b mutation UI/runtime.
+The split decision is made **before implementation**, not after the diff grows.
 
 **Estimated scope:** Medium.
 
@@ -168,7 +173,9 @@ If server-action plumbing makes this exceed 5 files, split into:
 
 ## C3 — Prove parent storefront, cart, and checkout use the activated child
 
-**Description:** Extend the existing P17 composite regressions so the test starts from the real inactive synced state, activates through the new admin/service boundary, and then proves the already-existing purchase architecture behaves correctly.
+**Implementation PR:** **Composite PR-C — commerce proof/convergence**, primarily test-only and target ≤5 files.
+
+**Description:** Extend the existing P17 composite regressions so the test starts from the real inactive synced state, activates through the accepted admin/service boundary, and then proves the already-existing purchase architecture behaves correctly.
 
 Do not rewrite storefront projection/cart/checkout merely because this test spans them. Change those modules only if RED/GREEN evidence exposes an independent defect.
 
@@ -200,6 +207,8 @@ Do not rewrite storefront projection/cart/checkout merely because this test span
 ---
 
 ## C4 — Final verification, review, and rollout readiness
+
+**Execution:** after Composite PR-A/B/C are accepted and merged, run this convergence gate on current `main`. Any newly discovered production defect becomes a separate focused fix PR.
 
 **Description:** Close the bugfix with project Definition of Done evidence and a safe operational check for the real catalog.
 
@@ -245,11 +254,11 @@ Do not log Pancake credentials or private raw payload.
 
 ## Checkpoints
 
-### Composite-A — failure contract
+### Composite-A — baseline contract
 After C0:
-- live-shaped inactive component failure is reproduced;
+- live-shaped inactive component precondition is characterized as baseline GREEN;
 - current P17 active-component behavior remains green;
-- no production implementation yet.
+- no false RED claim and no production implementation yet.
 
 ### Composite-B — mutation safety
 After C1:
