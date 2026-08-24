@@ -38,6 +38,10 @@ async function listAxeSpecs(): Promise<Array<{ name: string; source: string }>> 
   return specs.sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function countMatches(source: string, pattern: RegExp): number {
+  return source.match(pattern)?.length ?? 0;
+}
+
 test("buyer Axe tag set keeps WCAG coverage and opts into best-practice landmarks", () => {
   assert.deepEqual(BUYER_AXE_TAGS, [
     "wcag2a",
@@ -48,7 +52,7 @@ test("buyer Axe tag set keeps WCAG coverage and opts into best-practice landmark
   ]);
 });
 
-test("every buyer-facing Axe spec uses the shared best-practice tag set", async () => {
+test("every buyer-facing Axe scan uses the shared best-practice tag set", async () => {
   const axeSpecs = await listAxeSpecs();
   const buyerSpecs = axeSpecs.filter(({ name }) => !ADMIN_ONLY_AXE_SPECS.has(name));
   const buyerSpecNames = new Set(buyerSpecs.map(({ name }) => name));
@@ -61,13 +65,30 @@ test("every buyer-facing Axe spec uses the shared best-practice tag set", async 
     );
   }
 
-  const offenders = buyerSpecs
-    .filter(({ source }) => !source.includes("BUYER_AXE_TAGS"))
-    .map(({ name }) => name);
+  const offenders = buyerSpecs.flatMap(({ name, source }) => {
+    const builderCount = countMatches(source, /new\s+AxeBuilder\s*\(/g);
+    const withTagsCount = countMatches(source, /\.withTags\s*\(/g);
+    const sharedTagsCount = countMatches(
+      source,
+      /\.withTags\s*\(\s*BUYER_AXE_TAGS\s*\)/g,
+    );
+
+    if (
+      builderCount === 0 ||
+      withTagsCount !== builderCount ||
+      sharedTagsCount !== builderCount
+    ) {
+      return [
+        `${name} (builders=${builderCount}, withTags=${withTagsCount}, shared=${sharedTagsCount})`,
+      ];
+    }
+
+    return [];
+  });
 
   assert.deepEqual(
     offenders,
     [],
-    `Buyer-facing Axe specs must use BUYER_AXE_TAGS: ${offenders.join(", ")}`,
+    `Every buyer-facing AxeBuilder scan must use BUYER_AXE_TAGS: ${offenders.join(", ")}`,
   );
 });
