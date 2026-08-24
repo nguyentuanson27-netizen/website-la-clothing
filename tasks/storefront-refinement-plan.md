@@ -2,269 +2,333 @@
 
 Status: **DRAFT — requires human approval before `/build`**
 
-Basis: `docs/design/storefront-refinement-v3.md` plus current `main` architecture. This plan intentionally does not modify the existing P0–P19 historical plan/checklist.
+Basis: `docs/design/storefront-refinement-v3.md` plus current `main`. This plan does not modify the historical P0–P19 plan/checklist.
 
-## Dependency graph
-
-Authoritative dependency edges:
+## Authoritative dependency graph
 
 ```text
+U0a → U0b
+U0b → U1a
+U0b → U1b
+U0b → U1c
 U1a + U1b + U1c → U2
 U1a + U1b + U1c → U3
 U1a + U1b + U1c → U4
 U1a + U1b + U1c → U5
 U2 + U3 + U4 + U5 → U6a
-U2 + U3 + U4 + U5 → U6b
-U6a + U6b → U6c
+U6a → U6b
 ```
 
 Rules:
-- U1 is complete only when U1a, U1b, and U1c are accepted; together they establish shared buyer terminology and remove technical buyer copy.
-- U2, U3, U4, and U5 may proceed independently after all U1 slices, subject to their own content/merchandising approval gates.
-- U3 and U4 must coordinate only if both need the same storefront catalog contract; neither may invent a second collection-membership rule.
-- U5 owns creation of the public `/size-guide` route and the PDP link to it so route + link land atomically.
-- U6a owns SEO/structured-data convergence; U6b owns known landmark/id accessibility debt; U6c is the final release-quality gate.
-- U6a owns support-route search exposure as one atomic concern: conditional self-canonical metadata, indexable-path allowlist, and sitemap inclusion move together for each approved route.
-- No U6 slice may bypass ADR 0004's permanent-domain + explicit human indexing approval.
+- U0 fixes known landmark debt and enables the runtime best-practice gate **before** any V3 feature/support route work.
+- U1 is complete only when U1a/U1b/U1c are accepted. The repo-wide terminology inventory is authoritative; `Files likely touched` are examples, not a completeness boundary.
+- Every U1 slice owns both production copy and directly affected test assertions. Do not defer stale test strings to a later cleanup PR.
+- U2/U3/U4/U5 may proceed independently only after all U1 slices.
+- U6a converges SEO/structured-data/search-exposure behavior after U2–U5; U6b is final DoD/review verification.
+- No task may bypass ADR 0004 indexing approval.
 
-## Task U1 — Normalize buyer language and remove technical copy
+## U0a — Remove existing page-landmark/id debt
 
-**Description:** Establish the exact Vietnamese-first label map from the spec across shell, discovery, merchandising, Cart/Checkout, and checkout error states without changing commerce behavior. Lock `Túi hàng` as the single cart concept everywhere, including submit-feedback banners and recovery links.
+**Description:** Fix the known nested `<main>`/duplicate `main-content` debt so root layout is the sole page-level main landmark before new storefront/support routes are added.
 
 **Acceptance criteria:**
-- [ ] desktop/mobile header and footer use the locked navigation labels: `Cửa hàng`, `Hàng mới`, `Bộ sưu tập`, `Lookbook`, `Tìm kiếm`, `Tài khoản`, `Túi hàng`;
-- [ ] all Cart/Checkout empty/error/recovery copy uses `Túi hàng`; `Giỏ hàng` does not remain in buyer-facing checkout submit feedback or recovery links;
-- [ ] public Shop/Collection/PDP copy no longer exposes catalog-mirror/server implementation details where buyer value is absent;
-- [ ] no factual commerce statement is weakened or invented.
+- [ ] root layout remains sole owner of `<main id="main-content">`;
+- [ ] every audited public route uses non-main inner wrappers and does not duplicate `main-content`;
+- [ ] skip link resolves to exactly one target;
+- [ ] visual layout and commerce behavior are unchanged.
 
 **Verification:**
-- [ ] focused content assertions are updated first (RED), then copy changes make them GREEN;
-- [ ] header tests cover desktop + mobile exact labels; footer/Search/New arrivals assertions cover the same locked terminology;
-- [ ] checkout feedback tests explicitly cover `CART_CHANGED` and `CART_UNAVAILABLE`, and the guest-checkout error-state link text; do not verify only the happy path;
-- [ ] buyer-flow browser checks cover header → Shop/Collection/PDP → Cart → Checkout plus Search/New arrivals/footer navigation.
+- [ ] RED markup/runtime regression demonstrates current nested-main/duplicate-id failure first;
+- [ ] audit all public route wrappers, not only `/track-order`;
+- [ ] representative runtime checks include `/`, Shop, Collection, PDP, Cart, Checkout, Track order.
 
 **Dependencies:** None.
 
-**Mandatory implementation slices:**
-- **U1a — shell/search copy:** `src/components/layout/site-header.tsx`, `src/components/layout/site-footer.tsx`, `src/app/search/page.tsx`, `src/app/new-arrivals/page.tsx`, focused tests.
-- **U1b — merchandising-page copy:** `src/app/shop/page.tsx`, `src/app/collections/[slug]/page.tsx`, `src/app/shop/[slug]/page.tsx`, focused tests.
-- **U1c — transactional copy/error states:** `src/app/cart/page.tsx`, `src/app/checkout/page.tsx`, `src/commerce/checkout-submit-feedback.ts`, `src/components/commerce/guest-checkout-form.tsx`, focused tests.
+**Files likely touched:** route wrapper files discovered by the audit plus focused accessibility regression. Split into route-group sub-slices of ≤5 production/test files; each merged sub-slice must leave its affected routes valid.
 
-U1 is not complete until U1a, U1b, and U1c all satisfy the same terminology map.
+**Estimated scope:** Multiple Small/Medium sub-slices.
 
-**Estimated scope:** Three Medium-or-smaller slices; keep each implementation diff at roughly ≤5 production/test files where practical.
+## U0b — Enable storefront Axe best-practice landmark coverage
 
-## Task U2 — Make homepage merchandising collection-driven
-
-**Description:** Replace the currently inert `/shop?category=...` homepage links with valid published website-owned collection navigation while preserving the existing Campaign/Lookbook identity and the existing factual brand-facts/trust block. Editorial hero asset work is optional and content-gated, not required for U2 completion.
+**Description:** After current landmark debt is fixed, extend storefront accessibility runtime scans so landmark uniqueness regressions fail before U1–U5 work can ship.
 
 **Acceptance criteria:**
-- [ ] homepage renders curated published collection rail(s) with crawlable `/collections/{slug}` links;
-- [ ] **no** `/shop?category=...` link remains on the homepage after U2;
-- [ ] each old category-query destination is either replaced by an explicitly reviewed published collection mapping or removed when no truthful mapping exists;
-- [ ] if all category links are removed, the empty `category-strip`/heading/navigation container is removed too;
-- [ ] the target Trust/support strip is satisfied by refining/repositioning the existing factual homepage brand-facts block, with values still derived from canonical public-brand/shipping helpers and no links to unapproved support routes;
-- [ ] current trusted catalog hero media remains a valid fallback; absence of an approved editorial hero asset does not block U2, and U2 does not widen `remotePatterns` or CSP merely for editorial imagery.
-
-**Optional editorial-asset slice:**
-If the human supplies and approves a repository-owned editorial asset, add it as a separate focused same-origin content slice. No remote-origin expansion is part of V3 by default.
+- [ ] storefront-facing Axe scans include the relevant `best-practice` coverage in addition to existing WCAG tags;
+- [ ] landmark uniqueness/duplicate-main regressions are caught by the runtime suite;
+- [ ] admin-only coverage is changed only if the same rule is intentionally adopted there.
 
 **Verification:**
-- [ ] RED regression proves current `category=` links do not produce category filtering and therefore must not survive the slice;
-- [ ] published-only collection eligibility test;
-- [ ] homepage link guard explicitly rejects `/shop?category=` and rejects links to unimplemented support routes;
-- [ ] empty-container regression proves no “Shop by category” heading/nav remains when no truthful mapping exists;
-- [ ] trust-fact assertions prove COD/shipping/order-confirmation copy still derives from canonical helpers;
-- [ ] media-boundary regression proves U2 does not broaden remote media origins;
-- [ ] mobile/desktop browser check: no overflow, no broken images, Axe clean.
+- [ ] focused accessibility runtime specs pass after U0a;
+- [ ] a controlled duplicate-main fixture or direct markup assertion proves the new gate would fail on regression.
 
-**Dependencies:** U1a + U1b + U1c; collection merchandising names/order approved. Optional editorial asset slice additionally requires explicit asset approval/supply.
+**Dependencies:** U0a.
 
-**Files likely touched:** homepage route, one collection-merchandising/helper boundary if needed, existing public brand-facts/shipping helper only if presentation API genuinely requires it, focused tests.
+**Files likely touched:** `tests/a11y-runtime/*storefront*.spec.ts` or the existing shared storefront Axe helper/specs. Keep the change focused; do not mass-refactor unrelated Playwright code.
 
-**Estimated scope:** Medium. Keep optional asset delivery out of the core U2 diff unless an approved asset actually exists.
+**Estimated scope:** Small/Medium.
 
-## Task U3 — Upgrade collection landing to full PLP using existing discovery/facet contracts
+## U1 — Normalize buyer language and close dead search entry behavior
 
-**Description:** Reuse the existing discovery parser, discovery facets, and catalog repository behavior for collection Sort + Size controls while keeping the path slug as the only collection identity authority. Collection navigation uses a collection-local URL builder; the Shop href helper is out of scope for U3.
+### U1 completion contract
+Before editing, create a repo-wide exact-string inventory across `src/` and tests for locked buyer terms and known old English variants. Classify every hit as:
+1. buyer-functional → must change in the owning slice;
+2. explicit editorial exception → document/retain;
+3. test assertion → update in the same slice as the source behavior.
+
+U1 cannot pass while a buyer-functional old term remains or an affected test still asserts the old contract. Do **not** make tests import the same production label constant merely to avoid updating assertions; tests should independently assert the locked copy contract.
+
+### U1a — Shell, homepage functional copy, Search entry, New arrivals
+
+**Description:** Apply locked Vietnamese labels to navigation/shell and homepage functional CTAs while keeping explicit editorial titles intact. Make `/search` a truthful entry surface by handing `q` to existing Shop discovery instead of emitting dead `/search?q=` states.
 
 **Acceptance criteria:**
-- [ ] Sort uses the existing `STOREFRONT_DISCOVERY_SORTS` allowlist;
-- [ ] Size UI options come from existing `facets.sizes`; raw URL size remains governed by the current bounded normalized-text parser contract;
-- [ ] `/collections/a?collection=b` never renders collection `b` products under route `a` content/canonical;
-- [ ] collection discovery input is constructed from explicit supported query keys plus the route-owned slug; arbitrary raw params are not spread into discovery input;
-- [ ] U3 does **not** call or generalize `buildStorefrontDiscoveryHref`; collection href generation is collection-local and never serializes `collection=`;
-- [ ] pure pagination anchors are emitted exactly as `/collections/{slug}?page=N`; base page is `/collections/{slug}`; filtered/sorted utility anchors remain under that path and carry only supported filter/sort/page state;
-- [ ] changing a filter resets page appropriately; pagination preserves active Size/Sort state without adding `collection=`;
-- [ ] faceted/sorted states remain noindex/non-canonical, while base/pure-pagination states retain the existing canonical policy when global indexing is approved and enabled.
+- [ ] desktop/mobile header and footer use `Cửa hàng`, `Hàng mới`, `Bộ sưu tập`, `Lookbook`, `Tìm kiếm`, `Tài khoản`, `Túi hàng`;
+- [ ] homepage functional strings such as `Shop the collection`, `View collections`, `Shop edit`, `View all`, and trust-nav `Shop`/`Collections` are localized; campaign/editorial titles listed as explicit exemptions remain allowed;
+- [ ] `/search` H1/button/label are Vietnamese and its GET form hands `q` to `/shop`, not `/search`; no dead `/search?q=` URL is generated;
+- [ ] `/new-arrivals` functional H1/body copy is Vietnamese-first; editorial eyebrow may remain intentional;
+- [ ] affected source and Playwright/integration assertions are updated together.
 
 **Verification:**
-- [ ] RED/GREEN unit/integration tests for the **emitted href strings**, not only responses after navigation;
-- [ ] exact href regression asserts no collection-page anchor contains `collection=` and pure pagination contains only `?page=N`;
-- [ ] `/collections/a?collection=b` regression proves route-slug authority and no cross-collection leakage;
-- [ ] metadata/HTTP regression for base, pure pagination, size, sort, user-supplied collection query, and mixed states;
-- [ ] mobile/desktop keyboard/Axe browser coverage for controls and pagination.
+- [ ] RED/GREEN content tests for desktop + mobile shell, homepage functional CTA copy, Search form action/name, and New arrivals H1;
+- [ ] exact URL assertion proves Search submit targets `/shop?q=<term>` and `/search` remains outside index/sitemap promotion;
+- [ ] post-change repo-wide locked-term inventory has no unexplained buyer-functional hits in this slice.
+
+**Dependencies:** U0b.
+
+**Files likely touched:** `src/components/layout/site-header.tsx`, `src/components/layout/site-footer.tsx`, `src/app/page.tsx`, `src/app/search/page.tsx`, `src/app/new-arrivals/page.tsx`, plus directly affected tests. Split U1a further if the inventory exceeds ~5 production/test files in one diff.
+
+**Estimated scope:** Medium, possibly two focused sub-slices.
+
+### U1b — Shop/Collections/PDP functional copy and purchase CTA
+
+**Description:** Localize buyer-functional listing/PDP copy while preserving product/collection/editorial names. Lock purchase CTA to `Thêm vào túi`.
+
+**Acceptance criteria:**
+- [ ] `/collections` H1 and functional `Explore collection`/empty-state copy are Vietnamese-first;
+- [ ] Shop/Collection/PDP buyer-functional architecture/CTA copy is localized and technical mirror/server explanations are removed where they add no buyer value;
+- [ ] `product-purchase-panel.tsx` uses `Thêm vào túi`; PDP explanatory text does not reintroduce `Add to Bag`;
+- [ ] affected tests are updated in the same slice.
+
+**Verification:**
+- [ ] RED/GREEN assertions for Collections H1/CTA, PDP purchase CTA, and relevant Shop/Collection/PDP strings;
+- [ ] repo-wide inventory confirms `Add to Bag` is absent from buyer-facing source/tests except historical docs not under this task.
+
+**Dependencies:** U0b.
+
+**Files likely touched:** `src/app/collections/page.tsx`, `src/app/shop/page.tsx`, `src/app/collections/[slug]/page.tsx`, `src/app/shop/[slug]/page.tsx`, `src/components/commerce/product-purchase-panel.tsx`, plus directly affected tests. Split by surface to keep each implementation diff focused.
+
+**Estimated scope:** Medium sub-slices.
+
+### U1c — Cart/Checkout/loading/error/submit-feedback terminology
+
+**Description:** Make `Túi hàng` the single transactional cart term across normal, loading, error, checkout-submit, and recovery states.
+
+**Acceptance criteria:**
+- [ ] Cart H1 is Vietnamese-first (`TÚI HÀNG`) in empty and populated states;
+- [ ] cart loading/error states contain no buyer-facing `Bag`, `YOUR BAG`, or `Giỏ hàng` drift;
+- [ ] Checkout page, `checkout-submit-feedback.ts`, and guest-checkout recovery link use `Túi hàng` consistently, including `CART_CHANGED` and `CART_UNAVAILABLE`;
+- [ ] affected Playwright/integration assertions update with source in the same slice.
+
+**Verification:**
+- [ ] RED/GREEN error-path tests cover `CART_CHANGED`, `CART_UNAVAILABLE`, empty cart, loading/error copy, and recovery-link text;
+- [ ] do not verify only checkout happy path;
+- [ ] repo-wide inventory has zero unexplained transactional `Bag`/`Cart`/`Giỏ hàng` buyer terms.
+
+**Dependencies:** U0b.
+
+**Files likely touched:** `src/app/cart/page.tsx`, `src/app/cart/loading.tsx`, `src/app/cart/error.tsx`, `src/app/checkout/page.tsx`, `src/commerce/checkout-submit-feedback.ts`, `src/components/commerce/guest-checkout-form.tsx`, plus directly affected tests. Split into cart-state and checkout-feedback sub-slices to stay ≤5 files where practical.
+
+**Estimated scope:** Two Medium-or-smaller sub-slices.
+
+## U2 — Homepage collection merchandising + trust
+
+**Description:** Replace inert category-query navigation with truthful published-collection merchandising, own the target collection-navigation region, and refine the existing factual brand-facts block into the trust/support strip.
+
+**Acceptance criteria:**
+- [ ] no `/shop?category=...` homepage link remains;
+- [ ] replacement links target reviewed published `/collections/{slug}` mappings only;
+- [ ] zero mappings → remove category container/heading/nav entirely;
+- [ ] one or more mappings → render collection navigation with Vietnamese heading `Mua theo bộ sưu tập`; never retain `Shop by category`;
+- [ ] U2 explicitly owns the target “collection navigation region”; it is not an orphan sequence item;
+- [ ] trust/support strip reuses canonical public-brand/shipping facts and links only to implemented/approved routes;
+- [ ] current trusted catalog hero media remains valid fallback; optional editorial asset cannot block U2.
+
+**Verification:**
+- [ ] regression proves `category=` links are inert on current main and are absent after U2;
+- [ ] tests cover 0, partial (1–3), and full mapping cases including heading/container behavior;
+- [ ] homepage link guard rejects dead category queries and unimplemented support routes;
+- [ ] trust-fact assertions prove canonical-helper sourcing;
+- [ ] mobile/desktop/Axe/overflow checks remain green under U0b best-practice gate.
+
+**Dependencies:** U1a + U1b + U1c; merchandising mapping/order approval.
+
+**Files likely touched:** homepage route, focused collection-merchandising helper/repository if needed, homepage tests. Optional asset slice is separate and approval-gated.
+
+**Estimated scope:** Medium.
+
+## U3 — Collection PLP Sort + Size with canonical URL generation
+
+**Description:** Add Sort + Size using existing discovery/facets while keeping route slug authoritative and guaranteeing that every generated/navigation URL source obeys collection canonical-search semantics.
+
+**Acceptance criteria:**
+- [ ] Sort uses existing allowlist; Size options come from `facets.sizes` and raw URL size stays bounded/normalized;
+- [ ] route slug is the only collection identity; `/collections/a?collection=b` cannot switch rendered products to `b`;
+- [ ] U3 uses a collection-local serializer and does **not** call or generalize `buildStorefrontDiscoveryHref`;
+- [ ] serializer strips default-valued state before output: omit `sort=name-asc` and `page=1`;
+- [ ] no generated collection URL contains `collection=`;
+- [ ] base is exactly `/collections/{slug}` and pure pagination exactly `/collections/{slug}?page=N`; canonical-intended output from **every source** must satisfy the existing `canonicalSearch` contract;
+- [ ] filtered/sorted URLs contain only active supported state and remain intentionally noindex/non-canonical;
+- [ ] **all URL sources** use the same normalization contract: anchors, filter/sort controls, pagination, redirects, and any form submission. Do not ship raw GET-form serialization that can emit route-owned `collection` or default `sort`/`page` values.
+
+**Verification:**
+- [ ] RED/GREEN tests assert emitted href/navigation strings, not only response behavior;
+- [ ] explicit tests: default sort + page 2 emits only `?page=2`; page 1 emits no page param; no source emits `collection=`;
+- [ ] if a form/control implementation is used, test its actual submitted/navigation URL in the browser;
+- [ ] metadata/HTTP tests cover base, pure pagination, size, non-default sort, malicious `collection`, default-valued params, and mixed states;
+- [ ] keyboard/Axe/overflow checks.
 
 **Dependencies:** U1a + U1b + U1c.
 
-**Files likely touched:** `src/app/collections/[slug]/page.tsx`, focused collection href/route tests, metadata/search-policy tests, browser spec. Do not modify `src/commerce/storefront-discovery.ts` merely to make its Shop-specific href helper generic.
+**Files likely touched:** `src/app/collections/[slug]/page.tsx`, a focused collection URL helper/test, metadata/search-policy tests, browser spec. Do not modify `src/commerce/storefront-discovery.ts` merely to generalize the Shop href helper.
 
-**Estimated scope:** Medium, ~3–5 files.
+**Estimated scope:** Medium, ~3–5 files per slice.
 
-## Task U4 — Add bounded deterministic PDP related products
+## U4 — Deterministic related products
 
-**Description:** Add “Hoàn thiện phối đồ”/related product merchandising using the current product's existing storefront-projected published collection memberships, excluding the current product and preserving visibility/active-state boundaries. Do not create a second collection-membership interpretation.
-
-**Acceptance criteria:**
-- [ ] the current product's projected `collections` array is the sole seed for related-product collection membership;
-- [ ] U4 does not gate collection membership on `ProductContent.status` and does not independently read raw `collectionSlugs` in the PDP/UI path; current projection semantics remain authoritative;
-- [ ] candidate products are fetched through the existing storefront catalog/discovery boundary for those projected collection slugs, remain visible/active, exclude the current product, are deduplicated, deterministically ordered, and hard-capped at **4**;
-- [ ] no recommendation persistence or fabricated “set” relationship is introduced;
-- [ ] trusted product-specific `sizeGuide`/care content remains usable, and U4 does not add a `/size-guide` link before U5 creates route + link atomically.
-
-**Verification:**
-- [ ] repository/domain tests cover projected published-collection seeding, exclusion, deduplication, deterministic ordering, visibility/active filtering, and limit 4;
-- [ ] regression fixture with non-PUBLISHED editorial content proves U4 follows existing projected collection-membership semantics rather than inventing a status gate;
-- [ ] PDP browser regression covers related-product links and fallback when none exist;
-- [ ] no change to Add-to-Bag/price/stock authority.
-
-**Dependencies:** U1a + U1b + U1c; existing storefront product projection and published collection definitions.
-
-**Files likely touched:** storefront catalog repository/runtime or a focused related-selection helper, PDP route/component, focused domain/database/integration/browser tests.
-
-**Estimated scope:** Medium; split selection logic and PDP rendering if the combined diff exceeds ~5 files.
-
-## Task U5 — Build factual trust/footer/support surfaces
-
-**Description:** Expand footer/support architecture using existing verified COD and shipping facts. Create each support page only after its own factual content is explicitly approved. Route existence alone does not grant search exposure.
+**Description:** Add “Hoàn thiện phối đồ” using the current product's projected published collection memberships without creating another membership rule.
 
 **Acceptance criteria:**
-- [ ] footer exposes COD, shipping promotion and order tracking using existing policy helpers rather than duplicated constants;
-- [ ] `/about`, `/size-guide`, `/shipping-returns`, and `/faq` each require explicit content approval before shipping; none is presumed approved by this plan;
-- [ ] `/shipping-returns` additionally requires an approved return/exchange policy and `/faq` requires approved factual answers;
-- [ ] every shipped support page exports a unique factual title/description;
-- [ ] U5 does **not** add a public self-canonical merely because a support route exists; search-exposure metadata remains fail-closed until U6a owns canonical + allowlist + sitemap atomically;
-- [ ] when `indexingEnabled=false`, public canonical metadata is absent;
-- [ ] `/size-guide` route creation and the PDP link to `/size-guide` land in the same accepted slice so the link cannot 404;
-- [ ] support pages remain fail-closed under current search/indexing configuration until U6a prepares eligible approved routes and the separate ADR 0004 launch gate is satisfied.
+- [ ] seed only from current product `collections` projection;
+- [ ] do not independently gate collection membership on `ProductContent.status` or read raw `collectionSlugs` in PDP/UI;
+- [ ] fetch candidates via existing storefront catalog/discovery boundaries, visible/active only;
+- [ ] exclude current product, deduplicate, deterministic order, max 4;
+- [ ] no recommendation persistence or fabricated set relationship;
+- [ ] U4 does not add `/size-guide` link before U5 route+link atomic slice.
 
 **Verification:**
-- [ ] link-guard tests cover every new footer/support/PDP support link;
-- [ ] support content tests prove shipping/COD values are derived from canonical helpers;
-- [ ] metadata assertions cover title/description and absence of public canonical under current indexing-disabled mode;
-- [ ] `/size-guide` link test proves route + PDP link ship atomically;
-- [ ] mobile/desktop accessibility regression passes.
+- [ ] tests cover projection semantics, non-PUBLISHED editorial content, exclusion, dedupe, ordering, visibility, max 4;
+- [ ] PDP browser fallback when no related products;
+- [ ] Add-to-Bag/price/stock authority unchanged.
 
-**Dependencies:** U1a + U1b + U1c; explicit approved content for each route.
+**Dependencies:** U1a + U1b + U1c.
 
-**Files likely touched:** footer, public content helper(s), approved support page route, PDP route only when adding the atomic `/size-guide` link, focused metadata/content tests.
+**Files likely touched:** storefront catalog/related helper, PDP, focused tests.
 
-**Estimated scope:** Medium; ship one support route/concern per focused slice if approvals arrive independently.
+**Estimated scope:** Medium; split selection and rendering if >5 files.
 
-## Task U6a — SEO and structured-data convergence
+## U5 — Factual footer/support surfaces
 
-**Description:** After U2–U5 are integrated, add collection BreadcrumbList and atomically prepare only approved support routes for eventual search exposure behind the existing global gate.
+**Description:** Add approved support pages and footer trust links using existing factual helpers. U0b best-practice accessibility coverage is already active before this task.
 
 **Acceptance criteria:**
-- [ ] collection BreadcrumbList mirrors the visible breadcrumb and uses the server-owned origin;
-- [ ] for each shipped/approved support route, conditional self-canonical metadata, exact indexable-path allowlist entry, and static sitemap-path inclusion are introduced in the same focused search-exposure slice;
-- [ ] no intermediate merged state advertises a support canonical while an otherwise indexing-enabled eligible origin still noindexes that route;
-- [ ] current temporary production remains `SEARCH_INDEXING_ENABLED=false`, noindex/nofollow, without public canonicals, and with an empty sitemap under ADR 0004;
-- [ ] `/new-arrivals` remains outside V3 search-exposure promotion unless separately specified/approved;
-- [ ] Product/Offer/Organization/WebSite structured data remains unchanged unless required by a proven defect.
+- [ ] footer derives COD/shipping/order-tracking facts from canonical helpers;
+- [ ] `/about`, `/size-guide`, `/shipping-returns`, `/faq` each require independent content approval;
+- [ ] `/shipping-returns` additionally requires approved return/exchange policy; `/faq` requires approved answers;
+- [ ] every shipped route has factual title/description but no public canonical while indexing is disabled;
+- [ ] `/size-guide` route + PDP link land atomically;
+- [ ] support route implementation does not add nested `<main>`/duplicate `main-content` under the active U0b gate;
+- [ ] no duplicated shipping thresholds, fake contact data, or unapproved policy links.
 
 **Verification:**
-- [ ] collection BreadcrumbList tests;
-- [ ] search-policy tests for each shipped support route in indexing-disabled current-production mode and eligible indexing-enabled mode;
-- [ ] disabled sitemap/canonical regression and enabled eligible-origin HTTP/metadata/sitemap regression;
-- [ ] ADR 0004 release gate explicitly checked/documented; V3 does not set `SEARCH_INDEXING_ENABLED=true` or claim permanent-domain approval.
+- [ ] link guards cover footer/support/PDP support links;
+- [ ] factual helper assertions;
+- [ ] metadata no-canonical assertion in disabled mode;
+- [ ] best-practice Axe/keyboard checks on every newly shipped support route.
+
+**Dependencies:** U1a + U1b + U1c; explicit content approval per route.
+
+**Files likely touched:** footer, approved route, relevant content helper only if needed, PDP for atomic size-guide link, focused tests. One route/concern per focused slice.
+
+**Estimated scope:** Medium per route slice.
+
+## U6a — SEO, BreadcrumbList, support search exposure convergence
+
+**Description:** After U2–U5, add collection BreadcrumbList and atomically prepare only approved support exact-base paths for eventual indexing.
+
+**Acceptance criteria:**
+- [ ] collection BreadcrumbList mirrors visible breadcrumb and server-owned origin;
+- [ ] per approved support route, conditional self-canonical + exact indexable-path allowlist + sitemap path land atomically;
+- [ ] unapproved/unimplemented support routes remain absent from all three;
+- [ ] support **query-string states are never indexable/canonical**, even when the exact base path is eligible; no sitemap query variant exists;
+- [ ] temporary production remains `SEARCH_INDEXING_ENABLED=false`, noindex/nofollow, no public canonical, empty sitemap under ADR 0004;
+- [ ] `/new-arrivals` and `/search` remain outside V3 index/sitemap promotion unless separately approved;
+- [ ] Product/Offer/Organization/WebSite schema remains unchanged absent a proven defect.
+
+**Verification:**
+- [ ] BreadcrumbList tests;
+- [ ] search-exposure tests for exact base route and query variants in indexing-disabled and eligible indexing-enabled modes;
+- [ ] disabled sitemap/canonical regression;
+- [ ] eligible-enabled regression proves exact base is indexable+self-canonical+in sitemap while `?x=...` remains noindex/non-canonical and absent from sitemap;
+- [ ] ADR 0004 release gate explicitly checked; V3 does not enable indexing.
 
 **Dependencies:** U2 + U3 + U4 + U5.
 
-**Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, approved support-route metadata, structured-data helper/collection route, focused search/metadata tests.
+**Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, approved support metadata, structured-data helper/collection route, focused tests. Split per support route if needed; keep canonical+allowlist+sitemap atomic for each route.
 
-**Estimated scope:** Medium per focused search-exposure slice. If multiple support routes would exceed ~5 files together, expose them in separate U6a sub-slices; keep canonical + allowlist + sitemap atomic per route.
+**Estimated scope:** Medium slices.
 
-## Task U6b — Fix page landmark/id accessibility debt
+## U6b — Final release-quality gate
 
-**Description:** Correct the existing nested-main/duplicate-id defect instead of treating it as a baseline. Keep the root layout as the sole owner of the page-level `<main id="main-content">` and make route wrappers non-main semantic containers.
-
-**Acceptance criteria:**
-- [ ] every public route renders under exactly one page-level `main` landmark supplied by root layout;
-- [ ] `id="main-content"` occurs exactly once in a rendered page and the existing skip link resolves to that single target;
-- [ ] `/track-order` no longer duplicates `main-content`, and all other route-level nested `<main>` wrappers discovered in the audit are removed/replaced without changing visual layout or commerce behavior.
-
-**Verification:**
-- [ ] add a route/markup regression that fails on nested `<main>` or duplicate `main-content` ids;
-- [ ] Axe + keyboard skip-link verification on representative public routes including `/track-order`, Cart, Checkout, Collection, and PDP;
-- [ ] no CSS/layout regression from wrapper-element replacement.
-
-**Dependencies:** U2 + U3 + U4 + U5.
-
-**Files likely touched:** `src/app/layout.tsx` only if the root ownership contract needs an assertion, plus route page wrappers that currently render nested `<main>`, and focused accessibility tests.
-
-**Estimated scope:** The audit may span more than five route files. Before implementation, split U6b into route-group sub-slices of ≤5 production/test files each; each sub-slice must leave the affected routes with valid landmark structure.
-
-## Task U6c — Final release-quality regression gate
-
-**Description:** Converge accepted U6a/U6b heads and close V3 with full project Definition-of-Done evidence.
+**Description:** Converge accepted V3 slices and close with project Definition-of-Done evidence.
 
 **Acceptance criteria:**
-- [ ] all refined public routes satisfy the spec and project Definition of Done;
-- [ ] 0 Critical / 0 Required review findings remain;
-- [ ] no indexing/domain approval is inferred from this plan; temporary production still follows ADR 0004 unless a separate approval happened outside V3.
+- [ ] all spec acceptance criteria satisfied;
+- [ ] 0 Critical / 0 Required review findings;
+- [ ] temporary production still obeys ADR 0004 unless separate approval occurred outside V3.
 
 **Verification:**
 - [ ] `pnpm lint`;
 - [ ] `pnpm typecheck`;
 - [ ] relevant focused/full tests;
 - [ ] `pnpm build`;
-- [ ] representative 390px + desktop browser/Axe/keyboard/overflow checks;
+- [ ] representative 390px + desktop browser checks;
+- [ ] Axe including active best-practice landmark gate, keyboard, skip-link, no-horizontal-overflow;
 - [ ] metadata/robots/sitemap/canonical HTTP regression;
-- [ ] final correctness → security → architecture → simplicity → performance review.
+- [ ] final review order: correctness → security → architecture → simplicity → performance.
 
-**Dependencies:** U6a + U6b.
+**Dependencies:** U6a.
 
-**Files likely touched:** tests/docs/runtime workflows only if a proven coverage gap requires it; avoid production refactor in this final gate.
+**Files likely touched:** verification/docs only unless a proven regression requires a focused fix.
 
-**Estimated scope:** Small/Medium verification-focused slice.
+**Estimated scope:** Small/Medium.
 
 ## Checkpoints
 
-### Checkpoint V3-A — after U1a/U1b/U1c
-- exact locked buyer labels approved across desktop/mobile shell, discovery, Search/New arrivals, Cart/Checkout, checkout submit feedback, and footer;
-- `Túi hàng` is the single transactional cart term, including error banners/recovery links;
-- technical public copy removed without weakening factual commerce statements;
+### V3-0 — accessibility foundation
+- U0a landmark debt fixed;
+- U0b best-practice landmark coverage active and green;
+- no V3 feature/support route starts before this checkpoint.
+
+### V3-A — after U1
+- repo-wide locked-term inventory reconciled;
+- all functional old labels either replaced or explicitly editorial-exempt;
+- source + affected tests agree on locked labels;
+- Search submits `q` to Shop discovery, not dead `/search?q=`;
 - U2–U5 may start independently.
 
-### Checkpoint V3-B — before U6 convergence
-- U2–U5 accepted independently;
-- no inert `/shop?category=...` homepage links or empty category container remain;
-- homepage trust facts remain canonical-helper driven;
-- collection route slug cannot be overridden by query state;
-- no collection href contains `collection=`; pure pagination href is exact `?page=N`;
-- U4 related products use projected published collection membership as the single seed source;
-- only approved support content is public;
-- no broken PDP → `/size-guide` link exists;
-- U2 did not widen remote media/CSP origins merely to add editorial imagery;
-- no support route has been silently made indexable by route creation alone.
+### V3-B — before U6a
+- no inert category links;
+- 0/partial/full homepage mapping behavior verified;
+- collection navigation region and trust strip have U2 ownership;
+- every collection URL source obeys collection-local canonical serialization and strips defaults;
+- U4 uses projected collection membership;
+- only approved support content is public and best-practice landmark gate remains green;
+- no broken PDP → `/size-guide` link.
 
-### Checkpoint V3-C — final gate
-- U6a search/schema convergence accepted;
-- U6b landmark debt fixed with one `main`/one `main-content` target per page;
-- integrated head passes U6c verification;
-- temporary production still satisfies ADR 0004 unless a separate permanent-domain/indexing approval happened outside this plan;
-- 0 Critical / 0 Required findings;
+### V3-C — final
+- U6a exact-base support exposure/query-state regression accepted;
+- U6b full DoD verification accepted;
+- 0 Critical / 0 Required;
 - human approval before merge/ship.
 
 ## Human checkpoints
-- Approve this V3 spec/plan before implementation.
-- Approve collection merchandising names/order before U2 ships.
-- **Optional only:** supply/approve a dedicated editorial hero asset if the catalog-media fallback should be replaced. Absence of this asset does not block U2.
-- Approve the factual content of **each** support page independently before that page ships.
-- Supply/approve actual return/exchange, hotline and Zalo facts before publishing them.
-- Approve structured size-table data model separately if free-form size guides are replaced.
-- Permanent domain selection and `SEARCH_INDEXING_ENABLED=true` require the separate ADR 0004/P19 human approval and are **not** granted by approval of this V3 plan.
+- Approve this V3 spec/plan before `/build`.
+- Approve collection merchandising mappings/order before U2.
+- Optional only: supply/approve editorial hero asset.
+- Approve factual content of each support page independently.
+- Supply/approve return/exchange, hotline, Zalo facts before publishing them.
+- Approve structured size-table model separately if free-form size guides are replaced.
+- Permanent domain and `SEARCH_INDEXING_ENABLED=true` remain separate ADR 0004/P19 approvals.
 
 ## Definition of Done overlay
-Every behavior-changing slice must satisfy the repository's standing Definition of Done: task acceptance, focused failing test before implementation, existing regressions green, runtime verification where relevant, no unrelated refactor, security/search boundaries preserved, documentation current, and human review before merge.
+Every behavior-changing slice must meet task AC **and** repository Definition of Done: RED/GREEN tests, runtime verification where relevant, existing regressions green, no unrelated refactor, security/search boundaries preserved, docs current, and human review before merge.
