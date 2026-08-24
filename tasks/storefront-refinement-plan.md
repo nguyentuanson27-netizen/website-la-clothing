@@ -53,17 +53,19 @@ Rules:
 **Description:** After current landmark debt is fixed, extend storefront accessibility runtime scans so landmark uniqueness regressions fail before U1–U5 work can ship.
 
 **Acceptance criteria:**
-- [ ] storefront-facing Axe scans include the relevant `best-practice` coverage in addition to existing WCAG tags;
+- [ ] **every** buyer-facing Axe scan includes the relevant `best-practice` coverage in addition to existing WCAG tags — not a filename-glob subset;
+- [ ] coverage explicitly includes `tracking.spec.ts` (`/track-order`, the only current duplicate `main-content` id), `checkout.spec.ts`, `collection-landing.spec.ts`, `discovery.spec.ts`, and `editorial.spec.ts` alongside the `storefront-*` specs;
 - [ ] landmark uniqueness/duplicate-main regressions are caught by the runtime suite;
 - [ ] admin-only coverage is changed only if the same rule is intentionally adopted there.
 
 **Verification:**
 - [ ] focused accessibility runtime specs pass after U0a;
-- [ ] a controlled duplicate-main fixture or direct markup assertion proves the new gate would fail on regression.
+- [ ] a controlled duplicate-main fixture or direct markup assertion proves the new gate would fail on regression;
+- [ ] an inventory assertion proves no buyer-facing Axe spec still runs the WCAG-only tag set, so a future spec cannot silently opt out.
 
 **Dependencies:** U0a.
 
-**Files likely touched:** `tests/a11y-runtime/*storefront*.spec.ts` or the existing shared storefront Axe helper/specs. Keep the change focused; do not mass-refactor unrelated Playwright code.
+**Files likely touched:** the buyer-facing `tests/a11y-runtime/*.spec.ts` scans named above. Prefer extracting the shared `withTags([...])` set into one helper the specs import, so the tag set is changed in a single place; do not mass-refactor unrelated Playwright code.
 
 **Estimated scope:** Small/Medium.
 
@@ -106,11 +108,13 @@ U1 cannot pass while a buyer-functional old term remains or an affected test sti
 **Acceptance criteria:**
 - [ ] `/collections` H1 and functional `Explore collection`/empty-state copy are Vietnamese-first;
 - [ ] Shop/Collection/PDP buyer-functional architecture/CTA copy is localized and technical mirror/server explanations are removed where they add no buyer value;
+- [ ] no factual commerce statement is weakened or invented: a disclosure that states how availability is actually decided (for example the server-side re-check disclosure on the PDP) may be reworded into buyer language, but may not be deleted as "architecture copy" without an equally factual replacement;
 - [ ] `product-purchase-panel.tsx` uses `Thêm vào túi`; PDP explanatory text does not reintroduce `Add to Bag`;
 - [ ] affected tests are updated in the same slice.
 
 **Verification:**
 - [ ] RED/GREEN assertions for Collections H1/CTA, PDP purchase CTA, and relevant Shop/Collection/PDP strings;
+- [ ] an assertion proves the PDP still discloses server-side availability verification after the copy change;
 - [ ] repo-wide inventory confirms `Add to Bag` is absent from buyer-facing source/tests except historical docs not under this task.
 
 **Dependencies:** U0b.
@@ -151,9 +155,10 @@ U1 cannot pass while a buyer-functional old term remains or an affected test sti
 - [ ] one or more mappings → render collection navigation with Vietnamese heading `Mua theo bộ sưu tập`; never retain `Shop by category`;
 - [ ] U2 explicitly owns the target “collection navigation region”; it is not an orphan sequence item;
 - [ ] trust/support strip reuses canonical public-brand/shipping facts and links only to implemented/approved routes;
-- [ ] current trusted catalog hero media remains valid fallback; optional editorial asset cannot block U2.
+- [ ] current trusted catalog hero media remains valid fallback; optional editorial asset cannot block U2, and U2 does not widen `remotePatterns` or the CSP `img-src` allowlist merely for editorial imagery.
 
 **Verification:**
+- [ ] media-boundary regression proves `next.config.mjs` `remotePatterns` and the CSP `img-src` allowlist are byte-for-byte unchanged by U2;
 - [ ] regression proves `category=` links are inert on current main and are absent after U2;
 - [ ] tests cover 0, partial (1–3), and full mapping cases including heading/container behavior;
 - [ ] homepage link guard rejects dead category queries and unimplemented support routes;
@@ -175,6 +180,7 @@ U1 cannot pass while a buyer-functional old term remains or an affected test sti
 - [ ] route slug is the only collection identity; `/collections/a?collection=b` cannot switch rendered products to `b`;
 - [ ] U3 uses a collection-local serializer and does **not** call or generalize `buildStorefrontDiscoveryHref`;
 - [ ] serializer strips default-valued state before output: omit `sort=name-asc` and `page=1`;
+- [ ] changing Sort or Size resets pagination to page 1; pagination preserves active Size/Sort state without adding `collection=`. No control may carry a stale `page` into a newly filtered result set, because `src/app/collections/[slug]/page.tsx` calls `notFound()` for a page beyond `totalPages`;
 - [ ] no generated collection URL contains `collection=`;
 - [ ] base is exactly `/collections/{slug}` and pure pagination exactly `/collections/{slug}?page=N`; canonical-intended output from **every source** must satisfy the existing `canonicalSearch` contract;
 - [ ] filtered/sorted URLs contain only active supported state and remain intentionally noindex/non-canonical;
@@ -183,6 +189,7 @@ U1 cannot pass while a buyer-functional old term remains or an affected test sti
 **Verification:**
 - [ ] RED/GREEN tests assert emitted href/navigation strings, not only response behavior;
 - [ ] explicit tests: default sort + page 2 emits only `?page=2`; page 1 emits no page param; no source emits `collection=`;
+- [ ] explicit test: changing Sort or Size while on page N emits a URL with no `page` param, and a collection with fewer results after filtering never renders a 404 from a carried-over page number;
 - [ ] if a form/control implementation is used, test its actual submitted/navigation URL in the browser;
 - [ ] metadata/HTTP tests cover base, pure pagination, size, non-default sort, malicious `collection`, default-valued params, and mixed states;
 - [ ] keyboard/Axe/overflow checks.

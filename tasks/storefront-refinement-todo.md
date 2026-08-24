@@ -22,7 +22,10 @@ Status: **DRAFT — planning/review only**
 - [ ] representative runtime layout checks
 
 ## U0b — Best-practice accessibility gate
-- [ ] add relevant `best-practice` coverage to storefront Axe scans
+- [ ] add relevant `best-practice` coverage to **every** buyer-facing Axe scan, not a filename-glob subset
+- [ ] coverage includes `tracking.spec.ts`, `checkout.spec.ts`, `collection-landing.spec.ts`, `discovery.spec.ts`, `editorial.spec.ts` alongside `storefront-*`
+- [ ] prefer one shared `withTags` helper so the tag set has a single source
+- [ ] inventory assertion: no buyer-facing Axe spec still runs the WCAG-only tag set
 - [ ] prove duplicate/nested main would fail the gate
 - [ ] keep unrelated admin Playwright code out of scope unless deliberately adopting same rule
 - [ ] U0b green before any U1–U5 feature/support slice
@@ -49,6 +52,8 @@ Status: **DRAFT — planning/review only**
 - [ ] `/collections` H1/functional CTA/empty state Vietnamese-first
 - [ ] Shop/Collection/PDP buyer-functional copy localized
 - [ ] remove buyer-visible catalog/server architecture explanations where unnecessary
+- [ ] no factual commerce statement weakened or invented
+- [ ] PDP still discloses server-side availability verification after rewording
 - [ ] `product-purchase-panel.tsx`: `Thêm vào túi`
 - [ ] PDP copy contains no stale `Add to Bag`
 - [ ] update affected tests in same slice
@@ -74,6 +79,7 @@ Status: **DRAFT — planning/review only**
 - [ ] trust facts stay canonical-helper driven
 - [ ] no unapproved support links
 - [ ] current trusted catalog hero media remains valid fallback
+- [ ] U2 leaves `remotePatterns` and CSP `img-src` unchanged; media-boundary regression proves it
 - [ ] 0/partial/full mapping tests + link guard + trust fact tests
 - [ ] best-practice Axe/keyboard/overflow remains green
 
@@ -88,6 +94,9 @@ Status: **DRAFT — planning/review only**
 - [ ] no generated URL source contains `collection=`
 - [ ] strip default `sort=name-asc`
 - [ ] strip `page=1`
+- [ ] changing Sort or Size resets pagination to page 1
+- [ ] pagination preserves active Size/Sort without adding `collection=`
+- [ ] test: filtering from page N never carries a stale `page` into a 404
 - [ ] base exactly `/collections/{slug}`
 - [ ] pure pagination exactly `/collections/{slug}?page=N` and canonical-intended outputs satisfy `canonicalSearch` from every source
 - [ ] filtered/sorted utility states only active supported params and remain intentionally noindex/non-canonical

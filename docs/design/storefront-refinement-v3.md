@@ -52,6 +52,7 @@ Use Uniforme-style merchandising discipline while keeping LA Clothing's existing
 - No checkout/order/Pancake write-contract rewrite.
 - No wildcard image proxy or broader remote media origin merely for editorial imagery.
 - No AI auto-publish or fabricated material/fit/origin/return/review/contact claims.
+- No removal of a truthful commerce disclosure under the heading of "technical/architecture copy": such copy may be reworded into buyer language, never dropped without an equally factual replacement.
 - No mega-menu without evidence of taxonomy need.
 - No generic `ItemList` JSON-LD on the critical path.
 - No parsing free-form size-guide prose into invented measurements.
