@@ -3,4 +3,5 @@ export const BUYER_AXE_TAGS = [
   "wcag2aa",
   "wcag21a",
   "wcag21aa",
+  "best-practice",
 ];
