@@ -6,6 +6,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { createCompositeComponentAdminService } from "../../src/commerce/composite-component-admin.ts";
+import { createCompositeComponentRepository } from "../../src/commerce/composite-component-repository.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -28,6 +30,17 @@ const syncedAt = new Date("2026-08-23T00:00:00.000Z");
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
+let componentProductId = "";
+let componentVariantId = "";
+
+const activationRepository = createCompositeComponentRepository(prisma);
+const activationService = createCompositeComponentAdminService({
+  setLinkedVariantActivation: activationRepository.setLinkedVariantActivation,
+});
+const adminSession = {
+  user: { id: "composite-browser-admin", role: "ADMIN" },
+  session: { id: "composite-browser-session" },
+} as const;
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -124,6 +137,7 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  componentProductId = component.id;
 
   const parentVariant = await prisma.variantMirror.create({
     data: {
@@ -145,12 +159,14 @@ test.beforeAll(async () => {
       color: null,
       size: "M",
       isPresent: true,
-      isActive: true,
+      isActive: false,
       pancakeRetailPrice: 390_000,
       pancakeRetailPriceAfterDiscount: 390_000,
       syncedAt,
     },
   });
+
+  componentVariantId = componentVariant.id;
 
   await prisma.warehouseStock.createMany({
     data: [
@@ -199,7 +215,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("composite parent keeps parent-only schema while inactive component can be bought through the parent PDP", async ({
+test("composite activation opens and closes the real child purchase path while parent schema stays authoritative", async ({
   page,
 }) => {
   const directComponent = await page.request.get(`${BASE_URL}/shop/${componentSlug}`);
@@ -218,6 +234,25 @@ test("composite parent keeps parent-only schema while inactive component can be 
   await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: parentName })).toBeVisible();
   await expect(page.getByRole("group", { name: "Loại" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
+
+  expect(
+    await activationService.setActivation(adminSession, {
+      productId: componentProductId,
+      variantId: componentVariantId,
+      isActive: true,
+    }),
+  ).toEqual({
+    ok: true,
+    variantId: componentVariantId,
+    isActive: true,
+  });
+
+  const stillPrivateComponent = await page.request.get(`${BASE_URL}/shop/${componentSlug}`);
+  expect(stillPrivateComponent.status()).toBe(404);
+
+  await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
   await expect(page.getByRole("radio", { name: componentName })).toBeEnabled();
 
@@ -263,6 +298,23 @@ test("composite parent keeps parent-only schema while inactive component can be 
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
   await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
   await assertPageQuality(page);
+
+  expect(
+    await activationService.setActivation(adminSession, {
+      productId: componentProductId,
+      variantId: componentVariantId,
+      isActive: false,
+    }),
+  ).toEqual({
+    ok: true,
+    variantId: componentVariantId,
+    isActive: false,
+  });
+
+  await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeDisabled();
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
