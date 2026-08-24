@@ -152,6 +152,7 @@ export function createProductContentRepository(client: PrismaClient) {
             pancakeRetailPrice: true,
             pancakeRetailPriceAfterDiscount: true,
             pancakeImageUrls: true,
+            isPresent: true,
             isActive: true,
             warehouseStocks: {
               select: {
@@ -176,6 +177,34 @@ export function createProductContentRepository(client: PrismaClient) {
                       orderBy: [{ pancakeWarehouseId: "asc" }],
                       select: { quantity: true },
                     },
+                    product: {
+                      select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isPresent: true,
+                        isActive: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            // Incoming membership belongs to the child variant's admin read model. It is used only
+            // to expose the existing global VariantMirror activation state; the editor still never
+            // creates, removes or infers composite edges.
+            compositeParents: {
+              orderBy: [{ parentVariantId: "asc" }],
+              select: {
+                quantity: true,
+                parentVariant: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    color: true,
+                    size: true,
+                    isPresent: true,
+                    isActive: true,
                     product: {
                       select: {
                         id: true,
