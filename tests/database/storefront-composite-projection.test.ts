@@ -4,6 +4,8 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
+import { createCompositeComponentAdminService } from "../../src/commerce/composite-component-admin.ts";
+import { createCompositeComponentRepository } from "../../src/commerce/composite-component-repository.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
@@ -13,7 +15,15 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-const repository = createStorefrontProductDetailRepository(prisma);
+const productRepository = createStorefrontProductDetailRepository(prisma);
+const activationRepository = createCompositeComponentRepository(prisma);
+const activationService = createCompositeComponentAdminService({
+  setLinkedVariantActivation: activationRepository.setLinkedVariantActivation,
+});
+const adminSession = {
+  user: { id: "composite-convergence-admin", role: "ADMIN" },
+  session: { id: "composite-convergence-session" },
+} as const;
 const shopId = 910_060;
 const cartId = "projection-composite-cart";
 const publicCode = "projection-composite-order";
@@ -30,7 +40,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(async () => prisma.$disconnect());
 
-test("parent PDP projects relation-linked active component variants through cart and size-only checkout without publishing the component product", async () => {
+test("admin activation converges the real composite child through parent PDP, cart, checkout, and deactivation", async () => {
   const parent = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -73,7 +83,7 @@ test("parent PDP projects relation-linked active component variants through cart
       color: null,
       size: "M",
       isPresent: true,
-      isActive: true,
+      isActive: false,
       pancakeRetailPrice: 390_000,
       pancakeRetailPriceAfterDiscount: 390_000,
       syncedAt,
@@ -105,7 +115,35 @@ test("parent PDP projects relation-linked active component variants through cart
     },
   });
 
-  const detail = await repository.getProductBySlug({ shopId, slug: "projection-set-a" });
+  const beforeActivation = await productRepository.getProductBySlug({
+    shopId,
+    slug: "projection-set-a",
+  });
+  assert.ok(beforeActivation);
+  assert.equal(beforeActivation.projection.mode, "composite");
+  assert.deepEqual(
+    beforeActivation.projection.options.map(({ id, kindLabel }) => ({ id, kindLabel })),
+    [{ id: parentVariant.id, kindLabel: "Set" }],
+  );
+  assert.equal(
+    await productRepository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
+    null,
+  );
+
+  assert.deepEqual(
+    await activationService.setActivation(adminSession, {
+      productId: component.id,
+      variantId: componentVariant.id,
+      isActive: true,
+    }),
+    {
+      ok: true,
+      variantId: componentVariant.id,
+      isActive: true,
+    },
+  );
+
+  const detail = await productRepository.getProductBySlug({ shopId, slug: "projection-set-a" });
   assert.ok(detail);
   assert.equal(detail.projection.mode, "composite");
   assert.deepEqual(
@@ -116,8 +154,17 @@ test("parent PDP projects relation-linked active component variants through cart
     ],
   );
   assert.equal(
-    await repository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
+    await productRepository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
     null,
+  );
+  assert.equal(
+    (
+      await prisma.productMirror.findUniqueOrThrow({
+        where: { id: component.id },
+        select: { isActive: true },
+      })
+    ).isActive,
+    false,
   );
 
   await prisma.cart.create({
@@ -188,6 +235,67 @@ test("parent PDP projects relation-linked active component variants through cart
         color: null,
         size: "M",
         unitPriceVnd: BigInt(390_000),
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    await activationService.setActivation(adminSession, {
+      productId: component.id,
+      variantId: componentVariant.id,
+      isActive: false,
+    }),
+    {
+      ok: true,
+      variantId: componentVariant.id,
+      isActive: false,
+    },
+  );
+
+  const afterDeactivation = await productRepository.getProductBySlug({
+    shopId,
+    slug: "projection-set-a",
+  });
+  assert.ok(afterDeactivation);
+  assert.deepEqual(
+    afterDeactivation.projection.options.map(({ id, kindLabel }) => ({ id, kindLabel })),
+    [{ id: parentVariant.id, kindLabel: "Set" }],
+  );
+
+  assert.deepEqual(
+    await cartService.updateExistingItemQuantity({
+      cartId,
+      variantId: componentVariant.id,
+      quantity: 2,
+      now,
+    }),
+    {
+      ok: false,
+      reason: "VARIANT_UNAVAILABLE",
+    },
+  );
+
+  const unavailableLines = await createStorefrontCartRepository(prisma).getLines({
+    shopId,
+    items: [{ variantId: componentVariant.id, quantity: 1 }],
+  });
+  assert.deepEqual(
+    unavailableLines.map(
+      ({ productSlug, productName, available, unavailableReason, price }) => ({
+        productSlug,
+        productName,
+        available,
+        unavailableReason,
+        price,
+      }),
+    ),
+    [
+      {
+        productSlug: null,
+        productName: "Ao A",
+        available: false,
+        unavailableReason: "VARIANT_UNAVAILABLE",
+        price: null,
       },
     ],
   );
