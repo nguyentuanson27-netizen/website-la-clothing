@@ -3,70 +3,97 @@
 Status: **DRAFT — planning/review only**
 
 ## Execution order
-- [ ] U1 completes first and locks shared buyer terminology/copy boundaries
+- [ ] U1 completes first and locks shared buyer terminology/copy boundaries across the full buyer flow
 - [ ] U2, U3, U4, U5 may proceed independently after U1
+- [ ] U5 owns `/size-guide` route + PDP link atomically
 - [ ] U6 starts only after U2–U5 are accepted and integrated
+- [ ] U6 must not bypass ADR 0004 permanent-domain + explicit human indexing approval
 
 ## U1 — Language + buyer-copy cleanup
 - [ ] define Vietnamese-first buyer terminology
+- [ ] lock `Túi hàng` as the only cart term across Cart + Checkout
 - [ ] update header utility labels consistently
+- [ ] update footer labels/copy consistently
+- [ ] include Search and New arrivals in the language pass
+- [ ] include Cart and Checkout in the language pass
 - [ ] remove public catalog-mirror/server implementation explanations where buyer value is absent
 - [ ] preserve factual COD/shipping/stock semantics
 - [ ] focused RED/GREEN content/integration tests
-- [ ] browser/a11y regression
+- [ ] browser/a11y regression across shell → product → cart → checkout + search/footer
 
 ## U2 — Homepage collection merchandising
 - [ ] published collection rail(s)
 - [ ] crawlable `/collections/{slug}` links
-- [ ] retire hard-coded category query links as primary merchandising navigation
+- [ ] remove **all** `/shop?category=...` homepage links
+- [ ] replace an inert category link only when a reviewed published collection mapping exists; otherwise remove it
+- [ ] homepage link guard explicitly rejects `/shop?category=`
 - [ ] website-owned editorial hero asset boundary
 - [ ] trusted catalog media remains intentional fallback
 - [ ] published-only eligibility test
 - [ ] mobile/desktop/Axe/overflow regression
 
 ## U3 — Collection PLP filters
-- [ ] Sort control reuses existing discovery sort allowlist
-- [ ] Size control reuses existing discovery size contract
-- [ ] collection slug retained through filter requests
-- [ ] pagination retains allowed collection/query state correctly
+- [ ] Sort control reuses `STOREFRONT_DISCOVERY_SORTS`
+- [ ] Size options come from existing discovery facets; do not invent a static size enum
+- [ ] raw URL size remains bounded/normalized by the existing parser contract
+- [ ] route slug is the only collection identity authority
+- [ ] `/collections/a?collection=b` cannot render collection `b` products under route `a`
+- [ ] construct discovery input from explicit supported keys; do not spread arbitrary raw search params
+- [ ] collection filter URLs remain under `/collections/{slug}`
+- [ ] do not call Shop-specific `buildStorefrontDiscoveryHref` directly unless intentionally generalized with Shop + Collection regression tests
+- [ ] pagination retains supported Size/Sort state and route slug correctly
+- [ ] changing filters resets pagination appropriately
 - [ ] faceted/sorted states remain noindex/non-canonical
-- [ ] base and pure pagination retain current canonical policy
+- [ ] base and pure pagination retain current canonical policy only when global indexing is approved/enabled
 - [ ] keyboard/Axe/browser coverage
 
 ## U4 — PDP related products
 - [ ] deterministic shared-published-collection selection
 - [ ] current product excluded
 - [ ] only visible/active storefront products
-- [ ] result bounded to max 4 unless spec changes
+- [ ] result hard-capped at **4**
 - [ ] no recommendation-engine persistence
 - [ ] no fabricated “set” relationship
 - [ ] PDP fallback when no related products
+- [ ] preserve trusted product-specific size-guide/care presentation
+- [ ] U4 does not add `/size-guide` link before U5 owns route + link atomically
 - [ ] Add-to-Bag/price/stock regressions remain green
 
 ## U5 — Trust/footer/support
 - [ ] footer derives COD facts from canonical public brand-facts logic
 - [ ] footer derives shipping promotion from existing shipping-policy helper
 - [ ] order tracking link remains prominent
-- [ ] `/about` only with approved factual content
-- [ ] `/size-guide` only with approved factual content
-- [ ] `/shipping-returns` only after approved policy exists
-- [ ] `/faq` only after approved factual answers exist
+- [ ] `/about` only after explicit factual-content approval
+- [ ] `/size-guide` only after explicit factual-content approval
+- [ ] `/shipping-returns` only after explicit return/exchange-policy approval
+- [ ] `/faq` only after explicit factual-answer approval
+- [ ] no support route is presumed approved by this plan
 - [ ] each shipped support page has unique factual title + description
-- [ ] each shipped support page has explicit self-canonical from server-owned storefront origin
-- [ ] support routes remain fail-closed under current index allowlist until U6
+- [ ] when indexing is disabled, support-page public canonical metadata is withheld
+- [ ] eligible indexing-enabled test mode emits self-canonical from server-owned origin
+- [ ] `/size-guide` route + PDP link land in the same accepted slice
+- [ ] support routes remain fail-closed under current production indexation config
 - [ ] hotline/Zalo only after approved contact data exists
 - [ ] no duplicated shipping thresholds/constants
 - [ ] link guard + metadata + accessibility regression
 
 ## U6 — SEO/a11y/final regression
+- [ ] U6 is the sole owner of collection BreadcrumbList after U3 is accepted
 - [ ] collection BreadcrumbList matches visible breadcrumb
 - [ ] canonical origin remains server-owned
-- [ ] every shipped/approved support route is explicitly added to the indexable-path allowlist
-- [ ] every shipped/approved support route is explicitly added to the static canonical sitemap list
-- [ ] unimplemented/unapproved support routes remain absent from index allowlist and sitemap
-- [ ] support routes remain noindex when global indexing is disabled
-- [ ] support routes expose only self-canonical base URLs; no new query/faceted indexable states
-- [ ] if support-route exposure exceeds ~5 files, split focused U6a implementation slice(s) before U6b final convergence gate
+- [ ] only shipped/approved support routes are eligible for indexable-path allowlist preparation
+- [ ] only shipped/approved support routes are eligible for static sitemap-path preparation
+- [ ] unimplemented/unapproved support routes remain absent from index allowlist and sitemap code
+- [ ] current temporary production stays `SEARCH_INDEXING_ENABLED=false`
+- [ ] current temporary production support pages remain noindex/nofollow
+- [ ] current temporary production support pages withhold public canonicals
+- [ ] current temporary production sitemap remains empty
+- [ ] eligible permanent-origin/indexing-enabled test mode verifies approved support route indexability
+- [ ] eligible-enabled test mode verifies approved support-route self-canonicals
+- [ ] eligible-enabled sitemap test emits only approved shipped support routes
+- [ ] permanent domain + `SEARCH_INDEXING_ENABLED=true` remain separate human/P19 approval gates
+- [ ] support routes expose no query/faceted indexable states
+- [ ] if support-route preparation exceeds ~5 files, split focused U6a implementation slice(s) before U6b final convergence gate
 - [ ] no ItemList JSON-LD required for launch
 - [ ] Product/Offer schema unchanged unless fixing a proven defect
 - [ ] arbitrary faceted/query states remain out of index
@@ -91,3 +118,4 @@ Status: **DRAFT — planning/review only**
 - [ ] do not invent product material/fit/origin/return/review data
 - [ ] do not parse free-form size-guide text into measurements
 - [ ] do not weaken stable slug/media/search/security boundaries
+- [ ] do not enable public search indexing or claim permanent-domain approval as part of V3
