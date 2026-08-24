@@ -760,3 +760,20 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
               </label>
             </div>
           </section>
+
+          <div className="border-t border-black/20 pt-8">
+            <p className="text-sm leading-6 text-black/65">
+              Các trường để trống sẽ xóa nội dung biên tập tương ứng. Màn hình này không sửa giá, tồn kho, SKU hay trạng thái vận hành từ Pancake.
+            </p>
+            <button
+              className="mt-6 inline-flex min-h-11 w-full items-center justify-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
+              type="submit"
+            >
+              Lưu nội dung
+            </button>
+          </div>
+        </aside>
+      </form>
+    </div>
+  );
+}
