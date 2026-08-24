@@ -32,6 +32,14 @@ test("composite component activation requires ADMIN before relation lookup or wr
   });
 
   await assert.rejects(
+    () => service.setVariantActive(null, validInput()),
+    (error: unknown) => {
+      assert.ok(error instanceof AuthorizationError);
+      assert.equal(error.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+  await assert.rejects(
     () => service.setVariantActive(customerSession, validInput()),
     (error: unknown) => {
       assert.ok(error instanceof AuthorizationError);
