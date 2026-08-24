@@ -7,14 +7,9 @@ import test from "node:test";
 import { BUYER_AXE_TAGS } from "../a11y-runtime/axe-tags.ts";
 
 const A11Y_DIRECTORY = fileURLToPath(new URL("../a11y-runtime/", import.meta.url));
-const REQUIRED_BUYER_AXE_SPECS = new Set([
-  "checkout.spec.ts",
-  "collection-landing.spec.ts",
-  "discovery.spec.ts",
-  "editorial.spec.ts",
-  "storefront-commerce.spec.ts",
-  "storefront-composite.spec.ts",
-  "tracking.spec.ts",
+const ADMIN_ONLY_AXE_SPECS = new Set([
+  "admin-collections.spec.ts",
+  "admin-editor.spec.ts",
 ]);
 
 async function listAxeSpecs(): Promise<Array<{ name: string; source: string }>> {
@@ -46,15 +41,22 @@ test("buyer Axe tag set keeps WCAG coverage and opts into best-practice landmark
   ]);
 });
 
-test("U0b.2 required buyer Axe scans use the shared best-practice tag set", async () => {
+test("every buyer Axe scan uses the shared best-practice tag set", async () => {
   const axeSpecs = await listAxeSpecs();
-  const axeSpecsByName = new Map(axeSpecs.map((spec) => [spec.name, spec.source]));
+  const adminSpecs = axeSpecs
+    .filter((spec) => ADMIN_ONLY_AXE_SPECS.has(spec.name))
+    .map((spec) => spec.name);
+
+  assert.deepEqual(
+    adminSpecs,
+    [...ADMIN_ONLY_AXE_SPECS].sort(),
+    "Admin-only Axe allowlist must match the existing admin specs",
+  );
+
+  const buyerSpecs = axeSpecs.filter((spec) => !ADMIN_ONLY_AXE_SPECS.has(spec.name));
   const offenders: string[] = [];
 
-  for (const required of REQUIRED_BUYER_AXE_SPECS) {
-    const source = axeSpecsByName.get(required);
-    assert.ok(source, `Missing required buyer-facing Axe inventory entry: ${required}`);
-
+  for (const { name, source } of buyerSpecs) {
     const builderCount = countMatches(source, /new\s+AxeBuilder\s*\(/g);
     const withTagsCount = countMatches(source, /\.withTags\s*\(/g);
     const sharedTagsCount = countMatches(
@@ -68,7 +70,7 @@ test("U0b.2 required buyer Axe scans use the shared best-practice tag set", asyn
       sharedTagsCount !== builderCount
     ) {
       offenders.push(
-        `${required} (builders=${builderCount}, withTags=${withTagsCount}, shared=${sharedTagsCount})`,
+        `${name} (builders=${builderCount}, withTags=${withTagsCount}, shared=${sharedTagsCount})`,
       );
     }
   }
@@ -76,6 +78,6 @@ test("U0b.2 required buyer Axe scans use the shared best-practice tag set", asyn
   assert.deepEqual(
     offenders,
     [],
-    `Required buyer-facing AxeBuilder scans must use BUYER_AXE_TAGS: ${offenders.join(", ")}`,
+    `Buyer-facing AxeBuilder scans must use BUYER_AXE_TAGS: ${offenders.join(", ")}`,
   );
 });
