@@ -9,7 +9,8 @@ This is not a clone. Uniforme is a benchmark for product-first merchandising dis
 
 ## Verified current-state facts on `main`
 - Next.js 16 App Router + Prisma/PostgreSQL + Pancake catalog mirror.
-- Public storefront surfaces already include homepage, Shop, PDP, Collections, Lookbook, cart/checkout/tracking, search, and account/admin routes.
+- Public storefront surfaces include homepage, Shop, PDP, Collections, **New arrivals**, Lookbook, cart/checkout/tracking, search, and account/admin routes.
+- `/new-arrivals` currently exists as a lightweight placeholder surface and is not part of the current indexable-path allowlist; V3 owns its buyer-copy consistency but does not implicitly promote it to an SEO landing page.
 - Product/Offer/Breadcrumb structured data exists on PDP; Organization/WebSite exists site-wide.
 - Search exposure is fail-closed: arbitrary query/faceted states are not indexable; only reviewed base/pure-pagination catalog states can become canonical/indexable when indexing is enabled.
 - The current static sitemap allowlist is `/`, `/shop`, `/collections`, and `/lookbook`; support routes are not yet included.
@@ -20,6 +21,7 @@ This is not a clone. Uniforme is a benchmark for product-first merchandising dis
 - The homepage currently contains four `/shop?category=...` links, but `parseStorefrontDiscoverySearchParams` does not parse a `category` parameter. Those links therefore do not filter Shop and their query-state requests are noindex under the current search policy.
 - `buildStorefrontDiscoveryHref` is Shop-specific: it always returns `/shop` URLs and serializes collection as a query parameter. Collection PLP navigation must not call it directly unless the helper is deliberately generalized with regression coverage.
 - Discovery `sort` values are allowlisted; `size` is bounded normalized text. The current Shop UI derives selectable size values from discovery facets rather than a static size enum.
+- The homepage hero currently reuses trusted product media. There is no repository-owned editorial hero asset or existing `public/` asset tree on `main`; the current remote image/CSP boundary allows Pancake product media and same-origin resources, and V3 must not widen the remote allowlist merely to satisfy an editorial preference.
 
 ## Important correction from gap audit
 A published collection without `description` is not a valid public state today. The collection definition parser rejects `isPublished=true` when `description` is null, and the public collection route also fails closed when the description is missing. Therefore this is not currently treated as a production SEO bug; retain regression coverage rather than widening the model.
@@ -51,7 +53,7 @@ Campaign → curated collection → product → product facts → purchase → c
 ### Do not introduce in this refinement
 - No account-system rewrite.
 - No checkout/order/Pancake write-contract rewrite.
-- No wildcard image proxy.
+- No wildcard image proxy or broader remote image/CSP origin merely for editorial hero media.
 - No AI auto-publish or fabricated material/fit/origin/return/review claims.
 - No mega-menu unless taxonomy scale later proves it necessary.
 - No generic `ItemList` JSON-LD in the critical path; collection BreadcrumbList is higher-value and lower-risk.
@@ -78,7 +80,7 @@ Target sequence:
 ```text
 Promotion
 Header
-Editorial hero
+Editorial hero/fallback hero
 Current/New edit collection rail
 Editorial collection statement
 Collection rail A
@@ -93,7 +95,8 @@ Footer
 - Merchandising rails must be driven by website-owned **published collections** or an explicitly reviewed deterministic merchandising rule.
 - The four inert `/shop?category=...` links must not remain after U2. Replace each with a valid published `/collections/{slug}` destination when a reviewed mapping exists; otherwise remove the link rather than preserving a dead query URL.
 - U2 cannot pass merely by making collection links “primary” while leaving inert category-query links live elsewhere on the homepage.
-- Hero should prefer a website-owned editorial/campaign asset. Trusted catalog product media may remain an intentional fallback until such an asset exists.
+- **A dedicated editorial hero asset is not a U2 completion gate.** Until an approved asset actually exists, keep the current trusted catalog-media fallback and do not invent a new remote origin or asset configuration.
+- If the human later supplies an approved repository-owned editorial asset, it may be added as a focused same-origin content slice (for example a local static asset) without widening the remote media allowlist. Asset approval and delivery are separate from the U2 merchandising requirement.
 - Keep existing real-product card/media fallback behavior.
 - Do not invent seasonal claims or collection names.
 
@@ -180,6 +183,7 @@ A route that lacks approved content must not be added to the indexable allowlist
 - Preserve current noindex policy for mixed/filter/sort/search query states.
 - Preserve stable PDP slug/canonical metadata and Product/Offer JSON-LD.
 - Collection BreadcrumbList JSON-LD is owned by U6 after U3's visible collection behavior is accepted; it must mirror the visible breadcrumb content.
+- `/new-arrivals` remains outside the indexable-path/sitemap scope in V3 unless a separate reviewed SEO decision explicitly promotes it.
 - Apply the support-page publication/search contract above; support routes are not implicitly indexable merely because a page component exists.
 - Do not add ratings, GTIN, material, discount, shipping or return schema claims without verified source data.
 
@@ -187,11 +191,12 @@ A route that lacks approved content must not be added to the indexable allowlist
 - Reuse semantic HTML and existing controls before introducing custom widgets.
 - All new filters/actions keyboard reachable with visible focus.
 - Preserve no-horizontal-overflow gates at 390px and desktop representative widths.
-- Product imagery remains responsive; LCP/editorial hero asset should be deliberately prioritized, below-fold images remain lazy where appropriate.
+- Product imagery remains responsive; any approved LCP/editorial hero asset must be deliberately prioritized, while below-fold images remain lazy where appropriate.
 - No new dependency is expected.
 
 ## Acceptance criteria for the refinement program
 - Homepage merchandising is collection-driven and no inert `/shop?category=...` links remain.
+- U2 can complete without a new editorial hero asset; trusted current media remains the fallback until an asset is explicitly approved and supplied.
 - Collection PLP supports at least Sort + Size while preserving route-slug authority and SEO query-state policy.
 - Collection pages no longer expose internal architecture language to buyers.
 - PDP presents verified facts near purchase controls and has deterministic related products capped at 4.
