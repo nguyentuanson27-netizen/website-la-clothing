@@ -11,6 +11,8 @@ Status: **DRAFT — planning/review only**
 - [ ] U6 must not bypass ADR 0004 permanent-domain + explicit human indexing approval
 
 ## U1 — Language + buyer-copy cleanup
+- [ ] implement U1a shell/discovery copy slice
+- [ ] implement U1b commerce-flow copy slice
 - [ ] define Vietnamese-first buyer terminology
 - [ ] lock `Túi hàng` as the only cart term across Cart + Checkout
 - [ ] update header utility labels consistently
@@ -20,7 +22,7 @@ Status: **DRAFT — planning/review only**
 - [ ] remove public catalog-mirror/server implementation explanations where buyer value is absent
 - [ ] preserve factual COD/shipping/stock semantics
 - [ ] focused RED/GREEN content/integration tests
-- [ ] browser/a11y regression across shell → product → cart → checkout + search/footer
+- [ ] browser/a11y regression across shell → product → cart → checkout + search/new-arrivals/footer
 
 ## U2 — Homepage collection merchandising
 - [ ] published collection rail(s)
@@ -28,9 +30,12 @@ Status: **DRAFT — planning/review only**
 - [ ] remove **all** `/shop?category=...` homepage links
 - [ ] replace an inert category link only when a reviewed published collection mapping exists; otherwise remove it
 - [ ] homepage link guard explicitly rejects `/shop?category=`
-- [ ] website-owned editorial hero asset boundary
-- [ ] trusted catalog media remains intentional fallback
+- [ ] current trusted catalog hero media remains valid fallback
+- [ ] absence of approved editorial hero asset does **not** block U2
+- [ ] do not widen remote image `remotePatterns` or CSP origins merely for editorial hero media
+- [ ] if an editorial asset is supplied/approved, deliver it as a separate focused same-origin content slice
 - [ ] published-only eligibility test
+- [ ] media-boundary regression
 - [ ] mobile/desktop/Axe/overflow regression
 
 ## U3 — Collection PLP filters
@@ -92,6 +97,7 @@ Status: **DRAFT — planning/review only**
 - [ ] eligible permanent-origin/indexing-enabled test mode verifies approved support route indexability
 - [ ] eligible-enabled test mode verifies approved support-route self-canonicals
 - [ ] eligible-enabled sitemap test emits only approved shipped support routes
+- [ ] `/new-arrivals` remains outside V3 index/sitemap promotion unless separately reviewed/approved
 - [ ] permanent domain + `SEARCH_INDEXING_ENABLED=true` remain separate human/P19 approval gates
 - [ ] support routes expose no query/faceted indexable states
 - [ ] if support-route preparation exceeds ~5 files, split focused U6a implementation slice(s) before U6b final convergence gate
@@ -119,4 +125,5 @@ Status: **DRAFT — planning/review only**
 - [ ] do not invent product material/fit/origin/return/review data
 - [ ] do not parse free-form size-guide text into measurements
 - [ ] do not weaken stable slug/media/search/security boundaries
+- [ ] do not widen remote image/CSP allowlists merely to add editorial hero media
 - [ ] do not enable public search indexing or claim permanent-domain approval as part of V3
