@@ -166,6 +166,24 @@ test("component activation updates only the present relation-linked variant owne
     }),
     true,
   );
+
+  assert.equal(
+    await repository.setLinkedVariantActivation({
+      productId: fixture.child.id,
+      variantId: fixture.linkedVariant.id,
+      isActive: false,
+    }),
+    true,
+  );
+  assert.equal(
+    (
+      await prisma.variantMirror.findUniqueOrThrow({
+        where: { id: fixture.linkedVariant.id },
+        select: { isActive: true },
+      })
+    ).isActive,
+    false,
+  );
 });
 
 test("component activation rejects unlinked, cross-product, and stale component targets without changing activation", async () => {
