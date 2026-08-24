@@ -19,6 +19,7 @@ The graph is authoritative:
 - U3 and U4 must coordinate only if both need to change the same shared catalog projection/repository contract.
 - U5 owns creation of the public `/size-guide` route and the PDP link to it so that route + link land atomically.
 - U6 begins only after the accepted heads of U2–U5 are integrated; it is the convergence/release-quality gate.
+- U6 owns support-route search exposure as one atomic concern: conditional self-canonical metadata, indexable-path allowlist, and sitemap inclusion move together for each approved route.
 - U6 may prepare approved support paths for future indexation, but it cannot bypass ADR 0004's permanent-domain + explicit human indexing approval.
 
 ## Task U1 — Normalize buyer language and remove technical copy
@@ -123,15 +124,15 @@ The graph is authoritative:
 - [ ] `/about`, `/size-guide`, `/shipping-returns`, and `/faq` each require explicit content approval before shipping; none is presumed approved by this plan;
 - [ ] `/shipping-returns` additionally requires an approved return/exchange policy and `/faq` requires approved factual answers;
 - [ ] every shipped support page exports a unique factual title/description;
-- [ ] support-page canonical metadata is conditional on the existing search-exposure gate: when `indexingEnabled=false`, public canonical metadata is withheld; when indexing is later approved/enabled on an eligible permanent domain, the page may emit its self-canonical from the server-owned origin;
+- [ ] U5 does **not** add a public self-canonical merely because a support route exists; search-exposure metadata remains fail-closed until U6 owns canonical + allowlist + sitemap atomically;
+- [ ] when `indexingEnabled=false`, public canonical metadata is absent;
 - [ ] `/size-guide` route creation and the PDP link to `/size-guide` land in the same accepted slice so the link cannot 404;
 - [ ] support pages remain fail-closed under the current search/indexing configuration until U6 prepares eligible approved routes and the separate ADR 0004 launch gate is satisfied.
 
 **Verification:**
 - [ ] link-guard tests cover every new footer/support/PDP support link;
 - [ ] support content tests prove shipping/COD values are derived from canonical helpers;
-- [ ] metadata assertions cover title/description and **absence** of canonical when indexing is disabled;
-- [ ] an indexing-enabled eligible-origin test proves self-canonical behavior only in the approved-mode branch;
+- [ ] metadata assertions cover title/description and absence of public canonical under the current indexing-disabled mode;
 - [ ] `/size-guide` link test proves route + PDP link ship atomically;
 - [ ] mobile/desktop accessibility regression passes.
 
@@ -143,11 +144,12 @@ The graph is authoritative:
 
 ## Task U6 — SEO, structured-data, accessibility and release-quality regression gate
 
-**Description:** Integrate U2–U5, add collection BreadcrumbList structured data, prepare only approved support routes for eventual search exposure behind the existing global gate, and close the refinement with full metadata/indexing/accessibility/build evidence.
+**Description:** Integrate U2–U5, add collection BreadcrumbList structured data, atomically prepare only approved support routes for eventual search exposure behind the existing global gate, and close the refinement with full metadata/indexing/accessibility/build evidence.
 
 **Acceptance criteria:**
 - [ ] collection BreadcrumbList mirrors the visible breadcrumb and uses the server-owned origin; U6 is the single owner of this structured-data change after U3 is accepted;
-- [ ] only support routes that actually shipped with approved content are eligible to be added to the exact indexable-path allowlist and static sitemap canonical list; unimplemented/unapproved support routes remain absent from both;
+- [ ] for each shipped/approved support route, conditional self-canonical metadata, exact indexable-path allowlist entry, and static sitemap-path inclusion are introduced in the same focused search-exposure slice; unimplemented/unapproved routes remain absent from all three;
+- [ ] no intermediate merged state exists where a support page advertises canonical metadata while the response policy still treats that route as non-indexable under an otherwise indexing-enabled eligible origin;
 - [ ] adding an approved support path to code does **not** enable public indexing by itself: current temporary production remains `SEARCH_INDEXING_ENABLED=false`, noindex/nofollow, without public canonicals, and with an empty sitemap under ADR 0004;
 - [ ] actual support-route indexability/canonical/sitemap advertising is verified only in a test configuration representing an eligible permanent public origin with `indexingEnabled=true`; production enablement still requires separate permanent-domain confirmation and explicit human approval;
 - [ ] support pages introduce no query/faceted indexable states;
@@ -158,8 +160,7 @@ The graph is authoritative:
 - [ ] focused collection BreadcrumbList structured-data tests;
 - [ ] search-policy tests for each shipped support route in both indexing-disabled current-production mode and eligible indexing-enabled mode;
 - [ ] current-production/disabled sitemap regression proves sitemap remains empty and canonicals are withheld;
-- [ ] eligible-enabled sitemap regression proves only approved shipped support routes are emitted;
-- [ ] canonical metadata/HTTP checks prove support canonicals are absent when disabled and self-canonical when enabled on an eligible origin;
+- [ ] eligible-enabled HTTP/metadata regression proves each approved support route is simultaneously indexable, self-canonical, and present in sitemap while unapproved routes remain absent/noindex;
 - [ ] ADR 0004 release gate is explicitly checked/documented; this V3 refinement must not set `SEARCH_INDEXING_ENABLED=true` or claim final-domain approval;
 - [ ] `pnpm lint`, `pnpm typecheck`, relevant tests, `pnpm build`;
 - [ ] representative 390px + desktop browser/Axe/keyboard/overflow checks;
@@ -168,7 +169,7 @@ The graph is authoritative:
 
 **Dependencies:** U2, U3, U4, and U5 accepted and integrated.
 
-**Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, structured-data helper/collection route, support-route metadata/tests, existing runtime workflows only if coverage genuinely needs expansion. `src/proxy.ts` should remain the centralized response noindex gate unless a proven defect requires changing it.
+**Files likely touched:** `src/seo/search-exposure.ts`, `src/app/sitemap.ts`, approved support-route metadata, structured-data helper/collection route, search/metadata tests, existing runtime workflows only if coverage genuinely needs expansion. `src/proxy.ts` should remain the centralized response noindex gate unless a proven defect requires changing it.
 
 **Estimated scope:** Medium for the convergence check itself. If support-route search preparation requires more than ~5 files, implement focused U6a slice(s) first, then run a docs/test-only U6b final convergence gate. U6 remains after U2–U5 either way.
 
