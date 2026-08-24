@@ -6,6 +6,8 @@ import { notFound, redirect } from "next/navigation";
 
 import { requireCurrentAdmin, requireCurrentAdminPage } from "@/auth/current-admin";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
+import { createCompositeComponentAdminService } from "@/commerce/composite-component-admin";
+import { createCompositeComponentRepository } from "@/commerce/composite-component-repository";
 import {
   createProductContentAdminService,
   PRODUCT_CONTENT_LIMITS,
@@ -21,6 +23,10 @@ export const metadata: Metadata = {
 
 const repository = createProductContentRepository(prisma);
 const collectionRepository = createCollectionDefinitionRepository(prisma);
+const compositeRepository = createCompositeComponentRepository(prisma);
+const compositeAdminService = createCompositeComponentAdminService({
+  setLinkedVariantActivation: compositeRepository.setLinkedVariantActivation,
+});
 const adminService = createProductContentAdminService({
   productExists: repository.productExists,
   resolveCollectionSlugs: collectionRepository.resolveMembershipSlugs,
@@ -47,6 +53,8 @@ type ProductEditorPageProps = {
     error?: string | string[];
     slugSaved?: string | string[];
     slugError?: string | string[];
+    componentSaved?: string | string[];
+    componentError?: string | string[];
   }>;
 };
 
@@ -101,6 +109,35 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     redirect(`${editorPath}?saved=1`);
   }
 
+  async function setCompositeVariantActivation(formData: FormData) {
+    "use server";
+
+    const adminSession = await requireCurrentAdmin();
+    const rawState = formData.get("isActive");
+    const isActive =
+      rawState === "true" ? true : rawState === "false" ? false : rawState;
+
+    const result = await compositeAdminService.setActivation(adminSession, {
+      // Product identity is server-owned by the current editor route. Never trust a hidden
+      // product/parent id to authorize this mutation.
+      productId: persistedProductId,
+      variantId: formData.get("variantId"),
+      isActive,
+    });
+
+    if (!result.ok) {
+      redirect(
+        `${editorPath}?componentError=${
+          result.reason === "COMPONENT_NOT_AVAILABLE" ? "unavailable" : "invalid"
+        }`,
+      );
+    }
+
+    revalidatePath(editorPath);
+    revalidatePath("/admin");
+    redirect(`${editorPath}?componentSaved=1`);
+  }
+
   // Parent variants that actually carry persisted composite edges. Standalone products and
   // parents without edges produce an empty list, so the section below is not rendered at all.
   const compositeParents = product.variants
@@ -116,6 +153,12 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         stock: edge.componentVariant.warehouseStocks.reduce((acc, ws) => acc + ws.quantity, 0),
       })),
     }));
+
+  // The activation owner is the child VariantMirror itself. Incoming persisted edges only decide
+  // whether this website-owned global state is manageable from this child editor.
+  const compositeChildren = product.variants.filter(
+    (variant) => variant.compositeParents.length > 0,
+  );
 
   const definedCollections = await collectionRepository.listForAdmin(100);
   const assignedSlugs = new Set(product.content?.collectionSlugs ?? []);
@@ -143,6 +186,18 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const rawSlugError = queryValue(query.slugError);
   const slugError =
     rawSlugError === "invalid" || rawSlugError === "unavailable" ? rawSlugError : null;
+
+  const componentSaved = queryValue(query.componentSaved) === "1";
+  const rawComponentError = queryValue(query.componentError);
+  const componentError =
+    rawComponentError === "invalid" || rawComponentError === "unavailable"
+      ? rawComponentError
+      : null;
+  const componentStatus = componentError ? "error" : componentSaved ? "success" : null;
+  const componentErrorMessage =
+    componentError === "unavailable"
+      ? "Không thể cập nhật. Biến thể không còn là thành phần composite khả dụng."
+      : "Không thể cập nhật. Dữ liệu biến thể không hợp lệ.";
 
   // Extract all images
   const allImages = new Set<string>();
@@ -203,6 +258,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       </div>
 
       <AdminFormStatus kind={formStatus} />
+      <AdminFormStatus
+        kind={componentStatus}
+        successMessage="Đã cập nhật trạng thái biến thể composite."
+        errorMessage={componentErrorMessage}
+      />
 
       <ProductSlugEditor
         productId={persistedProductId}
@@ -211,6 +271,92 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         saved={slugSaved}
         error={slugError}
       />
+
+      {compositeChildren.length > 0 ? (
+        <section
+          aria-labelledby="composite-activation-heading"
+          className="mt-8 border border-black/20 bg-white p-6 md:p-8"
+        >
+          <p className="eyebrow">Website commerce</p>
+          <h2
+            id="composite-activation-heading"
+            className="mt-1 font-serif text-3xl tracking-[-0.03em]"
+          >
+            Kích hoạt biến thể bán qua set
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/70">
+            Trạng thái này thuộc biến thể trên website và áp dụng cho tất cả quan hệ composite đã đồng bộ.
+          </p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-black/70">
+            Kích hoạt biến thể không làm sản phẩm con được công khai riêng.
+          </p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-black/70">
+            Nếu sản phẩm con được bật bán riêng sau này, trạng thái của biến thể này vẫn được dùng cho sản phẩm đó.
+          </p>
+
+          <div className="mt-6 space-y-4">
+            {compositeChildren.map((variant) => {
+              const variantLabel =
+                variant.sku ||
+                [variant.color, variant.size].filter(Boolean).join(" / ") ||
+                variant.id;
+              const statusLabel = !variant.isPresent
+                ? "Không còn đồng bộ"
+                : variant.isActive
+                  ? "Đã kích hoạt"
+                  : "Chưa kích hoạt";
+
+              return (
+                <div
+                  key={variant.id}
+                  className="grid gap-4 border-t border-black/15 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
+                >
+                  <div>
+                    <p className="font-mono text-xs font-semibold">{variantLabel}</p>
+                    <p className="mt-1 text-xs text-black/60">
+                      {[variant.color, variant.size].filter(Boolean).join(" / ") || "Không có Màu / Size"}
+                      {" · "}
+                      {statusLabel}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                      {variant.compositeParents.map(({ parentVariant }) => (
+                        <Link
+                          key={parentVariant.id}
+                          className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+                          href={`/admin/products/${parentVariant.product.id}`}
+                        >
+                          {parentVariant.product.name}
+                          {" · "}
+                          {parentVariant.sku ||
+                            [parentVariant.color, parentVariant.size]
+                              .filter(Boolean)
+                              .join(" / ") ||
+                            parentVariant.id}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                  <form action={setCompositeVariantActivation}>
+                    <input name="variantId" type="hidden" value={variant.id} />
+                    <input
+                      name="isActive"
+                      type="hidden"
+                      value={String(!variant.isActive)}
+                    />
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center border border-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!variant.isPresent}
+                      type="submit"
+                    >
+                      {variant.isActive ? "Tắt" : "Kích hoạt"} biến thể {variantLabel}
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {/* PANCAKE POS SYNCHRONIZED SOURCE DATA */}
       <section
@@ -290,7 +436,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
             Chi tiết các biến thể (Màu / Size / Giá / Kho)
           </h3>
           {product.variants.length > 0 ? (
-            <div className="mt-3 overflow-x-auto">
+            <div
+              aria-label="Bảng biến thể sản phẩm, cuộn ngang khi cần"
+              className="mt-3 overflow-x-auto"
+              tabIndex={0}
+            >
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/80">
@@ -398,11 +548,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                     <tbody className="divide-y divide-black/10">
                       {parent.components.map((component) => {
                         const child = component.variant;
-                        const inactive =
-                          !child.isActive ||
-                          !child.isPresent ||
-                          !child.product.isActive ||
-                          !child.product.isPresent;
+                        const statusLabel = !child.product.isPresent
+                          ? "Sản phẩm con không còn đồng bộ"
+                          : !child.isPresent
+                            ? "Biến thể không còn đồng bộ"
+                            : child.isActive
+                              ? "Đã kích hoạt biến thể"
+                              : "Chưa kích hoạt biến thể";
+                        const variantReady =
+                          child.product.isPresent && child.isPresent && child.isActive;
 
                         return (
                           <tr className="hover:bg-black/[0.02]" key={`${parent.id}-${child.id}`}>
@@ -432,12 +586,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                             <td className="px-3 py-2.5">
                               <span
                                 className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
-                                  inactive
-                                    ? "bg-black/10 text-black/80"
-                                    : "bg-emerald-100 text-emerald-900"
+                                  variantReady
+                                    ? "bg-emerald-100 text-emerald-900"
+                                    : "bg-black/10 text-black/80"
                                 }`}
                               >
-                                {inactive ? "Không khả dụng" : "Hoạt động"}
+                                {statusLabel}
+                              </span>
+                              <span className="mt-1 block text-[0.65rem] text-black/55">
+                                Catalog riêng: {child.product.isActive ? "đang hoạt động" : "tắt"}
                               </span>
                             </td>
                           </tr>

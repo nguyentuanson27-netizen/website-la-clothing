@@ -4,9 +4,15 @@ import { useEffect, useRef } from "react";
 
 type AdminFormStatusProps = {
   kind: "success" | "error" | null;
+  successMessage?: string;
+  errorMessage?: string;
 };
 
-export function AdminFormStatus({ kind }: AdminFormStatusProps) {
+export function AdminFormStatus({
+  kind,
+  successMessage = "Đã lưu nội dung biên tập.",
+  errorMessage = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
+}: AdminFormStatusProps) {
   const statusRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,18 +25,18 @@ export function AdminFormStatus({ kind }: AdminFormStatusProps) {
     <div
       ref={statusRef}
       className="mt-8 min-h-6 focus-visible:outline-2 focus-visible:outline-offset-4"
-      role={kind === "error" ? "alert" : "status"}
-      aria-atomic="true"
+      role={kind ? (kind === "error" ? "alert" : "status") : undefined}
+      aria-atomic={kind ? "true" : undefined}
       tabIndex={kind ? -1 : undefined}
     >
       {kind === "success" ? (
         <p className="border-l-2 border-black pl-4 text-sm font-semibold">
-          Đã lưu nội dung biên tập.
+          {successMessage}
         </p>
       ) : null}
       {kind === "error" ? (
         <p className="border-l-2 border-black pl-4 text-sm font-semibold">
-          Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.
+          {errorMessage}
         </p>
       ) : null}
     </div>

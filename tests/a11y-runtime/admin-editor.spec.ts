@@ -23,11 +23,17 @@ const productExternalId = `admin-a11y-product-${runId}`;
 const productSlug = `admin-a11y-product-${runId}`;
 const editedProductSlug = `ao-so-mi-admin-${runId}`;
 const productName = `Admin A11y Product ${runId}`;
+const parentExternalId = `admin-a11y-parent-${runId}`;
+const parentSlug = `admin-a11y-parent-${runId}`;
+const parentName = `Admin Composite Parent ${runId}`;
 const sourceDescription = "Read-only Pancake source context for editorial decisions.";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let productId = "";
+let parentProductId = "";
+let parentVariantId = "";
+let componentVariantId = "";
 let adminCookies: Array<{ name: string; value: string; url: string }> = [];
 
 function captureServerOutput(chunk: Buffer) {
@@ -85,7 +91,9 @@ async function stopServer() {
 
 async function cleanupDatabase() {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
-  await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
+  await prisma.productMirror.deleteMany({
+    where: { pancakeProductId: { in: [productExternalId, parentExternalId] } },
+  });
 }
 
 function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
@@ -99,16 +107,78 @@ function expectSpokenPhrase(spokenPhrase: string, expected: string, label: strin
 test.beforeAll(async () => {
   await cleanupDatabase();
 
+  const syncedAt = new Date();
   const product = await prisma.productMirror.create({
     data: {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: productName,
       sourceDescription,
-      syncedAt: new Date(),
+      isPresent: true,
+      isActive: false,
+      syncedAt,
     },
   });
   productId = product.id;
+
+  const componentVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-a11y-component-m-${runId}`,
+      productId,
+      sku: "CHILD-M",
+      size: "M",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  componentVariantId = componentVariant.id;
+
+  await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-a11y-component-l-unlinked-${runId}`,
+      productId,
+      sku: "CHILD-L",
+      size: "L",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+
+  const parent = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: parentExternalId,
+      slug: parentSlug,
+      name: parentName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  parentProductId = parent.id;
+
+  const parentVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-a11y-parent-m-${runId}`,
+      productId: parent.id,
+      sku: "SET-PARENT-M",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  parentVariantId = parentVariant.id;
+
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId,
+      componentVariantId,
+      quantity: 1,
+      syncedAt,
+    },
+  });
 
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
@@ -143,7 +213,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("admin editor keeps Pancake source read-only and announces publication save/error with VoiceOver", async ({
+test("admin editor keeps Pancake source read-only and manages relation-linked child activation accessibly", async ({
   page,
   context,
   voiceOver,
@@ -191,6 +261,123 @@ test("admin editor keeps Pancake source read-only and announces publication save
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Kích hoạt biến thể bán qua set" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: parentName })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Trạng thái này thuộc biến thể trên website và áp dụng cho tất cả quan hệ composite đã đồng bộ.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Kích hoạt biến thể không làm sản phẩm con được công khai riêng.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await expect(
+    page.getByText(
+      "Nếu sản phẩm con được bật bán riêng sau này, trạng thái của biến thể này vẫn được dùng cho sản phẩm đó.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Kích hoạt biến thể CHILD-L" }),
+  ).toHaveCount(0);
+
+  // A relation can disappear after the page was rendered. The server-side mutation must reject
+  // that stale UI instead of trusting the hidden variant id or the old page state.
+  await prisma.compositeComponentMirror.delete({
+    where: {
+      parentVariantId_componentVariantId: {
+        parentVariantId,
+        componentVariantId,
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
+  await page.waitForURL(
+    (url) =>
+      url.pathname === editorPath && url.searchParams.get("componentError") === "unavailable",
+  );
+  const activationError = page
+    .getByRole("alert")
+    .filter({ hasText: "Biến thể không còn là thành phần composite khả dụng." });
+  await expect(activationError).toBeVisible();
+  await expect(activationError).toBeFocused();
+
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId,
+      componentVariantId,
+      quantity: 1,
+      syncedAt: new Date(),
+    },
+  });
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await voiceOver.navigateToWebContent({ capture: false });
+  const activationCapture = await voiceOver.capture(
+    async () => {
+      await page.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
+      await page.waitForURL(
+        (url) => url.pathname === editorPath && url.searchParams.get("componentSaved") === "1",
+      );
+      const successStatus = page
+        .getByRole("status")
+        .filter({ hasText: "Đã cập nhật trạng thái biến thể composite." });
+      await expect(successStatus).toBeVisible();
+      await expect(successStatus).toBeFocused();
+      await delay(500);
+    },
+    { capture: true },
+  );
+  expectSpokenPhrase(
+    activationCapture.spokenPhrase,
+    "Đã cập nhật trạng thái biến thể composite",
+    "VoiceOver must announce composite activation success",
+  );
+
+  const activated = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: componentVariantId },
+    select: {
+      isActive: true,
+      product: { select: { isActive: true } },
+    },
+  });
+  expect(activated).toEqual({
+    isActive: true,
+    product: { isActive: false },
+  });
+
+  const parentEditorPath = `/admin/products/${encodeURIComponent(parentProductId)}`;
+  await page.goto(`${BASE_URL}${parentEditorPath}`, { waitUntil: "networkidle" });
+  const childRow = page.getByRole("row").filter({ hasText: productName });
+  await expect(childRow.getByText("Đã kích hoạt biến thể", { exact: true })).toBeVisible();
+  await expect(childRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
+  await expect(childRow.getByText("Không khả dụng", { exact: true })).toHaveCount(0);
+  await expect(childRow.getByRole("button")).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Tắt biến thể CHILD-M" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("componentSaved") === "1",
+  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Đã cập nhật trạng thái biến thể composite." }),
+  ).toBeFocused();
+  expect(
+    (
+      await prisma.variantMirror.findUniqueOrThrow({
+        where: { id: componentVariantId },
+        select: { isActive: true },
+      })
+    ).isActive,
+  ).toBe(false);
 
   await slugTextbox.fill(`  Áo Sơ Mi Admin ${runId}  `);
   await page.getByRole("button", { name: "Lưu slug" }).click();
