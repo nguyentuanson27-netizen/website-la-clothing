@@ -3,150 +3,163 @@
 Status: **DRAFT — planning/review only**
 
 ## Execution order
-- [ ] U1a + U1b + U1c complete before U2/U3/U4/U5
-- [ ] U2, U3, U4, U5 may proceed independently after all U1 slices
-- [ ] U5 owns `/size-guide` route + PDP link atomically
-- [ ] U2 + U3 + U4 + U5 complete before U6a/U6b
-- [ ] U6a owns collection BreadcrumbList + support-route canonical/allowlist/sitemap atomically
-- [ ] U6b owns nested-main/duplicate-`main-content` accessibility debt
-- [ ] U6c starts only after U6a + U6b are accepted
-- [ ] no U6 slice may bypass ADR 0004 permanent-domain + explicit human indexing approval
+- [ ] U0a fix existing landmark/id debt
+- [ ] U0b enable storefront Axe `best-practice` landmark coverage
+- [ ] U1a/U1b/U1c may proceed after U0b
+- [ ] U1a + U1b + U1c all complete before U2/U3/U4/U5
+- [ ] U2/U3/U4/U5 may proceed independently after U1
+- [ ] U2 + U3 + U4 + U5 complete before U6a
+- [ ] U6b starts only after U6a
+- [ ] no task bypasses ADR 0004 indexing approval
 
-## U1 — Language + buyer-copy cleanup
-- [ ] implement U1a shell/search slice
-- [ ] implement U1b merchandising-page copy slice
-- [ ] implement U1c transactional copy/error-state slice
-- [ ] lock exact labels: `Cửa hàng`, `Hàng mới`, `Bộ sưu tập`, `Lookbook`, `Tìm kiếm`, `Tài khoản`, `Túi hàng`
-- [ ] desktop + mobile header match the locked labels
-- [ ] footer/Search/New arrivals match the locked labels
-- [ ] Cart + Checkout use `Túi hàng` consistently
-- [ ] `checkout-submit-feedback.ts` CART_CHANGED/CART_UNAVAILABLE messages use `Túi hàng`
-- [ ] guest checkout recovery link uses `Túi hàng`
-- [ ] remove public catalog-mirror/server implementation explanations where buyer value is absent
-- [ ] preserve factual COD/shipping/stock semantics
-- [ ] RED/GREEN content tests include checkout error paths, not only happy path
-- [ ] browser/a11y regression across shell → product → cart → checkout + search/new-arrivals/footer
+## U0a — Landmark/id debt
+- [ ] root layout sole owner of `<main id="main-content">`
+- [ ] audit all public route wrappers for nested `<main>`
+- [ ] remove duplicate `main-content` ids including `/track-order`
+- [ ] skip link resolves to exactly one target
+- [ ] RED regression first, then route-group fixes
+- [ ] split route groups to ≤5 production/test files per focused slice
+- [ ] representative runtime layout checks
 
-## U2 — Homepage collection merchandising
-- [ ] published collection rail(s)
-- [ ] crawlable `/collections/{slug}` links
-- [ ] remove **all** `/shop?category=...` homepage links
-- [ ] replace an inert category link only when a reviewed published collection mapping exists; otherwise remove it
-- [ ] if no truthful mapping remains, remove the empty category-strip heading/nav container
-- [ ] homepage link guard explicitly rejects `/shop?category=`
-- [ ] U2 owns/refines the existing homepage factual brand-facts block as the Trust/support strip
-- [ ] trust facts remain derived from canonical public-brand/shipping helpers
-- [ ] trust strip does not link to unapproved support routes
+## U0b — Best-practice accessibility gate
+- [ ] add relevant `best-practice` coverage to storefront Axe scans
+- [ ] prove duplicate/nested main would fail the gate
+- [ ] keep unrelated admin Playwright code out of scope unless deliberately adopting same rule
+- [ ] U0b green before any U1–U5 feature/support slice
+
+## U1 — Repo-wide locked terminology inventory
+- [ ] inventory locked/old buyer terms across `src/` and tests before editing
+- [ ] classify each hit: buyer-functional / editorial exception / test assertion
+- [ ] source + directly affected tests update in same slice
+- [ ] do not make tests import production label constants merely to avoid independent copy assertions
+- [ ] final inventory has no unexplained buyer-functional old terms
+
+### U1a — Shell/home/Search/New arrivals
+- [ ] header desktop/mobile: `Cửa hàng`, `Hàng mới`, `Bộ sưu tập`, `Lookbook`, `Tìm kiếm`, `Tài khoản`, `Túi hàng`
+- [ ] footer follows locked labels
+- [ ] homepage functional strings localized (`Shop the collection`, `View collections`, `Shop edit`, `View all`, trust-nav labels)
+- [ ] explicit editorial homepage exemptions remain documented
+- [ ] `/search` H1/button/label Vietnamese-first
+- [ ] `/search` GET form sends `q` to `/shop`, never dead `/search?q=`
+- [ ] `/new-arrivals` H1/body buyer copy Vietnamese-first
+- [ ] update affected source + Playwright/integration assertions together
+- [ ] exact Search URL handoff test
+
+### U1b — Shop/Collections/PDP + purchase CTA
+- [ ] `/collections` H1/functional CTA/empty state Vietnamese-first
+- [ ] Shop/Collection/PDP buyer-functional copy localized
+- [ ] remove buyer-visible catalog/server architecture explanations where unnecessary
+- [ ] `product-purchase-panel.tsx`: `Thêm vào túi`
+- [ ] PDP copy contains no stale `Add to Bag`
+- [ ] update affected tests in same slice
+- [ ] repo-wide `Add to Bag` buyer-source/test inventory clean
+
+### U1c — Cart/Checkout/error/loading
+- [ ] Cart empty/populated H1 = `TÚI HÀNG`
+- [ ] cart loading/error buyer copy has no stale `Bag`/`YOUR BAG`/`Giỏ hàng`
+- [ ] Checkout uses `Túi hàng` consistently
+- [ ] `CART_CHANGED` and `CART_UNAVAILABLE` feedback uses `Túi hàng`
+- [ ] guest-checkout recovery link uses `Túi hàng`
+- [ ] error-path tests, loading/error tests, and affected Playwright assertions update with source
+- [ ] transactional locked-term inventory clean
+
+## U2 — Homepage collection merchandising + trust
+- [ ] remove all `/shop?category=...` homepage links
+- [ ] only reviewed published `/collections/{slug}` replacements
+- [ ] 0 mappings → remove category container/heading/nav
+- [ ] 1–4 mappings → keep collection region with heading `Mua theo bộ sưu tập`
+- [ ] never leave `Shop by category` above collection links
+- [ ] U2 owns target collection-navigation region
+- [ ] U2 owns/refines existing brand-facts block as trust/support strip
+- [ ] trust facts stay canonical-helper driven
+- [ ] no unapproved support links
 - [ ] current trusted catalog hero media remains valid fallback
-- [ ] absence of approved editorial hero asset does **not** block U2
-- [ ] do not widen remote image `remotePatterns` or CSP origins merely for editorial hero media
-- [ ] if an editorial asset is supplied/approved, deliver it as a separate focused same-origin content slice
-- [ ] published-only eligibility + empty-container + trust-fact tests
-- [ ] media-boundary regression
-- [ ] mobile/desktop/Axe/overflow regression
+- [ ] 0/partial/full mapping tests + link guard + trust fact tests
+- [ ] best-practice Axe/keyboard/overflow remains green
 
-## U3 — Collection PLP filters
-- [ ] Sort control reuses `STOREFRONT_DISCOVERY_SORTS`
-- [ ] Size options come from existing discovery facets; do not invent a static size enum
-- [ ] raw URL size remains bounded/normalized by the existing parser contract
-- [ ] route slug is the only collection identity authority
-- [ ] `/collections/a?collection=b` cannot render collection `b` products under route `a`
-- [ ] construct discovery input from explicit supported keys; do not spread arbitrary raw search params
-- [ ] use a collection-local href builder
-- [ ] do **not** call or generalize Shop-specific `buildStorefrontDiscoveryHref` for collection navigation
-- [ ] no generated collection href contains `collection=`
-- [ ] base href is `/collections/{slug}`
-- [ ] pure pagination href is exactly `/collections/{slug}?page=N`
-- [ ] filtered/sorted hrefs stay under `/collections/{slug}` and preserve only supported state
-- [ ] changing filters resets pagination appropriately
-- [ ] tests assert emitted anchor href strings, not only response behavior after navigation
-- [ ] faceted/sorted states remain noindex/non-canonical
-- [ ] base and pure pagination retain current canonical policy only when global indexing is approved/enabled
+## U3 — Collection PLP URL contract
+- [ ] Sort uses existing allowlist
+- [ ] Size options from `facets.sizes`; raw size bounded/normalized
+- [ ] route slug sole collection identity
+- [ ] `/collections/a?collection=b` cannot switch products to b
+- [ ] explicit supported query keys only
+- [ ] collection-local URL serializer
+- [ ] do not call or generalize `buildStorefrontDiscoveryHref`
+- [ ] no generated URL source contains `collection=`
+- [ ] strip default `sort=name-asc`
+- [ ] strip `page=1`
+- [ ] base exactly `/collections/{slug}`
+- [ ] pure pagination exactly `/collections/{slug}?page=N` and canonical-intended outputs satisfy `canonicalSearch` from every source
+- [ ] filtered/sorted utility states only active supported params and remain intentionally noindex/non-canonical
+- [ ] all URL sources covered: anchors, controls, pagination, form submissions if any, redirects
+- [ ] do not rely on raw GET-form serialization that leaks defaults/route identity
+- [ ] tests assert emitted/submitted URLs, including default sort + page 2 → only `?page=2`
+- [ ] metadata/HTTP tests for base/pagination/filter/sort/malicious/default/mixed states
 - [ ] keyboard/Axe/browser coverage
 
-## U4 — PDP related products
-- [ ] seed membership only from the current product's projected `collections` array
-- [ ] do not invent a `ProductContent.status` gate for collection membership
-- [ ] do not independently read raw `collectionSlugs` in the PDP/UI path
-- [ ] fetch candidates through existing storefront catalog/discovery boundary for projected published collection slugs
+## U4 — Related products
+- [ ] seed from current product projected `collections` only
+- [ ] no `ProductContent.status` membership gate
+- [ ] no independent raw `collectionSlugs` interpretation in PDP/UI
+- [ ] candidate fetch through existing storefront boundary
+- [ ] visible/active only
 - [ ] current product excluded
-- [ ] only visible/active storefront products
-- [ ] candidates deduplicated + deterministically ordered
-- [ ] result hard-capped at **4**
-- [ ] regression covers non-PUBLISHED editorial content while retaining current projected collection semantics
-- [ ] no recommendation-engine persistence
-- [ ] no fabricated “set” relationship
-- [ ] PDP fallback when no related products
-- [ ] preserve trusted product-specific size-guide/care presentation
-- [ ] U4 does not add `/size-guide` link before U5 owns route + link atomically
-- [ ] Add-to-Bag/price/stock regressions remain green
+- [ ] deduplicate + deterministic order
+- [ ] hard cap 4
+- [ ] non-PUBLISHED editorial-content regression keeps current projection semantics
+- [ ] no recommendation persistence/fabricated set
+- [ ] no `/size-guide` link before U5 atomic route+link
+- [ ] Add-to-Bag/price/stock authority unchanged
 
-## U5 — Trust/footer/support
-- [ ] footer derives COD facts from canonical public brand-facts logic
-- [ ] footer derives shipping promotion from existing shipping-policy helper
-- [ ] order tracking link remains prominent
-- [ ] `/about` only after explicit factual-content approval
-- [ ] `/size-guide` only after explicit factual-content approval
-- [ ] `/shipping-returns` only after explicit return/exchange-policy approval
-- [ ] `/faq` only after explicit factual-answer approval
-- [ ] no support route is presumed approved by this plan
-- [ ] each shipped support page has unique factual title + description
-- [ ] U5 does not add support-route self-canonical metadata before U6a search-exposure slice
-- [ ] when indexing is disabled, support-page public canonical metadata is absent
-- [ ] `/size-guide` route + PDP link land in the same accepted slice
-- [ ] support routes remain fail-closed under current production indexation config
-- [ ] hotline/Zalo only after approved contact data exists
-- [ ] no duplicated shipping thresholds/constants
-- [ ] link guard + metadata + accessibility regression
+## U5 — Footer/support
+- [ ] footer derives COD/shipping/order tracking from canonical helpers
+- [ ] each support route independently content-approved
+- [ ] `/shipping-returns` requires approved return/exchange policy
+- [ ] `/faq` requires approved answers
+- [ ] unique factual title/description per shipped route
+- [ ] no canonical while indexing disabled
+- [ ] `/size-guide` route + PDP link atomic
+- [ ] no duplicated thresholds/fake contact/policy data
+- [ ] active U0b best-practice gate passes on every new support route
+- [ ] link guard + metadata + accessibility tests
 
-## U6a — SEO + structured-data convergence
+## U6a — SEO/structured data/support exposure
 - [ ] collection BreadcrumbList matches visible breadcrumb
-- [ ] canonical origin remains server-owned
-- [ ] for each approved/shipped support route, self-canonical metadata + indexable-path allowlist + sitemap path are introduced in the same focused slice
-- [ ] no intermediate indexing-enabled state exposes canonical metadata while response policy still noindexes the same support route
-- [ ] unimplemented/unapproved support routes remain absent from canonical metadata preparation, index allowlist and sitemap code
-- [ ] current temporary production stays `SEARCH_INDEXING_ENABLED=false`
-- [ ] current temporary production support pages remain noindex/nofollow
-- [ ] current temporary production support pages withhold public canonicals
-- [ ] current temporary production sitemap remains empty
-- [ ] eligible permanent-origin/indexing-enabled test mode verifies approved support route indexability + self-canonical + sitemap inclusion atomically
-- [ ] `/new-arrivals` remains outside V3 index/sitemap promotion unless separately reviewed/approved
-- [ ] permanent domain + `SEARCH_INDEXING_ENABLED=true` remain separate human/P19 approval gates
-- [ ] no ItemList JSON-LD required for launch
-- [ ] Product/Offer schema unchanged unless fixing a proven defect
+- [ ] server-owned canonical origin
+- [ ] approved support exact base: self-canonical + allowlist + sitemap atomic
+- [ ] unapproved/unimplemented routes absent from all three
+- [ ] support query-string states remain noindex/non-canonical even when base is eligible
+- [ ] no sitemap query variants
+- [ ] temporary production stays `SEARCH_INDEXING_ENABLED=false`
+- [ ] temporary production noindex/nofollow, no public canonical, empty sitemap
+- [ ] eligible-enabled test proves base indexable+self-canonical+sitemap
+- [ ] eligible-enabled test proves `?query` state noindex/non-canonical/not in sitemap
+- [ ] `/new-arrivals` and `/search` remain outside V3 index/sitemap promotion
+- [ ] permanent-domain/indexing approval remains separate human gate
+- [ ] Product/Offer/Organization/WebSite schema unchanged unless proven defect
 
-## U6b — Landmark/id accessibility hardening
-- [ ] root layout remains sole owner of page-level `<main id="main-content">`
-- [ ] audit public route wrappers for nested `<main>` elements
-- [ ] replace every nested route-level `<main>` with a non-main semantic wrapper without visual/commerce behavior change
-- [ ] `/track-order` no longer duplicates `id="main-content"`
-- [ ] rendered public pages contain exactly one `main` landmark and exactly one `main-content` id
-- [ ] skip link resolves to exactly one target
-- [ ] add regression that fails on nested main/duplicate id
-- [ ] if audit touches >5 files, split U6b into route-group sub-slices of ≤5 production/test files
-- [ ] Axe + keyboard skip-link checks on representative routes
-- [ ] no layout/CSS regression from wrapper changes
-
-## U6c — Final regression gate
+## U6b — Final DoD gate
 - [ ] `pnpm lint`
 - [ ] `pnpm typecheck`
 - [ ] relevant focused/full tests
 - [ ] `pnpm build`
 - [ ] representative 390px + desktop browser checks
-- [ ] Axe/keyboard/no-horizontal-overflow
+- [ ] Axe incl. best-practice landmark gate
+- [ ] keyboard + unique skip-link target
+- [ ] no-horizontal-overflow
 - [ ] metadata/robots/sitemap/canonical HTTP regression
 - [ ] final review: correctness → security → architecture → simplicity → performance
-- [ ] 0 Critical / 0 Required findings
-- [ ] current production still obeys ADR 0004 unless separately approved outside V3
+- [ ] 0 Critical / 0 Required
+- [ ] current production still follows ADR 0004 unless separately approved
 - [ ] human approval before merge
 
 ## Explicit non-goals
-- [ ] do not rewrite checkout/order/Pancake write semantics
-- [ ] do not add mega-menu without evidence of taxonomy need
-- [ ] do not add new dependency for this refinement by default
-- [ ] do not invent product material/fit/origin/return/review data
-- [ ] do not parse free-form size-guide text into measurements
-- [ ] do not create a second collection-membership truth for related products
-- [ ] do not weaken stable slug/media/search/security boundaries
-- [ ] do not widen remote image/CSP allowlists merely to add editorial hero media
-- [ ] do not enable public search indexing or claim permanent-domain approval as part of V3
+- [ ] no checkout/order/Pancake write rewrite
+- [ ] no mega-menu without taxonomy evidence
+- [ ] no new dependency by default
+- [ ] no fabricated material/fit/origin/return/review/contact data
+- [ ] no free-form size-guide → invented measurements
+- [ ] no second related-product collection truth
+- [ ] no broad remote image/CSP allowlist for editorial media
+- [ ] no separate search-results implementation; `/search` hands off to Shop discovery
+- [ ] no public search-indexing enablement/permanent-domain approval in V3
