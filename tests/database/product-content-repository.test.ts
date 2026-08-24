@@ -128,6 +128,8 @@ test("admin editor projection reads persisted composite parent → child edges w
       pancakeProductId: componentExternalId,
       slug: componentExternalId,
       name: "Editorial Composite Child",
+      isPresent: true,
+      isActive: false,
       syncedAt,
     },
   });
@@ -152,7 +154,7 @@ test("admin editor projection reads persisted composite parent → child edges w
       color: "Olive",
       size: "M",
       isPresent: true,
-      isActive: true,
+      isActive: false,
       syncedAt,
     },
   });
@@ -199,12 +201,22 @@ test("admin editor projection reads persisted composite parent → child edges w
     7,
   );
 
-  // The child product itself carries no outgoing edge, so its editor renders no composite section.
+  // The child carries no outgoing edge, but its own variant must expose the persisted incoming
+  // composite membership so the editor can own the global VariantMirror activation control.
   const editorChild = await repository.findForEditor(child.id);
-  assert.deepEqual(
-    editorChild?.variants.map(({ compositeComponents }) => compositeComponents.length),
-    [0],
-  );
+  const projectedChild = editorChild?.variants.find(({ id }) => id === componentVariant.id);
+  assert.equal(projectedChild?.compositeComponents.length, 0);
+  assert.equal(projectedChild?.isPresent, true);
+  assert.equal(projectedChild?.isActive, false);
+  assert.equal(projectedChild?.compositeParents.length, 1);
+
+  const incoming = projectedChild?.compositeParents[0];
+  assert.equal(incoming?.quantity, 2);
+  assert.equal(incoming?.parentVariant.id, parentVariant.id);
+  assert.equal(incoming?.parentVariant.sku, "SET-PARENT-M");
+  assert.equal(incoming?.parentVariant.size, "M");
+  assert.equal(incoming?.parentVariant.product.id, parent.id);
+  assert.equal(incoming?.parentVariant.product.name, "Editorial Composite Parent");
 });
 
 test("admin editor projection reports no composite edges for a standalone product", async () => {
