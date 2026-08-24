@@ -26,12 +26,16 @@ const PHRASE_TERMS = [
   "New arrivals",
   "New Arrivals",
   "Search products",
+  "Customer / Account",
 ] as const;
 
-const STANDALONE_TERMS = [
+const HEADING_TERMS = [
   "YOUR BAG",
   "SEARCH",
   "NEW ARRIVALS",
+  "ACCOUNT",
+  "COLLECTIONS",
+  "SHOP",
 ] as const;
 
 const EXACT_LABELS = [
@@ -51,11 +55,14 @@ const NON_BUYER_TECHNICAL_HITS = new Set([
 
 const PENDING_U1_BUYER_HITS = new Set([
   "src/app/account/page.tsx::Account",
+  "src/app/account/page.tsx::ACCOUNT",
+  "src/app/account/page.tsx::Customer / Account",
   "src/app/cart/error.tsx::YOUR BAG",
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
   "src/app/collections/page.tsx::Collections",
   "src/app/collections/page.tsx::Explore collection",
+  "src/app/collections/page.tsx::COLLECTIONS",
   "src/app/new-arrivals/page.tsx::New Arrivals",
   "src/app/new-arrivals/page.tsx::NEW ARRIVALS",
   "src/app/page.tsx::Shop the collection",
@@ -70,6 +77,7 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/search/page.tsx::SEARCH",
   "src/app/shop/[slug]/page.tsx::Add to Bag",
   "src/app/shop/page.tsx::Shop",
+  "src/app/shop/page.tsx::SHOP",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
   "src/components/commerce/product-purchase-panel.tsx::Add to Bag",
   "src/components/layout/site-footer.tsx::Shop",
@@ -88,6 +96,7 @@ const PENDING_U1_BUYER_HITS = new Set([
   "tests/a11y-runtime/editorial.spec.ts::View collections",
   "tests/a11y-runtime/editorial.spec.ts::Shop edit",
   "tests/a11y-runtime/editorial.spec.ts::Explore collection",
+  "tests/a11y-runtime/editorial.spec.ts::COLLECTIONS",
   "tests/a11y-runtime/editorial.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-commerce.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-composite.spec.ts::Add to Bag",
@@ -143,9 +152,14 @@ function findHits(path: string, source: string): InventoryHit[] {
       }
     }
 
-    for (const term of STANDALONE_TERMS) {
-      if (line.trim() === term) {
-        hits.push({ path, line: index + 1, term, text: line.trim() });
+    for (const term of HEADING_TERMS) {
+      const trimmed = line.trim();
+      const quoted = `["'\\\`]${term}["'\\\`]`;
+      if (
+        trimmed === term ||
+        new RegExp(`(?:name|title|label)\\s*:\\s*${quoted}`).test(line)
+      ) {
+        hits.push({ path, line: index + 1, term, text: trimmed });
       }
     }
 
