@@ -134,6 +134,18 @@ test.beforeAll(async () => {
   });
   componentVariantId = componentVariant.id;
 
+  await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-a11y-component-l-unlinked-${runId}`,
+      productId,
+      sku: "CHILD-L",
+      size: "L",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+
   const parent = await prisma.productMirror.create({
     data: {
       pancakeProductId: parentExternalId,
@@ -267,6 +279,16 @@ test("admin editor keeps Pancake source read-only and manages relation-linked ch
     }),
   ).toBeVisible();
 
+  await expect(
+    page.getByText(
+      "Nếu sản phẩm con được bật bán riêng sau này, trạng thái của biến thể này vẫn được dùng cho sản phẩm đó.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Kích hoạt biến thể CHILD-L" }),
+  ).toHaveCount(0);
+
   // A relation can disappear after the page was rendered. The server-side mutation must reject
   // that stale UI instead of trusting the hidden variant id or the old page state.
   await prisma.compositeComponentMirror.delete({
@@ -338,6 +360,7 @@ test("admin editor keeps Pancake source read-only and manages relation-linked ch
   await expect(childRow.getByText("Đã kích hoạt biến thể", { exact: true })).toBeVisible();
   await expect(childRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
   await expect(childRow.getByText("Không khả dụng", { exact: true })).toHaveCount(0);
+  await expect(childRow.getByRole("button")).toHaveCount(0);
 
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Tắt biến thể CHILD-M" }).click();
