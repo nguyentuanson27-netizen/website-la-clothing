@@ -7,6 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const HOST = "127.0.0.1";
 const PORT = 3216;
@@ -97,7 +98,7 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 }
