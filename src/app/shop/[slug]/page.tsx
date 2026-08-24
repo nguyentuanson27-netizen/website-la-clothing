@@ -34,7 +34,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
   });
 
   return (
-    <main className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
+    <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
@@ -121,6 +121,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </p>
         </article>
       </div>
-    </main>
+    </div>
   );
 }
