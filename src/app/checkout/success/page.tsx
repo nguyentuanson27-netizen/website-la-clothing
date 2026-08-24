@@ -32,7 +32,7 @@ export default async function CheckoutSuccessPage({
   const confirmed = order?.state === "CONFIRMED";
 
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
@@ -87,6 +87,6 @@ export default async function CheckoutSuccessPage({
           </Link>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
