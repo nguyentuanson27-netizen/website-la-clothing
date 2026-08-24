@@ -59,7 +59,7 @@ export default async function CheckoutPage() {
 
   if (lines.length === 0) {
     return (
-      <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
@@ -94,14 +94,14 @@ export default async function CheckoutPage() {
             Tiếp tục mua sắm ↗
           </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
   const totals = checkoutTotals(lines);
   if (!totals) {
     return (
-      <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
@@ -139,12 +139,12 @@ export default async function CheckoutPage() {
             Quay lại giỏ hàng ↗
           </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
@@ -250,6 +250,6 @@ export default async function CheckoutPage() {
           </p>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }
