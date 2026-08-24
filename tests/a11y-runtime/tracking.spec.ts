@@ -7,6 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const HOST = "127.0.0.1";
 const PORT = 3215;
@@ -119,6 +120,21 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+test("best-practice Axe gate catches duplicate main landmarks", async ({ page }) => {
+  await page.setContent(`
+    <main id="main-content">Primary content</main>
+    <main>Duplicate content</main>
+  `);
+
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+
+  expect(accessibilityScan.violations.map(({ id }) => id)).toContain(
+    "landmark-no-duplicate-main",
+  );
+});
+
 test("guest tracking hides order existence on wrong proof and exposes only safe confirmed summary", async ({
   page,
   context,
@@ -188,7 +204,7 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   const accessibilityScan = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
