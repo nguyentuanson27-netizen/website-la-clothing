@@ -18,10 +18,12 @@ This is not a clone. Uniforme is a benchmark for product-first merchandising dis
 - Product URLs use website-owned stable slugs; price/stock/Add-to-Bag authority remains server-side.
 - Product media is already resolved through the trusted-media boundary.
 - `ProductContent` currently owns `editorialDescription`, `careInstructions`, `sizeGuide`, SEO fields, and collection membership.
+- Storefront projection resolves `collections` from `ProductContent.collectionSlugs` against **published** `CollectionDefinition` rows. Unlike editorial fields, projected collection membership is not currently gated by `ProductContent.status`; V3 must not invent a different status rule for related products.
 - The homepage currently contains four `/shop?category=...` links, but `parseStorefrontDiscoverySearchParams` does not parse a `category` parameter. Those links therefore do not filter Shop and their query-state requests are noindex under the current search policy.
-- `buildStorefrontDiscoveryHref` is Shop-specific: it always returns `/shop` URLs and serializes collection as a query parameter. Collection PLP navigation must not call it directly unless the helper is deliberately generalized with regression coverage.
+- `buildStorefrontDiscoveryHref` is Shop-specific: it always returns `/shop` URLs and serializes `collection` as a query parameter. Collection PLP navigation must use a collection-local URL builder and must never serialize route-owned collection identity back into `?collection=`.
 - Discovery `sort` values are allowlisted; `size` is bounded normalized text. The current Shop UI derives selectable size values from discovery facets rather than a static size enum.
 - The homepage hero currently reuses trusted product media. There is no repository-owned editorial hero asset or existing `public/` asset tree on `main`; the current remote image/CSP boundary allows Pancake product media and same-origin resources, and V3 must not widen the remote allowlist merely to satisfy an editorial preference.
+- The root layout already owns `<main id="main-content">`, while at least some route pages render another `<main>` inside it; `/track-order` also repeats `id="main-content"`. This landmark/id defect is existing accessibility debt and is **not** a baseline to preserve.
 
 ## Important correction from gap audit
 A published collection without `description` is not a valid public state today. The collection definition parser rejects `isPublished=true` when `description` is null, and the public collection route also fails closed when the description is missing. Therefore this is not currently treated as a production SEO bug; retain regression coverage rather than widening the model.
@@ -48,7 +50,7 @@ Campaign → curated collection → product → product facts → purchase → c
 - Fail-closed indexing policy for temporary production, staging/private/faceted/query states.
 - ADR 0004's separate permanent-domain + human-approval gate before search indexing can be enabled.
 - Server-side Add-to-Bag validation.
-- Existing accessibility baseline: skip link, semantic navigation, focus-visible, runtime Axe/keyboard coverage.
+- Existing skip-link intent, focus-visible behavior, and Axe/keyboard runtime coverage. Do **not** preserve invalid nested `<main>` landmarks or duplicate `main-content` ids.
 
 ### Do not introduce in this refinement
 - No account-system rewrite.
@@ -66,11 +68,17 @@ Use Vietnamese-first buyer UI:
 - one buyer concept uses one Vietnamese term across the entire purchase flow;
 - avoid accidental EN/VI mixing within one transactional flow.
 
-Locked commerce terminology for this refinement:
+Locked navigation/commerce terminology for this refinement:
+- `Shop` → `Cửa hàng`
+- `New arrivals` → `Hàng mới`
+- `Collections` → `Bộ sưu tập`
+- `Lookbook` → `Lookbook` as an explicit editorial-label exception
 - `Search` → `Tìm kiếm`
 - `Account` → `Tài khoản`
 - `Bag` / `Cart` / `Giỏ hàng` → `Túi hàng`
-- cart and checkout empty/error/support wording must use the same `Túi hàng` terminology.
+- cart and checkout empty/error/support wording, including checkout submit feedback, must use the same `Túi hàng` terminology.
+
+These mappings are acceptance criteria, not examples. Desktop header, mobile navigation, footer, Search/New arrivals surfaces, Cart/Checkout pages, checkout error banners, and transactional links must not drift from them unless the spec is explicitly revised.
 
 ## Homepage specification
 Current homepage already has campaign hero, editorial blocks, a product grid, Lookbook, brand facts, and category links. Refine hierarchy rather than rebuild it.
@@ -94,7 +102,9 @@ Footer
 ### Homepage rules
 - Merchandising rails must be driven by website-owned **published collections** or an explicitly reviewed deterministic merchandising rule.
 - The four inert `/shop?category=...` links must not remain after U2. Replace each with a valid published `/collections/{slug}` destination when a reviewed mapping exists; otherwise remove the link rather than preserving a dead query URL.
+- If no truthful replacement mapping exists, remove the now-empty category container/heading/navigation as well; do not ship an empty “Shop by category” region.
 - U2 cannot pass merely by making collection links “primary” while leaving inert category-query links live elsewhere on the homepage.
+- The target Trust/support strip is owned by **U2** as a refinement/repositioning of the homepage's existing factual brand-facts block. It must continue deriving buyer facts from the canonical public-brand/shipping helpers and must not link to unapproved support routes.
 - **A dedicated editorial hero asset is not a U2 completion gate.** Until an approved asset actually exists, keep the current trusted catalog-media fallback and do not invent a new remote origin or asset configuration.
 - If the human later supplies an approved repository-owned editorial asset, it may be added as a focused same-origin content slice (for example a local static asset) without widening the remote media allowlist. Asset approval and delivery are separate from the U2 merchandising requirement.
 - Keep existing real-product card/media fallback behavior.
@@ -109,7 +119,8 @@ Collection pages become full buyer-facing PLPs using the existing discovery doma
 - Sort options reuse the existing allowlist. Size UI options come from current discovery facets; raw URL size input remains governed by the existing bounded normalization contract rather than a nonexistent static enum.
 - The route slug is the only collection-identity authority. A user-supplied `?collection=` value must never change which collection's products are rendered under `/collections/{slug}`.
 - Construct collection discovery input from explicitly selected supported keys; do not spread arbitrary raw search params into the discovery query.
-- Collection filter/pagination URLs stay under `/collections/{slug}`. Do not call the current Shop-specific `buildStorefrontDiscoveryHref` directly unless it is generalized with tests that preserve both Shop and Collection behavior.
+- Collection filter/pagination URLs are built by a **collection-local href builder** and remain under `/collections/{slug}`. U3 must not call or generalize `buildStorefrontDiscoveryHref` for collection navigation.
+- Collection URLs must never serialize route-owned identity as `?collection=...`. Pure pagination must emit exactly `/collections/{slug}?page=N`; filtered/sorted utility URLs may carry their supported filter/sort/page state but never `collection=`.
 - Faceted/sorted query states remain utility UX and noindex; base collection and reviewed pure pagination retain canonical/search authority when global indexing is approved and enabled.
 - Remove visible architecture copy such as “membership is managed by the website” or “catalog mirror validates price/stock”. Keep those truths in tests/docs, not buyer-facing merchandising.
 - Empty state should be buyer-facing and factual.
@@ -133,7 +144,8 @@ Complete the look
 
 ### Related products / “Complete the look”
 - Initial implementation is locked to a maximum of **4** products.
-- Selection is deterministic and simple: same published collection(s), exclude current product, visible/active products only.
+- The current product's **projected `collections` array** is the source of related-product collection membership. That projection already resolves `collectionSlugs` against published collection definitions; U4 must not independently reinterpret raw `ProductContent.status` or create a second membership rule.
+- Candidate products are fetched through the existing storefront catalog/discovery boundary for those projected published collection slugs, remain visible/active, exclude the current product, and are deduplicated before applying the deterministic order and cap.
 - Do not call a product relationship a “set” unless an explicit curated relationship exists.
 - No recommendation engine or new persistence model is required for the first slice.
 
@@ -174,7 +186,7 @@ For each support route that actually ships with approved factual content:
 A route that lacks approved content must not be added to the indexable allowlist or sitemap. It may remain unimplemented; do not publish placeholder SEO copy merely to occupy the URL. Creating a route component alone is never sufficient to make it indexable.
 
 ## Navigation
-- Keep the current simple semantic navigation model unless real taxonomy size justifies a mega-menu.
+- Keep the current simple navigation architecture unless real taxonomy size justifies a mega-menu, but apply the locked Vietnamese-first labels above.
 - Native `<details>` mobile navigation is not itself a defect; preserve accessible simplicity unless a tested replacement is materially better.
 - Cart count badge is a separate nice-to-have and should not block the merchandising/trust work.
 
@@ -189,22 +201,26 @@ A route that lacks approved content must not be added to the indexable allowlist
 
 ## Accessibility and performance
 - Reuse semantic HTML and existing controls before introducing custom widgets.
+- U6 owns a landmark-hardening slice: the root layout remains the sole page-level `<main id="main-content">`; route content must not nest another `<main>` or duplicate that id.
+- The skip link must continue resolving to exactly one `#main-content` target after the landmark fix.
 - All new filters/actions keyboard reachable with visible focus.
 - Preserve no-horizontal-overflow gates at 390px and desktop representative widths.
 - Product imagery remains responsive; any approved LCP/editorial hero asset must be deliberately prioritized, while below-fold images remain lazy where appropriate.
 - No new dependency is expected.
 
 ## Acceptance criteria for the refinement program
-- Homepage merchandising is collection-driven and no inert `/shop?category=...` links remain.
+- Homepage merchandising is collection-driven, no inert `/shop?category=...` links remain, and no empty category navigation container remains when no truthful mapping exists.
+- Homepage trust facts remain sourced from canonical helpers and owned by U2; unapproved support links are not introduced.
 - U2 can complete without a new editorial hero asset; trusted current media remains the fallback until an asset is explicitly approved and supplied.
-- Collection PLP supports at least Sort + Size while preserving route-slug authority and SEO query-state policy.
+- Collection PLP supports at least Sort + Size while preserving route-slug authority and SEO query-state policy; generated collection hrefs never contain `collection=` and pure pagination hrefs contain only `?page=N`.
 - Collection pages no longer expose internal architecture language to buyers.
-- PDP presents verified facts near purchase controls and has deterministic related products capped at 4.
+- PDP presents verified facts near purchase controls and has deterministic related products capped at 4 using the current product's projected published collections as the membership source.
 - PDP never links to `/size-guide` before that approved route exists.
-- Vietnamese-first buyer microcopy is consistent across header/search/new-arrivals/Shop/Collection/PDP/cart/checkout/footer/support flows, with `Túi hàng` as the single cart term.
+- Vietnamese-first buyer microcopy matches the locked label map across desktop/mobile header, footer, Search/New arrivals, Shop/Collection/PDP, Cart/Checkout, checkout submit feedback, and support flows.
 - Footer/support pages expose only approved factual trust information.
 - Every shipped support route has an explicit metadata/indexability/sitemap decision; runtime canonical/indexing exposure remains blocked until ADR 0004's permanent-domain and human-approval gate is satisfied.
-- Existing price/stock/order authority, media trust, stable URLs, metadata/indexing/schema and accessibility contracts do not regress.
+- Public pages have one page-level `main` landmark and one `main-content` id target; the existing nested-main/duplicate-id debt is removed rather than preserved.
+- Existing price/stock/order authority, media trust, stable URLs, metadata/indexing/schema, keyboard/focus behavior, and accessibility test coverage do not regress.
 - Every behavior-changing slice follows RED/GREEN focused tests plus relevant browser/runtime verification.
 
 ## Benchmark boundary
