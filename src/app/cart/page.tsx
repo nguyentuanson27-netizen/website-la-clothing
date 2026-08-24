@@ -56,7 +56,7 @@ export default async function CartPage() {
 
   if (lines.length === 0) {
     return (
-      <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
           <ol className="flex items-center gap-2">
             <li>
@@ -85,7 +85,7 @@ export default async function CartPage() {
             Tiếp tục mua sắm ↗
           </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -93,7 +93,7 @@ export default async function CartPage() {
   const hasUnavailableLines = lines.some((line) => !line.available);
 
   return (
-    <main className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
@@ -250,6 +250,6 @@ export default async function CartPage() {
           </Link>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }
