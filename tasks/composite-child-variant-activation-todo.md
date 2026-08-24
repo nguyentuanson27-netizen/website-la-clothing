@@ -1,134 +1,147 @@
 # Composite child-variant activation — execution checklist
 
-Status: **PLANNING / REVIEW ONLY**
+Status: **IMPLEMENTED / AUTOMATED VERIFIED — trusted real-catalog acceptance pending**
 
-PR #105 remains planning-only. After explicit human approval it is refreshed onto current `main` and merged; production work then proceeds in focused Composite PR-A/B/C branches from current `main`.
+PR #105 remained planning-only and was merged after approval. Composite PR-A/#106, PR-B/#108 and PR-C/#109 were then reviewed and merged. Current merged implementation: `main@a0c362cb6d7dc50f2224db17f07ca7975c1f9a37`.
+
+## Closeout evidence
+
+- [x] PR-A/#106 merged: activation boundary only
+- [x] PR-B/#108 merged: admin activation/readiness UI only
+- [x] PR-C/#109 merged: 2-file test-only commerce convergence proof
+- [x] Squash merge trees match their reviewed green PR-head trees
+- [x] Exact-head CI #1224 green: DB smoke, auth/security smoke, lint, typecheck, 408/408 domain/integration, build/start
+- [x] Playwright/VoiceOver 25/25 green, including the modified storefront composite convergence test
+- [x] Catalog indexation #213 green
+- [x] P18 final QA #95 green
+- [x] Final combined self-review: 0 Critical / 0 Required
+- [ ] Trusted real-catalog acceptance on an authorized environment
 
 ## Planning gate
 
-- [ ] Review `docs/design/composite-child-variant-activation.md`
-- [ ] Approve global `VariantMirror.isActive` as the existing activation truth
-- [ ] Approve child-product variant table as mutation owner
-- [ ] Approve parent product/parent variant activation as out of scope
-- [ ] Approve no-schema / no-new-dependency approach
-- [ ] Before implementation, refresh #105 onto then-current `main`
-- [ ] Recheck V3 U0/a11y changes after refresh
-- [ ] Merge approved planning-only #105 before production work
-- [ ] Predeclare Composite PR-A activation boundary (≤5 files)
-- [ ] Predeclare Composite PR-B admin ownership/status UI (≤5 files, or B1/B2 split before implementation)
-- [ ] Predeclare Composite PR-C commerce proof/convergence (≤5 files)
-- [ ] Create implementation branches from current `main`, not the mutable planning branch
+- [x] Review `docs/design/composite-child-variant-activation.md`
+- [x] Approve global `VariantMirror.isActive` as the existing activation truth
+- [x] Approve child-product variant table as mutation owner
+- [x] Approve parent product/parent variant activation as out of scope
+- [x] Approve no-schema / no-new-dependency approach
+- [x] Before implementation, refresh #105 onto then-current `main`
+- [x] Recheck V3 U0/a11y changes after refresh
+- [x] Merge approved planning-only #105 before production work
+- [x] Predeclare Composite PR-A activation boundary (≤5 files)
+- [x] Predeclare Composite PR-B admin ownership/status UI (≤5 files, or B1/B2 split before implementation)
+- [x] Predeclare Composite PR-C commerce proof/convergence (≤5 files)
+- [x] Create implementation branches from current `main`, not the mutable planning branch
 
 ## C0 — Baseline GREEN contract
 
-- [ ] Characterize live-shaped fixture: active parent product/variant
-- [ ] Child product present but inactive
-- [ ] Child variant present but inactive
-- [ ] Persist real `CompositeComponentMirror` edge
-- [ ] Give child valid size/price/stock
-- [ ] Baseline GREEN proves child option is absent/unpurchasable before activation
-- [ ] Baseline GREEN proves direct child PDP remains private
-- [ ] Existing active-component P17 regression remains green
-- [ ] Do not label these already-existing facts as RED
+- [x] Characterize live-shaped fixture: active parent product/variant
+- [x] Child product present but inactive
+- [x] Child variant present but inactive
+- [x] Persist real `CompositeComponentMirror` edge
+- [x] Give child valid size/price/stock
+- [x] Baseline GREEN proves child option is absent/unpurchasable before activation
+- [x] Baseline GREEN proves direct child PDP remains private
+- [x] Existing active-component P17 regression remains green
+- [x] Do not label these already-existing facts as RED
 
 ## C1 / Composite PR-A — Authorized activation boundary
 
-- [ ] First discriminating RED calls the missing activation operation and fails before production implementation
-- [ ] Add focused admin service
-- [ ] Add focused Prisma repository
-- [ ] Require ADMIN session
-- [ ] Bound/trim product + variant ids
-- [ ] Target state is explicit boolean
-- [ ] Verify target variant belongs to current child product
-- [ ] Verify target has incoming persisted composite edge
-- [ ] Reject unrelated forged variant id
-- [ ] Reject no-edge variant
-- [ ] Reject stale/not-present child product/variant on activation
-- [ ] Update only `VariantMirror.isActive`
-- [ ] Do not update child `ProductMirror.isActive`
-- [ ] Do not mutate `CompositeComponentMirror`
-- [ ] Do not write to Pancake
-- [ ] Idempotent same-state mutation
-- [ ] Domain RED/GREEN tests
-- [ ] DB RED/GREEN tests
-- [ ] Confirm no migration
+- [x] First discriminating RED calls the missing activation operation and fails before production implementation
+- [x] Add focused admin service
+- [x] Add focused Prisma repository
+- [x] Require ADMIN session
+- [x] Bound/trim product + variant ids
+- [x] Target state is explicit boolean
+- [x] Verify target variant belongs to current child product
+- [x] Verify target has incoming persisted composite edge
+- [x] Reject unrelated forged variant id
+- [x] Reject no-edge variant
+- [x] Reject stale/not-present child product/variant on activation
+- [x] Update only `VariantMirror.isActive`
+- [x] Do not update child `ProductMirror.isActive`
+- [x] Do not mutate `CompositeComponentMirror`
+- [x] Do not write to Pancake
+- [x] Idempotent same-state mutation
+- [x] Domain RED/GREEN tests
+- [x] DB RED/GREEN tests
+- [x] Confirm no migration
 
 ## C2 / Composite PR-B — Admin UI + status semantics
 
-### Child product variant table
+### Child product editor — Website commerce section
 
-- [ ] Project incoming composite-parent membership for own variants
-- [ ] Show composite-use context only from persisted relations
-- [ ] Relation-linked variant gets accessible activation control
-- [ ] Non-component variant gets no composite-specific toggle
-- [ ] Copy explains activation is global to the variant
-- [ ] Copy explains child product is not published by this action
-- [ ] Copy explains future standalone product activation would reuse same variant state
-- [ ] Success feedback persists after redirect/reload
-- [ ] Error feedback is accessible
+- [x] Project incoming composite-parent membership for own variants
+- [x] Show composite-use context only from persisted relations
+- [x] Relation-linked variant gets accessible activation control
+- [x] Non-component variant gets no composite-specific toggle
+- [x] Copy explains activation is global to the variant
+- [x] Copy explains child product is not published by this action
+- [x] Copy explains future standalone product activation would reuse same variant state
+- [x] Success feedback persists after redirect/reload
+- [x] Error feedback is accessible
 
 ### Parent composite table
 
-- [ ] Keep relationship structure read-only
-- [ ] Keep link to child editor
-- [ ] Remove child `ProductMirror.isActive=false` as sole `Không khả dụng` condition
-- [ ] Show child presence truth
-- [ ] Show child variant activation truth
-- [ ] Keep stock separate
-- [ ] Do not claim final purchasability from activation alone
-- [ ] Optionally expose parent inactive state as separate readiness blocker
+- [x] Keep relationship structure read-only
+- [x] Keep link to child editor
+- [x] Remove child `ProductMirror.isActive=false` as sole `Không khả dụng` condition
+- [x] Show child presence truth
+- [x] Show child variant activation truth
+- [x] Keep stock separate
+- [x] Do not claim final purchasability from activation alone
+- [x] Optionally expose parent inactive state as separate readiness blocker
 
 ### Verification
 
-- [ ] DB projection assertions
-- [ ] Browser admin activation persistence
-- [ ] Keyboard reachability
-- [ ] Axe clean
-- [ ] No horizontal overflow
-- [ ] Forged non-component action rejected server-side
+- [x] DB projection assertions
+- [x] Browser admin activation persistence
+- [x] Keyboard reachability
+- [x] Axe clean
+- [x] No horizontal overflow
+- [x] Forged non-component action rejected server-side
 
 ## C3 / Composite PR-C — Commerce regression
 
-- [ ] Before activation: child not enabled on parent
-- [ ] Activate via new service/admin path
-- [ ] Child `VariantMirror.isActive=true`
-- [ ] Child `ProductMirror.isActive=false`
-- [ ] Parent projection contains exact child variant id
-- [ ] Parent selector shows real child product label
-- [ ] Direct child PDP still 404/private
-- [ ] Add to Bag server revalidation accepts real child id through parent
-- [ ] Cart shows safe child facts without private PDP link
-- [ ] Checkout stores real child Pancake variation id
-- [ ] Product/Offer JSON-LD stays parent-only
-- [ ] Deactivate child variant
-- [ ] Parent option closes/revalidation rejects it
-- [ ] Existing composite browser/DB regressions green
+- [x] Before activation: child not enabled on parent
+- [x] Activate via new service/admin path
+- [x] Child `VariantMirror.isActive=true`
+- [x] Child `ProductMirror.isActive=false`
+- [x] Parent projection contains exact child variant id
+- [x] Parent selector shows real child product label
+- [x] Direct child PDP still 404/private
+- [x] Add to Bag server revalidation accepts real child id through parent
+- [x] Cart shows safe child facts without private PDP link
+- [x] Checkout stores real child Pancake variation id
+- [x] Product/Offer JSON-LD stays parent-only
+- [x] Deactivate child variant
+- [x] Parent option closes/revalidation rejects it
+- [x] Existing composite browser/DB regressions green
 
 ## C4 — Final convergence quality gate on current main
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:db`
-- [ ] `pnpm build`
-- [ ] Admin a11y runtime
-- [ ] Storefront composite runtime
-- [ ] CI green
-- [ ] Catalog indexation runtime green
-- [ ] P18 final QA runtime green
-- [ ] No schema migration
-- [ ] No new dependency
-- [ ] No sync auto-activation
-- [ ] No child product auto-publication
-- [ ] No relation inference
-- [ ] No unrelated V3 U1/U4 implementation mixed in
-- [ ] Correctness review
-- [ ] Security review
-- [ ] Architecture review
-- [ ] Simplicity review
-- [ ] Performance review
-- [ ] 0 Critical
-- [ ] 0 Required
+- [x] `pnpm lint`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [x] `pnpm test:db`
+- [x] `pnpm build`
+- [x] Admin a11y runtime
+- [x] Storefront composite runtime
+- [x] CI green
+- [x] Catalog indexation runtime green
+- [x] P18 final QA runtime green
+- [x] No schema migration
+- [x] No new dependency
+- [x] No sync auto-activation
+- [x] No child product auto-publication
+- [x] No relation inference
+- [x] No unrelated V3 U1/U4 implementation mixed in
+- [x] Correctness review
+- [x] Security review
+- [x] Architecture review
+- [x] Simplicity review
+- [x] Performance review
+- [x] 0 Critical
+- [x] 0 Required
 
 ## Trusted real-catalog acceptance
 
@@ -147,8 +160,8 @@ PR #105 remains planning-only. After explicit human approval it is refreshed ont
 
 ## Merge gates
 
-- [ ] #105 remains planning-only and is merged only after plan approval
-- [ ] Each Composite PR-A/B/C receives its own human review before merge
-- [ ] Full final DoD passes after A/B/C converge on current `main`
-- [ ] Any production regression found at convergence becomes a focused fix PR
-- [ ] Merge each implementation PR only after explicit human instruction
+- [x] #105 remained planning-only and was merged only after plan approval
+- [x] Each Composite PR-A/B/C received its own human review before merge
+- [ ] Full final DoD passes after A/B/C converge on current `main` — **pending only trusted real-catalog acceptance**
+- [x] No production regression was found at convergence; no focused production fix PR was required
+- [x] Each implementation PR merged only after explicit human instruction
