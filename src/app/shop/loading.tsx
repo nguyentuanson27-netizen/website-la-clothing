@@ -1,11 +1,11 @@
 export default function ShopLoading() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24" aria-busy="true" aria-live="polite">
-      <p className="eyebrow">LA Clothing / Store</p>
+      <p className="eyebrow">LA Clothing / Cửa hàng</p>
       <p className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em] text-black/15" aria-hidden="true">
-        SHOP
+        CỬA HÀNG
       </p>
-      <p className="sr-only">Đang tải catalog cửa hàng.</p>
+      <p className="sr-only">Đang tải cửa hàng.</p>
 
       <div className="mt-12 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2" aria-hidden="true">
         <div className="h-24 max-w-xl animate-pulse bg-black/5" />

@@ -17,8 +17,8 @@ import { StorefrontProductCard } from "@/components/commerce/storefront-product-
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
-const SHOP_TITLE = "Shop";
-const SHOP_DESCRIPTION = "Khám phá thời trang nam LA Clothing đang có sẵn từ catalog cửa hàng.";
+const SHOP_TITLE = "Cửa hàng";
+const SHOP_DESCRIPTION = "Khám phá thời trang nam LA Clothing đang có sẵn tại cửa hàng.";
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
 const controlClassName =
@@ -83,25 +83,25 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">LA Clothing / Store</p>
+      <p className="eyebrow">LA Clothing / Cửa hàng</p>
       <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-        SHOP
+        CỬA HÀNG
       </h1>
       <div className="mt-12 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
         <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
           Phom dáng thư thái, đường nét gọn và bảng màu trung tính cho nhịp sống hằng ngày.
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
-          Tìm kiếm và bộ lọc chỉ dùng catalog mirror hiện tại. Giá, màu, kích cỡ và tồn kho vẫn được xác nhận phía máy chủ.
+          Dùng tìm kiếm và bộ lọc để khám phá sản phẩm. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
         </p>
       </div>
 
       <section className="mt-14 border-y border-black/20 py-8" aria-labelledby="shop-discovery-title">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="eyebrow">Discovery</p>
+            <p className="eyebrow">Khám phá</p>
             <h2 id="shop-discovery-title" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
-              Tìm trong catalog
+              Khám phá sản phẩm
             </h2>
           </div>
           {filtered ? (
@@ -128,7 +128,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Collection</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Bộ sưu tập</span>
             <select className={controlClassName} defaultValue={discovery.collection ?? ""} name="collection">
               <option value="">Tất cả</option>
               {facets.collections.map((collection) => (
@@ -226,28 +226,28 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
 
       {totalCount === 0 ? (
         <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="shop-empty-title">
-          <p className="eyebrow">{filtered ? "No match" : "Current drop"}</p>
+          <p className="eyebrow">{filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}</p>
           <h2 id="shop-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
             {filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
           </h2>
           <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
             {filtered
-              ? "Thử bỏ bớt bộ lọc hoặc quay lại toàn bộ catalog."
-              : "Catalog sẽ xuất hiện tại đây khi sản phẩm được đồng bộ và chủ shop bật trạng thái bán trên website."}
+              ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm."
+              : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."}
           </p>
           {filtered ? (
             <Link
               className="mt-6 inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
               href="/shop"
             >
-              Xem toàn bộ catalog →
+              Xem tất cả sản phẩm →
             </Link>
           ) : null}
         </section>
       ) : (
         <section className="mt-16" aria-labelledby="shop-products-title">
           <div className="section-heading-row border-t border-black/20 pt-5">
-            <h2 id="shop-products-title">Current collection</h2>
+            <h2 id="shop-products-title">Sản phẩm hiện tại</h2>
             <p className="eyebrow">
               {totalCount} sản phẩm · Trang {page}/{totalPages}
             </p>
