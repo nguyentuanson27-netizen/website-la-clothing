@@ -70,7 +70,6 @@ const NON_BUYER_TECHNICAL_HITS = new Set([
 const PENDING_U1_BUYER_HITS = new Set([
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
-  "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
   "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
 ]);

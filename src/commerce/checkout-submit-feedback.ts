@@ -49,16 +49,16 @@ export function checkoutSubmitFeedback(
     case "CART_CHANGED":
       return {
         tone: "warning",
-        title: "Giỏ hàng đã thay đổi",
+        title: "Túi hàng đã thay đổi",
         message:
-          "Giá hoặc tồn kho đã thay đổi. Hãy quay lại giỏ hàng để kiểm tra trước khi đặt lại.",
+          "Giá hoặc tồn kho đã thay đổi. Hãy quay lại túi hàng để kiểm tra trước khi đặt lại.",
         mayRetry: false,
       };
     case "CART_UNAVAILABLE":
       return {
         tone: "warning",
-        title: "Giỏ hàng không còn sẵn sàng",
-        message: "Giỏ hàng hiện không thể thanh toán. Hãy quay lại giỏ hàng và kiểm tra sản phẩm.",
+        title: "Túi hàng không còn sẵn sàng",
+        message: "Túi hàng hiện không thể thanh toán. Hãy quay lại túi hàng và kiểm tra sản phẩm.",
         mayRetry: false,
       };
     case "SERVICE_UNAVAILABLE":
