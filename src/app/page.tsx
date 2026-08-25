@@ -179,8 +179,8 @@ export default async function HomePage() {
             </div>
           </dl>
           <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-3" aria-label="Tìm hiểu LA Clothing">
-            <Link className="text-link" href="/shop">Shop ↗</Link>
-            <Link className="text-link" href="/collections">Collections ↗</Link>
+            <Link className="text-link" href="/shop">Cửa hàng ↗</Link>
+            <Link className="text-link" href="/collections">Bộ sưu tập ↗</Link>
             <Link className="text-link" href="/track-order">Tra cứu đơn ↗</Link>
           </nav>
         </div>
