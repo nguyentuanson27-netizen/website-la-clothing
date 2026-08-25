@@ -72,18 +72,13 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/collections/[slug]/page.tsx::Collections",
   "src/app/shop/[slug]/page.tsx::Add to Bag",
   "src/app/shop/[slug]/page.tsx::Shop",
-  "src/app/shop/loading.tsx::SHOP",
-  "src/app/shop/page.tsx::Shop",
-  "src/app/shop/page.tsx::SHOP",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
   "src/components/commerce/product-purchase-panel.tsx::Add to Bag",
   "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
-  "tests/a11y-runtime/discovery.spec.ts::SHOP",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
   "tests/a11y-runtime/editorial.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-commerce.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-composite.spec.ts::Add to Bag",
-  "tests/domain/catalog-listing-metadata.test.ts::Shop",
 ]);
 
 type InventoryHit = {
@@ -212,6 +207,46 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
     "Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.",
   ]) {
     assert.equal(source.includes(expected), true, `collections listing missing Vietnamese copy: ${expected}`);
+  }
+});
+
+test("U1b shop listing and loading use Vietnamese buyer-functional copy", async () => {
+  const [pageSource, loadingSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/shop/page.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/app/shop/loading.tsx"), "utf8"),
+  ]);
+
+  for (const expected of [
+    'const SHOP_TITLE = "Cửa hàng";',
+    "LA Clothing / Cửa hàng",
+    "CỬA HÀNG",
+    "Khám phá sản phẩm",
+    ">Bộ sưu tập<",
+    "Không tìm thấy",
+    "Sản phẩm hiện tại",
+  ]) {
+    assert.equal(pageSource.includes(expected), true, `shop listing missing Vietnamese copy: ${expected}`);
+  }
+
+  for (const oldCopy of [
+    "LA Clothing / Store",
+    "Tìm trong catalog",
+    ">Discovery<",
+    ">Collection<",
+    "No match",
+    "Current drop",
+    "Current collection",
+    "catalog mirror",
+    "phía máy chủ",
+  ]) {
+    assert.equal(pageSource.includes(oldCopy), false, `shop listing retained old/technical copy: ${oldCopy}`);
+  }
+
+  for (const expected of ["LA Clothing / Cửa hàng", "CỬA HÀNG", "Đang tải cửa hàng."]) {
+    assert.equal(loadingSource.includes(expected), true, `shop loading missing Vietnamese copy: ${expected}`);
+  }
+  for (const oldCopy of ["LA Clothing / Store", "SHOP", "catalog cửa hàng"]) {
+    assert.equal(loadingSource.includes(oldCopy), false, `shop loading retained old copy: ${oldCopy}`);
   }
 });
 
