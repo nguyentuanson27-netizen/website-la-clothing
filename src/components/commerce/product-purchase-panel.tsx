@@ -178,11 +178,11 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
           {hasPurchasableVariant
             ? selection.hasKindOptions
               ? selection.hasColorOptions
-                ? "Chọn Loại × Size × Màu"
-                : "Chọn Loại × Size"
+                ? "Chọn loại × kích cỡ × màu"
+                : "Chọn loại × kích cỡ"
               : selection.hasColorOptions
-                ? "Chọn Color × Size"
-                : "Chọn Size"
+                ? "Chọn màu × kích cỡ"
+                : "Chọn kích cỡ"
             : "Chưa thể mua online"}
         </p>
       </div>
@@ -206,7 +206,7 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
         disabled={!selection.canAdd || isPending}
         onClick={addToBag}
       >
-        {isPending ? "Đang thêm…" : "Add to Bag"}
+        {isPending ? "Đang thêm…" : "Thêm vào túi"}
       </button>
 
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
