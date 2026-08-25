@@ -166,6 +166,14 @@ test("published collection exposes visible copy and deterministic website-owned 
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
+  await expect(page.getByText("LA Clothing / Bộ sưu tập", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
+      { exact: true },
+    ),
+  ).toBeVisible();
 
   const productHeadings = page.locator("article h2");
   await expect(productHeadings).toHaveCount(2);
@@ -194,5 +202,9 @@ test("published empty collection renders an intentional empty state", async ({ p
   const response = await page.goto(`${BASE_URL}/collections/${emptySlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime Empty Collection" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Collection này chưa có sản phẩm." })).toBeVisible();
+  await expect(page.getByText("Bộ sưu tập hiện tại", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Bộ sưu tập này chưa có sản phẩm." })).toBeVisible();
+  await expect(
+    page.getByText("Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.", { exact: true }),
+  ).toBeVisible();
 });
