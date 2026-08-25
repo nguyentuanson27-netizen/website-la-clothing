@@ -95,7 +95,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           <li aria-hidden="true">/</li>
           <li>
             <Link className="hover:underline" href="/collections">
-              Collections
+              Bộ sưu tập
             </Link>
           </li>
           <li aria-hidden="true">/</li>
@@ -104,7 +104,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           </li>
         </ol>
       </nav>
-      <p className="eyebrow mt-6">LA Clothing / Collection</p>
+      <p className="eyebrow mt-6">LA Clothing / Bộ sưu tập</p>
       <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         {collection.title}
       </h1>
@@ -113,18 +113,18 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           {collection.description}
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/65 md:justify-self-end">
-          Membership của collection này do website quản lý. Giá, tồn kho và trạng thái bán vẫn được xác nhận từ catalog mirror hiện tại.
+          Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
         </p>
       </div>
 
       {totalCount === 0 ? (
         <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="collection-empty-title">
-          <p className="eyebrow">Current collection</p>
+          <p className="eyebrow">Bộ sưu tập hiện tại</p>
           <h2 id="collection-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
-            Collection này chưa có sản phẩm.
+            Bộ sưu tập này chưa có sản phẩm.
           </h2>
           <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
-            Đây là trạng thái trống có chủ đích. Sản phẩm sẽ xuất hiện khi chủ shop gán membership cho collection này.
+            Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.
           </p>
         </section>
       ) : (
@@ -152,7 +152,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           {totalPages > 1 ? (
             <nav
               className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
-              aria-label="Phân trang collection"
+              aria-label="Phân trang bộ sưu tập"
             >
               {catalogPage.hasPrevious ? (
                 <Link
