@@ -235,9 +235,10 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
   await assertPageQuality(page);
 
-  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
@@ -292,10 +293,10 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: sizeOnlyProductName })).toBeVisible();
   await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-  await expect(page.getByText("Chọn Size", { exact: true })).toBeVisible();
+  await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
   const size = page.getByRole("radio", { name: "L" });
-  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
@@ -334,9 +335,10 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   // 1. PDP selection at 1440px
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
   await assertPageQuality(page);
 
-  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
@@ -372,5 +374,3 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
-
-

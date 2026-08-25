@@ -76,12 +76,8 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/shop/[slug]/page.tsx::Add to Bag",
   "src/app/shop/[slug]/page.tsx::Shop",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
-  "src/components/commerce/product-purchase-panel.tsx::Add to Bag",
   "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
-  "tests/a11y-runtime/editorial.spec.ts::Add to Bag",
-  "tests/a11y-runtime/storefront-commerce.spec.ts::Add to Bag",
-  "tests/a11y-runtime/storefront-composite.spec.ts::Add to Bag",
 ]);
 
 type InventoryHit = {
@@ -278,6 +274,33 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
     'aria-label="Phân trang collection"',
   ]) {
     assert.equal(source.includes(oldCopy), false, `collection detail retained old/technical copy: ${oldCopy}`);
+  }
+});
+
+test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
+  const source = await readFile(
+    join(REPO_ROOT, "src/components/commerce/product-purchase-panel.tsx"),
+    "utf8",
+  );
+
+  for (const expected of [
+    "Thêm vào túi",
+    "Chọn loại × kích cỡ × màu",
+    "Chọn loại × kích cỡ",
+    "Chọn màu × kích cỡ",
+    "Chọn kích cỡ",
+  ]) {
+    assert.equal(source.includes(expected), true, `purchase panel missing Vietnamese copy: ${expected}`);
+  }
+
+  for (const oldCopy of [
+    "Add to Bag",
+    "Chọn Loại × Size × Màu",
+    "Chọn Loại × Size",
+    "Chọn Color × Size",
+    "Chọn Size",
+  ]) {
+    assert.equal(source.includes(oldCopy), false, `purchase panel retained old copy: ${oldCopy}`);
   }
 });
 
