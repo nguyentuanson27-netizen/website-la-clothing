@@ -6,8 +6,8 @@ import { createCollectionDefinitionRepository } from "@/commerce/collection-defi
 import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
-  title: "Collections",
-  description: "Published collections from LA Clothing.",
+  title: "Bộ sưu tập",
+  description: "Khám phá các bộ sưu tập từ LA Clothing.",
 };
 
 const repository = createCollectionDefinitionRepository(prisma);
@@ -18,9 +18,9 @@ export default async function CollectionsPage() {
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">LA Clothing / Collections</p>
+      <p className="eyebrow">LA Clothing / Bộ sưu tập</p>
       <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
-        COLLECTIONS
+        BỘ SƯU TẬP
       </h1>
       {publishedCollections.length > 0 ? (
         <div className="mt-12 grid gap-px border border-black/20 bg-black/20 md:grid-cols-2">
@@ -30,7 +30,7 @@ export default async function CollectionsPage() {
               className="flex min-h-72 flex-col justify-between bg-[var(--paper)] p-8 md:p-12"
             >
               <div>
-                <p className="eyebrow">Collection</p>
+                <p className="eyebrow">Bộ sưu tập</p>
                 <h2 className="mt-4 max-w-md break-words font-serif text-3xl leading-tight md:text-5xl">
                   {collection.title}
                 </h2>
@@ -45,7 +45,7 @@ export default async function CollectionsPage() {
                   className="text-link"
                   href={`/collections/${collection.slug}`}
                 >
-                  Explore collection ↗
+                  Khám phá bộ sưu tập ↗
                 </Link>
               </div>
             </article>
@@ -57,12 +57,12 @@ export default async function CollectionsPage() {
           className="ui-state ui-state--empty mt-12"
           data-ui-state="empty"
         >
-          <p className="eyebrow">Current collections</p>
+          <p className="eyebrow">Bộ sưu tập hiện tại</p>
           <h2 id="collections-empty-title" className="ui-state__title">
-            Collections are being prepared.
+            Các bộ sưu tập đang được chuẩn bị.
           </h2>
           <p className="ui-state__copy">
-            Published collections will appear here as they become available.
+            Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.
           </p>
         </section>
       )}
