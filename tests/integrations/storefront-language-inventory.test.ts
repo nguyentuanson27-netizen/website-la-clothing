@@ -37,6 +37,9 @@ const PHRASE_TERMS = [
   "Phân trang collection",
   "Add to Bag",
   "Giỏ hàng",
+  "Continue shopping",
+  "Color / Size unavailable",
+  "Color × Size",
   "New arrivals",
   "New Arrivals",
   "Search products",
@@ -68,9 +71,7 @@ const NON_BUYER_TECHNICAL_HITS = new Set([
 ]);
 
 const PENDING_U1_BUYER_HITS = new Set([
-  "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
-  "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
 ]);
 
@@ -138,12 +139,16 @@ function isEmbeddedBuyerLabelLine(line: string, label: string): boolean {
   return quotedSegments.some((segment) => token.test(segment));
 }
 
+function isTechnicalTestTitle(line: string, term: string): boolean {
+  return term === "Color × Size" && /^\s*test\(/.test(line);
+}
+
 function findHits(path: string, source: string): InventoryHit[] {
   const hits: InventoryHit[] = [];
 
   source.split("\n").forEach((line, index) => {
     for (const term of PHRASE_TERMS) {
-      if (line.includes(term)) {
+      if (line.includes(term) && !isTechnicalTestTitle(line, term)) {
         hits.push({ path, line: index + 1, term, text: line.trim() });
       }
     }
@@ -345,7 +350,7 @@ test("U1c cart loading and error states use Túi hàng terminology", async () =>
   }
 });
 
-test("U1 inventory classifies every locked old buyer-copy literal before edits", async () => {
+test("U1 inventory classifies remaining checkout buyer-copy literals", async () => {
   const files = (
     await Promise.all(
       SOURCE_ROOTS.map((root) => listSourceFiles(join(REPO_ROOT, root))),

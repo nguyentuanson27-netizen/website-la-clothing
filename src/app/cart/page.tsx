@@ -27,9 +27,9 @@ function unavailableLabel(line: StorefrontCartLine): string {
     case "PRICE_UNRESOLVED":
       return "Giá đang cập nhật";
     case "MAPPING_REQUIRED":
-      return "Color × Size chưa hoàn tất";
+      return "Màu × kích cỡ chưa hoàn tất";
     case "AMBIGUOUS_OPTION":
-      return "Color × Size đang bị trùng";
+      return "Màu × kích cỡ đang bị trùng";
     case "PRODUCT_UNAVAILABLE":
     case "VARIANT_UNAVAILABLE":
       return "Sản phẩm không còn khả dụng";
@@ -74,7 +74,7 @@ export default async function CartPage() {
           </ol>
         </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          YOUR BAG
+          TÚI HÀNG
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
           <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
@@ -112,7 +112,7 @@ export default async function CartPage() {
       </nav>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          YOUR BAG
+          TÚI HÀNG
         </h1>
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">
           {lines.length} {lines.length === 1 ? "sản phẩm" : "sản phẩm"}
@@ -186,7 +186,7 @@ export default async function CartPage() {
                         </h2>
                       )}
                       <p className="mt-2 text-sm text-black/75">
-                        {[line.color, line.size].filter(Boolean).join(" / ") || "Color / Size unavailable"}
+                        {[line.color, line.size].filter(Boolean).join(" / ") || "Màu / Kích cỡ không khả dụng"}
                       </p>
                     </div>
 
@@ -246,7 +246,7 @@ export default async function CartPage() {
             </p>
           )}
           <Link className="text-link mt-7 inline-block" href="/shop">
-            Continue shopping ↗
+            Tiếp tục mua sắm ↗
           </Link>
         </aside>
       </div>
