@@ -488,7 +488,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByText("Draft Capsule")).toHaveCount(0);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
 
-  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
   await expect(addToBag).toBeDisabled();
 
   await page.getByText("Ink", { exact: true }).click();
