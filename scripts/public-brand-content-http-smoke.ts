@@ -40,6 +40,16 @@ function anchorHasVisibleText(body: string, href: string, text: string): boolean
   });
 }
 
+function sectionByAriaLabelledBy(body: string, id: string): string {
+  const sections = body.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+  return (
+    sections.find((section) => {
+      const labelledBy = section.match(/\baria-labelledby=(?:"([^"]+)"|'([^']+)')/i);
+      return (labelledBy?.[1] ?? labelledBy?.[2] ?? null) === id;
+    }) ?? ""
+  );
+}
+
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) {
@@ -113,9 +123,11 @@ try {
     assert.equal(text.includes(fact), true, `homepage must expose factual visible text: ${fact}`);
   }
 
-  assert.equal(anchorHasVisibleText(body, "/shop", "Cửa hàng"), true);
-  assert.equal(anchorHasVisibleText(body, "/collections", "Bộ sưu tập"), true);
-  assert.equal(anchorHasVisibleText(body, "/track-order", "Tra cứu đơn"), true);
+  const brandSection = sectionByAriaLabelledBy(body, "brand-facts-title");
+  assert.notEqual(brandSection, "", "homepage must expose the public brand facts section");
+  assert.equal(anchorHasVisibleText(brandSection, "/shop", "Cửa hàng"), true);
+  assert.equal(anchorHasVisibleText(brandSection, "/collections", "Bộ sưu tập"), true);
+  assert.equal(anchorHasVisibleText(brandSection, "/track-order", "Tra cứu đơn"), true);
 
   console.log("P16A public-brand HTTP smoke passed: factual brand/COD/shipping/server-verification content and internal links render in initial HTML.");
 } finally {
