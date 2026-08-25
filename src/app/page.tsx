@@ -59,7 +59,7 @@ export default async function HomePage() {
             Clean lines, relaxed proportions and a muted palette designed for everyday movement.
           </p>
           <Link className="text-link" href="/shop">
-            Shop the collection <span aria-hidden="true">↗</span>
+            Mua bộ sưu tập <span aria-hidden="true">↗</span>
           </Link>
         </div>
       </section>
@@ -73,15 +73,15 @@ export default async function HomePage() {
             distinct enough to feel considered.
           </p>
           <Link className="text-link mt-4 inline-block" href="/collections">
-            View collections ↗
+            Xem các bộ sưu tập ↗
           </Link>
         </div>
       </section>
 
       <section className="product-section" aria-labelledby="shop-edit-title">
         <div className="section-heading-row">
-          <h2 id="shop-edit-title">Shop edit</h2>
-          <Link className="text-link" href="/shop">View all</Link>
+          <h2 id="shop-edit-title">Tuyển chọn</h2>
+          <Link className="text-link" href="/shop">Xem tất cả</Link>
         </div>
         {featuredProducts.length > 0 ? (
           <div className="product-grid">
@@ -103,12 +103,12 @@ export default async function HomePage() {
             className="ui-state ui-state--empty"
             data-ui-state="empty"
           >
-            <p className="eyebrow">Current edit</p>
+            <p className="eyebrow">Tuyển chọn hiện tại</p>
             <h2 id="homepage-empty-title" className="ui-state__title">
-              The current edit is being prepared.
+              Tuyển chọn hiện tại đang được chuẩn bị.
             </h2>
             <p className="ui-state__copy">
-              Products will appear here when the shop catalog is available for the website.
+              Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.
             </p>
           </section>
         )}
@@ -135,7 +135,7 @@ export default async function HomePage() {
           <p className="eyebrow">Editorial / 02</p>
           <h2 id="lookbook-title">CITY UNIFORM</h2>
           <p>Measured proportions and functional utility for moving through the everyday.</p>
-          <Link className="text-link" href="/lookbook">View lookbook ↗</Link>
+          <Link className="text-link" href="/lookbook">Xem lookbook ↗</Link>
         </div>
         {lookbookSmallImage ? (
           <div className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]">
@@ -187,12 +187,12 @@ export default async function HomePage() {
       </section>
 
       <section className="category-strip" aria-labelledby="categories-title">
-        <p className="eyebrow" id="categories-title">Shop by category</p>
+        <p className="eyebrow" id="categories-title">Mua theo danh mục</p>
         <nav className="category-links" aria-label="Danh mục sản phẩm">
-          <Link href="/shop?category=shirts">Shirts</Link>
-          <Link href="/shop?category=t-shirts">T-shirts</Link>
-          <Link href="/shop?category=trousers">Trousers</Link>
-          <Link href="/shop?category=outerwear">Outerwear</Link>
+          <Link href="/shop?category=shirts">Sơ mi</Link>
+          <Link href="/shop?category=t-shirts">Áo thun</Link>
+          <Link href="/shop?category=trousers">Quần</Link>
+          <Link href="/shop?category=outerwear">Áo khoác</Link>
         </nav>
       </section>
     </>
