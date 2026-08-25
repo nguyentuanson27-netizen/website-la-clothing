@@ -9,11 +9,11 @@ export function SiteFooter() {
       </div>
 
       <nav className="footer-links" aria-label="Liên kết cuối trang">
-        <Link href="/shop">Shop</Link>
-        <Link href="/new-arrivals">New arrivals</Link>
+        <Link href="/shop">Cửa hàng</Link>
+        <Link href="/new-arrivals">Hàng mới</Link>
         <Link href="/lookbook">Lookbook</Link>
         <Link href="/track-order">Tra cứu đơn</Link>
-        <Link href="/account">Account</Link>
+        <Link href="/account">Tài khoản</Link>
       </nav>
 
       <p className="footer-meta">© 2026 LA Clothing</p>
