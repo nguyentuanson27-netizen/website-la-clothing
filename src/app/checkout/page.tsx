@@ -86,10 +86,10 @@ export default async function CheckoutPage() {
           </ol>
         </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          CHECKOUT
+          THANH TOÁN
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
+          <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">
             Tiếp tục mua sắm ↗
           </Link>
@@ -128,15 +128,15 @@ export default async function CheckoutPage() {
           </ol>
         </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          CHECKOUT
+          THANH TOÁN
         </h1>
         <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
+          <p className="font-serif text-2xl md:text-3xl">Túi hàng cần được kiểm tra lại.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
+            Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại túi hàng để cập nhật trước khi tiếp tục.
           </p>
           <Link className="text-link mt-6 inline-block" href="/cart">
-            Quay lại giỏ hàng ↗
+            Quay lại túi hàng ↗
           </Link>
         </div>
       </div>
@@ -172,7 +172,7 @@ export default async function CheckoutPage() {
       </nav>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          CHECKOUT
+          THANH TOÁN
         </h1>
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
       </div>
@@ -187,7 +187,7 @@ export default async function CheckoutPage() {
               className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               href="/cart"
             >
-              Sửa giỏ hàng
+              Sửa túi hàng
             </Link>
           </div>
 
