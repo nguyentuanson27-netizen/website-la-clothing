@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { checkoutSubmitFeedback } from "../../src/commerce/checkout-submit-feedback.ts";
+
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 test("confirmed checkout feedback surfaces the order code", () => {
   assert.deepEqual(
@@ -27,7 +32,7 @@ test("processing and sync-unknown feedback never suggests a blind resubmit", () 
   }
 });
 
-test("retryable checkout feedback distinguishes invalid input, cart drift and temporary service failures", () => {
+test("retryable checkout feedback uses Túi hàng for cart drift and unavailable-cart recovery", () => {
   assert.deepEqual(
     checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "INVALID_INPUT" }),
     {
@@ -37,12 +42,39 @@ test("retryable checkout feedback distinguishes invalid input, cart drift and te
       mayRetry: true,
     },
   );
-  assert.equal(
-    checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CART_CHANGED" }).mayRetry,
-    false,
+
+  assert.deepEqual(
+    checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CART_CHANGED" }),
+    {
+      tone: "warning",
+      title: "Túi hàng đã thay đổi",
+      message: "Giá hoặc tồn kho đã thay đổi. Hãy quay lại túi hàng để kiểm tra trước khi đặt lại.",
+      mayRetry: false,
+    },
   );
+
+  assert.deepEqual(
+    checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CART_UNAVAILABLE" }),
+    {
+      tone: "warning",
+      title: "Túi hàng không còn sẵn sàng",
+      message: "Túi hàng hiện không thể thanh toán. Hãy quay lại túi hàng và kiểm tra sản phẩm.",
+      mayRetry: false,
+    },
+  );
+
   assert.equal(
     checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE" }).mayRetry,
     true,
   );
+});
+
+test("guest checkout recovery link uses Túi hàng terminology", async () => {
+  const source = await readFile(
+    join(REPO_ROOT, "src/components/commerce/guest-checkout-form.tsx"),
+    "utf8",
+  );
+
+  assert.equal(source.includes("Quay lại túi hàng"), true);
+  assert.equal(source.includes("Quay lại giỏ hàng"), false);
 });
