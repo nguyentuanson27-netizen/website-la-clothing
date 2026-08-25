@@ -255,6 +255,7 @@ test("composite activation opens and closes the real child purchase path while p
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
   await expect(page.getByRole("radio", { name: componentName })).toBeEnabled();
+  await expect(page.getByText("Chọn loại × kích cỡ", { exact: true })).toBeVisible();
 
   const structuredDocuments = (await page
     .locator('script[type="application/ld+json"]')
@@ -271,7 +272,7 @@ test("composite activation opens and closes the real child purchase path while p
     availability: "https://schema.org/OutOfStock",
   });
 
-  const addToBag = page.getByRole("button", { name: "Add to Bag" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
   await expect(addToBag).toBeDisabled();
   await page.getByText(componentName, { exact: true }).click();
   await expect(page.getByRole("radio", { name: componentName })).toBeChecked();
@@ -314,7 +315,7 @@ test("composite activation opens and closes the real child purchase path while p
   await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Add to Bag" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Thêm vào túi" })).toBeDisabled();
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
