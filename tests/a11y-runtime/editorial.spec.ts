@@ -361,6 +361,39 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   expect(failedResponses).toEqual([]);
 });
 
+test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", async ({ page }) => {
+  const searchResponse = await page.goto(`${BASE_URL}/search`, { waitUntil: "networkidle" });
+  expect(searchResponse?.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+  await expect(page).toHaveTitle(/Tìm kiếm/);
+  await expect(page.getByRole("heading", { level: 1, name: "TÌM KIẾM" })).toBeVisible();
+
+  const searchForm = page.getByRole("search");
+  await expect(searchForm).toHaveAttribute("action", "/shop");
+  const searchInput = page.getByRole("searchbox", { name: "Tìm sản phẩm" });
+  await expect(searchInput).toHaveAttribute("name", "q");
+  await searchInput.fill("Oxford");
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/shop?q=Oxford`),
+    page.getByRole("button", { name: "Tìm kiếm", exact: true }).click(),
+  ]);
+  expect(page.url()).toBe(`${BASE_URL}/shop?q=Oxford`);
+
+  const sitemapResponse = await page.request.get(`${BASE_URL}/sitemap.xml`);
+  expect(sitemapResponse.ok()).toBe(true);
+  expect(await sitemapResponse.text()).not.toContain("/search");
+
+  await page.goto(`${BASE_URL}/new-arrivals`, { waitUntil: "networkidle" });
+  await expect(page).toHaveTitle(/Hàng mới/);
+  await expect(page.getByRole("heading", { level: 1, name: "HÀNG MỚI" })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng chọn lọc.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expectRuntimePageClean(page);
+});
+
 test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
   page,
 }) => {
@@ -372,11 +405,29 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.locator(".lookbook-panel--small img")).toBeVisible();
   await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "View collections ↗" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Mua bộ sưu tập", exact: true })).toHaveAttribute("href", "/shop");
+  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute(
     "href",
     "/collections",
   );
-  await expect(page.getByRole("heading", { level: 2, name: "Shop edit" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
+  await expect(page.getByRole("link", { name: "Xem lookbook ↗" })).toHaveAttribute("href", "/lookbook");
+  const brandFactsNavigation = page.getByRole("navigation", { name: "Tìm hiểu LA Clothing" });
+  await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute(
+    "href",
+    "/shop",
+  );
+  await expect(brandFactsNavigation.getByRole("link", { name: "Bộ sưu tập ↗" })).toHaveAttribute(
+    "href",
+    "/collections",
+  );
+  await expect(page.getByText("Mua theo danh mục", { exact: true })).toBeVisible();
+  const categoryNavigation = page.getByRole("navigation", { name: "Danh mục sản phẩm" });
+  await expect(categoryNavigation.getByRole("link", { name: "Sơ mi", exact: true })).toBeVisible();
+  await expect(categoryNavigation.getByRole("link", { name: "Áo thun", exact: true })).toBeVisible();
+  await expect(categoryNavigation.getByRole("link", { name: "Quần", exact: true })).toBeVisible();
+  await expect(categoryNavigation.getByRole("link", { name: "Áo khoác", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
     "href",
@@ -464,7 +515,12 @@ test("P8 homepage empty state uses the shared semantic state pattern and degrade
   const emptyState = page.locator('[data-ui-state="empty"]');
   await expect(emptyState).toBeVisible();
   await expect(
-    emptyState.getByRole("heading", { level: 2, name: "The current edit is being prepared." }),
+    emptyState.getByRole("heading", { level: 2, name: "Tuyển chọn hiện tại đang được chuẩn bị." }),
+  ).toBeVisible();
+  await expect(
+    emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(page.locator(".campaign-visual img")).toHaveCount(0);
   await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
