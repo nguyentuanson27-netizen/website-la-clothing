@@ -69,8 +69,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/page.tsx::View collections",
   "src/app/page.tsx::Shop edit",
   "src/app/page.tsx::View all",
-  "src/app/page.tsx::Shop",
-  "src/app/page.tsx::Collections",
   "src/app/page.tsx::Shop by category",
   "src/app/search/page.tsx::Search",
   "src/app/search/page.tsx::Search products",
