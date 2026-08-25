@@ -113,8 +113,8 @@ try {
     assert.equal(text.includes(fact), true, `homepage must expose factual visible text: ${fact}`);
   }
 
-  assert.equal(anchorHasVisibleText(body, "/shop", "Shop"), true);
-  assert.equal(anchorHasVisibleText(body, "/collections", "Collections"), true);
+  assert.equal(anchorHasVisibleText(body, "/shop", "Cửa hàng"), true);
+  assert.equal(anchorHasVisibleText(body, "/collections", "Bộ sưu tập"), true);
   assert.equal(anchorHasVisibleText(body, "/track-order", "Tra cứu đơn"), true);
 
   console.log("P16A public-brand HTTP smoke passed: factual brand/COD/shipping/server-verification content and internal links render in initial HTML.");
