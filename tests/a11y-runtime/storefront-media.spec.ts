@@ -45,10 +45,7 @@ async function waitForServer() {
     }
     try {
       const response = await fetch(`${BASE_URL}/shop`, { redirect: "manual" });
-      if (response.status === 200) {
-        const text = await response.text();
-        if (text.includes("Current collection") || text.includes("Shop")) return;
-      }
+      if (response.status === 200) return;
     } catch {
       // Next dev may still be compiling.
     }
