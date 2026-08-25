@@ -68,9 +68,6 @@ const NON_BUYER_TECHNICAL_HITS = new Set([
 ]);
 
 const PENDING_U1_BUYER_HITS = new Set([
-  "src/app/cart/error.tsx::Bag",
-  "src/app/cart/error.tsx::YOUR BAG",
-  "src/app/cart/loading.tsx::Bag",
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
@@ -328,6 +325,25 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   }
 
   assert.equal(source.includes('href="/size-guide"'), false, "U1b must not add /size-guide before U5");
+});
+
+test("U1c cart loading and error states use Túi hàng terminology", async () => {
+  const [loadingSource, errorSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/cart/loading.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/app/cart/error.tsx"), "utf8"),
+  ]);
+
+  for (const expected of ["Mua sắm / Túi hàng", "Đang tải túi hàng."]) {
+    assert.equal(loadingSource.includes(expected), true, `cart loading missing Vietnamese copy: ${expected}`);
+  }
+  assert.equal(loadingSource.includes("Shopping / Bag"), false, "cart loading retained Shopping / Bag");
+
+  for (const expected of ["Mua sắm / Túi hàng", "TÚI HÀNG", "Không thể tải túi hàng lúc này."]) {
+    assert.equal(errorSource.includes(expected), true, `cart error missing Vietnamese copy: ${expected}`);
+  }
+  for (const oldCopy of ["Shopping / Bag", "YOUR BAG"]) {
+    assert.equal(errorSource.includes(oldCopy), false, `cart error retained old copy: ${oldCopy}`);
+  }
 });
 
 test("U1 inventory classifies every locked old buyer-copy literal before edits", async () => {

@@ -3,9 +3,9 @@
 export default function CartError({ reset }: { reset: () => void }) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Shopping / Bag</p>
+      <p className="eyebrow">Mua sắm / Túi hàng</p>
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-        YOUR BAG
+        TÚI HÀNG
       </h1>
       <div className="mt-12 border-t border-black/20 pt-8">
         <p className="font-serif text-2xl md:text-3xl">Không thể tải túi hàng lúc này.</p>
