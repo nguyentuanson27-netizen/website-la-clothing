@@ -3,16 +3,16 @@ import type { Metadata } from "next";
 import { AccountAuthPanel } from "@/components/account/account-auth-panel";
 
 export const metadata: Metadata = {
-  title: "Account",
+  title: "Tài khoản",
   description: "Đăng nhập hoặc tạo tài khoản LA Clothing để theo dõi đơn hàng thuận tiện hơn.",
 };
 
 export default function AccountPage() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Customer / Account</p>
+      <p className="eyebrow">Khách hàng / Tài khoản</p>
       <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-        ACCOUNT
+        TÀI KHOẢN
       </h1>
       <div className="mt-12 grid gap-8 pb-12 md:grid-cols-2 md:pb-16">
         <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">

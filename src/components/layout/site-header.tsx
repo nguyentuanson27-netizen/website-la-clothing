@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const primaryNav = [
-  { href: "/shop", label: "Shop" },
-  { href: "/new-arrivals", label: "New arrivals" },
-  { href: "/collections", label: "Collections" },
+  { href: "/shop", label: "Cửa hàng" },
+  { href: "/new-arrivals", label: "Hàng mới" },
+  { href: "/collections", label: "Bộ sưu tập" },
   { href: "/lookbook", label: "Lookbook" },
 ];
 
@@ -36,16 +36,16 @@ export function SiteHeader() {
                   {item.label}
                 </Link>
               ))}
-              <Link href="/search">Search</Link>
-              <Link href="/account">Account</Link>
+              <Link href="/search">Tìm kiếm</Link>
+              <Link href="/account">Tài khoản</Link>
             </nav>
           </details>
         </div>
 
         <nav className="utility-nav" aria-label="Tiện ích">
-          <Link href="/search">Search</Link>
-          <Link href="/account">Account</Link>
-          <Link href="/cart">Bag</Link>
+          <Link href="/search">Tìm kiếm</Link>
+          <Link href="/account">Tài khoản</Link>
+          <Link href="/cart">Túi hàng</Link>
         </nav>
       </div>
     </header>

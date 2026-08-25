@@ -304,15 +304,25 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   await expect(shippingPromotion).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "LA Clothing — Trang chủ" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Bag", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Liên kết cuối trang" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Túi hàng", exact: true })).toBeVisible();
+  const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
+  await expect(footerNavigation).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
   await expectVisualFoundationTokens(page);
 
   const mobileMenu = page.locator("summary", { hasText: "Menu" });
   await expect(mobileMenu).toBeVisible();
   await mobileMenu.click();
   const mobileNavigation = page.getByRole("navigation", { name: "Điều hướng chính trên di động" });
-  await expect(mobileNavigation.getByRole("link", { name: "Shop", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
 
   await page.reload({ waitUntil: "networkidle" });
   await page.keyboard.press("Tab");
@@ -329,8 +339,22 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.reload({ waitUntil: "networkidle" });
-  await expect(page.getByRole("navigation", { name: "Điều hướng chính" })).toBeVisible();
+  const desktopNavigation = page.getByRole("navigation", { name: "Điều hướng chính" });
+  await expect(desktopNavigation).toBeVisible();
+  await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
+  await expect(desktopNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
+  await expect(desktopNavigation.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
+  await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
+  await expect(utilityNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("link", { name: "Túi hàng", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
+  await expectRuntimePageClean(page);
+
+  await page.goto(`${BASE_URL}/account`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: "TÀI KHOẢN" })).toBeVisible();
+  await expect(page).toHaveTitle(/Tài khoản/);
   await expectRuntimePageClean(page);
 
   expect(browserErrors).toEqual([]);
