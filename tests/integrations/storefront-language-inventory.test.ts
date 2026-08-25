@@ -31,6 +31,10 @@ const PHRASE_TERMS = [
   "Collections are being prepared.",
   "Published collections will appear here as they become available.",
   "Published collections from LA Clothing.",
+  "LA Clothing / Collection",
+  "Current collection",
+  "Collection này chưa có sản phẩm.",
+  "Phân trang collection",
   "Add to Bag",
   "Giỏ hàng",
   "New arrivals",
@@ -69,7 +73,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/cart/loading.tsx::Bag",
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
-  "src/app/collections/[slug]/page.tsx::Collections",
   "src/app/shop/[slug]/page.tsx::Add to Bag",
   "src/app/shop/[slug]/page.tsx::Shop",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
@@ -247,6 +250,34 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
   }
   for (const oldCopy of ["LA Clothing / Store", "SHOP", "catalog cửa hàng"]) {
     assert.equal(loadingSource.includes(oldCopy), false, `shop loading retained old copy: ${oldCopy}`);
+  }
+});
+
+test("U1b collection detail uses Vietnamese buyer-functional copy", async () => {
+  const source = await readFile(join(REPO_ROOT, "src/app/collections/[slug]/page.tsx"), "utf8");
+
+  for (const expected of [
+    "Bộ sưu tập",
+    "LA Clothing / Bộ sưu tập",
+    "Bộ sưu tập hiện tại",
+    "Bộ sưu tập này chưa có sản phẩm.",
+    "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
+    'aria-label="Phân trang bộ sưu tập"',
+    "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
+  ]) {
+    assert.equal(source.includes(expected), true, `collection detail missing Vietnamese copy: ${expected}`);
+  }
+
+  for (const oldCopy of [
+    "Collections",
+    "LA Clothing / Collection",
+    "Current collection",
+    "Collection này chưa có sản phẩm.",
+    "Membership của collection",
+    "catalog mirror",
+    'aria-label="Phân trang collection"',
+  ]) {
+    assert.equal(source.includes(oldCopy), false, `collection detail retained old/technical copy: ${oldCopy}`);
   }
 });
 
