@@ -69,8 +69,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/page.tsx::View collections",
   "src/app/page.tsx::Shop edit",
   "src/app/page.tsx::View all",
-  "src/app/page.tsx::Shop",
-  "src/app/page.tsx::Collections",
   "src/app/page.tsx::Shop by category",
   "src/app/search/page.tsx::Search",
   "src/app/search/page.tsx::Search products",
@@ -128,7 +126,7 @@ function isExactBuyerLabelLine(line: string, label: string): boolean {
   const trimmed = line.trim();
   if (trimmed === label) return true;
 
-  const quoted = `["'\\\`]${label}(?:\\s*↗)?["'\\\`]`;
+  const quoted = `["'\`]${label}(?:\\s*↗)?["'\`]`;
   return new RegExp(
     `(?:>\\s*${label}(?:\\s*↗)?\\s*<|(?:label|title|name)\\s*:\\s*${quoted}|const\\s+[A-Z0-9_]+\\s*=\\s*${quoted})`,
   ).test(line);
@@ -171,7 +169,7 @@ function findHits(path: string, source: string): InventoryHit[] {
 
     for (const term of HEADING_TERMS) {
       const trimmed = line.trim();
-      const quoted = `["'\\\`]${term}["'\\\`]`;
+      const quoted = `["'\`]${term}["'\`]`;
       if (
         trimmed === term ||
         new RegExp(`(?:name|title|label)\\s*:\\s*${quoted}`).test(line)
