@@ -49,7 +49,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           <li aria-hidden="true">/</li>
           <li>
             <Link className="hover:underline" href="/shop">
-              Shop
+              Cửa hàng
             </Link>
           </li>
           <li aria-hidden="true">/</li>
@@ -63,7 +63,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         <ProductGallery media={product.media} productName={product.name} />
 
         <article className="min-w-0 pb-10 lg:pt-4">
-          <p className="eyebrow">LA Clothing / Product</p>
+          <p className="eyebrow">LA Clothing / Sản phẩm</p>
           <h1 className="mt-5 break-words text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
             {product.name}
           </h1>
@@ -103,13 +103,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
               </h2>
               {product.sizeGuide ? (
                 <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Size guide</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">
+                    Hướng dẫn chọn kích cỡ
+                  </h3>
                   <p className="max-w-xl text-sm leading-6 text-black/70">{product.sizeGuide}</p>
                 </div>
               ) : null}
               {product.careInstructions ? (
                 <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Care</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Bảo quản</h3>
                   <p className="max-w-xl text-sm leading-6 text-black/70">{product.careInstructions}</p>
                 </div>
               ) : null}
@@ -117,7 +119,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <p className="mt-8 max-w-xl text-xs leading-5 text-black/60">
-            Tình trạng mua được được kiểm tra lại phía máy chủ khi Add to Bag. Dữ liệu tồn kho được dùng để quyết định khả dụng nhưng không gửi số lượng tồn chính xác xuống client.
+            Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào túi. Số lượng tồn kho chính xác không được hiển thị trên website.
           </p>
         </article>
       </div>

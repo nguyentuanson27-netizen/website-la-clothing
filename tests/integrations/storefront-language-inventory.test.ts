@@ -73,8 +73,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/cart/loading.tsx::Bag",
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
-  "src/app/shop/[slug]/page.tsx::Add to Bag",
-  "src/app/shop/[slug]/page.tsx::Shop",
   "src/commerce/checkout-submit-feedback.ts::Giỏ hàng",
   "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
@@ -302,6 +300,34 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
   ]) {
     assert.equal(source.includes(oldCopy), false, `purchase panel retained old copy: ${oldCopy}`);
   }
+});
+
+test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability disclosure", async () => {
+  const source = await readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8");
+
+  for (const expected of [
+    "Cửa hàng",
+    "LA Clothing / Sản phẩm",
+    "Hướng dẫn chọn kích cỡ",
+    "Bảo quản",
+    "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào túi.",
+    "Số lượng tồn kho chính xác không được hiển thị trên website.",
+  ]) {
+    assert.equal(source.includes(expected), true, `PDP missing Vietnamese/factual copy: ${expected}`);
+  }
+
+  for (const oldCopy of [
+    "LA Clothing / Product",
+    ">Size guide<",
+    ">Care<",
+    "Add to Bag",
+    "phía máy chủ",
+    "client",
+  ]) {
+    assert.equal(source.includes(oldCopy), false, `PDP retained old/technical copy: ${oldCopy}`);
+  }
+
+  assert.equal(source.includes('href="/size-guide"'), false, "U1b must not add /size-guide before U5");
 });
 
 test("U1 inventory classifies every locked old buyer-copy literal before edits", async () => {
