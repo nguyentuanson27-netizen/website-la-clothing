@@ -297,7 +297,7 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(checkoutLink).toBeVisible();
   await checkoutLink.click();
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
-  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await assertPageQuality(page);
 
   expect(

@@ -48,6 +48,7 @@ const PHRASE_TERMS = [
 
 const HEADING_TERMS = [
   "YOUR BAG",
+  "CHECKOUT",
   "SEARCH",
   "NEW ARRIVALS",
   "ACCOUNT",
@@ -70,10 +71,7 @@ const NON_BUYER_TECHNICAL_HITS = new Set([
   "tests/integrations/pancake-shops.test.ts::Shop",
 ]);
 
-const PENDING_U1_BUYER_HITS = new Set([
-  "src/app/checkout/page.tsx::Giỏ hàng",
-  "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
-]);
+const PENDING_U1_BUYER_HITS = new Set<string>();
 
 type InventoryHit = {
   path: string;
@@ -350,7 +348,7 @@ test("U1c cart loading and error states use Túi hàng terminology", async () =>
   }
 });
 
-test("U1 inventory classifies remaining checkout buyer-copy literals", async () => {
+test("U1 inventory has no unexplained locked old buyer-copy literals", async () => {
   const files = (
     await Promise.all(
       SOURCE_ROOTS.map((root) => listSourceFiles(join(REPO_ROOT, root))),

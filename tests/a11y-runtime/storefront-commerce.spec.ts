@@ -270,7 +270,7 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   await expect(checkoutLink).toBeVisible();
   await checkoutLink.click();
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
-  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await assertPageQuality(page);
 
   await page.keyboard.press("Tab");
@@ -368,7 +368,7 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   await expect(checkoutLink).toBeVisible();
   await checkoutLink.click();
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
-  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await assertPageQuality(page);
 
   expect(browserErrors).toEqual([]);

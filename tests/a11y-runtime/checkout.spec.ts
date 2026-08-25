@@ -281,7 +281,7 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
   await expect(page.getByLabel("Tỉnh / Thành phố")).toBeVisible();
 
@@ -328,7 +328,7 @@ for (const { name, viewport } of [
     const commune = page.getByLabel("Phường / Xã");
     const submit = page.getByRole("button", { name: "Đặt hàng COD" });
 
-    await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
     await expect(
       page.getByText("Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake."),
@@ -439,9 +439,9 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
   await assertCheckoutAccessibility(page);
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "CHECKOUT" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await expect(page.locator('[data-ui-state="empty"]')).toBeVisible();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Túi hàng của bạn đang trống.")).toBeVisible();
   await assertCheckoutAccessibility(page);
 
   expect(browserErrors).toEqual([]);
