@@ -27,6 +27,10 @@ const PHRASE_TERMS = [
   "Find / Discover",
   "The newest silhouettes, fabrics and seasonal layers",
   "Explore collection",
+  "Current collections",
+  "Collections are being prepared.",
+  "Published collections will appear here as they become available.",
+  "Published collections from LA Clothing.",
   "Add to Bag",
   "Giỏ hàng",
   "New arrivals",
@@ -65,9 +69,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "src/app/cart/loading.tsx::Bag",
   "src/app/cart/page.tsx::YOUR BAG",
   "src/app/checkout/page.tsx::Giỏ hàng",
-  "src/app/collections/page.tsx::Collections",
-  "src/app/collections/page.tsx::Explore collection",
-  "src/app/collections/page.tsx::COLLECTIONS",
   "src/app/collections/[slug]/page.tsx::Collections",
   "src/app/shop/[slug]/page.tsx::Add to Bag",
   "src/app/shop/[slug]/page.tsx::Shop",
@@ -79,8 +80,6 @@ const PENDING_U1_BUYER_HITS = new Set([
   "tests/a11y-runtime/checkout.spec.ts::YOUR BAG",
   "tests/a11y-runtime/discovery.spec.ts::SHOP",
   "tests/a11y-runtime/checkout.spec.ts::Giỏ hàng",
-  "tests/a11y-runtime/editorial.spec.ts::Explore collection",
-  "tests/a11y-runtime/editorial.spec.ts::COLLECTIONS",
   "tests/a11y-runtime/editorial.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-commerce.spec.ts::Add to Bag",
   "tests/a11y-runtime/storefront-composite.spec.ts::Add to Bag",
@@ -199,6 +198,21 @@ test("U1 inventory catches embedded buyer labels without matching technical iden
   );
   assert.deepEqual(findHits("fixture.ts", "class CartError extends Error {}"), []);
   assert.deepEqual(findHits("fixture.ts", 'const query = "FROM \\"Cart\\"";'), []);
+});
+
+test("U1b collections listing uses Vietnamese functional copy", async () => {
+  const source = await readFile(join(REPO_ROOT, "src/app/collections/page.tsx"), "utf8");
+  for (const expected of [
+    'title: "Bộ sưu tập"',
+    'description: "Khám phá các bộ sưu tập từ LA Clothing."',
+    "BỘ SƯU TẬP",
+    "Khám phá bộ sưu tập ↗",
+    "Bộ sưu tập hiện tại",
+    "Các bộ sưu tập đang được chuẩn bị.",
+    "Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.",
+  ]) {
+    assert.equal(source.includes(expected), true, `collections listing missing Vietnamese copy: ${expected}`);
+  }
 });
 
 test("U1 inventory classifies every locked old buyer-copy literal before edits", async () => {

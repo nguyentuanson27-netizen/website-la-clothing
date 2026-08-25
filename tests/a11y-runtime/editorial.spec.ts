@@ -462,9 +462,9 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "COLLECTIONS" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "BỘ SƯU TẬP" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Essential Outerwear" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Explore collection ↗" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Khám phá bộ sưu tập ↗" })).toHaveAttribute(
     "href",
     "/collections/essential-outerwear",
   );
