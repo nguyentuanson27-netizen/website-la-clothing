@@ -252,7 +252,7 @@ export function AccountAuthPanel() {
               required
               disabled={formsDisabled}
             />
-            <p className="mt-2 text-xs leading-5 text-black/60" id="sign-up-password-help">
+            <p className="mt-2 text-xs leading-5 text-black/50" id="sign-up-password-help">
               Từ 8 đến 128 ký tự.
             </p>
           </div>

@@ -135,6 +135,17 @@ test("best-practice Axe gate catches duplicate main landmarks", async ({ page })
   );
 });
 
+test("account password help satisfies buyer Axe contrast", async ({ page }) => {
+  await page.goto(`${BASE_URL}/account`, { waitUntil: "networkidle" });
+  await expect(page.getByText("Từ 8 đến 128 ký tự.", { exact: true })).toBeVisible();
+
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+
+  expect(accessibilityScan.violations.filter(({ id }) => id === "color-contrast")).toEqual([]);
+});
+
 test("guest tracking hides order existence on wrong proof and exposes only safe confirmed summary", async ({
   page,
   context,
