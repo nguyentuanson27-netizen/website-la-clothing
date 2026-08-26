@@ -83,7 +83,7 @@ Product/Offer/Organization/WebSite structured-data behavior is unchanged by U6a.
 
 ## Final U6b quality gate
 
-The closeout PR must be evaluated on one exact head. Before it can be considered merge-ready, evidence must show:
+The closeout PR must be evaluated on one exact head. Before it can be considered merge-ready, exact-head evidence must show:
 
 - lint passes;
 - typecheck passes;
@@ -96,8 +96,9 @@ The closeout PR must be evaluated on one exact head. Before it can be considered
 - metadata/robots/sitemap/canonical HTTP regressions remain green;
 - P18 final QA runtime passes;
 - Catalog indexation runtime passes;
-- VPS container verification passes;
 - fresh review reports 0 Critical / 0 Required findings.
+
+VPS container verification is **not** an exact-head U6b criterion in the canonical V3 plan. If a docs-only closeout head is path-filtered out of `.github/workflows/vps-container.yml`, any cited passing VPS evidence from the unchanged production tree is supporting evidence only, must be labeled inherited/non-exact-head, and must not be represented as an exact-head run for this PR.
 
 Exact-head workflow IDs and the final review verdict belong in the closeout PR description/review so they cannot become misleading after a later head change.
 
