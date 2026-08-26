@@ -177,17 +177,24 @@ test("admin product directory selects current-page products and bulk-updates sta
   expect(await selectAll.evaluate((element) => (element as HTMLInputElement).indeterminate)).toBe(true);
   await expect(selectAll).not.toBeChecked();
 
-  await page.getByRole("link", { name: /^Nháp/ }).click();
-  await page.waitForLoadState("networkidle");
-  expect(new URL(page.url()).searchParams.get("status")).toBe("DRAFT");
+  const draftFacet = page.locator('a[href*="status=DRAFT"]').filter({ hasText: "Nháp" }).first();
+  await expect(draftFacet).toHaveAttribute("href", /status=DRAFT/);
+  await Promise.all([
+    page.waitForURL((url) => url.searchParams.get("status") === "DRAFT"),
+    draftFacet.click(),
+  ]);
   await expect(page.getByText("Đã chọn 1 sản phẩm", { exact: true })).toHaveCount(0);
   await expect(firstCheckbox).not.toBeChecked();
   await expect(secondCheckbox).not.toBeChecked();
   await expect(selectAll).not.toBeChecked();
 
-  await page.getByRole("link", { name: /^Tất cả/ }).click();
-  await page.waitForLoadState("networkidle");
-  expect(new URL(page.url()).searchParams.get("status")).toBeNull();
+  const allFacet = page.getByRole("link", { name: /^Tất cả/ });
+  await Promise.all([
+    page.waitForURL(
+      (url) => url.searchParams.get("status") === null && url.searchParams.get("q") === runId,
+    ),
+    allFacet.click(),
+  ]);
 
   await selectAll.check();
   await expect(firstCheckbox).toBeChecked();
