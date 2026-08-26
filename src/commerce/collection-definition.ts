@@ -8,6 +8,7 @@ export const COLLECTION_DEFINITION_LIMITS = {
   seoTitle: 500,
   seoDescription: 2_000,
   pancakeCategoryCount: 100,
+  homepagePosition: 6,
 } as const;
 
 export type CollectionDefinitionReason =
@@ -18,6 +19,7 @@ export type CollectionDefinitionReason =
   | "collection-seo-title"
   | "collection-seo-description"
   | "collection-publish-state"
+  | "collection-homepage-position"
   | "collection-pos-category";
 
 export class CollectionDefinitionError extends Error {
@@ -37,6 +39,7 @@ export type CollectionDefinition = {
   seoTitle: string | null;
   seoDescription: string | null;
   isPublished: boolean;
+  homepagePosition: number | null;
   pancakeCategoryIds: number[];
 };
 
@@ -56,6 +59,18 @@ function parseOptionalText(value: unknown, maxLength: number, reason: Collection
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function parseHomepagePosition(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > COLLECTION_DEFINITION_LIMITS.homepagePosition
+  ) {
+    throw new CollectionDefinitionError("collection-homepage-position");
+  }
+  return value as number;
 }
 
 function parsePancakeCategoryIds(value: unknown): number[] {
@@ -102,6 +117,7 @@ export function parseCollectionDefinition(input: unknown): CollectionDefinition 
     seoTitle,
     seoDescription,
     isPublished,
+    homepagePosition: parseHomepagePosition(record.homepagePosition),
     pancakeCategoryIds: parsePancakeCategoryIds(record.pancakeCategoryIds),
   };
 }

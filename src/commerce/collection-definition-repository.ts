@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import {
+  COLLECTION_DEFINITION_LIMITS,
   CollectionDefinitionError,
   parseCollectionDefinition,
   parseCollectionSlug,
@@ -15,6 +16,7 @@ const collectionSelect = {
   seoTitle: true,
   seoDescription: true,
   isPublished: true,
+  homepagePosition: true,
   pancakeCategoryIds: true,
 } as const;
 
@@ -31,6 +33,15 @@ function parseCollectionListLimit(limit: number): number {
     throw new RangeError(`Collection list limit must be between 1 and ${MAX_COLLECTION_LIST}`);
   }
   return limit;
+}
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 function parseMutableDefinition(
@@ -53,12 +64,19 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     const definition = parseCollectionDefinition(input);
     const { slug, ...fields } = definition;
 
-    return client.collectionDefinition.upsert({
-      where: { slug },
-      create: { slug, ...fields },
-      update: fields,
-      select: collectionSelect,
-    });
+    try {
+      return await client.collectionDefinition.upsert({
+        where: { slug },
+        create: { slug, ...fields },
+        update: fields,
+        select: collectionSelect,
+      });
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new CollectionDefinitionError("collection-homepage-position");
+      }
+      throw error;
+    }
   }
 
   async function createDefinition(input: unknown): Promise<CollectionDefinition | null> {
@@ -77,12 +95,20 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
   ): Promise<CollectionDefinition | null> {
     const definition = parseMutableDefinition(targetSlug, input);
     const { slug, ...fields } = definition;
-    const result = await client.collectionDefinition.updateMany({
-      where: { slug },
-      data: fields,
-    });
 
-    return result.count === 1 ? definition : null;
+    try {
+      const result = await client.collectionDefinition.updateMany({
+        where: { slug },
+        data: fields,
+      });
+
+      return result.count === 1 ? definition : null;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new CollectionDefinitionError("collection-homepage-position");
+      }
+      throw error;
+    }
   }
 
   async function listForAdmin(limit: number) {
@@ -98,6 +124,18 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
       where: { isPublished: true },
       take: parseCollectionListLimit(limit),
       orderBy: { slug: "asc" },
+      select: publicCollectionSelect,
+    });
+  }
+
+  async function listHomepageMerchandising() {
+    return client.collectionDefinition.findMany({
+      where: {
+        isPublished: true,
+        homepagePosition: { not: null },
+      },
+      take: COLLECTION_DEFINITION_LIMITS.homepagePosition,
+      orderBy: { homepagePosition: "asc" },
       select: publicCollectionSelect,
     });
   }
@@ -141,6 +179,7 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     updateExistingDefinition,
     listForAdmin,
     listPublished,
+    listHomepageMerchandising,
     findPublishedBySlug,
     resolveMembershipSlugs,
   };

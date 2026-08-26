@@ -224,10 +224,12 @@ test.beforeAll(async () => {
       seoTitle: "Essential Outerwear — LA Clothing",
       seoDescription: "Modern outerwear from LA Clothing.",
       isPublished: true,
+      homepagePosition: 1,
       pancakeCategoryIds: [],
     },
     update: {
       isPublished: true,
+      homepagePosition: 1,
       title: "Essential Outerwear",
       description: "Functional outerwear designed for transition and movement.",
     },
@@ -241,10 +243,12 @@ test.beforeAll(async () => {
       seoTitle: "Draft Capsule — LA Clothing",
       seoDescription: "Unpublished.",
       isPublished: false,
+      homepagePosition: null,
       pancakeCategoryIds: [],
     },
     update: {
       isPublished: false,
+      homepagePosition: null,
       title: "Draft Capsule",
       description: "Unpublished internal capsule.",
     },
@@ -413,7 +417,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
   await expect(page.getByRole("link", { name: "Xem lookbook ↗" })).toHaveAttribute("href", "/lookbook");
-  const brandFactsNavigation = page.getByRole("navigation", { name: "Tìm hiểu LA Clothing" });
+  const brandFactsNavigation = page.getByRole("navigation", { name: "Hỗ trợ và khám phá" });
   await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute(
     "href",
     "/shop",
@@ -422,12 +426,21 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     "href",
     "/collections",
   );
-  await expect(page.getByText("Mua theo danh mục", { exact: true })).toBeVisible();
-  const categoryNavigation = page.getByRole("navigation", { name: "Danh mục sản phẩm" });
-  await expect(categoryNavigation.getByRole("link", { name: "Sơ mi", exact: true })).toBeVisible();
-  await expect(categoryNavigation.getByRole("link", { name: "Áo thun", exact: true })).toBeVisible();
-  await expect(categoryNavigation.getByRole("link", { name: "Quần", exact: true })).toBeVisible();
-  await expect(categoryNavigation.getByRole("link", { name: "Áo khoác", exact: true })).toBeVisible();
+  await expect(brandFactsNavigation.getByRole("link", { name: "Tra cứu đơn ↗" })).toHaveAttribute(
+    "href",
+    "/track-order",
+  );
+  await expect(page.getByText("Mua theo danh mục", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Danh mục sản phẩm" })).toHaveCount(0);
+  await expect(page.getByText("Mua theo bộ sưu tập", { exact: true })).toBeVisible();
+  const collectionNavigation = page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" });
+  await expect(collectionNavigation).toBeVisible();
+  await expect(collectionNavigation.getByRole("link", { name: "Essential Outerwear", exact: true })).toHaveAttribute(
+    "href",
+    "/collections/essential-outerwear",
+  );
+  await expect(page.getByText("Draft Capsule", { exact: true })).toHaveCount(0);
+  await expect(page.locator('a[href*="category="]')).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
     "href",

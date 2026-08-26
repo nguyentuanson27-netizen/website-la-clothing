@@ -23,6 +23,7 @@ function validInput() {
     seoTitle: " City Uniform | LA Clothing ",
     seoDescription: " Everyday menswear essentials. ",
     isPublished: "on",
+    homepagePosition: "2",
     pancakeCategoryIds: "42, 7",
   };
 }
@@ -66,16 +67,18 @@ test("collection admin normalizes browser form values and persists through the r
       seoTitle: "City Uniform | LA Clothing",
       seoDescription: "Everyday menswear essentials.",
       isPublished: true,
+      homepagePosition: 2,
       pancakeCategoryIds: [7, 42],
     },
   ]);
   assert.equal(result.ok, true);
   if (result.ok) {
+    assert.equal(result.definition.homepagePosition, 2);
     assert.deepEqual(result.definition.pancakeCategoryIds, [7, 42]);
   }
 });
 
-test("collection admin keeps publication opt-in and optional category mapping empty by default", async () => {
+test("collection admin keeps publication and homepage merchandising opt-in by default", async () => {
   const writes: unknown[] = [];
   const service = createCollectionDefinitionAdminService({
     async saveDefinition(definition) {
@@ -91,6 +94,7 @@ test("collection admin keeps publication opt-in and optional category mapping em
     seoTitle: "",
     seoDescription: null,
     isPublished: null,
+    homepagePosition: "",
     pancakeCategoryIds: "",
   });
 
@@ -103,12 +107,13 @@ test("collection admin keeps publication opt-in and optional category mapping em
       seoTitle: null,
       seoDescription: null,
       isPublished: false,
+      homepagePosition: null,
       pancakeCategoryIds: [],
     },
   ]);
 });
 
-test("collection admin rejects malformed checkbox and category CSV before persistence", async () => {
+test("collection admin rejects malformed checkbox, homepage position and category CSV before persistence", async () => {
   let saves = 0;
   const service = createCollectionDefinitionAdminService({
     async saveDefinition() {
@@ -119,6 +124,9 @@ test("collection admin rejects malformed checkbox and category CSV before persis
 
   for (const input of [
     { ...validInput(), isPublished: "yes" },
+    { ...validInput(), homepagePosition: "0" },
+    { ...validInput(), homepagePosition: "7" },
+    { ...validInput(), homepagePosition: "1.5" },
     { ...validInput(), pancakeCategoryIds: "7,,42" },
     { ...validInput(), pancakeCategoryIds: "7, 7" },
     { ...validInput(), pancakeCategoryIds: "1.5" },
@@ -189,6 +197,7 @@ test("collection admin update treats the target as untrusted and never falls bac
       seoTitle: "City Uniform | LA Clothing",
       seoDescription: "Everyday menswear essentials.",
       isPublished: true,
+      homepagePosition: 2,
       pancakeCategoryIds: [7, 42],
     },
   });

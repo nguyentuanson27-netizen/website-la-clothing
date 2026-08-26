@@ -24,6 +24,7 @@ test("P7 keeps collection identity and publication state website-owned", () => {
     seoTitle: "Áo sơ mi nam | LA Clothing",
     seoDescription: "Khám phá bộ sưu tập áo sơ mi nam của LA Clothing.",
     isPublished: true,
+    homepagePosition: null,
     pancakeCategoryIds: [7, 42],
   });
 });
@@ -89,4 +90,37 @@ test("P7 requires visible copy before a collection can be published", () => {
     (error: unknown) =>
       error instanceof CollectionDefinitionError && error.reason === "collection-description",
   );
+});
+
+test("U2 accepts an explicit homepage merchandising position from 1 through 6", () => {
+  for (const homepagePosition of [1, 3, 6]) {
+    const collection = parseCollectionDefinition({
+      slug: `homepage-position-${homepagePosition}`,
+      title: `Homepage position ${homepagePosition}`,
+      description: "Published homepage collection.",
+      isPublished: true,
+      homepagePosition,
+      pancakeCategoryIds: [],
+    });
+
+    assert.equal(collection.homepagePosition, homepagePosition);
+  }
+});
+
+test("U2 fails closed on homepage merchandising positions outside 1 through 6", () => {
+  for (const homepagePosition of [0, 7, 1.5, "1"]) {
+    assert.throws(
+      () =>
+        parseCollectionDefinition({
+          slug: "homepage-position-invalid",
+          title: "Invalid homepage position",
+          description: "Published homepage collection.",
+          isPublished: true,
+          homepagePosition,
+          pancakeCategoryIds: [],
+        }),
+      (error: unknown) =>
+        error instanceof CollectionDefinitionError && error.reason === "collection-homepage-position",
+    );
+  }
 });
