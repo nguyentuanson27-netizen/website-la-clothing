@@ -19,6 +19,11 @@ test("P16A public brand facts expose only approved identity and commerce facts",
     paymentMethod: "Thanh toán khi nhận hàng (COD).",
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
+    orderTracking: {
+      title: "Tra cứu đơn hàng",
+      detail:
+        "Tra cứu trạng thái đơn COD bằng mã đơn và số điện thoại đã dùng khi đặt hàng.",
+    },
     serverVerification:
       "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
   });
