@@ -8,7 +8,6 @@ test("U6a collection BreadcrumbList mirrors the visible breadcrumb from the serv
   assert.deepEqual(
     buildCollectionBreadcrumbStructuredData({
       origin: "https://shop.example.com",
-      slug: "city-uniform",
       title: "City Uniform",
     }),
     {
