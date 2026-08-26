@@ -9,6 +9,7 @@ export const PRODUCT_CONTENT_LIMITS = {
   collectionSlug: 48,
 } as const;
 
+export const PRODUCT_CONTENT_BULK_STATUS_LIMIT = 100;
 export const PRODUCT_CONTENT_STATUSES = ["DRAFT", "REVIEWED", "PUBLISHED"] as const;
 export type ProductContentStatus = (typeof PRODUCT_CONTENT_STATUSES)[number];
 
@@ -38,10 +39,25 @@ export type ProductContentSnapshot = {
   collectionSlugs: string[];
 };
 
+export type BulkProductContentStatusUpdate = {
+  productIds: string[];
+  status: ProductContentStatus;
+};
+
+export type BulkProductContentStatusResult =
+  | { ok: true; updatedCount: number }
+  | { ok: false; reason: "PRODUCT_NOT_FOUND" };
+
 type ProductContentAdminDependencies = {
   productExists(productId: string): Promise<boolean>;
   resolveCollectionSlugs(collectionSlugs: string[]): Promise<string[] | null>;
   saveContent(content: ProductContentSnapshot): Promise<ProductContentSnapshot>;
+};
+
+type ProductContentBulkStatusAdminDependencies = {
+  updateStatusesAtomically(
+    input: BulkProductContentStatusUpdate,
+  ): Promise<BulkProductContentStatusResult>;
 };
 
 type ParsedTextField = { ok: true; value: string | null } | { ok: false };
@@ -86,19 +102,31 @@ function parseStatus(value: unknown): ProductContentStatus | null {
   return PRODUCT_CONTENT_STATUSES.find((status) => status === value) ?? null;
 }
 
+function parseExplicitStatus(value: unknown): ProductContentStatus | null {
+  if (typeof value !== "string") return null;
+  return PRODUCT_CONTENT_STATUSES.find((status) => status === value) ?? null;
+}
+
+function parseProductId(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > PRODUCT_CONTENT_LIMITS.productId ||
+    value !== value.trim()
+  ) {
+    return null;
+  }
+  return value;
+}
+
 function parseProductContentInput(input: unknown): ProductContentSnapshot | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return null;
   }
 
   const record = input as Record<string, unknown>;
-  const productId = record.productId;
-  if (
-    typeof productId !== "string" ||
-    productId.length === 0 ||
-    productId.length > PRODUCT_CONTENT_LIMITS.productId ||
-    productId !== productId.trim()
-  ) {
+  const productId = parseProductId(record.productId);
+  if (productId === null) {
     return null;
   }
 
@@ -143,6 +171,38 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
   };
 }
 
+function parseBulkProductContentStatusInput(
+  input: unknown,
+): BulkProductContentStatusUpdate | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const record = input as Record<string, unknown>;
+  const productIds = record.productIds;
+  const status = parseExplicitStatus(record.status);
+  if (
+    !Array.isArray(productIds) ||
+    productIds.length < 1 ||
+    productIds.length > PRODUCT_CONTENT_BULK_STATUS_LIMIT ||
+    status === null
+  ) {
+    return null;
+  }
+
+  const parsedProductIds = productIds.map(parseProductId);
+  if (parsedProductIds.some((productId) => productId === null)) {
+    return null;
+  }
+
+  const canonicalProductIds = parsedProductIds as string[];
+  if (new Set(canonicalProductIds).size !== canonicalProductIds.length) {
+    return null;
+  }
+
+  return { productIds: canonicalProductIds, status };
+}
+
 export function createProductContentAdminService({
   productExists,
   resolveCollectionSlugs,
@@ -175,6 +235,23 @@ export function createProductContentAdminService({
         collectionSlugs: resolvedCollectionSlugs,
       }),
     } as const;
+  }
+
+  return { update };
+}
+
+export function createProductContentBulkStatusAdminService({
+  updateStatusesAtomically,
+}: ProductContentBulkStatusAdminDependencies) {
+  async function update(session: AdminSessionCandidate, input: unknown) {
+    requireAdminSession(session);
+
+    const parsed = parseBulkProductContentStatusInput(input);
+    if (!parsed) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    return updateStatusesAtomically(parsed);
   }
 
   return { update };
