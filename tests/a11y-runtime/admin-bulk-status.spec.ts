@@ -165,7 +165,7 @@ test("admin product directory selects current-page products and bulk-updates sta
   });
 
   await context.addCookies(adminCookies);
-  await page.goto(`${BASE_URL}/admin`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE_URL}/admin?q=${encodeURIComponent(runId)}`, { waitUntil: "networkidle" });
 
   const selectAll = page.getByRole("checkbox", { name: "Chọn tất cả sản phẩm trên trang này" });
   const firstCheckbox = page.getByRole("checkbox", { name: `Chọn ${firstName}` });
@@ -173,14 +173,14 @@ test("admin product directory selects current-page products and bulk-updates sta
 
   await firstCheckbox.check();
   await expect(page.getByText("Đã chọn 1 sản phẩm", { exact: true })).toBeVisible();
-  expect(await selectAll.evaluate((element: HTMLInputElement) => element.indeterminate)).toBe(true);
+  expect(await selectAll.evaluate((element) => (element as HTMLInputElement).indeterminate)).toBe(true);
   await expect(selectAll).not.toBeChecked();
 
   await selectAll.check();
   await expect(firstCheckbox).toBeChecked();
   await expect(secondCheckbox).toBeChecked();
   await expect(selectAll).toBeChecked();
-  expect(await selectAll.evaluate((element: HTMLInputElement) => element.indeterminate)).toBe(false);
+  expect(await selectAll.evaluate((element) => (element as HTMLInputElement).indeterminate)).toBe(false);
   await expect(page.getByText("Đã chọn 2 sản phẩm", { exact: true })).toBeVisible();
 
   await page.getByLabel("Trạng thái mới").selectOption("REVIEWED");
