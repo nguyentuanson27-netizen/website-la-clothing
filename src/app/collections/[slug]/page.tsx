@@ -3,10 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
+import {
+  buildCollectionDiscoveryHref,
+  parseCollectionDiscoverySearchParams,
+} from "@/commerce/collection-discovery-url";
 import { CollectionDefinitionError } from "@/commerce/collection-definition";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
-import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
-import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
+import {
+  listConfiguredStorefrontDiscoveryFacets,
+  listConfiguredStorefrontDiscoveryPage,
+} from "@/commerce/storefront-catalog-runtime";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { prisma } from "@/db/prisma";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
@@ -15,6 +21,14 @@ import { readSearchExposure } from "@/seo/search-exposure";
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
 const repository = createCollectionDefinitionRepository(prisma);
+const sortOptions = [
+  { value: "name-asc", label: "Tên A–Z" },
+  { value: "name-desc", label: "Tên Z–A" },
+  { value: "price-asc", label: "Giá thấp → cao" },
+  { value: "price-desc", label: "Giá cao → thấp" },
+] as const;
+const optionLinkClassName =
+  "inline-flex min-h-11 items-center border border-black/25 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 aria-[current=true]:border-black aria-[current=true]:bg-black aria-[current=true]:text-white";
 
 type CollectionSearchParams = Readonly<Record<string, string | string[] | undefined>>;
 
@@ -53,10 +67,6 @@ export async function generateMetadata({
   });
 }
 
-function collectionPageHref(slug: string, page: number): string {
-  return page === 1 ? `/collections/${slug}` : `/collections/${slug}?page=${page}`;
-}
-
 export default async function CollectionPage({ params, searchParams }: CollectionPageProps) {
   await connection();
   const { slug } = await params;
@@ -64,17 +74,19 @@ export default async function CollectionPage({ params, searchParams }: Collectio
 
   if (!collection || !collection.description?.trim()) notFound();
 
+  let discovery: ReturnType<typeof parseCollectionDiscoverySearchParams>;
   let catalogPage: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;
+  let facets: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryFacets>>;
   try {
     const query = await searchParams;
-    const discovery = parseStorefrontDiscoverySearchParams({
-      collection: collection.slug,
-      page: query.page,
-    });
-    catalogPage = await listConfiguredStorefrontDiscoveryPage({
-      discovery,
-      pageSize: PAGE_SIZE,
-    });
+    discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
+    [catalogPage, facets] = await Promise.all([
+      listConfiguredStorefrontDiscoveryPage({
+        discovery,
+        pageSize: PAGE_SIZE,
+      }),
+      listConfiguredStorefrontDiscoveryFacets(),
+    ]);
   } catch (error) {
     if (error instanceof RangeError) notFound();
     throw error;
@@ -82,6 +94,11 @@ export default async function CollectionPage({ params, searchParams }: Collectio
 
   const { page, products, totalCount, totalPages } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
+
+  const filtered = discovery.size !== null;
+  const hrefFor = (
+    state: Parameters<typeof buildCollectionDiscoveryHref>[1],
+  ) => buildCollectionDiscoveryHref(collection.slug, state);
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
@@ -117,15 +134,81 @@ export default async function CollectionPage({ params, searchParams }: Collectio
         </p>
       </div>
 
+      <section className="mt-12 grid gap-8 border-y border-black/20 py-6 md:grid-cols-2" aria-label="Điều khiển bộ sưu tập">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.13em]">Sắp xếp</p>
+          <nav
+            aria-label="Sắp xếp bộ sưu tập"
+            className="mt-3 flex flex-wrap gap-2"
+          >
+            {sortOptions.map((option) => (
+              <Link
+                aria-current={discovery.sort === option.value ? "true" : undefined}
+                className={optionLinkClassName}
+                href={hrefFor({
+                  size: discovery.size,
+                  sort: option.value,
+                  page: 1,
+                })}
+                key={option.value}
+              >
+                {option.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.13em]">Kích cỡ</p>
+          <nav aria-label="Lọc theo kích cỡ" className="mt-3 flex flex-wrap gap-2">
+            <Link
+              aria-current={discovery.size === null ? "true" : undefined}
+              className={optionLinkClassName}
+              href={hrefFor({
+                size: null,
+                sort: discovery.sort,
+                page: 1,
+              })}
+            >
+              Tất cả kích cỡ
+            </Link>
+            {facets.sizes.map((size) => (
+              <Link
+                aria-current={discovery.size === size ? "true" : undefined}
+                className={optionLinkClassName}
+                href={hrefFor({
+                  size,
+                  sort: discovery.sort,
+                  page: 1,
+                })}
+                key={size}
+              >
+                {size}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </section>
+
       {totalCount === 0 ? (
         <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="collection-empty-title">
-          <p className="eyebrow">Bộ sưu tập hiện tại</p>
+          <p className="eyebrow">{filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}</p>
           <h2 id="collection-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
-            Bộ sưu tập này chưa có sản phẩm.
+            {filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
           </h2>
           <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
-            Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.
+            {filtered
+              ? "Thử chọn kích cỡ khác hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
+              : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."}
           </p>
+          {filtered ? (
+            <Link
+              className="mt-6 inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+              href={hrefFor({ size: null, sort: discovery.sort, page: 1 })}
+            >
+              Xem tất cả kích cỡ →
+            </Link>
+          ) : null}
         </section>
       ) : (
         <section className="mt-16" aria-labelledby="collection-products-title">
@@ -157,7 +240,11 @@ export default async function CollectionPage({ params, searchParams }: Collectio
               {catalogPage.hasPrevious ? (
                 <Link
                   className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-                  href={collectionPageHref(collection.slug, page - 1)}
+                  href={hrefFor({
+                    size: discovery.size,
+                    sort: discovery.sort,
+                    page: page - 1,
+                  })}
                   rel="prev"
                 >
                   ← Trang trước
@@ -168,7 +255,11 @@ export default async function CollectionPage({ params, searchParams }: Collectio
               {catalogPage.hasNext ? (
                 <Link
                   className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-                  href={collectionPageHref(collection.slug, page + 1)}
+                  href={hrefFor({
+                    size: discovery.size,
+                    sort: discovery.sort,
+                    page: page + 1,
+                  })}
                   rel="next"
                 >
                   Trang sau →
