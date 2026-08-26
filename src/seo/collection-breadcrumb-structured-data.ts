@@ -29,7 +29,6 @@ export function buildCollectionBreadcrumbStructuredData({
   title,
 }: Readonly<{
   origin: string;
-  slug: string;
   title: string;
 }>): CollectionBreadcrumbStructuredDataDocument {
   return {
