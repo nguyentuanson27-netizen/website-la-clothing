@@ -33,6 +33,7 @@ test("P7 deployed schema stores website-owned collection definitions with fail-c
       seoTitle: string | null;
       seoDescription: string | null;
       isPublished: boolean;
+      homepagePosition: number | null;
       pancakeCategoryIds: number[];
     }>
   >`
@@ -45,6 +46,7 @@ test("P7 deployed schema stores website-owned collection definitions with fail-c
       "seoTitle",
       "seoDescription",
       "isPublished",
+      "homepagePosition",
       "pancakeCategoryIds"
   `;
 
@@ -56,6 +58,7 @@ test("P7 deployed schema stores website-owned collection definitions with fail-c
       seoTitle: null,
       seoDescription: null,
       isPublished: false,
+      homepagePosition: null,
       pancakeCategoryIds: [],
     },
   ]);
@@ -71,6 +74,36 @@ test("P7 deployed schema enforces stable unique collection slugs", async () => {
     prisma.$executeRaw`
       INSERT INTO "CollectionDefinition" ("id", "slug", "title", "createdAt", "updatedAt")
       VALUES ('p7-schema-id-2', 'p7-schema-unique', 'Second', NOW(), NOW())
+    `,
+  );
+});
+
+test("U2 deployed schema bounds homepage positions to unique slots 1 through 6 while allowing unassigned collections", async () => {
+  await prisma.$executeRaw`
+    INSERT INTO "CollectionDefinition" ("id", "slug", "title", "homepagePosition", "createdAt", "updatedAt")
+    VALUES
+      ('p7-schema-home-1', 'p7-schema-home-one', 'Home One', 1, NOW(), NOW()),
+      ('p7-schema-home-6', 'p7-schema-home-six', 'Home Six', 6, NOW(), NOW()),
+      ('p7-schema-home-null-a', 'p7-schema-home-null-a', 'No Slot A', NULL, NOW(), NOW()),
+      ('p7-schema-home-null-b', 'p7-schema-home-null-b', 'No Slot B', NULL, NOW(), NOW())
+  `;
+
+  await assert.rejects(() =>
+    prisma.$executeRaw`
+      INSERT INTO "CollectionDefinition" ("id", "slug", "title", "homepagePosition", "createdAt", "updatedAt")
+      VALUES ('p7-schema-home-zero', 'p7-schema-home-zero', 'Invalid Zero', 0, NOW(), NOW())
+    `,
+  );
+  await assert.rejects(() =>
+    prisma.$executeRaw`
+      INSERT INTO "CollectionDefinition" ("id", "slug", "title", "homepagePosition", "createdAt", "updatedAt")
+      VALUES ('p7-schema-home-seven', 'p7-schema-home-seven', 'Invalid Seven', 7, NOW(), NOW())
+    `,
+  );
+  await assert.rejects(() =>
+    prisma.$executeRaw`
+      INSERT INTO "CollectionDefinition" ("id", "slug", "title", "homepagePosition", "createdAt", "updatedAt")
+      VALUES ('p7-schema-home-duplicate', 'p7-schema-home-duplicate', 'Duplicate One', 1, NOW(), NOW())
     `,
   );
 });
