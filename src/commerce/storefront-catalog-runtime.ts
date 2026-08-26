@@ -1,8 +1,12 @@
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
-import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
+import {
+  parseStorefrontDiscoverySearchParams,
+  type StorefrontDiscoveryQuery,
+} from "./storefront-discovery.ts";
 import { createStorefrontProductDetailRepository } from "./storefront-product-detail.ts";
+import { listRelatedStorefrontProducts } from "./storefront-related-products.ts";
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 
 export async function listConfiguredStorefrontProducts(limit: number) {
@@ -44,6 +48,31 @@ export async function listConfiguredStorefrontDiscoveryFacets() {
 export async function getConfiguredStorefrontProductBySlug(slug: string) {
   const shopId = readPancakeShopId();
   return createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug });
+}
+
+export async function listConfiguredRelatedStorefrontProducts(
+  currentProduct: Readonly<{
+    id: string;
+    collections: readonly Readonly<{ slug: string }>[];
+  }>,
+) {
+  const shopId = readPancakeShopId();
+  const catalog = createStorefrontCatalogRepository(prisma);
+
+  return listRelatedStorefrontProducts({
+    currentProduct,
+    listCollectionProducts: async (collectionSlug, limit) => {
+      const discovery = parseStorefrontDiscoverySearchParams({
+        collection: collectionSlug,
+      });
+      const page = await catalog.listDiscoveryPage({
+        shopId,
+        discovery,
+        pageSize: limit,
+      });
+      return page.products;
+    },
+  });
 }
 
 export async function resolveConfiguredStorefrontProductSlug(slug: string) {
