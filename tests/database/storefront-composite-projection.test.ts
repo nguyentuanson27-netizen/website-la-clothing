@@ -4,7 +4,10 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
-import { createCompositeComponentAdminService } from "../../src/commerce/composite-component-admin.ts";
+import {
+  createCompositeComponentAdminService,
+  createCompositeParentVariantAdminService,
+} from "../../src/commerce/composite-component-admin.ts";
 import { createCompositeComponentRepository } from "../../src/commerce/composite-component-repository.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
@@ -17,8 +20,11 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const productRepository = createStorefrontProductDetailRepository(prisma);
 const activationRepository = createCompositeComponentRepository(prisma);
-const activationService = createCompositeComponentAdminService({
+const componentActivationService = createCompositeComponentAdminService({
   setLinkedVariantActivation: activationRepository.setLinkedVariantActivation,
+});
+const parentActivationService = createCompositeParentVariantAdminService({
+  setParentVariantActivation: activationRepository.setParentVariantActivation,
 });
 const adminSession = {
   user: { id: "composite-convergence-admin", role: "ADMIN" },
@@ -40,7 +46,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(async () => prisma.$disconnect());
 
-test("admin activation converges the real composite child through parent PDP, cart, checkout, and deactivation", async () => {
+test("admin activation converges inactive real parent and child through PDP, cart, checkout, and deactivation", async () => {
   const parent = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -70,7 +76,7 @@ test("admin activation converges the real composite child through parent PDP, ca
       productId: parent.id,
       size: "M",
       isPresent: true,
-      isActive: true,
+      isActive: false,
       pancakeRetailPrice: 790_000,
       pancakeRetailPriceAfterDiscount: 790_000,
       syncedAt,
@@ -120,18 +126,15 @@ test("admin activation converges the real composite child through parent PDP, ca
     slug: "projection-set-a",
   });
   assert.ok(beforeActivation);
-  assert.equal(beforeActivation.projection.mode, "composite");
-  assert.deepEqual(
-    beforeActivation.projection.options.map(({ id, kindLabel }) => ({ id, kindLabel })),
-    [{ id: parentVariant.id, kindLabel: "Set" }],
-  );
+  assert.equal(beforeActivation.projection.mode, "standalone");
+  assert.deepEqual(beforeActivation.projection.options, []);
   assert.equal(
     await productRepository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
     null,
   );
 
   assert.deepEqual(
-    await activationService.setActivation(adminSession, {
+    await componentActivationService.setActivation(adminSession, {
       productId: component.id,
       variantId: componentVariant.id,
       isActive: true,
@@ -139,6 +142,27 @@ test("admin activation converges the real composite child through parent PDP, ca
     {
       ok: true,
       variantId: componentVariant.id,
+      isActive: true,
+    },
+  );
+
+  const childOnlyActivated = await productRepository.getProductBySlug({
+    shopId,
+    slug: "projection-set-a",
+  });
+  assert.ok(childOnlyActivated);
+  assert.equal(childOnlyActivated.projection.mode, "standalone");
+  assert.deepEqual(childOnlyActivated.projection.options, []);
+
+  assert.deepEqual(
+    await parentActivationService.setActivation(adminSession, {
+      productId: parent.id,
+      variantId: parentVariant.id,
+      isActive: true,
+    }),
+    {
+      ok: true,
+      variantId: parentVariant.id,
       isActive: true,
     },
   );
@@ -240,7 +264,7 @@ test("admin activation converges the real composite child through parent PDP, ca
   );
 
   assert.deepEqual(
-    await activationService.setActivation(adminSession, {
+    await componentActivationService.setActivation(adminSession, {
       productId: component.id,
       variantId: componentVariant.id,
       isActive: false,
