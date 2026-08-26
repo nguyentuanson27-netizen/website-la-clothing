@@ -11,6 +11,7 @@ export default defineConfig({
     "collection-landing.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
+    "homepage-taxonomy.spec.ts",
     "pdp-language.spec.ts",
     "storefront-commerce.spec.ts",
     "storefront-composite.spec.ts",
