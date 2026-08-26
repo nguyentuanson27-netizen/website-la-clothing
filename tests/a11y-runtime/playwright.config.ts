@@ -8,6 +8,7 @@ export default defineConfig({
     "admin-collections.spec.ts",
     "admin-editor.spec.ts",
     "checkout.spec.ts",
+    "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
