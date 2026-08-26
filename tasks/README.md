@@ -2,6 +2,12 @@
 
 Task plans in this directory define dependencies, ownership, acceptance criteria, and verification for their workstreams.
 
+## Storefront Refinement V3 execution record
+
+The original V3 design/plan/todo files preserve the planning-state language under which they were authored. After the reviewed implementation slices were merged, current execution/closeout truth is recorded in [Storefront Refinement V3 — U6b final verification record](../docs/verification/storefront-refinement-v3-final.md).
+
+Do not interpret an original `DRAFT` status line in those historical planning files as the current runtime status, and do not infer approval for deferred support content, permanent-domain selection, or `SEARCH_INDEXING_ENABLED=true` from implementation completion.
+
 ## Pull request sizing
 
 Current PR sizing is governed by [ADR 0005](../docs/decisions/0005-pr-scope-reviewability.md).
