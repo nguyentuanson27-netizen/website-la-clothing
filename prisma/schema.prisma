@@ -67,9 +67,9 @@ model Session {
 }
 
 model Account {
-  id                     String    @id
-  accountId              String
-  providerId             String
+  id                    String    @id
+  accountId             String
+  providerId            String
   userId                 String
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken            String?
@@ -77,10 +77,10 @@ model Account {
   idToken                String?
   accessTokenExpiresAt   DateTime?
   refreshTokenExpiresAt  DateTime?
-  scope                  String?
-  password               String?
-  createdAt              DateTime
-  updatedAt              DateTime
+  scope                   String?
+  password                String?
+  createdAt               DateTime
+  updatedAt               DateTime
 
   @@map("account")
 }
@@ -90,8 +90,8 @@ model Verification {
   identifier String
   value      String
   expiresAt  DateTime
-  createdAt  DateTime?
-  updatedAt  DateTime?
+  createdAt DateTime?
+  updatedAt DateTime?
 
   @@map("verification")
 }
@@ -304,7 +304,7 @@ model OrderMirror {
 }
 
 model OrderLineSnapshot {
-  id                 String      @id @default(uuid())
+  id                 String      @id @default(cuid())
   orderId            String
   variantId          String
   pancakeVariationId String
