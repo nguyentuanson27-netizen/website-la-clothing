@@ -46,9 +46,11 @@ test("P7 repository validates and upserts one canonical website-owned definition
   });
 
   assert.equal(initial.isPublished, false);
+  assert.equal(initial.homepagePosition, null);
   assert.deepEqual(initial.pancakeCategoryIds, [7, 42]);
   assert.equal(updated.title, "Shirts Updated");
   assert.equal(updated.isPublished, true);
+  assert.equal(updated.homepagePosition, null);
   assert.deepEqual(updated.pancakeCategoryIds, [7]);
   assert.equal(
     await prisma.collectionDefinition.count({ where: { slug: "p7-repo-shirts" } }),
@@ -94,6 +96,7 @@ test("P7 update-existing persistence cannot create a forged or missing collectio
     seoTitle: null,
     seoDescription: null,
     isPublished: false,
+    homepagePosition: null,
     pancakeCategoryIds: [],
   });
   assert.equal(updated?.title, "Existing Updated");
@@ -104,6 +107,7 @@ test("P7 update-existing persistence cannot create a forged or missing collectio
     seoTitle: null,
     seoDescription: null,
     isPublished: false,
+    homepagePosition: null,
     pancakeCategoryIds: [],
   });
   assert.equal(missing, null);
@@ -167,6 +171,56 @@ test("P7 public repository reads expose only published allowlisted definition fi
     seoTitle: null,
     seoDescription: null,
   });
+});
+
+test("U2 homepage merchandising uses explicit positions, ignores slug order, and fails closed on duplicate slots", async () => {
+  await repository.saveDefinition({
+    slug: "p7-repo-homepage-a",
+    title: "Position Six",
+    description: "Homepage position six.",
+    isPublished: true,
+    homepagePosition: 6,
+  });
+  await repository.saveDefinition({
+    slug: "p7-repo-homepage-z",
+    title: "Position Two",
+    description: "Homepage position two.",
+    isPublished: true,
+    homepagePosition: 2,
+  });
+  await repository.saveDefinition({
+    slug: "p7-repo-homepage-unpositioned",
+    title: "Unpositioned",
+    description: "Published but not selected for homepage.",
+    isPublished: true,
+  });
+  await repository.saveDefinition({
+    slug: "p7-repo-homepage-draft",
+    title: "Draft Position One",
+    description: "Draft must not render on homepage.",
+    isPublished: false,
+    homepagePosition: 1,
+  });
+
+  const homepage = await repository.listHomepageMerchandising();
+  assert.deepEqual(
+    homepage.filter(({ slug }) => slug.startsWith("p7-repo-homepage-")).map(({ slug }) => slug),
+    ["p7-repo-homepage-z", "p7-repo-homepage-a"],
+  );
+
+  await assert.rejects(
+    () =>
+      repository.saveDefinition({
+        slug: "p7-repo-homepage-duplicate",
+        title: "Duplicate Position",
+        description: "Must fail closed.",
+        isPublished: true,
+        homepagePosition: 2,
+      }),
+    (error: unknown) =>
+      error instanceof CollectionDefinitionError &&
+      error.reason === "collection-homepage-position",
+  );
 });
 
 test("P7 membership resolver returns deterministic canonical slugs and fails closed for stale membership", async () => {
