@@ -62,6 +62,20 @@ test("P15 withholds catalog canonical metadata for noindex query states and stag
     { indexingEnabled: true, pathname: "/shop", searchParams: { page: "2", sort: "name-asc" } },
     { indexingEnabled: true, pathname: "/shop", searchParams: { q: "shirt", page: "2" } },
     { indexingEnabled: true, pathname: "/collections/summer-shirts", searchParams: { page: "2", color: "black" } },
+    { indexingEnabled: true, pathname: "/collections/summer-shirts", searchParams: { size: "M" } },
+    { indexingEnabled: true, pathname: "/collections/summer-shirts", searchParams: { sort: "price-desc" } },
+    { indexingEnabled: true, pathname: "/collections/summer-shirts", searchParams: { sort: "name-asc" } },
+    { indexingEnabled: true, pathname: "/collections/summer-shirts", searchParams: { page: "1" } },
+    {
+      indexingEnabled: true,
+      pathname: "/collections/summer-shirts",
+      searchParams: { collection: "forged-collection" },
+    },
+    {
+      indexingEnabled: true,
+      pathname: "/collections/summer-shirts",
+      searchParams: { size: "M", sort: "price-desc", page: "2" },
+    },
   ] as const;
 
   for (const input of cases) {
