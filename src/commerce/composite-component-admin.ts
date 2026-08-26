@@ -28,6 +28,10 @@ type CompositeComponentAdminDependencies = {
   setLinkedVariantActivation(input: CompositeComponentActivationInput): Promise<boolean>;
 };
 
+type CompositeParentVariantAdminDependencies = {
+  setParentVariantActivation(input: CompositeComponentActivationInput): Promise<boolean>;
+};
+
 function isBoundedTrimmedId(value: unknown, maxLength: number): value is string {
   return (
     typeof value === "string" &&
@@ -71,6 +75,31 @@ export function createCompositeComponentAdminService({
 
     if (!(await setLinkedVariantActivation(parsed))) {
       return { ok: false, reason: "COMPONENT_NOT_AVAILABLE" } as const;
+    }
+
+    return {
+      ok: true,
+      variantId: parsed.variantId,
+      isActive: parsed.isActive,
+    } as const;
+  }
+
+  return { setActivation };
+}
+
+export function createCompositeParentVariantAdminService({
+  setParentVariantActivation,
+}: CompositeParentVariantAdminDependencies) {
+  async function setActivation(session: AdminSessionCandidate, input: unknown) {
+    requireAdminSession(session);
+
+    const parsed = parseActivationInput(input);
+    if (!parsed) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    if (!(await setParentVariantActivation(parsed))) {
+      return { ok: false, reason: "PARENT_VARIANT_NOT_AVAILABLE" } as const;
     }
 
     return {

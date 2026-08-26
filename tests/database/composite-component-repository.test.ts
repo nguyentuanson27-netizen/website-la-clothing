@@ -74,6 +74,16 @@ async function createFixture() {
       syncedAt,
     },
   });
+  const unlinkedParentVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "activation-parent-l",
+      productId: parent.id,
+      size: "L",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
   const linkedVariant = await prisma.variantMirror.create({
     data: {
       pancakeVariationId: "activation-child-m",
@@ -115,8 +125,11 @@ async function createFixture() {
   });
 
   return {
+    parent,
     child,
     otherChild,
+    parentVariant,
+    unlinkedParentVariant,
     linkedVariant,
     unlinkedVariant,
     otherVariant,
@@ -253,4 +266,124 @@ test("component activation rejects unlinked, cross-product, and stale component 
     select: { id: true, isActive: true },
   });
   assert.equal(variants.every(({ isActive }) => isActive === false), true);
+});
+
+test("parent activation updates only a present composite parent variant owned by the supplied product", async () => {
+  const fixture = await createFixture();
+
+  await prisma.variantMirror.update({
+    where: { id: fixture.parentVariant.id },
+    data: { isActive: false },
+  });
+
+  assert.equal(
+    await repository.setParentVariantActivation({
+      productId: fixture.parent.id,
+      variantId: fixture.parentVariant.id,
+      isActive: true,
+    }),
+    true,
+  );
+
+  const parentAfterActivation = await prisma.productMirror.findUniqueOrThrow({
+    where: { id: fixture.parent.id },
+    include: { variants: { orderBy: { size: "asc" } } },
+  });
+  assert.equal(parentAfterActivation.isActive, true);
+  assert.deepEqual(
+    parentAfterActivation.variants.map(({ size, isActive }) => ({ size, isActive })),
+    [
+      { size: "L", isActive: false },
+      { size: "M", isActive: true },
+    ],
+  );
+  assert.equal(
+    await prisma.compositeComponentMirror.count({
+      where: { parentVariantId: fixture.parentVariant.id },
+    }),
+    1,
+  );
+
+  assert.equal(
+    await repository.setParentVariantActivation({
+      productId: fixture.parent.id,
+      variantId: fixture.parentVariant.id,
+      isActive: false,
+    }),
+    true,
+  );
+  assert.equal(
+    (
+      await prisma.variantMirror.findUniqueOrThrow({
+        where: { id: fixture.parentVariant.id },
+        select: { isActive: true },
+      })
+    ).isActive,
+    false,
+  );
+});
+
+test("parent activation rejects unlinked, cross-product, child, and stale targets", async () => {
+  const fixture = await createFixture();
+  await prisma.variantMirror.update({
+    where: { id: fixture.parentVariant.id },
+    data: { isActive: false },
+  });
+
+  for (const input of [
+    {
+      productId: fixture.parent.id,
+      variantId: fixture.unlinkedParentVariant.id,
+      isActive: true,
+    },
+    {
+      productId: fixture.child.id,
+      variantId: fixture.parentVariant.id,
+      isActive: true,
+    },
+    {
+      productId: fixture.child.id,
+      variantId: fixture.linkedVariant.id,
+      isActive: true,
+    },
+  ]) {
+    assert.equal(await repository.setParentVariantActivation(input), false);
+  }
+
+  await prisma.variantMirror.update({
+    where: { id: fixture.parentVariant.id },
+    data: { isPresent: false },
+  });
+  assert.equal(
+    await repository.setParentVariantActivation({
+      productId: fixture.parent.id,
+      variantId: fixture.parentVariant.id,
+      isActive: true,
+    }),
+    false,
+  );
+
+  await prisma.variantMirror.update({
+    where: { id: fixture.parentVariant.id },
+    data: { isPresent: true },
+  });
+  await prisma.productMirror.update({
+    where: { id: fixture.parent.id },
+    data: { isPresent: false },
+  });
+  assert.equal(
+    await repository.setParentVariantActivation({
+      productId: fixture.parent.id,
+      variantId: fixture.parentVariant.id,
+      isActive: true,
+    }),
+    false,
+  );
+
+  const parentVariants = await prisma.variantMirror.findMany({
+    where: { id: { in: [fixture.parentVariant.id, fixture.unlinkedParentVariant.id] } },
+    orderBy: { id: "asc" },
+    select: { isActive: true },
+  });
+  assert.equal(parentVariants.every(({ isActive }) => isActive === false), true);
 });
