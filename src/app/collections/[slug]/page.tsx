@@ -16,7 +16,9 @@ import {
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { prisma } from "@/db/prisma";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
+import { buildCollectionBreadcrumbStructuredData } from "@/seo/collection-breadcrumb-structured-data";
 import { readSearchExposure } from "@/seo/search-exposure";
+import { serializeJsonLd } from "@/seo/structured-data";
 
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
@@ -100,9 +102,18 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   const hrefFor = (
     state: Parameters<typeof buildCollectionDiscoveryHref>[1],
   ) => buildCollectionDiscoveryHref(collection.slug, state);
+  const collectionBreadcrumb = buildCollectionBreadcrumbStructuredData({
+    origin: readSearchExposure().origin,
+    slug: collection.slug,
+    title: collection.title,
+  });
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(collectionBreadcrumb) }}
+      />
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li>
