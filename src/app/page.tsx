@@ -161,7 +161,28 @@ export default async function HomePage() {
         )}
       </section>
 
-      <section className="collection-intro" aria-labelledby="brand-facts-title">
+      {publishedCollections.length > 0 ? (
+        <section
+          className="category-strip"
+          aria-labelledby="homepage-collections-title"
+          data-homepage-region="collection-navigation"
+        >
+          <p className="eyebrow" id="homepage-collections-title">Mua theo bộ sưu tập</p>
+          <nav className="category-links" aria-label="Bộ sưu tập nổi bật">
+            {publishedCollections.map((collection) => (
+              <Link key={collection.slug} href={`/collections/${collection.slug}`}>
+                {collection.title}
+              </Link>
+            ))}
+          </nav>
+        </section>
+      ) : null}
+
+      <section
+        className="collection-intro"
+        aria-labelledby="brand-facts-title"
+        data-homepage-region="trust-support"
+      >
         <p className="eyebrow">LA Clothing / About</p>
         <h2 id="brand-facts-title">{brandFacts.brandName}</h2>
         <div>
@@ -184,26 +205,13 @@ export default async function HomePage() {
               <dd className="mt-1 text-black/70">{brandFacts.serverVerification}</dd>
             </div>
           </dl>
-          <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-3" aria-label="Tìm hiểu LA Clothing">
+          <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-3" aria-label="Hỗ trợ và khám phá">
             <Link className="text-link" href="/shop">Cửa hàng ↗</Link>
             <Link className="text-link" href="/collections">Bộ sưu tập ↗</Link>
             <Link className="text-link" href="/track-order">Tra cứu đơn ↗</Link>
           </nav>
         </div>
       </section>
-
-      {publishedCollections.length > 0 ? (
-        <section className="category-strip" aria-labelledby="homepage-collections-title">
-          <p className="eyebrow" id="homepage-collections-title">Mua theo bộ sưu tập</p>
-          <nav className="category-links" aria-label="Bộ sưu tập nổi bật">
-            {publishedCollections.map((collection) => (
-              <Link key={collection.slug} href={`/collections/${collection.slug}`}>
-                {collection.title}
-              </Link>
-            ))}
-          </nav>
-        </section>
-      ) : null}
     </>
   );
 }
