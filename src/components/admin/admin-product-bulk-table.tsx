@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   bulkUpdateProductStatusAction,
@@ -48,10 +48,8 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [targetStatus, setTargetStatus] = useState<ProductContentStatus>("REVIEWED");
   const [confirming, setConfirming] = useState(false);
-  const [actionState, formAction, isPending] = useActionState(
-    bulkUpdateProductStatusAction,
-    initialActionState,
-  );
+  const [actionState, setActionState] = useState<BulkProductStatusActionState>(initialActionState);
+  const [isPending, setIsPending] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
 
@@ -64,16 +62,6 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
       selectAllRef.current.indeterminate = partlySelected;
     }
   }, [partlySelected]);
-
-  useEffect(() => {
-    if (actionState.kind === "success") {
-      setSelectedIds(new Set());
-      setConfirming(false);
-    }
-    if (actionState.kind !== "idle") {
-      feedbackRef.current?.focus();
-    }
-  }, [actionState]);
 
   function toggleProduct(productId: string, checked: boolean) {
     setConfirming(false);
@@ -95,6 +83,25 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
     setConfirming(false);
   }
 
+  async function submitBulkStatus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (selectedCount === 0 || isPending) return;
+
+    const formData = new FormData(event.currentTarget);
+    setIsPending(true);
+    try {
+      const result = await bulkUpdateProductStatusAction(initialActionState, formData);
+      setActionState(result);
+      if (result.kind === "success") {
+        setSelectedIds(new Set());
+        setConfirming(false);
+      }
+      requestAnimationFrame(() => feedbackRef.current?.focus());
+    } finally {
+      setIsPending(false);
+    }
+  }
+
   const feedback =
     actionState.kind === "success"
       ? `Đã cập nhật ${actionState.updatedCount} sản phẩm sang ${statusLabels[actionState.status]}.`
@@ -103,13 +110,13 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
         : null;
 
   return (
-    <form action={formAction}>
+    <form onSubmit={submitBulkStatus}>
       <div
         ref={feedbackRef}
         aria-atomic={feedback ? "true" : undefined}
         className="min-h-0 focus-visible:outline-2 focus-visible:outline-offset-4"
         role={actionState.kind === "error" ? "alert" : actionState.kind === "success" ? "status" : undefined}
-        tabIndex={feedback ? -1 : undefined}
+        tabIndex={-1}
       >
         {feedback ? (
           <p className="mb-4 border-l-2 border-black pl-4 text-sm font-semibold">{feedback}</p>
