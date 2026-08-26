@@ -26,7 +26,7 @@ export default async function HomePage() {
   await connection();
   const [featuredProducts, publishedCollections] = await Promise.all([
     loadHomepageProductEdit(),
-    collectionRepository.listPublished(4),
+    collectionRepository.listHomepageMerchandising(),
   ]);
   const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
