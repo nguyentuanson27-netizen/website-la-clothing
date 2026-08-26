@@ -2,13 +2,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
+import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
+import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
+const collectionRepository = createCollectionDefinitionRepository(prisma);
 
 async function loadHomepageProductEdit() {
   try {
@@ -21,7 +24,10 @@ async function loadHomepageProductEdit() {
 
 export default async function HomePage() {
   await connection();
-  const featuredProducts = await loadHomepageProductEdit();
+  const [featuredProducts, publishedCollections] = await Promise.all([
+    loadHomepageProductEdit(),
+    collectionRepository.listPublished(4),
+  ]);
   const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
   const heroProduct = productsWithMedia[0];
@@ -186,15 +192,18 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="category-strip" aria-labelledby="categories-title">
-        <p className="eyebrow" id="categories-title">Mua theo danh mục</p>
-        <nav className="category-links" aria-label="Danh mục sản phẩm">
-          <Link href="/shop?category=shirts">Sơ mi</Link>
-          <Link href="/shop?category=t-shirts">Áo thun</Link>
-          <Link href="/shop?category=trousers">Quần</Link>
-          <Link href="/shop?category=outerwear">Áo khoác</Link>
-        </nav>
-      </section>
+      {publishedCollections.length > 0 ? (
+        <section className="category-strip" aria-labelledby="homepage-collections-title">
+          <p className="eyebrow" id="homepage-collections-title">Mua theo bộ sưu tập</p>
+          <nav className="category-links" aria-label="Bộ sưu tập nổi bật">
+            {publishedCollections.map((collection) => (
+              <Link key={collection.slug} href={`/collections/${collection.slug}`}>
+                {collection.title}
+              </Link>
+            ))}
+          </nav>
+        </section>
+      ) : null}
     </>
   );
 }
