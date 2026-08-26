@@ -13,6 +13,7 @@ export default defineConfig({
     "editorial.spec.ts",
     "homepage-taxonomy.spec.ts",
     "pdp-language.spec.ts",
+    "related-products.spec.ts",
     "storefront-commerce.spec.ts",
     "storefront-composite.spec.ts",
     "storefront-media.spec.ts",
