@@ -24,6 +24,10 @@ const adminService = createCollectionDefinitionAdminService({
   createDefinition: repository.createDefinition,
   updateExistingDefinition: repository.updateExistingDefinition,
 });
+const HOMEPAGE_POSITIONS = Array.from(
+  { length: COLLECTION_DEFINITION_LIMITS.homepagePosition },
+  (_, index) => index + 1,
+);
 
 const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
@@ -36,6 +40,7 @@ function mutableCollectionInput(formData: FormData) {
     seoTitle: formData.get("seoTitle"),
     seoDescription: formData.get("seoDescription"),
     isPublished: formData.get("isPublished"),
+    homepagePosition: formData.get("homepagePosition"),
     pancakeCategoryIds: formData.get("pancakeCategoryIds"),
   };
 }
@@ -45,6 +50,7 @@ function finishCollectionMutation(result: { ok: boolean }) {
     redirect("/admin/collections?error=invalid");
   }
 
+  revalidatePath("/");
   revalidatePath("/admin/collections");
   revalidatePath("/admin");
   redirect("/admin/collections?saved=1");
@@ -171,6 +177,27 @@ function CollectionForm({ definition, action }: CollectionFormProps) {
           />
           <span className="mt-2 block text-xs leading-5 text-black/55">
             Mapping tùy chọn theo ID; không tự publish collection và không thay website taxonomy.
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-[0.13em]">
+            Vị trí trên trang chủ
+          </span>
+          <select
+            className={inputClassName}
+            defaultValue={definition?.homepagePosition?.toString() ?? ""}
+            name="homepagePosition"
+          >
+            <option value="">Không hiển thị trên trang chủ</option>
+            {HOMEPAGE_POSITIONS.map((position) => (
+              <option key={position} value={position}>
+                Vị trí {position}
+              </option>
+            ))}
+          </select>
+          <span className="mt-2 block text-xs leading-5 text-black/55">
+            Chỉ collection đã publish và có vị trí 1–6 mới xuất hiện. Mỗi vị trí chỉ thuộc một collection.
           </span>
         </label>
 
@@ -343,6 +370,11 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
                   <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
                     {definition.isPublished ? "Published" : "Draft"}
                   </span>
+                  {definition.homepagePosition !== null ? (
+                    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
+                      Trang chủ #{definition.homepagePosition}
+                    </span>
+                  ) : null}
                   <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
                     {productCounts.get(definition.slug) ?? 0} sản phẩm
                   </span>
