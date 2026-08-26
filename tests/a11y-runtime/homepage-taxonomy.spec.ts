@@ -5,6 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
 
+import { readGuestShippingPolicy } from "../../src/commerce/guest-shipping-policy.ts";
+import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 import { prisma } from "../../src/db/prisma.ts";
 
 const HOST = "127.0.0.1";
@@ -13,6 +15,7 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TEST_PREFIX = "u2-homepage-";
+const expectedBrandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -96,6 +99,31 @@ async function addCollection(slug: string, title: string, isPublished: boolean) 
   });
 }
 
+async function expectCanonicalTrustStrip(page: import("@playwright/test").Page) {
+  const trustStrip = page.locator('[data-homepage-region="trust-support"]');
+  await expect(trustStrip).toBeVisible();
+  await expect(trustStrip.getByText(expectedBrandFacts.brandSummary, { exact: true })).toBeVisible();
+  await expect(
+    trustStrip.getByText(
+      `${expectedBrandFacts.paymentMethod} ${expectedBrandFacts.checkoutAccount}`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    trustStrip.getByText(
+      `${expectedBrandFacts.shipping.title}. ${expectedBrandFacts.shipping.detail}`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(trustStrip.getByText(expectedBrandFacts.serverVerification, { exact: true })).toBeVisible();
+
+  const supportHrefs = await trustStrip
+    .getByRole("navigation", { name: "Hỗ trợ và khám phá" })
+    .getByRole("link")
+    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  expect(supportHrefs).toEqual(["/shop", "/collections", "/track-order"]);
+}
+
 test.beforeAll(async () => {
   await prepareCollectionState();
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
@@ -126,6 +154,12 @@ test("U2 homepage collection rail renders only truthful published mappings acros
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Mua bộ sưu tập/ })).toHaveAttribute("href", "/shop");
+  await expectCanonicalTrustStrip(page);
+  expect(
+    await page.locator("[data-homepage-region]").evaluateAll((regions) =>
+      regions.map((region) => region.getAttribute("data-homepage-region")),
+    ),
+  ).toEqual(["trust-support"]);
 
   await addCollection(`${TEST_PREFIX}02`, "U2 Published Two", true);
   await addCollection(`${TEST_PREFIX}01`, "U2 Published One", true);
@@ -145,6 +179,12 @@ test("U2 homepage collection rail renders only truthful published mappings acros
   );
   await expect(page.getByText("U2 Draft Hidden")).toHaveCount(0);
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
+  await expectCanonicalTrustStrip(page);
+  expect(
+    await page.locator("[data-homepage-region]").evaluateAll((regions) =>
+      regions.map((region) => region.getAttribute("data-homepage-region")),
+    ),
+  ).toEqual(["collection-navigation", "trust-support"]);
 
   await addCollection(`${TEST_PREFIX}03`, "U2 Published Three", true);
   await addCollection(`${TEST_PREFIX}04`, "U2 Published Four", true);
@@ -158,4 +198,5 @@ test("U2 homepage collection rail renders only truthful published mappings acros
   await expect(fullRail.getByRole("link").nth(3)).toHaveText("U2 Published Four");
   await expect(page.getByText("U2 Draft Hidden")).toHaveCount(0);
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
+  await expectCanonicalTrustStrip(page);
 });
