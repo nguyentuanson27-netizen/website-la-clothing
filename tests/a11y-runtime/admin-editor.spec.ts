@@ -165,7 +165,7 @@ test.beforeAll(async () => {
       sku: "SET-PARENT-M",
       size: "M",
       isPresent: true,
-      isActive: true,
+      isActive: false,
       syncedAt,
     },
   });
@@ -213,7 +213,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("admin editor keeps Pancake source read-only and manages relation-linked child activation accessibly", async ({
+test("admin editor keeps Pancake source read-only and manages composite child and parent activation accessibly", async ({
   page,
   context,
   voiceOver,
@@ -261,7 +261,6 @@ test("admin editor keeps Pancake source read-only and manages relation-linked ch
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
-
 
   await expect(
     page.getByRole("heading", { level: 2, name: "Kích hoạt biến thể bán qua set" }),
@@ -361,6 +360,57 @@ test("admin editor keeps Pancake source read-only and manages relation-linked ch
   await expect(childRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
   await expect(childRow.getByText("Không khả dụng", { exact: true })).toHaveCount(0);
   await expect(childRow.getByRole("button")).toHaveCount(0);
+
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Kích hoạt biến thể set" }),
+  ).toBeVisible();
+  const parentActivationButton = page.getByRole("button", {
+    name: "Kích hoạt biến thể set SET-PARENT-M",
+  });
+  await expect(parentActivationButton).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+  const parentAccessibilityScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(parentAccessibilityScan.violations).toEqual([]);
+
+  await voiceOver.navigateToWebContent({ capture: false });
+  const parentActivationCapture = await voiceOver.capture(
+    async () => {
+      await parentActivationButton.click();
+      await page.waitForURL(
+        (url) =>
+          url.pathname === parentEditorPath && url.searchParams.get("parentVariantSaved") === "1",
+      );
+      const successStatus = page
+        .getByRole("status")
+        .filter({ hasText: "Đã cập nhật trạng thái biến thể cha composite." });
+      await expect(successStatus).toBeVisible();
+      await expect(successStatus).toBeFocused();
+      await delay(500);
+    },
+    { capture: true },
+  );
+  expectSpokenPhrase(
+    parentActivationCapture.spokenPhrase,
+    "Đã cập nhật trạng thái biến thể cha composite",
+    "VoiceOver must announce parent composite activation success",
+  );
+  expect(
+    (
+      await prisma.variantMirror.findUniqueOrThrow({
+        where: { id: parentVariantId },
+        select: { isActive: true },
+      })
+    ).isActive,
+  ).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Tắt biến thể set SET-PARENT-M" }),
+  ).toBeVisible();
+  const parentVariantRow = page.getByRole("row").filter({ hasText: "SET-PARENT-M" });
+  await expect(parentVariantRow.getByText("Hoạt động", { exact: true })).toBeVisible();
 
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Tắt biến thể CHILD-M" }).click();
