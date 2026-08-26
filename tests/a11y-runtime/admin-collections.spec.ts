@@ -171,6 +171,7 @@ test("admin can maintain canonical collections with accessible success and error
   await page.getByLabel("SEO title").fill("City Uniform Runtime | LA Clothing");
   await page.getByLabel("SEO description").fill("Accessible collection maintenance runtime.");
   await page.getByLabel("Pancake category IDs").fill("7, 7");
+  await page.getByLabel("Vị trí trên trang chủ").selectOption("2");
 
   const errorCapture = await voiceOver.capture(
     async () => {
@@ -198,6 +199,7 @@ test("admin can maintain canonical collections with accessible success and error
   await page.getByLabel("SEO title").fill("City Uniform Runtime | LA Clothing");
   await page.getByLabel("SEO description").fill("Accessible collection maintenance runtime.");
   await page.getByLabel("Pancake category IDs").fill("42, 7");
+  await page.getByLabel("Vị trí trên trang chủ").selectOption("2");
 
   const successCapture = await voiceOver.capture(
     async () => {
@@ -222,12 +224,14 @@ test("admin can maintain canonical collections with accessible success and error
     select: {
       title: true,
       isPublished: true,
+      homepagePosition: true,
       pancakeCategoryIds: true,
     },
   });
   expect(persisted).toEqual({
     title: "City Uniform Runtime",
     isPublished: false,
+    homepagePosition: 2,
     pancakeCategoryIds: [7, 42],
   });
 
@@ -239,6 +243,7 @@ test("admin can maintain canonical collections with accessible success and error
   const persistedSlug = existingForm.locator('input[name="slug"]');
   await expect(persistedSlug).toHaveValue(collectionSlug);
   await expect(persistedSlug).not.toBeEditable();
+  await expect(existingForm.getByLabel("Vị trí trên trang chủ")).toHaveValue("2");
 
   const forgedSlug = `${collectionSlug}-forged`;
   await persistedSlug.evaluate((input, nextSlug) => {
@@ -261,9 +266,12 @@ test("admin can maintain canonical collections with accessible success and error
   expect(forged).toBeNull();
   const updatedOriginal = await prisma.collectionDefinition.findUnique({
     where: { slug: collectionSlug },
-    select: { title: true },
+    select: { title: true, homepagePosition: true },
   });
-  expect(updatedOriginal).toEqual({ title: "City Uniform Runtime Updated" });
+  expect(updatedOriginal).toEqual({
+    title: "City Uniform Runtime Updated",
+    homepagePosition: 2,
+  });
 
   expect(
     browserErrors,
