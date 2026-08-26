@@ -9,6 +9,7 @@ import { voiceOverTest as test } from "@guidepup/playwright";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3212;
@@ -372,7 +373,7 @@ test("admin editor keeps Pancake source read-only and manages composite child an
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
   const parentAccessibilityScan = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(parentAccessibilityScan.violations).toEqual([]);
 
