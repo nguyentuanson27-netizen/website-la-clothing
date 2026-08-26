@@ -16,6 +16,7 @@ const TEST_PREFIX = "u2-homepage-";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
+let originallyPublishedSlugs: string[] = [];
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -54,7 +55,14 @@ async function stopServer() {
   server = undefined;
 }
 
-async function resetCollectionState() {
+async function prepareCollectionState() {
+  originallyPublishedSlugs = (
+    await prisma.collectionDefinition.findMany({
+      where: { isPublished: true },
+      select: { slug: true },
+    })
+  ).map(({ slug }) => slug);
+
   await prisma.collectionDefinition.updateMany({
     where: { isPublished: true },
     data: { isPublished: false },
@@ -62,6 +70,18 @@ async function resetCollectionState() {
   await prisma.collectionDefinition.deleteMany({
     where: { slug: { startsWith: TEST_PREFIX } },
   });
+}
+
+async function restoreCollectionState() {
+  await prisma.collectionDefinition.deleteMany({
+    where: { slug: { startsWith: TEST_PREFIX } },
+  });
+  if (originallyPublishedSlugs.length > 0) {
+    await prisma.collectionDefinition.updateMany({
+      where: { slug: { in: originallyPublishedSlugs } },
+      data: { isPublished: true },
+    });
+  }
 }
 
 async function addCollection(slug: string, title: string, isPublished: boolean) {
@@ -77,7 +97,7 @@ async function addCollection(slug: string, title: string, isPublished: boolean) 
 }
 
 test.beforeAll(async () => {
-  await resetCollectionState();
+  await prepareCollectionState();
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
@@ -95,7 +115,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await stopServer();
-  await resetCollectionState();
+  await restoreCollectionState();
   await prisma.$disconnect();
 });
 
