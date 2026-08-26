@@ -83,6 +83,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   }
 
   const persistedProductId = product.id;
+  const persistedProductSlug = product.slug;
   const editorPath = `/admin/products/${persistedProductId}`;
 
   async function saveProductContent(formData: FormData) {
@@ -173,7 +174,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     revalidatePath(editorPath);
     revalidatePath("/admin");
     revalidatePath("/shop");
-    revalidatePath(`/shop/${product.slug}`);
+    revalidatePath(`/shop/${persistedProductSlug}`);
     redirect(`${editorPath}?parentVariantSaved=1`);
   }
 
