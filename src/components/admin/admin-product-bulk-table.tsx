@@ -23,6 +23,8 @@ const statusStyles: Record<ProductContentStatus, string> = {
 };
 
 const initialActionState: BulkProductStatusActionState = { kind: "idle" };
+const genericBulkStatusError =
+  "Không thể cập nhật trạng thái lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
 
 type AdminProductBulkTableRow = {
   id: string;
@@ -96,9 +98,11 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
         setSelectedIds(new Set());
         setConfirming(false);
       }
-      requestAnimationFrame(() => feedbackRef.current?.focus());
+    } catch {
+      setActionState({ kind: "error", message: genericBulkStatusError });
     } finally {
       setIsPending(false);
+      requestAnimationFrame(() => feedbackRef.current?.focus());
     }
   }
 
@@ -253,7 +257,7 @@ export function AdminProductBulkTable({ products }: AdminProductBulkTableProps) 
                       />
                     </div>
                   ) : (
-                    <div className="flex aspect-[3/4] w-12 items-center justify-center border border-black/15 bg-black/5 text-[0.55rem] uppercase tracking-wider text-black/40">
+                    <div className="flex aspect-[3/4] w-12 items-center justify-center border border-black/15 bg-black/5 text-[0.55rem] uppercase tracking-wider text-black/70">
                       Không ảnh
                     </div>
                   )}
