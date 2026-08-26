@@ -68,7 +68,12 @@ async function cleanup() {
   });
 }
 
-async function seedProduct(key: string, name: string, collections: string[]) {
+async function seedProduct(
+  key: string,
+  name: string,
+  collections: string[],
+  size: string,
+) {
   const product = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -91,7 +96,7 @@ async function seedProduct(key: string, name: string, collections: string[]) {
       pancakeVariationId: `collection-${key}-variant-${suffix}`,
       productId: product.id,
       color: "Ink",
-      size: "M",
+      size,
       isPresent: true,
       isActive: true,
       pancakeRetailPrice: 900_000,
@@ -136,9 +141,9 @@ test.beforeAll(async () => {
       },
     ],
   });
-  await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug]);
-  await seedProduct("alpha", `Alpha Runtime Shirt ${suffix}`, [publishedSlug]);
-  await seedProduct("outsider", `Outsider Runtime Trouser ${suffix}`, []);
+  await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug], "M");
+  await seedProduct("alpha", `Alpha Runtime Shirt ${suffix}`, [publishedSlug], "S");
+  await seedProduct("outsider", `Outsider Runtime Trouser ${suffix}`, [], "XL");
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -185,6 +190,66 @@ test("published collection exposes visible copy and deterministic website-owned 
   expect((await page.content()).includes(String(operationalCategoryId))).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("U3 collection controls emit route-local canonical hrefs and ignore forged collection query identity", async ({
+  page,
+}) => {
+  const forgedResponse = await page.goto(
+    `${BASE_URL}/collections/${publishedSlug}?collection=${draftSlug}`,
+    { waitUntil: "networkidle" },
+  );
+  expect(forgedResponse?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
+  await expect(page.getByText("Runtime Draft Collection")).toHaveCount(0);
+
+  const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
+  await expect(sort).toBeVisible();
+  await expect(sort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}`,
+  );
+  await expect(sort.getByRole("link", { name: "Giá cao → thấp", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?sort=price-desc`,
+  );
+
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(sizes).toBeVisible();
+  await expect(sizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=S`,
+  );
+  await expect(sizes.getByRole("link", { name: "M", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=M`,
+  );
+  await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/collections/${publishedSlug}?size=M&sort=price-desc`, {
+    waitUntil: "networkidle",
+  });
+  const combinedSort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
+  const combinedSizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(combinedSort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=M`,
+  );
+  await expect(combinedSizes.getByRole("link", { name: "Tất cả kích cỡ", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?sort=price-desc`,
+  );
+  await expect(combinedSizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=S&sort=price-desc`,
+  );
+  await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(BUYER_AXE_TAGS)
     .analyze();
