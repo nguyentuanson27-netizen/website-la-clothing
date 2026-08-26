@@ -21,6 +21,9 @@ export type BulkProductStatusActionState =
   | { kind: "success"; updatedCount: number; status: ProductContentStatus }
   | { kind: "error"; message: string };
 
+const genericBulkStatusError =
+  "Không thể cập nhật trạng thái lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+
 export async function bulkUpdateProductStatusAction(
   _previousState: BulkProductStatusActionState,
   formData: FormData,
@@ -35,13 +38,18 @@ export async function bulkUpdateProductStatusAction(
         message: "Phiên quản trị không còn hợp lệ. Tải lại trang và đăng nhập lại.",
       };
     }
-    throw error;
+    return { kind: "error", message: genericBulkStatusError };
   }
 
-  const result = await bulkStatusAdminService.update(adminSession, {
-    productIds: formData.getAll("productId"),
-    status: formData.get("status"),
-  });
+  let result: Awaited<ReturnType<typeof bulkStatusAdminService.update>>;
+  try {
+    result = await bulkStatusAdminService.update(adminSession, {
+      productIds: formData.getAll("productId"),
+      status: formData.get("status"),
+    });
+  } catch {
+    return { kind: "error", message: genericBulkStatusError };
+  }
 
   if (!result.ok) {
     return {
@@ -49,7 +57,9 @@ export async function bulkUpdateProductStatusAction(
       message:
         result.reason === "PRODUCT_NOT_FOUND"
           ? "Có sản phẩm không còn tồn tại. Tải lại danh sách rồi thử lại."
-          : "Lựa chọn hoặc trạng thái không hợp lệ. Kiểm tra lại rồi thử lại.",
+          : result.reason === "UNAVAILABLE"
+            ? genericBulkStatusError
+            : "Lựa chọn hoặc trạng thái không hợp lệ. Kiểm tra lại rồi thử lại.",
     };
   }
 
