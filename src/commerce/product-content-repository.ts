@@ -1,7 +1,11 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
 import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
-import type { ProductContentSnapshot } from "./product-content-admin.ts";
+import type {
+  BulkProductContentStatusResult,
+  BulkProductContentStatusUpdate,
+  ProductContentSnapshot,
+} from "./product-content-admin.ts";
 
 const MAX_ADMIN_PRODUCTS = 100;
 
@@ -129,6 +133,35 @@ export function createProductContentRepository(client: PrismaClient) {
         seoDescription: true,
         collectionSlugs: true,
       },
+    });
+  }
+
+  async function updateStatusesAtomically(
+    input: BulkProductContentStatusUpdate,
+  ): Promise<BulkProductContentStatusResult> {
+    const { productIds, status } = input;
+
+    return client.$transaction(async (tx) => {
+      const productCount = await tx.productMirror.count({
+        where: { id: { in: productIds } },
+      });
+      if (productCount !== productIds.length) {
+        return { ok: false, reason: "PRODUCT_NOT_FOUND" } as const;
+      }
+
+      // Create content rows only for products that do not have one yet, then patch the single
+      // website-owned status field for the whole batch. Unrelated editorial/Pancake fields are
+      // never reconstructed from stale table data.
+      await tx.productContent.createMany({
+        data: productIds.map((productId) => ({ productId, status })),
+        skipDuplicates: true,
+      });
+      await tx.productContent.updateMany({
+        where: { productId: { in: productIds } },
+        data: { status },
+      });
+
+      return { ok: true, updatedCount: productIds.length } as const;
     });
   }
 
@@ -347,6 +380,7 @@ export function createProductContentRepository(client: PrismaClient) {
   return {
     productExists,
     saveContent,
+    updateStatusesAtomically,
     findForEditor,
     listForAdmin,
     listDirectoryPage,
