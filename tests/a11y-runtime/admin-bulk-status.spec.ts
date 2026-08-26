@@ -9,6 +9,7 @@ import { voiceOverTest as test } from "@guidepup/playwright";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3214;
@@ -226,7 +227,7 @@ test("admin product directory selects current-page products and bulk-updates sta
   );
 
   const accessibilityScan = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
