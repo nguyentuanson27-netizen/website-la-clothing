@@ -8,7 +8,9 @@ import {
 
 const MAX_INTEGER_ID = 2_147_483_647;
 const CATEGORY_ID_PATTERN = /^[0-9]+$/;
+const HOMEPAGE_POSITION_PATTERN = /^[1-6]$/;
 const MAX_CATEGORY_CSV_LENGTH = COLLECTION_DEFINITION_LIMITS.pancakeCategoryCount * 12;
+const INVALID_HOMEPAGE_POSITION = Symbol("invalid-homepage-position");
 
 type AdminSessionCandidate =
   | {
@@ -57,6 +59,14 @@ function parsePublicationCheckbox(value: unknown): boolean | null {
   return value === "on" ? true : null;
 }
 
+function parseHomepagePosition(value: unknown): number | null | typeof INVALID_HOMEPAGE_POSITION {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || !HOMEPAGE_POSITION_PATTERN.test(value)) {
+    return INVALID_HOMEPAGE_POSITION;
+  }
+  return Number(value);
+}
+
 function parseCategoryIdsCsv(value: unknown): number[] | null {
   if (value === undefined || value === null || value === "") return [];
   if (typeof value !== "string" || value.length > MAX_CATEGORY_CSV_LENGTH) return null;
@@ -83,8 +93,15 @@ function parseAdminInput(input: unknown, slugOverride?: SlugOverride): Collectio
 
   const record = input as Record<string, unknown>;
   const isPublished = parsePublicationCheckbox(record.isPublished);
+  const homepagePosition = parseHomepagePosition(record.homepagePosition);
   const pancakeCategoryIds = parseCategoryIdsCsv(record.pancakeCategoryIds);
-  if (isPublished === null || pancakeCategoryIds === null) return null;
+  if (
+    isPublished === null ||
+    homepagePosition === INVALID_HOMEPAGE_POSITION ||
+    pancakeCategoryIds === null
+  ) {
+    return null;
+  }
 
   try {
     return parseCollectionDefinition({
@@ -94,6 +111,7 @@ function parseAdminInput(input: unknown, slugOverride?: SlugOverride): Collectio
       seoTitle: record.seoTitle,
       seoDescription: record.seoDescription,
       isPublished,
+      homepagePosition,
       pancakeCategoryIds,
     });
   } catch (error) {
