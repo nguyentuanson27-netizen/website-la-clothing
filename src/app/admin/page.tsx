@@ -96,6 +96,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
   const filtered = hasActiveAdminProductFilters(query);
   const firstIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastIndex = Math.min(page * pageSize, totalCount);
+  const directoryStateKey = buildAdminProductDirectoryHref(query, page);
 
   const facetChips = (
     [
@@ -246,6 +247,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
               }`}
               href={chip.href}
               key={chip.key}
+              style={chip.active ? { color: "var(--white)" } : undefined}
             >
               {chip.label}
               <span className={chip.active ? "text-white/70" : "text-black/45"}>{chip.count}</span>
@@ -280,7 +282,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
           ) : null}
         </section>
       ) : (
-        <AdminProductBulkTable products={bulkRows} />
+        <AdminProductBulkTable key={directoryStateKey} products={bulkRows} />
       )}
 
       {totalPages > 1 ? (
