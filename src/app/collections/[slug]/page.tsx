@@ -104,7 +104,6 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   ) => buildCollectionDiscoveryHref(collection.slug, state);
   const collectionBreadcrumb = buildCollectionBreadcrumbStructuredData({
     origin: readSearchExposure().origin,
-    slug: collection.slug,
     title: collection.title,
   });
 
