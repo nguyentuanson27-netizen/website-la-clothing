@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const APP_DIRECTORY = fileURLToPath(new URL("../../src/app/", import.meta.url));
+const HOMEPAGE_SOURCE = new URL("../../src/app/page.tsx", import.meta.url);
+const NEXT_CONFIG_SOURCE = new URL("../../next.config.mjs", import.meta.url);
 const STOREFRONT_SOURCES = [
   {
     name: "homepage",
-    url: new URL("../../src/app/page.tsx", import.meta.url),
+    url: HOMEPAGE_SOURCE,
   },
   {
     name: "lookbook",
@@ -28,6 +30,21 @@ const STOREFRONT_SOURCES = [
   },
 ] as const;
 const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;
+const UNAPPROVED_SUPPORT_PATHS = new Set([
+  "/about",
+  "/faq",
+  "/shipping-returns",
+  "/size-guide",
+]);
+const LOCKED_IMG_SRC = "img-src 'self' blob: data: https://content.pancake.vn;";
+const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpg",
+      },
+    ],`;
 
 type RouteExists = (pathname: string) => Promise<boolean>;
 
@@ -47,6 +64,20 @@ async function routeExists(pathname: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function findU2ForbiddenHomepageLinks(source: string): string[] {
+  const forbidden = new Set<string>();
+
+  for (const match of source.matchAll(INTERNAL_PATH_LITERAL)) {
+    const href = match[2];
+    const url = new URL(href, "https://storefront.invalid");
+    if (url.searchParams.has("category") || UNAPPROVED_SUPPORT_PATHS.has(url.pathname)) {
+      forbidden.add(href);
+    }
+  }
+
+  return [...forbidden].sort();
 }
 
 async function findMissingInternalLinks(
@@ -86,9 +117,30 @@ test("shared storefront literal internal links resolve to implemented App Router
   assert.deepEqual(missingBySource, {});
 });
 
-test("storefront link guard detects a missing internal destination", async () => {
+test("U2 homepage link guard rejects inert category queries and unapproved support routes", async () => {
+  const homepage = await readFile(HOMEPAGE_SOURCE, "utf8");
+  assert.deepEqual(findU2ForbiddenHomepageLinks(homepage), []);
+
+  const counterexample = `
+    const inert = "/shop?category=shirts";
+    const unapproved = "/faq";
+    const allowed = "/track-order";
+  `;
+  assert.deepEqual(findU2ForbiddenHomepageLinks(counterexample), ["/faq", "/shop?category=shirts"]);
+});
+
+test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-for-byte locked", async () => {
+  const nextConfig = await readFile(NEXT_CONFIG_SOURCE, "utf8");
+  const imgSrc = nextConfig.match(/img-src [^;]+;/)?.[0] ?? null;
+  const remotePatterns = nextConfig.match(/remotePatterns: \[\n[\s\S]*?\n    \],/)?.[0] ?? null;
+
+  assert.equal(imgSrc, LOCKED_IMG_SRC);
+  assert.equal(remotePatterns, LOCKED_REMOTE_PATTERNS);
+});
+
+test("storefront link guard detects a missing internal destination without treating query state as a route", async () => {
   const source = `
-    const valid = "/shop?category=shirts";
+    const valid = "/shop?q=shirt";
     const broken = "/products/missing-product";
   `;
 
