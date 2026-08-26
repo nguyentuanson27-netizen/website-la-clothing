@@ -28,7 +28,8 @@ const sortOptions = [
   { value: "price-desc", label: "Giá cao → thấp" },
 ] as const;
 const optionLinkClassName =
-  "inline-flex min-h-11 items-center border border-black/25 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 aria-[current=true]:border-black aria-[current=true]:bg-black aria-[current=true]:text-white";
+  "inline-flex min-h-11 items-center border border-black/25 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4";
+const activeOptionLinkClassName = "border-black bg-black/10";
 
 type CollectionSearchParams = Readonly<Record<string, string | string[] | undefined>>;
 
@@ -141,20 +142,23 @@ export default async function CollectionPage({ params, searchParams }: Collectio
             aria-label="Sắp xếp bộ sưu tập"
             className="mt-3 flex flex-wrap gap-2"
           >
-            {sortOptions.map((option) => (
-              <Link
-                aria-current={discovery.sort === option.value ? "true" : undefined}
-                className={optionLinkClassName}
-                href={hrefFor({
-                  size: discovery.size,
-                  sort: option.value,
-                  page: 1,
-                })}
-                key={option.value}
-              >
-                {option.label}
-              </Link>
-            ))}
+            {sortOptions.map((option) => {
+              const active = discovery.sort === option.value;
+              return (
+                <Link
+                  aria-current={active ? "true" : undefined}
+                  className={`${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`}
+                  href={hrefFor({
+                    size: discovery.size,
+                    sort: option.value,
+                    page: 1,
+                  })}
+                  key={option.value}
+                >
+                  {option.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 
@@ -163,7 +167,9 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           <nav aria-label="Lọc theo kích cỡ" className="mt-3 flex flex-wrap gap-2">
             <Link
               aria-current={discovery.size === null ? "true" : undefined}
-              className={optionLinkClassName}
+              className={`${optionLinkClassName}${
+                discovery.size === null ? ` ${activeOptionLinkClassName}` : ""
+              }`}
               href={hrefFor({
                 size: null,
                 sort: discovery.sort,
@@ -172,20 +178,23 @@ export default async function CollectionPage({ params, searchParams }: Collectio
             >
               Tất cả kích cỡ
             </Link>
-            {facets.sizes.map((size) => (
-              <Link
-                aria-current={discovery.size === size ? "true" : undefined}
-                className={optionLinkClassName}
-                href={hrefFor({
-                  size,
-                  sort: discovery.sort,
-                  page: 1,
-                })}
-                key={size}
-              >
-                {size}
-              </Link>
-            ))}
+            {facets.sizes.map((size) => {
+              const active = discovery.size === size;
+              return (
+                <Link
+                  aria-current={active ? "true" : undefined}
+                  className={`${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`}
+                  href={hrefFor({
+                    size,
+                    sort: discovery.sort,
+                    page: 1,
+                  })}
+                  key={size}
+                >
+                  {size}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </section>
