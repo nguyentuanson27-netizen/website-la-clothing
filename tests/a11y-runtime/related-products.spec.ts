@@ -167,7 +167,7 @@ test("U4 PDP renders deterministic visible related products from projected publi
   expect(names).toEqual([draftCandidateName, publishedCandidateName]);
   await expect(related.getByText(currentName, { exact: true })).toHaveCount(0);
   await expect(related.getByText(hiddenCandidateName, { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /size guide/i })).toHaveCount(0);
+  await expect(page.locator('a[href="/size-guide"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
