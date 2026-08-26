@@ -251,7 +251,11 @@ export function createProductContentBulkStatusAdminService({
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
 
-    return updateStatusesAtomically(parsed);
+    try {
+      return await updateStatusesAtomically(parsed);
+    } catch {
+      return { ok: false, reason: "UNAVAILABLE" } as const;
+    }
   }
 
   return { update };
