@@ -107,3 +107,16 @@ test("bulk product status updates preserve repository not-found failure", async 
     reason: "PRODUCT_NOT_FOUND",
   });
 });
+
+test("bulk product status updates collapse rejected persistence to an unavailable result", async () => {
+  const service = createProductContentBulkStatusAdminService({
+    async updateStatusesAtomically() {
+      throw new Error("postgresql://secret-user:secret-pass@database.invalid/private");
+    },
+  });
+
+  assert.deepEqual(await service.update(adminSession, validInput()), {
+    ok: false,
+    reason: "UNAVAILABLE",
+  });
+});
