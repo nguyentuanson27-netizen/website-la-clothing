@@ -33,16 +33,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product) notFound();
 
-  const [relatedProducts, structuredData] = await Promise.all([
-    listConfiguredRelatedStorefrontProducts(product),
-    Promise.resolve(
-      buildStorefrontProductStructuredData({
-        origin: readSearchExposure().origin,
-        product,
-      }),
-    ),
-  ]);
+  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
   const options = product.projection.options;
+  const structuredData = buildStorefrontProductStructuredData({
+    origin: readSearchExposure().origin,
+    product,
+  });
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
