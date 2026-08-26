@@ -163,7 +163,7 @@ test("U4 PDP renders deterministic visible related products from projected publi
 
   const related = page.getByRole("region", { name: "Hoàn thiện phối đồ" });
   await expect(related).toBeVisible();
-  const names = await related.locator("article h3").allTextContents();
+  const names = await related.locator("article h2").allTextContents();
   expect(names).toEqual([draftCandidateName, publishedCandidateName]);
   await expect(related.getByText(currentName, { exact: true })).toHaveCount(0);
   await expect(related.getByText(hiddenCandidateName, { exact: true })).toHaveCount(0);
