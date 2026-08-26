@@ -18,6 +18,7 @@ const SHOP_ID = 920_014;
 const syncedAt = new Date("2026-08-20T00:00:00.000Z");
 const suffix = `${process.pid}`;
 const publishedSlug = `runtime-city-${suffix}`;
+const pagedSlug = `runtime-paged-${suffix}`;
 const draftSlug = `runtime-draft-${suffix}`;
 const emptySlug = `runtime-empty-${suffix}`;
 const operationalCategoryId = 987_654_321;
@@ -64,11 +65,16 @@ async function stopServer() {
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [publishedSlug, draftSlug, emptySlug] } },
+    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug] } },
   });
 }
 
-async function seedProduct(key: string, name: string, collections: string[]) {
+async function seedProduct(
+  key: string,
+  name: string,
+  collections: string[],
+  size: string,
+) {
   const product = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -91,7 +97,7 @@ async function seedProduct(key: string, name: string, collections: string[]) {
       pancakeVariationId: `collection-${key}-variant-${suffix}`,
       productId: product.id,
       color: "Ink",
-      size: "M",
+      size,
       isPresent: true,
       isActive: true,
       pancakeRetailPrice: 900_000,
@@ -123,6 +129,12 @@ test.beforeAll(async () => {
         pancakeCategoryIds: [operationalCategoryId],
       },
       {
+        slug: pagedSlug,
+        title: "Runtime Paged Collection",
+        description: "Published collection used to prove filter pagination reset.",
+        isPublished: true,
+      },
+      {
         slug: draftSlug,
         title: "Runtime Draft Collection",
         description: "Draft copy must never become public.",
@@ -136,9 +148,19 @@ test.beforeAll(async () => {
       },
     ],
   });
-  await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug]);
-  await seedProduct("alpha", `Alpha Runtime Shirt ${suffix}`, [publishedSlug]);
-  await seedProduct("outsider", `Outsider Runtime Trouser ${suffix}`, []);
+  await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug], "M");
+  await seedProduct("alpha", `Alpha Runtime Shirt ${suffix}`, [publishedSlug], "S");
+  await seedProduct("outsider", `Outsider Runtime Trouser ${suffix}`, [], "XL");
+
+  for (let index = 1; index <= 25; index += 1) {
+    const number = String(index).padStart(2, "0");
+    await seedProduct(
+      `paged-${number}`,
+      `Paged Runtime Product ${number} ${suffix}`,
+      [pagedSlug],
+      index === 1 ? "S" : "M",
+    );
+  }
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -189,6 +211,90 @@ test("published collection exposes visible copy and deterministic website-owned 
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("U3 collection controls emit route-local canonical hrefs and ignore forged collection query identity", async ({
+  page,
+}) => {
+  const forgedResponse = await page.goto(
+    `${BASE_URL}/collections/${publishedSlug}?collection=${draftSlug}`,
+    { waitUntil: "networkidle" },
+  );
+  expect(forgedResponse?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
+  await expect(page.getByText("Runtime Draft Collection")).toHaveCount(0);
+
+  const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
+  await expect(sort).toBeVisible();
+  await expect(sort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}`,
+  );
+  await expect(sort.getByRole("link", { name: "Giá cao → thấp", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?sort=price-desc`,
+  );
+
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(sizes).toBeVisible();
+  await expect(sizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=S`,
+  );
+  await expect(sizes.getByRole("link", { name: "M", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=M`,
+  );
+  await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/collections/${publishedSlug}?size=M&sort=price-desc`, {
+    waitUntil: "networkidle",
+  });
+  const combinedSort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
+  const combinedSizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(combinedSort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=M`,
+  );
+  await expect(combinedSizes.getByRole("link", { name: "Tất cả kích cỡ", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?sort=price-desc`,
+  );
+  await expect(combinedSizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?size=S&sort=price-desc`,
+  );
+  await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("U3 changing Size from page 2 resets pagination and does not carry a stale page into 404", async ({
+  page,
+}) => {
+  const pageTwo = await page.goto(`${BASE_URL}/collections/${pagedSlug}?page=2`, {
+    waitUntil: "networkidle",
+  });
+  expect(pageTwo?.status()).toBe(200);
+  await expect(page.getByText("25 sản phẩm · Trang 2/2", { exact: true })).toBeVisible();
+
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  const small = sizes.getByRole("link", { name: "S", exact: true });
+  await expect(small).toHaveAttribute("href", `/collections/${pagedSlug}?size=S`);
+
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${pagedSlug}?size=S`),
+    small.click(),
+  ]);
+  await expect(page.getByRole("heading", { level: 1, name: "Runtime Paged Collection" })).toBeVisible();
+  await expect(page.getByText("1 sản phẩm · Trang 1/1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: `Paged Runtime Product 01 ${suffix}` })).toBeVisible();
+  expect(page.url()).not.toContain("page=");
+  await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 });
 
 test("draft and unknown collections are not public", async ({ page }) => {
