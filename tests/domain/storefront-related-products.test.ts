@@ -20,8 +20,8 @@ test("U4 seeds only projected collections, excludes current product, dedupes det
     currentProduct: {
       id: "current",
       collections: [
-        { slug: "tailoring", title: "Tailoring" },
-        { slug: "essentials", title: "Essentials" },
+        { slug: "tailoring" },
+        { slug: "essentials" },
       ],
     },
     listCollectionProducts: async (slug, limit) => {
@@ -63,7 +63,6 @@ test("U4 bounds collection fan-out even if persisted editorial data bypasses the
       id: "current",
       collections: Array.from({ length: 12 }, (_, index) => ({
         slug: `collection-${index + 1}`,
-        title: `Collection ${index + 1}`,
       })),
     },
     listCollectionProducts: async (slug) => {
