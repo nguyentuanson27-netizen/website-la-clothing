@@ -2,12 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-catalog-runtime";
+import {
+  getConfiguredStorefrontProductBySlug,
+  listConfiguredRelatedStorefrontProducts,
+} from "@/commerce/storefront-catalog-runtime";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
+import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { serializeJsonLd } from "@/seo/structured-data";
 import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-structured-data";
+
+const relatedTones = ["stone", "olive", "ink", "sand"] as const;
 
 type ProductPageProps = {
   params: Promise<{ slug: string }>;
@@ -27,11 +33,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product) notFound();
 
+  const [relatedProducts, structuredData] = await Promise.all([
+    listConfiguredRelatedStorefrontProducts(product),
+    Promise.resolve(
+      buildStorefrontProductStructuredData({
+        origin: readSearchExposure().origin,
+        product,
+      }),
+    ),
+  ]);
   const options = product.projection.options;
-  const structuredData = buildStorefrontProductStructuredData({
-    origin: readSearchExposure().origin,
-    product,
-  });
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
@@ -123,6 +134,31 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </p>
         </article>
       </div>
+
+      {relatedProducts.length > 0 ? (
+        <section
+          aria-labelledby="related-products-title"
+          className="mt-20 border-t border-black/20 pt-6"
+        >
+          <div className="section-heading-row">
+            <h2 id="related-products-title">Hoàn thiện phối đồ</h2>
+            <p className="eyebrow">Cùng bộ sưu tập</p>
+          </div>
+          <div className="product-grid">
+            {relatedProducts.map((related, index) => (
+              <StorefrontProductCard
+                key={related.id}
+                slug={related.slug}
+                name={related.name}
+                media={related.media}
+                editorialDescription={related.editorialDescription}
+                variants={related.variants}
+                tone={relatedTones[index % relatedTones.length]!}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
