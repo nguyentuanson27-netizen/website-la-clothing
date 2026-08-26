@@ -698,7 +698,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                               >
                                 {child.product.name}
                               </Link>
-                              <span className="mt-0.5 block text-black/50">
+                              <span className="mt-0.5 block text-black/60">
                                 /{child.product.slug}
                               </span>
                             </td>
