@@ -4,19 +4,23 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 
+import { readAuthServerConfig } from "@/auth/config";
 import { requireCurrentAdmin, requireCurrentAdminPage } from "@/auth/current-admin";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
-import {
-  createCompositeComponentAdminService,
-  createCompositeParentVariantAdminService,
-} from "@/commerce/composite-component-admin";
-import { createCompositeComponentRepository } from "@/commerce/composite-component-repository";
 import {
   createProductContentAdminService,
   PRODUCT_CONTENT_LIMITS,
 } from "@/commerce/product-content-admin";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
+import { createProductCommerceAdminService } from "@/commerce/product-commerce-admin";
+import { createProductCommerceRepository } from "@/commerce/product-commerce-repository";
 import { AdminFormStatus } from "@/components/admin/admin-form-status";
+import {
+  initialProductCommerceActionState,
+  ProductCommercePanel,
+  type ProductCommerceActionState,
+  type ProductCommerceVariantRow,
+} from "@/components/admin/product-commerce-panel";
 import { ProductSlugEditor } from "@/components/admin/product-slug-editor";
 import { prisma } from "@/db/prisma";
 
@@ -26,12 +30,15 @@ export const metadata: Metadata = {
 
 const repository = createProductContentRepository(prisma);
 const collectionRepository = createCollectionDefinitionRepository(prisma);
-const compositeRepository = createCompositeComponentRepository(prisma);
-const compositeAdminService = createCompositeComponentAdminService({
-  setLinkedVariantActivation: compositeRepository.setLinkedVariantActivation,
-});
-const compositeParentAdminService = createCompositeParentVariantAdminService({
-  setParentVariantActivation: compositeRepository.setParentVariantActivation,
+const productCommerceRepository = createProductCommerceRepository(prisma);
+const productCommerceAdminService = createProductCommerceAdminService({
+  setVariantActivation: productCommerceRepository.setVariantActivation,
+  readCatalogEnableWarningState: productCommerceRepository.readCatalogEnableWarningState,
+  commitCatalogEnable: productCommerceRepository.commitCatalogEnable,
+  disableCatalog: productCommerceRepository.disableCatalog,
+  activateProductAndStockedVariants: productCommerceRepository.activateProductAndStockedVariants,
+  readConfirmationSecret: () => readAuthServerConfig().secret,
+  nowMs: () => Date.now(),
 });
 const adminService = createProductContentAdminService({
   productExists: repository.productExists,
@@ -52,6 +59,10 @@ function formatVnd(amount: number | null | undefined): string {
   return new Intl.NumberFormat("vi-VN").format(amount) + " ₫";
 }
 
+function productCommerceError(message: string): ProductCommerceActionState {
+  return { kind: "error", message };
+}
+
 type ProductEditorPageProps = {
   params: Promise<{ productId: string }>;
   searchParams: Promise<{
@@ -59,10 +70,8 @@ type ProductEditorPageProps = {
     error?: string | string[];
     slugSaved?: string | string[];
     slugError?: string | string[];
-    componentSaved?: string | string[];
-    componentError?: string | string[];
-    parentVariantSaved?: string | string[];
-    parentVariantError?: string | string[];
+    variantSaved?: string | string[];
+    variantError?: string | string[];
   }>;
 };
 
@@ -98,7 +107,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       sizeGuide: formData.get("sizeGuide"),
       seoTitle: formData.get("seoTitle"),
       seoDescription: formData.get("seoDescription"),
-      // Checkbox group: the domain parser takes the same comma-separated contract as before.
       collectionSlugs: formData
         .getAll("collectionSlugs")
         .filter((value): value is string => typeof value === "string")
@@ -118,55 +126,43 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     redirect(`${editorPath}?saved=1`);
   }
 
-  async function setCompositeVariantActivation(formData: FormData) {
+  async function setWebsiteVariantActivation(formData: FormData) {
     "use server";
 
     const adminSession = await requireCurrentAdmin();
-    const rawState = formData.get("isActive");
-    const isActive =
-      rawState === "true" ? true : rawState === "false" ? false : rawState;
+    const activateVariantId = formData.get("activateVariantId");
+    const deactivateVariantId = formData.get("deactivateVariantId");
+    const bulkState = formData.get("bulkState");
 
-    const result = await compositeAdminService.setActivation(adminSession, {
-      // Product identity is server-owned by the current editor route. Never trust a hidden
-      // product/parent id to authorize this mutation.
-      productId: persistedProductId,
-      variantId: formData.get("variantId"),
-      isActive,
-    });
-
-    if (!result.ok) {
-      redirect(
-        `${editorPath}?componentError=${
-          result.reason === "COMPONENT_NOT_AVAILABLE" ? "unavailable" : "invalid"
-        }`,
-      );
+    const hasActivate = typeof activateVariantId === "string";
+    const hasDeactivate = typeof deactivateVariantId === "string";
+    const hasBulk = bulkState === "true" || bulkState === "false";
+    if (Number(hasActivate) + Number(hasDeactivate) + Number(hasBulk) !== 1) {
+      redirect(`${editorPath}?variantError=invalid`);
     }
 
-    revalidatePath(editorPath);
-    revalidatePath("/admin");
-    redirect(`${editorPath}?componentSaved=1`);
-  }
+    let variantIds: unknown[];
+    let isActive: boolean;
+    if (hasActivate) {
+      variantIds = [activateVariantId];
+      isActive = true;
+    } else if (hasDeactivate) {
+      variantIds = [deactivateVariantId];
+      isActive = false;
+    } else {
+      variantIds = formData.getAll("variantId");
+      isActive = bulkState === "true";
+    }
 
-  async function setCompositeParentVariantActivation(formData: FormData) {
-    "use server";
-
-    const adminSession = await requireCurrentAdmin();
-    const rawState = formData.get("isActive");
-    const isActive =
-      rawState === "true" ? true : rawState === "false" ? false : rawState;
-
-    const result = await compositeParentAdminService.setActivation(adminSession, {
-      // The current editor owns the parent product identity. Hidden form fields are never allowed
-      // to select another product or authorize a non-parent variant.
-      productId: persistedProductId,
-      variantId: formData.get("variantId"),
-      isActive,
-    });
-
+    const result = await productCommerceAdminService.setVariantActivation(
+      adminSession,
+      persistedProductId,
+      { variantIds, isActive },
+    );
     if (!result.ok) {
       redirect(
-        `${editorPath}?parentVariantError=${
-          result.reason === "PARENT_VARIANT_NOT_AVAILABLE" ? "unavailable" : "invalid"
+        `${editorPath}?variantError=${
+          result.reason === "VARIANT_NOT_AVAILABLE" ? "unavailable" : "invalid"
         }`,
       );
     }
@@ -175,11 +171,109 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     revalidatePath("/admin");
     revalidatePath("/shop");
     revalidatePath(`/shop/${persistedProductSlug}`);
-    redirect(`${editorPath}?parentVariantSaved=1`);
+    redirect(`${editorPath}?variantSaved=1`);
   }
 
-  // Parent variants that actually carry persisted composite edges. Standalone products and
-  // parents without edges produce an empty list, so the section below is not rendered at all.
+  async function manageProductCommerce(
+    _previousState: ProductCommerceActionState,
+    formData: FormData,
+  ): Promise<ProductCommerceActionState> {
+    "use server";
+
+    const adminSession = await requireCurrentAdmin();
+    const intent = formData.get("intent");
+
+    if (intent === "catalog-prepare") {
+      const result = await productCommerceAdminService.prepareCatalogEnable(
+        adminSession,
+        persistedProductId,
+      );
+      if (!result.ok) {
+        return productCommerceError(
+          result.reason === "PRODUCT_NOT_AVAILABLE"
+            ? "Sản phẩm không còn khả dụng."
+            : "Không thể chuẩn bị xác nhận bật catalog.",
+        );
+      }
+      return {
+        kind: "catalog-confirm",
+        warningState: result.warningState,
+        proof: result.proof,
+        expiresAtMs: result.expiresAtMs,
+      };
+    }
+
+    if (intent === "catalog-commit") {
+      const result = await productCommerceAdminService.commitCatalogEnable(
+        adminSession,
+        persistedProductId,
+        { proof: formData.get("proof") },
+      );
+      if (result.ok) {
+        revalidatePath(editorPath);
+        revalidatePath("/admin");
+        revalidatePath("/shop");
+        revalidatePath(`/shop/${persistedProductSlug}`);
+        return { kind: "success", operation: "catalog-enable" };
+      }
+      if (result.reason === "RECONFIRM_REQUIRED") {
+        revalidatePath(editorPath);
+        return {
+          kind: "catalog-reconfirm",
+          warningState: result.warningState,
+          proof: result.proof,
+          expiresAtMs: result.expiresAtMs,
+        };
+      }
+      return productCommerceError("Sản phẩm không còn khả dụng.");
+    }
+
+    if (intent === "catalog-disable") {
+      const result = await productCommerceAdminService.disableCatalog(
+        adminSession,
+        persistedProductId,
+      );
+      if (!result.ok) {
+        return productCommerceError(
+          result.reason === "PRODUCT_NOT_AVAILABLE"
+            ? "Sản phẩm không còn khả dụng."
+            : "Không thể tắt catalog.",
+        );
+      }
+      revalidatePath(editorPath);
+      revalidatePath("/admin");
+      revalidatePath("/shop");
+      revalidatePath(`/shop/${persistedProductSlug}`);
+      return { kind: "success", operation: "catalog-disable" };
+    }
+
+    if (intent === "quick-activate") {
+      const result = await productCommerceAdminService.activateProductAndStockedVariants(
+        adminSession,
+        persistedProductId,
+      );
+      if (!result.ok) {
+        revalidatePath(editorPath);
+        return productCommerceError(
+          result.reason === "COMPOSITE_CHILD"
+            ? "Sản phẩm hiện là thành phần của set/composite. Thao tác đã bị hủy và không có dữ liệu nào được thay đổi."
+            : "Sản phẩm không còn khả dụng.",
+        );
+      }
+      revalidatePath(editorPath);
+      revalidatePath("/admin");
+      revalidatePath("/shop");
+      revalidatePath(`/shop/${persistedProductSlug}`);
+      return {
+        kind: "success",
+        operation: "quick-activate",
+        activatedVariantCount: result.activatedVariantCount,
+      };
+    }
+
+    return productCommerceError("Thao tác website commerce không hợp lệ.");
+  }
+
   const compositeParents = product.variants
     .filter((variant) => variant.compositeComponents.length > 0)
     .map((variant) => ({
@@ -196,12 +290,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       })),
     }));
 
-  // The activation owner is the child VariantMirror itself. Incoming persisted edges only decide
-  // whether this website-owned global state is manageable from this child editor.
-  const compositeChildren = product.variants.filter(
-    (variant) => variant.compositeParents.length > 0,
-  );
-
   const definedCollections = await collectionRepository.listForAdmin(100);
   const assignedSlugs = new Set(product.content?.collectionSlugs ?? []);
   const definedSlugs = new Set(definedCollections.map((collection) => collection.slug));
@@ -213,12 +301,35 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       checked: assignedSlugs.has(collection.slug),
       missing: false,
     })),
-    // A slug saved earlier whose definition is gone stays visible and checked, so it is removed
-    // deliberately rather than silently dropped on the next save.
     ...[...assignedSlugs]
       .filter((slug) => !definedSlugs.has(slug))
       .map((slug) => ({ slug, title: slug, isPublished: false, checked: true, missing: true })),
   ];
+
+  const commerceVariants: ProductCommerceVariantRow[] = product.variants
+    .filter((variant) => variant.isPresent)
+    .map((variant) => {
+      const contexts: ProductCommerceVariantRow["contexts"] = [];
+      if (variant.compositeComponents.length > 0) contexts.push("Set cha");
+      if (variant.compositeParents.length > 0) contexts.push("Thành phần set");
+      if (contexts.length === 0) contexts.push("Thường");
+      return {
+        id: variant.id,
+        label:
+          variant.sku ||
+          [variant.color, variant.size].filter(Boolean).join(" / ") ||
+          variant.id,
+        sku: variant.sku,
+        color: variant.color,
+        size: variant.size,
+        stock: variant.warehouseStocks.reduce((sum, warehouse) => sum + warehouse.quantity, 0),
+        isActive: variant.isActive,
+        contexts,
+      };
+    });
+  const quickActionEligible = !product.variants.some(
+    (variant) => variant.compositeParents.length > 0,
+  );
 
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
@@ -228,55 +339,34 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const rawSlugError = queryValue(query.slugError);
   const slugError =
     rawSlugError === "invalid" || rawSlugError === "unavailable" ? rawSlugError : null;
-
-  const componentSaved = queryValue(query.componentSaved) === "1";
-  const rawComponentError = queryValue(query.componentError);
-  const componentError =
-    rawComponentError === "invalid" || rawComponentError === "unavailable"
-      ? rawComponentError
-      : null;
-  const componentStatus = componentError ? "error" : componentSaved ? "success" : null;
-  const componentErrorMessage =
-    componentError === "unavailable"
-      ? "Không thể cập nhật. Biến thể không còn là thành phần composite khả dụng."
+  const variantSaved = queryValue(query.variantSaved) === "1";
+  const rawVariantError = queryValue(query.variantError);
+  const variantError =
+    rawVariantError === "invalid" || rawVariantError === "unavailable" ? rawVariantError : null;
+  const variantStatus = variantError ? "error" : variantSaved ? "success" : null;
+  const variantErrorMessage =
+    variantError === "unavailable"
+      ? "Không thể cập nhật. Một hoặc nhiều biến thể không còn khả dụng cho sản phẩm này."
       : "Không thể cập nhật. Dữ liệu biến thể không hợp lệ.";
 
-  const parentVariantSaved = queryValue(query.parentVariantSaved) === "1";
-  const rawParentVariantError = queryValue(query.parentVariantError);
-  const parentVariantError =
-    rawParentVariantError === "invalid" || rawParentVariantError === "unavailable"
-      ? rawParentVariantError
-      : null;
-  const parentVariantStatus = parentVariantError
-    ? "error"
-    : parentVariantSaved
-      ? "success"
-      : null;
-  const parentVariantErrorMessage =
-    parentVariantError === "unavailable"
-      ? "Không thể cập nhật. Biến thể cha không còn là parent composite khả dụng."
-      : "Không thể cập nhật. Dữ liệu biến thể cha không hợp lệ.";
-
-  // Extract all images
   const allImages = new Set<string>();
   if (product.primaryImageUrl) {
     allImages.add(product.primaryImageUrl);
   }
-  for (const v of product.variants) {
-    if (Array.isArray(v.pancakeImageUrls)) {
-      for (const img of v.pancakeImageUrls) {
-        if (typeof img === "string" && img.startsWith("http")) {
-          allImages.add(img);
+  for (const variant of product.variants) {
+    if (Array.isArray(variant.pancakeImageUrls)) {
+      for (const image of variant.pancakeImageUrls) {
+        if (typeof image === "string" && image.startsWith("http")) {
+          allImages.add(image);
         }
       }
     }
   }
   const imageUrls = Array.from(allImages);
 
-  // Compute price range and stock summary
   const prices = product.variants
-    .map((v) => v.pancakeRetailPriceAfterDiscount ?? v.pancakeRetailPrice)
-    .filter((p): p is number => typeof p === "number" && !Number.isNaN(p));
+    .map((variant) => variant.pancakeRetailPriceAfterDiscount ?? variant.pancakeRetailPrice)
+    .filter((price): price is number => typeof price === "number" && !Number.isNaN(price));
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
   const priceDisplay =
@@ -286,8 +376,8 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         : `${formatVnd(minPrice)} – ${formatVnd(maxPrice)}`
       : "Chưa có giá";
 
-  const totalStock = product.variants.reduce((acc, v) => {
-    const variantStock = v.warehouseStocks.reduce((sAcc, ws) => sAcc + ws.quantity, 0);
+  const totalStock = product.variants.reduce((acc, variant) => {
+    const variantStock = variant.warehouseStocks.reduce((sum, warehouse) => sum + warehouse.quantity, 0);
     return acc + variantStock;
   }, 0);
 
@@ -317,14 +407,19 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
       <AdminFormStatus kind={formStatus} />
       <AdminFormStatus
-        kind={componentStatus}
-        successMessage="Đã cập nhật trạng thái biến thể composite."
-        errorMessage={componentErrorMessage}
+        kind={variantStatus}
+        successMessage="Đã cập nhật trạng thái biến thể website."
+        errorMessage={variantErrorMessage}
       />
-      <AdminFormStatus
-        kind={parentVariantStatus}
-        successMessage="Đã cập nhật trạng thái biến thể cha composite."
-        errorMessage={parentVariantErrorMessage}
+
+      <ProductCommercePanel
+        commerceAction={manageProductCommerce}
+        collectionCount={assignedSlugs.size}
+        productIsActive={product.isActive}
+        productName={product.name}
+        quickActionEligible={quickActionEligible}
+        variantAction={setWebsiteVariantActivation}
+        variants={commerceVariants}
       />
 
       <ProductSlugEditor
@@ -335,161 +430,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         error={slugError}
       />
 
-      {compositeParents.length > 0 ? (
-        <section
-          aria-labelledby="composite-parent-activation-heading"
-          className="mt-8 border border-black/20 bg-white p-6 md:p-8"
-        >
-          <p className="eyebrow">Website commerce</p>
-          <h2
-            id="composite-parent-activation-heading"
-            className="mt-1 font-serif text-3xl tracking-[-0.03em]"
-          >
-            Kích hoạt biến thể set
-          </h2>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/70">
-            Storefront chỉ đọc quan hệ composite từ các biến thể cha đang hoạt động. Kích hoạt từng biến thể set sau khi đã kiểm tra cấu thành bên dưới.
-          </p>
-          {!product.isActive ? (
-            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-rose-800">
-              Catalog sản phẩm cha đang tắt. Bật biến thể chưa đủ để sản phẩm xuất hiện trên storefront.
-            </p>
-          ) : null}
-
-          <div className="mt-6 space-y-4">
-            {compositeParents.map((variant) => {
-              const variantLabel =
-                variant.sku ||
-                [variant.color, variant.size].filter(Boolean).join(" / ") ||
-                variant.id;
-              const statusLabel = !variant.isPresent
-                ? "Không còn đồng bộ"
-                : variant.isActive
-                  ? "Đã kích hoạt"
-                  : "Chưa kích hoạt";
-
-              return (
-                <div
-                  key={variant.id}
-                  className="grid gap-4 border-t border-black/15 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
-                >
-                  <div>
-                    <p className="font-mono text-xs font-semibold">{variantLabel}</p>
-                    <p className="mt-1 text-xs text-black/60">
-                      {[variant.color, variant.size].filter(Boolean).join(" / ") || "Không có Màu / Size"}
-                      {" · "}
-                      {statusLabel}
-                    </p>
-                  </div>
-                  <form action={setCompositeParentVariantActivation}>
-                    <input name="variantId" type="hidden" value={variant.id} />
-                    <input
-                      name="isActive"
-                      type="hidden"
-                      value={String(!variant.isActive)}
-                    />
-                    <button
-                      className="inline-flex min-h-11 items-center justify-center border border-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!variant.isPresent}
-                      type="submit"
-                    >
-                      {variant.isActive ? "Tắt" : "Kích hoạt"} biến thể set {variantLabel}
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {compositeChildren.length > 0 ? (
-        <section
-          aria-labelledby="composite-activation-heading"
-          className="mt-8 border border-black/20 bg-white p-6 md:p-8"
-        >
-          <p className="eyebrow">Website commerce</p>
-          <h2
-            id="composite-activation-heading"
-            className="mt-1 font-serif text-3xl tracking-[-0.03em]"
-          >
-            Kích hoạt biến thể bán qua set
-          </h2>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/70">
-            Trạng thái này thuộc biến thể trên website và áp dụng cho tất cả quan hệ composite đã đồng bộ.
-          </p>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-black/70">
-            Kích hoạt biến thể không làm sản phẩm con được công khai riêng.
-          </p>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-black/70">
-            Nếu sản phẩm con được bật bán riêng sau này, trạng thái của biến thể này vẫn được dùng cho sản phẩm đó.
-          </p>
-
-          <div className="mt-6 space-y-4">
-            {compositeChildren.map((variant) => {
-              const variantLabel =
-                variant.sku ||
-                [variant.color, variant.size].filter(Boolean).join(" / ") ||
-                variant.id;
-              const statusLabel = !variant.isPresent
-                ? "Không còn đồng bộ"
-                : variant.isActive
-                  ? "Đã kích hoạt"
-                  : "Chưa kích hoạt";
-
-              return (
-                <div
-                  key={variant.id}
-                  className="grid gap-4 border-t border-black/15 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
-                >
-                  <div>
-                    <p className="font-mono text-xs font-semibold">{variantLabel}</p>
-                    <p className="mt-1 text-xs text-black/60">
-                      {[variant.color, variant.size].filter(Boolean).join(" / ") || "Không có Màu / Size"}
-                      {" · "}
-                      {statusLabel}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
-                      {variant.compositeParents.map(({ parentVariant }) => (
-                        <Link
-                          key={parentVariant.id}
-                          className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-                          href={`/admin/products/${parentVariant.product.id}`}
-                        >
-                          {parentVariant.product.name}
-                          {" · "}
-                          {parentVariant.sku ||
-                            [parentVariant.color, parentVariant.size]
-                              .filter(Boolean)
-                              .join(" / ") ||
-                            parentVariant.id}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                  <form action={setCompositeVariantActivation}>
-                    <input name="variantId" type="hidden" value={variant.id} />
-                    <input
-                      name="isActive"
-                      type="hidden"
-                      value={String(!variant.isActive)}
-                    />
-                    <button
-                      className="inline-flex min-h-11 items-center justify-center border border-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!variant.isPresent}
-                      type="submit"
-                    >
-                      {variant.isActive ? "Tắt" : "Kích hoạt"} biến thể {variantLabel}
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {/* PANCAKE POS SYNCHRONIZED SOURCE DATA */}
       <section
         aria-labelledby="source-description-heading"
         className="mt-8 border border-black/20 bg-black/[0.02] p-6 md:p-8"
@@ -517,7 +457,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           </div>
         </div>
 
-        {/* SOURCE DESCRIPTION */}
         <div className="mt-6">
           {product.sourceDescription ? (
             <p className="whitespace-pre-wrap text-sm leading-7 text-black/80">
@@ -531,21 +470,20 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           </p>
         </div>
 
-        {/* IMAGE GALLERY */}
         <div className="mt-6">
           <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/80">
             Hình ảnh sản phẩm ({imageUrls.length} ảnh)
           </h3>
           {imageUrls.length > 0 ? (
             <div className="mt-3 flex flex-wrap gap-4">
-              {imageUrls.map((url, idx) => (
+              {imageUrls.map((url, index) => (
                 <div
-                  key={idx}
+                  key={url}
                   className="relative aspect-[3/4] w-24 overflow-hidden border border-black/20 bg-[var(--stone)] md:w-32"
                 >
                   <Image
                     src={url}
-                    alt={`${product.name} ảnh ${idx + 1}`}
+                    alt={`${product.name} ảnh ${index + 1}`}
                     fill
                     sizes="128px"
                     className="object-cover"
@@ -561,7 +499,6 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           )}
         </div>
 
-        {/* VARIANTS BREAKDOWN TABLE */}
         <div className="mt-8">
           <h3 className="text-xs font-semibold uppercase tracking-[0.13em] text-black/80">
             Chi tiết các biến thể (Màu / Size / Giá / Kho)
@@ -585,18 +522,21 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
-                  {product.variants.map((v) => {
-                    const stock = v.warehouseStocks.reduce((acc, ws) => acc + ws.quantity, 0);
+                  {product.variants.map((variant) => {
+                    const stock = variant.warehouseStocks.reduce(
+                      (acc, warehouse) => acc + warehouse.quantity,
+                      0,
+                    );
                     return (
-                      <tr key={v.id} className="hover:bg-black/[0.02]">
-                        <td className="px-3 py-2.5 font-mono">{v.sku || "—"}</td>
-                        <td className="px-3 py-2.5 font-medium">{v.color || "—"}</td>
-                        <td className="px-3 py-2.5 font-medium">{v.size || "—"}</td>
-                        <td className="px-3 py-2.5">{formatVnd(v.pancakeRetailPrice)}</td>
+                      <tr key={variant.id} className="hover:bg-black/[0.02]">
+                        <td className="px-3 py-2.5 font-mono">{variant.sku || "—"}</td>
+                        <td className="px-3 py-2.5 font-medium">{variant.color || "—"}</td>
+                        <td className="px-3 py-2.5 font-medium">{variant.size || "—"}</td>
+                        <td className="px-3 py-2.5">{formatVnd(variant.pancakeRetailPrice)}</td>
                         <td className="px-3 py-2.5 font-medium text-black">
-                          {v.pancakeRetailPriceAfterDiscount
-                            ? formatVnd(v.pancakeRetailPriceAfterDiscount)
-                            : formatVnd(v.pancakeRetailPrice)}
+                          {variant.pancakeRetailPriceAfterDiscount
+                            ? formatVnd(variant.pancakeRetailPriceAfterDiscount)
+                            : formatVnd(variant.pancakeRetailPrice)}
                         </td>
                         <td className="px-3 py-2.5 font-semibold">
                           {stock > 0 ? (
@@ -608,10 +548,12 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                         <td className="px-3 py-2.5">
                           <span
                             className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${
-                              v.isActive ? "bg-emerald-100 text-emerald-900" : "bg-black/10 text-black/80"
+                              variant.isActive
+                                ? "bg-emerald-100 text-emerald-900"
+                                : "bg-black/10 text-black/80"
                             }`}
                           >
-                            {v.isActive ? "Hoạt động" : "Tắt"}
+                            {variant.isActive ? "Hoạt động" : "Tắt"}
                           </span>
                         </td>
                       </tr>
@@ -656,24 +598,12 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
                     </caption>
                     <thead>
                       <tr className="border-b border-black/20 bg-black/5 uppercase tracking-[0.1em] text-black/80">
-                        <th className="px-3 py-2.5" scope="col">
-                          Sản phẩm con
-                        </th>
-                        <th className="px-3 py-2.5" scope="col">
-                          SKU
-                        </th>
-                        <th className="px-3 py-2.5" scope="col">
-                          Màu / Size
-                        </th>
-                        <th className="px-3 py-2.5" scope="col">
-                          Số lượng cấu thành
-                        </th>
-                        <th className="px-3 py-2.5" scope="col">
-                          Tồn kho
-                        </th>
-                        <th className="px-3 py-2.5" scope="col">
-                          Trạng thái
-                        </th>
+                        <th className="px-3 py-2.5" scope="col">Sản phẩm con</th>
+                        <th className="px-3 py-2.5" scope="col">SKU</th>
+                        <th className="px-3 py-2.5" scope="col">Màu / Size</th>
+                        <th className="px-3 py-2.5" scope="col">Số lượng cấu thành</th>
+                        <th className="px-3 py-2.5" scope="col">Tồn kho</th>
+                        <th className="px-3 py-2.5" scope="col">Trạng thái</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-black/10">
