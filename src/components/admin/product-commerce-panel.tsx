@@ -51,7 +51,7 @@ type ProductCommercePanelProps = {
 const PAGE_SIZE = 100;
 
 function buttonClassName(primary = false) {
-  return `inline-flex min-h-11 items-center justify-center border border-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-50 ${
+  return `inline-flex min-h-11 max-w-full items-center justify-center whitespace-normal break-words border border-black px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-50 ${
     primary ? "bg-black text-white hover:bg-white hover:text-black" : "hover:bg-black hover:text-white"
   }`;
 }
@@ -176,11 +176,11 @@ export function ProductCommercePanel({
   return (
     <section
       aria-labelledby="website-commerce-heading"
-      className="mt-8 border border-black/20 bg-white p-5 md:p-7"
+      className="mt-8 min-w-0 max-w-full border border-black/20 bg-white p-5 md:p-7"
     >
       <p className="eyebrow">Website commerce</p>
-      <div className="mt-1 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="mt-1 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
           <h2 id="website-commerce-heading" className="font-serif text-3xl tracking-[-0.03em]">
             Website commerce
           </h2>
@@ -188,7 +188,7 @@ export function ProductCommercePanel({
             Catalog sản phẩm và trạng thái biến thể là dữ liệu website sở hữu. Giá, tồn kho và quan hệ composite bên dưới vẫn chỉ đọc từ mirror Pancake.
           </p>
         </div>
-        <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-xs sm:grid-cols-5 lg:text-right">
+        <dl className="grid min-w-0 grid-cols-2 gap-x-5 gap-y-2 text-xs sm:grid-cols-5 lg:text-right">
           <div>
             <dt className="text-black/55">Catalog</dt>
             <dd className="font-semibold">{productIsActive ? "Đang bật" : "Đang tắt"}</dd>
@@ -215,7 +215,7 @@ export function ProductCommercePanel({
       <div
         ref={feedbackRef}
         aria-atomic={feedback ? "true" : undefined}
-        className="mt-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+        className="mt-4 min-w-0 focus-visible:outline-2 focus-visible:outline-offset-4"
         role={
           commerceState.kind === "error"
             ? "alert"
@@ -230,8 +230,8 @@ export function ProductCommercePanel({
         ) : null}
       </div>
 
-      <form action={commerceFormAction} className="mt-5 border-t border-black/15 pt-5">
-        <div className="flex flex-wrap gap-3">
+      <form action={commerceFormAction} className="mt-5 min-w-0 max-w-full border-t border-black/15 pt-5">
+        <div className="flex min-w-0 max-w-full flex-wrap gap-3">
           {productIsActive ? (
             <button
               className={buttonClassName()}
@@ -268,7 +268,7 @@ export function ProductCommercePanel({
         </div>
 
         {confirmationState ? (
-          <div className="mt-4 border border-amber-700/40 bg-amber-50 p-4 text-sm leading-6">
+          <div className="mt-4 min-w-0 max-w-full border border-amber-700/40 bg-amber-50 p-4 text-sm leading-6">
             {confirmationWarnings.map((warning) => (
               <p className="font-semibold" key={warning}>{warning}</p>
             ))}
@@ -276,7 +276,7 @@ export function ProductCommercePanel({
               Bật catalog không tự kích hoạt biến thể.
             </p>
             <input name="proof" type="hidden" value={confirmationState.proof} />
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex min-w-0 max-w-full flex-wrap gap-2">
               <button
                 className={buttonClassName(true)}
                 disabled={commercePending}
@@ -299,7 +299,7 @@ export function ProductCommercePanel({
         ) : null}
 
         {quickConfirming ? (
-          <div className="mt-4 border border-black/20 bg-black/[0.02] p-4 text-sm leading-6">
+          <div className="mt-4 min-w-0 max-w-full border border-black/20 bg-black/[0.02] p-4 text-sm leading-6">
             <p>
               Thao tác sẽ bật catalog sản phẩm và kích hoạt các biến thể hiện có tổng tồn kho dương.
               Theo dữ liệu đang hiển thị: <strong>{positiveStockCount} biến thể có hàng</strong>.
@@ -307,7 +307,7 @@ export function ProductCommercePanel({
             <p className="mt-1 text-black/65">
               Server sẽ đọc lại tồn kho và quan hệ composite ngay trước khi ghi.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex min-w-0 max-w-full flex-wrap gap-2">
               <button
                 className={buttonClassName(true)}
                 disabled={commercePending}
@@ -330,16 +330,16 @@ export function ProductCommercePanel({
         ) : null}
       </form>
 
-      <div className="mt-7 border-t border-black/15 pt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
+      <div className="mt-7 min-w-0 max-w-full border-t border-black/15 pt-6">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <h3 className="font-serif text-2xl tracking-[-0.03em]">Biến thể website</h3>
             <p className="mt-1 text-sm text-black/65" aria-live="polite">
               {rangeLabel}
             </p>
           </div>
           {variants.length > PAGE_SIZE ? (
-            <div className="flex gap-2">
+            <div className="flex max-w-full flex-wrap gap-2">
               <button
                 aria-label="Trang biến thể trước"
                 className={buttonClassName()}
@@ -363,14 +363,14 @@ export function ProductCommercePanel({
         </div>
 
         {variants.length > 0 ? (
-          <form action={variantAction} className="mt-4">
+          <form action={variantAction} className="mt-4 min-w-0 max-w-full">
             {pageRows
               .filter((variant) => selectedIds.has(variant.id))
               .map((variant) => (
                 <input key={variant.id} name="variantId" type="hidden" value={variant.id} />
               ))}
 
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="mb-3 flex min-w-0 max-w-full flex-wrap items-center gap-2">
               <button
                 className={buttonClassName()}
                 onClick={selectStockedOnCurrentPage}
@@ -412,7 +412,7 @@ export function ProductCommercePanel({
 
             <div
               aria-label="Bảng biến thể website, cuộn ngang khi cần"
-              className="overflow-x-auto border-y border-black/20"
+              className="w-full max-w-full overflow-x-auto border-y border-black/20"
               tabIndex={0}
             >
               <table className="w-full min-w-[52rem] text-left text-xs">
