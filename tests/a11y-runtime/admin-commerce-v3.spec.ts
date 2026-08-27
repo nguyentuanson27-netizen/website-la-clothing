@@ -119,6 +119,25 @@ async function cleanupDatabase() {
   });
 }
 
+async function resetProductActivation(productId: string, activeVariantIds: string[] = []) {
+  await prisma.$transaction([
+    prisma.productMirror.update({
+      where: { id: productId },
+      data: { isActive: false },
+    }),
+    prisma.variantMirror.updateMany({
+      where: { productId },
+      data: { isActive: false },
+    }),
+  ]);
+  if (activeVariantIds.length > 0) {
+    await prisma.variantMirror.updateMany({
+      where: { productId, id: { in: activeVariantIds } },
+      data: { isActive: true },
+    });
+  }
+}
+
 function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
   expect(
     spokenPhrase.includes(expected),
@@ -358,11 +377,13 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
   page,
   context,
 }) => {
+  await resetProductActivation(ordinaryProductId);
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(ordinaryProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 2, name: "Biến thể website" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Website commerce" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Biến thể website" })).toBeVisible();
   await expect(page.getByText("1–100 / 245", { exact: true })).toBeVisible();
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
@@ -432,11 +453,13 @@ test("A4 ordinary inactive stocked XL can be activated without publishing the pr
   page,
   context,
 }) => {
+  await resetProductActivation(regressionProductId);
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(regressionProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 2, name: "Biến thể website" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Website commerce" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Biến thể website" })).toBeVisible();
   const xlRow = page.getByRole("row").filter({ hasText: "REG-XL" });
   await expect(xlRow.getByText("1", { exact: true })).toBeVisible();
   await xlRow.getByRole("button", { name: "Kích hoạt biến thể REG-XL" }).click();
@@ -456,6 +479,7 @@ test("A5 ordinary quick action publishes stocked variants and storefront converg
   context,
   voiceOver,
 }) => {
+  await resetProductActivation(regressionProductId);
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(regressionProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
@@ -494,6 +518,11 @@ test("A5 initial composite child catalog enable warns about standalone publicati
   page,
   context,
 }) => {
+  await prisma.productMirror.update({ where: { id: childProductId }, data: { isActive: false } });
+  await prisma.variantMirror.updateMany({
+    where: { productId: childProductId },
+    data: { isActive: true },
+  });
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(childProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
@@ -518,6 +547,14 @@ test("A5 stale catalog confirmation reconfirms current composite publication ris
   page,
   context,
 }) => {
+  await prisma.productMirror.update({ where: { id: staleProductId }, data: { isActive: false } });
+  await prisma.variantMirror.updateMany({
+    where: { productId: staleProductId },
+    data: { isActive: true },
+  });
+  await prisma.compositeComponentMirror.deleteMany({
+    where: { parentVariantId, componentVariantId: staleVariantId },
+  });
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(staleProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
@@ -571,6 +608,10 @@ test("A5 quick action rendered ordinary fails closed if product becomes composit
   page,
   context,
 }) => {
+  await resetProductActivation(quickStaleProductId);
+  await prisma.compositeComponentMirror.deleteMany({
+    where: { parentVariantId, componentVariantId: quickStaleVariantId },
+  });
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(quickStaleProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
@@ -608,6 +649,11 @@ test("A5 catalog enable and disable remain independent from variant activation",
   page,
   context,
 }) => {
+  await resetProductActivation(ordinaryProductId, [stockedVariantIds[0]]);
+  expect(
+    await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
+  ).toBe(1);
+
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(ordinaryProductId)}`;
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
