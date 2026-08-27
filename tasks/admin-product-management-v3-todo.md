@@ -78,41 +78,43 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [ ] exact target/warning sets in prepare proof
   - [ ] relation/zero-active/target drift => `RECONFIRM_REQUIRED`
   - [ ] zero writes for stale whole batch
-  - [ ] disable is atomic/idempotent and changes only product state
+  - [ ] disable changes product state only
 
-- [ ] **C3 — Exact directory health read model**
-  - [ ] full-catalog DB-side predicates before pagination
-  - [ ] exact summed-stock semantics for `stocked-inactive`
-  - [ ] active/total variant metrics
-  - [ ] health parser/URL/page-reset contract
-  - [ ] no N+1 product reads
+- [ ] **C3 — Health read model and filters**
+  - [ ] `stocked-inactive` uses summed stock >0 DB truth
+  - [ ] `zero-active`
+  - [ ] `no-collection`
+  - [ ] `catalog-inactive`
+  - [ ] `missing-image` uses `ProductMirror.primaryImageUrl` + present variants' `pancakeImageUrls` and existing `parseTrustedProductImageUrl()` trust semantics
+  - [ ] null primary + trusted present-variant image => not missing
+  - [ ] only rejected/absent media or stale-variant-only media => missing
+  - [ ] DB predicate parity-tested against the trusted image parser
+  - [ ] list/count/pagination predicates stay aligned
 
-- [ ] **C4 — Expand current-page bulk toolbar**
-  - [ ] existing editorial bulk behavior preserved
-  - [ ] add/remove collection UI
-  - [ ] enable/disable catalog UI
-  - [ ] prepare/commit confirmation + reconfirmation
-  - [ ] selection/focus/Axe/VoiceOver regressions
+- [ ] **C4 — Bulk toolbar UX**
+  - [ ] editorial status remains working
+  - [ ] add/remove collection
+  - [ ] enable/disable catalog
+  - [ ] zero-active + composite-publication warning summary
+  - [ ] stale confirmation preserves selection and requires reconfirm
+  - [ ] success/error/Axe/VoiceOver coverage
 
-- [ ] **C5 — Health indicators and filters UI**
-  - [ ] `Biến thể: X / N active`
-  - [ ] stocked-but-inactive warning
-  - [ ] zero-active / no-collection / catalog-inactive / missing-image filters
-  - [ ] facet count/href/query truth stays aligned
-  - [ ] no synthetic health score
+- [ ] **C5 — Directory health metrics/filters UI**
+  - [ ] row shows active/total present variants
+  - [ ] stocked inactive warning count
+  - [ ] health filter URLs compose with existing filters
+  - [ ] `missing-image` browser result/count matches the approved variant-fallback rule
+  - [ ] filter navigation resets stale page/selection
 
-- [ ] **Checkpoint C — V3 implementation complete**
-  - [ ] exact-head DB/domain/security/auth/lint/typecheck/build/release/start green
-  - [ ] admin browser Axe/VoiceOver green
-  - [ ] fresh review 0 Critical / 0 Required
-  - [ ] ADR 0005 scope/revertability check
-  - [ ] trusted deployed smoke: normal product admin → storefront
-  - [ ] trusted deployed smoke: composite product admin → storefront
-  - [ ] no Pancake-owned price/stock/media/relation mutation
-  - [ ] no schema/dependency/sync behavior change without separate approval
+- [ ] **Checkpoint C / V3 implementation closeout**
+  - [ ] exact-head CI verify green
+  - [ ] admin Axe/VoiceOver green
+  - [ ] P18/Catalog runtime green when triggered
+  - [ ] 0 Critical / 0 Required fresh review
+  - [ ] trusted deployed catalog acceptance completed
+  - [ ] Pancake-owned price/stock/source/image/relation data unchanged by new writes
+  - [ ] no unapproved schema/dependency/sync change
 
-## Human approval gate
+## Human gate
 
-- [ ] **Plan approved for `/build`**
-
-Do not start implementation only because this checklist exists. The V3 spec is approved; this plan/todo must be reviewed and approved before PR-A build work begins.
+- [ ] Human approves this plan before `/build` starts.
