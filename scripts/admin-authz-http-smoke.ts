@@ -67,6 +67,14 @@ function serverActionEntries(html: string): Array<[string, string]> {
   return entries;
 }
 
+function formContainingField(html: string, fieldName: string): string | null {
+  const encodedField = `name="${fieldName}"`;
+  for (const formHtml of html.match(/<form\b[\s\S]*?<\/form>/g) ?? []) {
+    if (formHtml.includes(encodedField)) return formHtml;
+  }
+  return null;
+}
+
 async function signUpCookie(email: string, name: string, clientIp: string): Promise<string> {
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
@@ -192,10 +200,15 @@ try {
     "ADMIN editor must render the editorial form",
   );
 
-  const actionEntries = serverActionEntries(editorHtml);
+  // The product editor now has several independent Server Action forms. Only submit the action
+  // metadata belonging to the editorial form; combining $ACTION_* inputs from unrelated forms
+  // can produce an action id that Next rightfully rejects as stale/unknown.
+  const editorialFormHtml = formContainingField(editorHtml, "editorialDescription");
+  assert.ok(editorialFormHtml, "ADMIN editor must render an editorial form boundary");
+  const actionEntries = serverActionEntries(editorialFormHtml);
   assert.ok(
     actionEntries.length > 0,
-    "ADMIN editor form must include progressive-enhancement Server Action metadata",
+    "ADMIN editorial form must include progressive-enhancement Server Action metadata",
   );
 
   const editorialDescription = "Authenticated HTTP admin persistence proof.";
