@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { AuthorizationError } from "../../src/auth/authorization.ts";
 import {
+  ADMIN_CATALOG_CONFIRMATION_LIMITS,
   issueAdminCatalogConfirmationProof,
   verifyAdminCatalogConfirmationProof,
 } from "../../src/commerce/admin-catalog-confirmation.ts";
@@ -60,7 +61,7 @@ test("catalog prepare requires ADMIN and returns a server-authenticated proof fo
   });
 
   await assert.rejects(
-    () => service.prepareCatalogEnable(customerSession, { productId: "product-1" }),
+    () => service.prepareCatalogEnable(customerSession, "product-1"),
     (error: unknown) => {
       assert.ok(error instanceof AuthorizationError);
       assert.equal(error.code, "FORBIDDEN");
@@ -69,7 +70,7 @@ test("catalog prepare requires ADMIN and returns a server-authenticated proof fo
   );
   assert.equal(warningReads, 0);
 
-  const result = await service.prepareCatalogEnable(adminSession, { productId: "product-1" });
+  const result = await service.prepareCatalogEnable(adminSession, "product-1");
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.deepEqual(result.warningState, {
@@ -100,17 +101,17 @@ test("catalog prepare fails closed for malformed or unavailable route product", 
     },
   });
 
-  assert.deepEqual(await unavailable.prepareCatalogEnable(adminSession, { productId: "" }), {
+  assert.deepEqual(await unavailable.prepareCatalogEnable(adminSession, ""), {
     ok: false,
     reason: "INVALID_INPUT",
   });
-  assert.deepEqual(
-    await unavailable.prepareCatalogEnable(adminSession, { productId: "missing-product" }),
-    { ok: false, reason: "PRODUCT_NOT_AVAILABLE" },
-  );
+  assert.deepEqual(await unavailable.prepareCatalogEnable(adminSession, "missing-product"), {
+    ok: false,
+    reason: "PRODUCT_NOT_AVAILABLE",
+  });
 });
 
-test("catalog commit passes actor, server secret and proof to transactional repository", async () => {
+test("catalog commit binds the persisted route target and ignores a forged browser productId", async () => {
   const calls: unknown[] = [];
   const deps = dependencies();
   const service = createProductCommerceAdminService({
@@ -125,23 +126,74 @@ test("catalog commit passes actor, server secret and proof to transactional repo
     nowMs,
     actorId: adminSession.user.id,
     operation: "enable",
-    targetProductIds: ["product-1"],
-    zeroActiveProductIds: ["product-1"],
+    targetProductIds: ["route-product"],
+    zeroActiveProductIds: ["route-product"],
     compositeChildProductIds: [],
   }).proof;
 
-  assert.deepEqual(await service.commitCatalogEnable(adminSession, { productId: "product-1", proof }), {
-    ok: true,
-  });
+  assert.deepEqual(
+    await service.commitCatalogEnable(adminSession, "route-product", {
+      productId: "forged-product",
+      proof,
+    }),
+    { ok: true },
+  );
   assert.deepEqual(calls, [
     {
-      productId: "product-1",
+      productId: "route-product",
       actorId: adminSession.user.id,
       proof,
       secret,
       nowMs,
     },
   ]);
+});
+
+test("catalog commit treats missing empty and oversized proof as reconfirmation freshness failures", async () => {
+  const deps = dependencies();
+  let warningReads = 0;
+  let commitCalls = 0;
+  const service = createProductCommerceAdminService({
+    ...deps,
+    async readCatalogEnableWarningState(productId: string) {
+      warningReads += 1;
+      return deps.readCatalogEnableWarningState(productId);
+    },
+    async commitCatalogEnable() {
+      commitCalls += 1;
+      return { ok: true } as const;
+    },
+  });
+
+  for (const input of [
+    {},
+    { proof: "" },
+    { proof: "x".repeat(ADMIN_CATALOG_CONFIRMATION_LIMITS.proofLength + 1) },
+  ]) {
+    const result = await service.commitCatalogEnable(adminSession, "product-1", input);
+    assert.equal(result.ok, false);
+    if (result.ok || result.reason !== "RECONFIRM_REQUIRED") continue;
+    assert.deepEqual(result.warningState, {
+      zeroActiveProductIds: ["product-1"],
+      compositeChildProductIds: [],
+    });
+    assert.equal(
+      verifyAdminCatalogConfirmationProof({
+        secret,
+        nowMs,
+        proof: result.proof,
+        actorId: adminSession.user.id,
+        operation: "enable",
+        targetProductIds: ["product-1"],
+        zeroActiveProductIds: ["product-1"],
+        compositeChildProductIds: [],
+      }),
+      true,
+    );
+  }
+
+  assert.equal(warningReads, 3);
+  assert.equal(commitCalls, 0);
 });
 
 test("catalog stale commit returns a fresh proof for the server-returned warning state", async () => {
@@ -160,8 +212,7 @@ test("catalog stale commit returns a fresh proof for the server-returned warning
     },
   });
 
-  const result = await service.commitCatalogEnable(adminSession, {
-    productId: "product-1",
+  const result = await service.commitCatalogEnable(adminSession, "product-1", {
     proof: "stale-proof",
   });
   assert.equal(result.ok, false);
@@ -185,40 +236,37 @@ test("catalog stale commit returns a fresh proof for the server-returned warning
   );
 });
 
-test("catalog disable and combined quick action are distinct ADMIN operations", async () => {
+test("catalog disable and combined quick action are distinct route-owned ADMIN operations", async () => {
   const deps = dependencies();
-  let disableCalls = 0;
-  let quickCalls = 0;
+  const disableTargets: string[] = [];
+  const quickTargets: string[] = [];
   const service = createProductCommerceAdminService({
     ...deps,
-    async disableCatalog() {
-      disableCalls += 1;
+    async disableCatalog(productId: string) {
+      disableTargets.push(productId);
       return true;
     },
-    async activateProductAndStockedVariants() {
-      quickCalls += 1;
+    async activateProductAndStockedVariants(productId: string) {
+      quickTargets.push(productId);
       return { ok: true, activatedVariantCount: 3 } as const;
     },
   });
 
-  assert.deepEqual(await service.disableCatalog(adminSession, { productId: "product-1" }), {
+  assert.deepEqual(await service.disableCatalog(adminSession, "route-product"), {
     ok: true,
   });
   assert.deepEqual(
-    await service.activateProductAndStockedVariants(adminSession, { productId: "product-1" }),
+    await service.activateProductAndStockedVariants(adminSession, "route-product"),
     { ok: true, activatedVariantCount: 3 },
   );
-  assert.equal(disableCalls, 1);
-  assert.equal(quickCalls, 1);
+  assert.deepEqual(disableTargets, ["route-product"]);
+  assert.deepEqual(quickTargets, ["route-product"]);
 
+  await assert.rejects(() => service.disableCatalog(null, "route-product"), AuthorizationError);
   await assert.rejects(
-    () => service.disableCatalog(null, { productId: "product-1" }),
+    () => service.activateProductAndStockedVariants(customerSession, "route-product"),
     AuthorizationError,
   );
-  await assert.rejects(
-    () => service.activateProductAndStockedVariants(customerSession, { productId: "product-1" }),
-    AuthorizationError,
-  );
-  assert.equal(disableCalls, 1);
-  assert.equal(quickCalls, 1);
+  assert.deepEqual(disableTargets, ["route-product"]);
+  assert.deepEqual(quickTargets, ["route-product"]);
 });
