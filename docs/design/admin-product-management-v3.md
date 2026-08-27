@@ -2,7 +2,7 @@
 
 Status: **DRAFT SPEC — docs-only; no implementation in this PR**
 
-This spec extends the narrower bulk-status work documented in `docs/design/admin-product-management-v2.md`. It does not rewrite that document or claim any runtime behavior beyond what is already merged on `main`.
+This spec extends the narrower bulk-status work documented in `docs/design/admin-product-management-v2.md`. It does not rewrite that document or claim runtime behavior beyond what is already merged on `main`.
 
 ## Objective
 
@@ -13,7 +13,7 @@ V3 focuses on four operator problems:
 1. normal products can have present variants with stock but no admin control to activate those variants;
 2. variant activation is split across composite-specific sections instead of one consistent commerce workflow;
 3. `/admin` already supports current-page bulk selection, but bulk operations are limited to editorial status;
-4. the single-product editor is long and source-heavy, making the most common commerce/editorial actions slower to reach.
+4. the single-product editor is long and source-heavy, making common commerce/editorial actions slower to reach.
 
 Success means an admin can safely activate normal/composite variants, perform useful bulk product operations, and edit a product from a compact workflow while Pancake-owned source data remains read-only.
 
@@ -39,6 +39,7 @@ Success means an admin can safely activate normal/composite variants, perform us
 7. Bulk selection remains scoped to the current `/admin` page; no cross-page persistent selection.
 8. Price and inventory remain Pancake-owned and are never mutated by these admin actions.
 9. No sync-time auto-activation is introduced.
+10. Any UI-derived eligibility or warning count is advisory only; privileged mutation decisions must be recomputed from current database truth immediately before writes.
 
 ## Feature A — Unified Website Commerce controls
 
@@ -64,11 +65,14 @@ A product catalog mutation must:
 - require `ADMIN`;
 - bind product identity to the current editor route/server context;
 - require the product to still exist and be present;
+- recompute current incoming composite membership before writes when enabling catalog;
 - mutate only `ProductMirror.isActive`;
 - be idempotent;
 - never mutate any variant, price, stock, collection, editorial field, Pancake identifier, or composite edge.
 
-For a product that has incoming composite membership, the UI must make standalone publication risk explicit before enabling the product catalog. Variant activation remains available regardless of whether the child product catalog is enabled.
+For a product that currently has incoming composite membership, the UI must make standalone-publication risk explicit before enabling the product catalog. Variant activation remains available regardless of whether the child product catalog is enabled.
+
+The single-product catalog toggle may still enable a relation-linked child product after an explicit warning and confirmation. The separate combined quick action defined below is stricter and is never allowed for a current composite child.
 
 ## Feature B — Generic variant activation for every product
 
@@ -153,21 +157,29 @@ Các biến thể hết hàng sẽ giữ nguyên trạng thái.
 
 ### Eligibility
 
-The convenience action is shown only when the product has no incoming composite membership. Relation-linked child products keep generic variant controls but do not get a one-click standalone publication action.
+The convenience action is rendered only when the product has no incoming composite membership according to the editor's current read model.
+
+Relation-linked child products keep generic variant controls but do not receive a one-click standalone publication shortcut.
+
+Render-time eligibility is **not** authorization. The action must re-check this rule against current persisted relation data inside the server-side mutation/transaction.
 
 ### Combined mutation contract
 
-At mutation time, the server must recompute current eligible variants from the database. Browser-provided stock or eligibility is advisory only.
+Browser-provided stock, product kind, relation state, and eligibility are advisory only.
 
-In one transaction:
+At mutation time, in one transaction and before any write, the server must:
 
-1. verify the route-owned product exists and is present;
-2. set `ProductMirror.isActive=true`;
-3. find variants belonging to that product with `isPresent=true` and summed mirrored warehouse stock `> 0`;
-4. set only those variants to `VariantMirror.isActive=true`;
-5. leave zero-stock variants unchanged.
+1. verify the route-owned product exists and is `isPresent=true`;
+2. query current persisted incoming composite membership for that exact product through its variants;
+3. if any incoming `CompositeComponentMirror` membership currently exists, fail closed with **zero writes**;
+4. recompute current eligible variants belonging to that product with `isPresent=true` and summed mirrored warehouse stock `> 0`;
+5. set `ProductMirror.isActive=true`;
+6. set only those currently positive-stock variants to `VariantMirror.isActive=true`;
+7. leave zero-stock variants unchanged.
 
-Any failure must roll back the entire operation.
+Any validation/query/write failure must roll back the entire operation.
+
+This explicitly closes the stale-UI/TOCTOU case where the editor rendered an ordinary product, a later sync persisted an incoming composite edge, and the old form is submitted after that relation change.
 
 ## Feature D — Bulk product operations on `/admin`
 
@@ -227,19 +239,33 @@ The mutation must:
 
 - require `ADMIN`;
 - accept `1..100` unique product IDs;
-- validate all targets before mutation;
+- validate all targets against current database truth before mutation;
+- verify every target still exists and is present;
+- recompute each target's current active-variant count and current incoming composite membership before writes;
 - mutate only `ProductMirror.isActive`;
 - be atomic and idempotent;
 - never mutate variant activation.
 
-Before enabling products, the UI should summarize how many selected products currently have zero active variants and warn that product activation does not activate variants.
+Before **enabling** products, the confirmation UI must summarize both:
+
+1. how many selected products currently have zero active variants; and
+2. how many selected products currently have incoming composite membership and would therefore become separately public if catalog is enabled.
 
 Example:
 
 ```text
 7/12 sản phẩm hiện không có biến thể hoạt động.
+2/12 sản phẩm đang là thành phần của set/composite và sẽ được mở catalog riêng nếu tiếp tục.
 Bật catalog không tự kích hoạt biến thể.
+
+[Hủy] [Xác nhận bật catalog]
 ```
+
+The composite-child standalone-publication warning is required for the bulk entry point for the same reason it is required in the single-product editor.
+
+Counts rendered in the browser are UX only. The server must re-read current target state after submit and before writes. If targets become missing/stale/invalid, the atomic batch fails closed. A relation change after render must never be silently treated as proof that the old confirmation summary is still current.
+
+Bulk `Tắt catalog` does not need the standalone-publication warning because it reduces publication exposure, but it must still validate all current targets atomically.
 
 ## Feature E — Compact product editor
 
@@ -337,6 +363,8 @@ Use the repository's existing native-control-first admin patterns.
 - relevant Axe checks use the shared admin/buyer tag set including `best-practice`;
 - critical activation and bulk flows retain VoiceOver/browser runtime coverage.
 
+For bulk catalog enable, the confirmation must expose the zero-active-variant summary and composite-child standalone-publication warning to assistive technology, not only visually.
+
 ## Security and hardening
 
 All product/variant/collection mutations cross an authenticated admin boundary and must be treated as untrusted browser input.
@@ -347,6 +375,7 @@ Always:
 - validate shape, count, uniqueness, and bounded IDs before repository writes;
 - use route-owned product identity for product-editor mutations;
 - verify record ownership and current presence immediately before writes;
+- re-check current incoming composite membership at mutation time when it affects publication safety;
 - validate collection slugs against existing definitions;
 - use atomic transactions for batch operations;
 - fail closed when any requested record is missing/stale/invalid;
@@ -356,6 +385,7 @@ Always:
 Never:
 
 - trust a hidden product ID as authorization;
+- trust stale browser-rendered stock/relation state as mutation eligibility;
 - infer variant/product/composite identity from display fields;
 - partially report success for an atomic batch;
 - mutate Pancake price, stock, source identity, images, or composite source edges;
@@ -448,6 +478,8 @@ if (!result.ok) {
 
 Repository methods should name the exact field/business operation they mutate rather than reusing broad snapshot-save methods.
 
+For publication-sensitive operations, service/repository boundaries must expose the current relation-state check explicitly rather than assuming the render-time read model is still valid.
+
 ## Testing strategy
 
 Use RED → GREEN for changed behavior.
@@ -460,7 +492,9 @@ At minimum:
 - malformed/empty/duplicate/over-limit product and variant batches rejected;
 - route-owned product identity is not replaceable by browser input;
 - collection add/remove parser/service contracts preserve add/remove semantics;
-- stale/unavailable targets fail closed.
+- stale/unavailable targets fail closed;
+- quick action rejects current incoming composite membership before dependency writes;
+- bulk catalog enable requires current composite-membership data for warning/validation behavior rather than trusting browser-submitted counts.
 
 ### Database coverage
 
@@ -475,6 +509,9 @@ At minimum:
 - variant activation changes only `VariantMirror.isActive`;
 - quick action activates product plus only current positive-stock variants in one transaction;
 - zero-stock variants stay unchanged during the quick action;
+- **stale quick-action regression:** render/prepare the action while product has no incoming composite membership, then persist an incoming composite edge before submit; mutation must fail with product and all variants unchanged;
+- bulk catalog enable re-reads current incoming composite membership for every selected product before writes;
+- bulk catalog batch with a stale/missing/invalid target performs zero writes;
 - collection add/remove preserves status, editorial text, SEO, other collections, and mirrored product fields;
 - missing selected product causes no partial batch commit.
 
@@ -509,8 +546,12 @@ At minimum verify:
 - select-positive-stock shortcut;
 - bulk variant activation/deactivation;
 - combined quick-action confirmation and result;
+- quick action is absent for a current relation-linked child product;
+- stale quick-action server rejection is surfaced accessibly if relation membership changes after render;
 - bulk add/remove collection;
-- bulk product catalog toggle warning when variants are inactive;
+- bulk product catalog enable warning when variants are inactive;
+- bulk product catalog enable warning summarizes relation-linked/composite-child publication exposure;
+- bulk confirmation counts may come from the current page UX, but submit-time behavior is reconciled against server/database truth;
 - compact editor order and collapsed Pancake disclosure;
 - no page-level horizontal overflow;
 - success/error focus and announcements;
@@ -527,6 +568,8 @@ Do not implement this spec as one large PR.
 - bulk variant activation/deactivation inside one product;
 - select-positive-stock convenience;
 - combined `Bật sản phẩm + kích hoạt biến thể có hàng` action;
+- server-side current incoming-composite eligibility guard for the quick action;
+- stale-render/edge-added-after-render regression;
 - regression for ordinary variants currently stuck `TẮT`.
 
 ### PR-B — Compact editor
@@ -541,6 +584,8 @@ Do not implement this spec as one large PR.
 
 - add/remove collection on selected current-page products;
 - bulk product catalog enable/disable;
+- bulk catalog confirmation includes zero-active-variant and current composite-child publication warnings;
+- submit-time current database reconciliation for bulk catalog targets;
 - activation coverage and operational warnings in rows;
 - actionable health filters;
 - reuse the existing selection and confirmation boundary.
@@ -555,6 +600,7 @@ Each PR must leave the application in a working state and pass focused verificat
 - require server-side authorization for every mutation;
 - preserve Pancake source ownership;
 - keep product and variant activation independent except for the explicit confirmed quick action;
+- re-check publication-sensitive composite membership from current persisted data at mutation time;
 - use atomic writes for multi-record operations;
 - reuse current admin/service/repository patterns;
 - revalidate affected admin/storefront routes after successful commerce mutations;
@@ -576,6 +622,8 @@ Each PR must leave the application in a working state and pass focused verificat
 
 - auto-publish a product because one variant was activated;
 - auto-activate variants because a product was activated;
+- allow the combined quick action when current persisted incoming composite membership exists;
+- trust render-time eligibility as mutation-time authorization;
 - mutate price or stock from these admin flows;
 - infer composite relations from names/SKUs/categories;
 - provide bulk replace-all collection membership in V3;
@@ -591,16 +639,19 @@ V3 is complete only when all of the following are true:
 3. Variant controls cover ordinary, composite-parent, and composite-child variants through one consistent UI.
 4. Product catalog activation remains independent from variant activation.
 5. The explicit quick action can atomically activate the product and only variants with positive current stock.
-6. Relation-linked child products do not receive the one-click standalone publication shortcut.
-7. `/admin` current-page selection can add selected products to an existing collection.
-8. `/admin` current-page selection can remove one collection without disturbing other memberships.
-9. `/admin` current-page selection can enable/disable product catalog state without changing variant state.
-10. The editor prioritizes commerce/editorial controls and collapses long Pancake source context by default.
-11. The directory surfaces activation coverage and actionable catalog-health filters.
-12. No new flow mutates Pancake-owned price, inventory, source identity, images, or relation data.
-13. Focused domain/database regressions would fail without the new behavior.
-14. Existing tests, lint, typecheck, build, security smokes, and relevant admin Axe/VoiceOver runtime checks are green for each implementation slice.
-15. No schema/dependency/sync behavior change is introduced without a separate approved decision.
+6. Relation-linked child products do not receive or successfully execute the one-click standalone publication shortcut; current incoming composite membership is re-checked server-side before any quick-action write.
+7. A stale quick-action form fails closed if an incoming composite relation is persisted after render and before submit.
+8. `/admin` current-page selection can add selected products to an existing collection.
+9. `/admin` current-page selection can remove one collection without disturbing other memberships.
+10. `/admin` current-page selection can enable/disable product catalog state without changing variant state.
+11. Bulk catalog enable explicitly warns about selected products with current incoming composite membership and standalone-publication exposure, in addition to zero-active-variant warnings.
+12. Bulk catalog mutations validate current target/relation state server-side rather than trusting browser-rendered counts.
+13. The editor prioritizes commerce/editorial controls and collapses long Pancake source context by default.
+14. The directory surfaces activation coverage and actionable catalog-health filters.
+15. No new flow mutates Pancake-owned price, inventory, source identity, images, or relation data.
+16. Focused domain/database regressions would fail without the new behavior.
+17. Existing tests, lint, typecheck, build, security smokes, and relevant admin Axe/VoiceOver runtime checks are green for each implementation slice.
+18. No schema/dependency/sync behavior change is introduced without a separate approved decision.
 
 ## Open questions
 
