@@ -2,139 +2,521 @@
 
 Status: **DRAFT SPEC — docs-only; no implementation in this PR**
 
-This spec extends the narrower bulk-status work documented in `docs/design/admin-product-management-v2.md`. It does not rewrite that document or claim runtime behavior beyond what is already merged on `main`.
+This spec extends `docs/design/admin-product-management-v2.md`. It defines the next admin-product-management scope without changing Pancake source ownership or claiming runtime behavior that is not already implemented.
 
 ## Objective
 
-Improve product operations for authenticated admins so routine catalog work can be completed without opening and editing products one by one.
+Improve product operations for authenticated admins so common catalog work does not require repetitive one-by-one editing.
 
-V3 focuses on four operator problems:
+V3 addresses four problems:
 
-1. normal products can have present variants with stock but no admin control to activate those variants;
-2. variant activation is split across composite-specific sections instead of one consistent commerce workflow;
-3. `/admin` already supports current-page bulk selection, but bulk operations are limited to editorial status;
-4. the single-product editor is long and source-heavy, making common commerce/editorial actions slower to reach.
-
-Success means an admin can safely activate normal/composite variants, perform useful bulk product operations, and edit a product from a compact workflow while Pancake-owned source data remains read-only.
+1. ordinary products can have present variants with stock but no admin control to activate those variants;
+2. activation controls are split across composite-specific sections instead of one consistent workflow;
+3. `/admin` bulk selection exists, but bulk operations are limited to editorial status;
+4. the single-product editor is long and source-heavy, so common commerce/editorial actions are hard to reach.
 
 ## Current truth and constraints
 
-- `/admin` already supports row selection, current-page select-all, indeterminate state, confirmation, and atomic bulk editorial status updates.
-- `ProductContent.status` is website-owned and currently supports `DRAFT | REVIEWED | PUBLISHED`.
-- collection membership is stored as `ProductContent.collectionSlugs` and collection definitions already have admin resolution/listing paths.
-- `ProductMirror.isActive` and `VariantMirror.isActive` are website-owned commerce state, but they are independent values.
-- the product editor currently exposes activation controls for relation-linked composite child variants and composite parent variants; ordinary standalone variants remain read-only in the source table.
-- Pancake remains authoritative for mirrored source identity, price, inventory, source description, images, and composite source relations.
-- Pancake sync must not auto-activate products or variants.
-- storefront commerce still decides purchasability from activation, presence, price, inventory, and composite eligibility; this spec does not weaken those guards.
+- `/admin` already supports current-page row selection, select-all, indeterminate state, confirmation, and atomic bulk editorial status updates.
+- `ProductContent.status` is website-owned: `DRAFT | REVIEWED | PUBLISHED`.
+- collection membership is stored in `ProductContent.collectionSlugs`.
+- `ProductMirror.isActive` and `VariantMirror.isActive` are website-owned but independent.
+- the editor currently has activation controls for composite parent/child variants; ordinary variants remain read-only.
+- Pancake remains authoritative for mirrored identity, price, inventory, source description/images, and composite source relations.
+- sync must not auto-activate products or variants.
+- storefront purchasability continues to depend on existing activation, presence, price, stock, and composite guards.
 
-## Decisions already approved
+## Approved decisions
 
 1. Product activation and variant activation remain independent.
 2. Activating a variant must not automatically activate its product.
-3. Activating a product must not automatically activate its variants.
-4. The editor may offer one explicit convenience action: **Bật sản phẩm + kích hoạt biến thể có hàng**.
-5. That combined action requires confirmation and must be atomic.
-6. Bulk collection operations use **add** and **remove** semantics, never replace-all in V3.
-7. Bulk selection remains scoped to the current `/admin` page; no cross-page persistent selection.
-8. Price and inventory remain Pancake-owned and are never mutated by these admin actions.
-9. No sync-time auto-activation is introduced.
-10. Any UI-derived eligibility or warning count is advisory only; privileged mutation decisions must be recomputed from current database truth immediately before writes.
+3. Activating a product must not automatically activate variants.
+4. The editor may offer **Bật sản phẩm + kích hoạt biến thể có hàng** as an explicit combined convenience action.
+5. The combined action is confirmed and atomic.
+6. Bulk collection uses add/remove semantics, never replace-all.
+7. Bulk selection stays current-page scoped; no persistent cross-page selection.
+8. Price/inventory remain Pancake-owned and are never edited by these admin actions.
+9. No sync-time auto-activation.
+10. Browser-rendered counts, relation state, stock, eligibility, and confirmation summaries are advisory only; privileged writes use current server/database truth.
 
 ## Feature A — Unified Website Commerce controls
 
-Every product editor must expose one primary `Website commerce` section before long source/editorial details.
+Every product editor exposes one primary `Website commerce` section before long source details.
 
-The section shows compact product-level state:
+Show a compact summary:
 
-- catalog: active/inactive;
-- active variants: `X / N`;
-- variants with positive stock;
+- catalog active/inactive;
+- active variants `X / N`;
+- positive-stock variant count;
 - total mirrored stock;
 - collection count.
 
-It provides an explicit product catalog toggle:
+Provide explicit product actions:
 
-- `Bật catalog` when `ProductMirror.isActive=false`;
-- `Tắt catalog` when `ProductMirror.isActive=true`.
+- `Bật catalog` when inactive;
+- `Tắt catalog` when active.
 
-### Product activation contract
+### Product catalog mutation contract
 
-A product catalog mutation must:
+A catalog mutation must:
 
 - require `ADMIN`;
 - bind product identity to the current editor route/server context;
-- require the product to still exist and be present;
-- recompute current incoming composite membership before writes when enabling catalog;
+- verify the product still exists and is present;
 - mutate only `ProductMirror.isActive`;
 - be idempotent;
-- never mutate any variant, price, stock, collection, editorial field, Pancake identifier, or composite edge.
+- never mutate variants, price, stock, collections, editorial fields, Pancake identifiers, or composite edges.
 
-For a product that currently has incoming composite membership, the UI must make standalone-publication risk explicit before enabling the product catalog. Variant activation remains available regardless of whether the child product catalog is enabled.
+A relation-linked child product may still be enabled as a standalone product, but the publication risk must be explicitly confirmed.
 
-The single-product catalog toggle may still enable a relation-linked child product, but enabling is a **two-phase server confirmation contract**:
+### Publication-risk confirmation freshness
 
-1. **Prepare confirmation:** the server reads current publication-warning state and returns the warning plus an opaque server-authenticated confirmation proof bound to the route-owned product, the `enable` operation, and the warning-relevant state the operator is shown.
-2. **Commit confirmation:** after the operator confirms, the server re-reads current database state before any write and validates it against that proof.
+`Bật catalog` is a **two-phase server confirmation contract**.
 
-The warning-relevant state for single-product enable includes at minimum:
+**Prepare confirmation**
 
-- whether the product currently has any persisted incoming composite membership; and
-- whether it currently has zero active present variants.
+The server reads current warning-relevant state and returns:
 
-If the product/operation binding is wrong, the proof is missing/invalid/expired, or either warning-relevant state changed after confirmation was prepared, the server must return `RECONFIRM_REQUIRED` (or an equivalent explicit result), perform **zerrites*, and return/render a fresh current warning summary that requires a new operator confirmation. Raw browser-provided booleans/counts/ID sets are not acceptable as the proof. A signed short-lived token or equivalent server-held confirmation nonce is acceptable; no new schema or dependency is required by this spec.
+- the operator-visible warning summary; and
+- an opaque server-authenticated confirmation proof bound to the route-owned product, the `enable` operation, and the exact warning-relevant state shown.
 
-`Tắt catalog` does not require this publication-risk reconfirmation handshake because it reduces standalone publication exposure, but it still performs normal authorization/current-target validation.
+For a single product, warning-relevant state includes at minimum:
 
-The separate combined quick action defined below is stricter and is never allowed for a current composite child.
+- whether any persisted incoming composite membership currently exists; and
+- whether the product currently has zero active present variants.
+
+**Commit confirmation**
+
+After the operator confirms, the server re-reads current state before any write and validates it against the confirmation proof.
+
+If the proof is missing, invalid, expired, bound to the wrong target/operation, or warning-relevant state changed after prepare, the server must:
+
+- return `RECONFIRM_REQUIRED` or an equivalent explicit result;
+- perform **zero writes**;
+- return/render a fresh current warning summary;
+- require a new operator confirmation.
+
+Raw browser-provided booleans, counts, or ID sets are not acceptable proof. A signed short-lived token or equivalent server-held confirmation nonce is acceptable. This spec does not require a new schema or dependency.
+
+`Tắt catalog` does not need this publication-risk reconfirmation handshake because it reduces standalone exposure, but normal auth/current-target validation still applies.
 
 ## Feature B — Generic variant activation for every product
 
-The product editor must expose a single `Biến thể website` table for all present variants, including:
+Expose one `Biến thể website` table covering:
 
-- ordinary standalone variants;
+- ordinary variants;
 - composite parent variants;
 - relation-linked composite child variants.
 
-Composite membership is context only; it must not be required for generic variant activation.
+Composite membership is context, not a prerequisite for generic activation.
 
 Each row shows at minimum:
 
-- SKU or fallback variant label;
+- SKU/fallback label;
 - color;
 - size;
-- mirrored stock total;
+- mirrored stock;
 - activation state;
-- context badge: `Thường`, `Set cha`, and/or `Thành phần set` when applicable;
-- a single-row `Kích hoạt` / `Tắt` action.
+- context badge: `Thường`, `Set cha`, and/or `Thành phần set`;
+- single-row `Kích hoạt` / `Tắt` action.
+
+### Generic variant mutation contract
+
+The server-side mutation must:
+
+- require `ADMIN`;
+- accept `1..100` unique variant IDs;
+- reject empty, duplicate, malformed, or oversized input before writes;
+- bind `productId` to current route/server context;
+- verify every variant belongs to that product;
+- verify every variant is still `isPresent=true`;
+- mutate only `VariantMirror.isActive`;
+- be atomic per submitted batch;
+- allow idempotent updates;
+- never infer ownership/relation from names, slugs, SKUs, color, or size.
+
+Any mixed valid/invalid batch performs zero updates.
+
+### Deterministic behavior above the 100-variant batch cap
+
+The repository does not establish an invariant that one product has at most 100 variants. Therefore V3 must not expose a UI action that can silently create an oversized batch.
+
+For products with **100 or fewer** present variants:
+
+- `Chọn tất cả biến thể` selects the whole product;
+- `Chọn biến thể có hàng` selects all current positive-stock variants.
+
+For products with **more than 100** present variants:
+
+- render deterministic pages/windows of at most 100 variants using stable editor order (`color`, `size`, then `id`);
+- label actions `Chọn tất cả biến thể trên trang này` and `Chọn biến thể có hàng trên trang này`;
+- scope selection to the current variant page/window;
+- clear selection when moving to another variant page;
+- show range/total, e.g. `1–100 / 245 biến thể`;
+- never accumulate or submit more than 100 browser-selected IDs across pages;
+- require multiple explicit submissions to process a product with >100 variants;
+- guarantee atomicity per submitted batch, not across the operator's sequence of multiple pages.
+
+A forged 101-ID request is rejected before writes. Selection is never silently truncated.
+
+The Feature C quick action is separate: it accepts no browser variant-ID list and may atomically update all currently eligible positive-stock variants of the one route-owned product even if that server-computed count exceeds 100.
+
+## Feature C — Combined quick action
+
+For an ordinary product, offer:
+
+**Bật sản phẩm + kích hoạt biến thể có hàng**
+
+The UI confirms the current expected effect. Browser stock/relation state is advisory only.
+
+### Eligibility and mutation contract
+
+The action is rendered only when the editor's current read model has no incoming composite membership.
+
+At mutation time, in one transaction and before any write, the server must:
+
+1. verify the route-owned product exists and is present;
+2. re-read current incoming composite membership through its variants;
+3. if any incoming `CompositeComponentMirror` exists, fail closed with zero writes;
+4. recompute current product variants with `isPresent=true` and summed mirrored stock `> 0`;
+5. set `ProductMirror.isActive=true`;
+6. set only those current positive-stock variants to `VariantMirror.isActive=true`;
+7. leave zero-stock variants unchanged.
+
+Any validation/query/write failure rolls back the whole operation.
+
+This explicitly covers stale UI: if the product was ordinary at render time but a later sync adds an incoming composite edge before submit, the action fails with zero writes.
+
+## Feature D — Bulk product operations on `/admin`
+
+Reuse the existing current-page selection system. Do not add a second or cross-page selection model.
+
+Support:
+
+1. existing bulk editorial status;
+2. `Thêm vào collection`;
+3. `Gỡ khỏi collection`;
+4. `Bật catalog`;
+5. `Tắt catalog`.
+
+### Bulk collection add/remove
+
+For `1..100` selected products and one existing collection:
+
+- add only the selected collection when absent, or remove only that collection when present;
+- preserve all other collection membership;
+- preserve status, editorial text, SEO, and mirrored/Pancake fields;
+- create minimal `ProductContent` only when add requires it;
+- treat already-added/already-absent state as idempotent success;
+- validate the collection against existing definitions;
+- perform the selected batch atomically.
+
+V3 has no bulk `Replace collections` action.
+
+### Bulk catalog enable/disable
+
+The mutation must:
+
+- require `ADMIN`;
+- accept `1..100` unique selected product IDs;
+- validate all targets against current database truth;
+- verify every target exists and is present;
+- mutate only `ProductMirror.isActive`;
+- never mutate variant activation;
+- be atomic and idempotent.
+
+Before **enabling**, the warning summary includes at minimum:
+
+- selected products with zero active present variants; and
+- selected products with current incoming composite membership that would become separately public.
 
 Example:
 
 ```text
-Biến thể website                         1 / 4 hoạt động
-
-[ ] Chọn tất cả   [Chọn biến thể có hàng]
-
-L      Hết hàng       TẮT
-M      Hết hàng       TẮT
-XL     1 cái          TẮT
-XXL    Hết hàng       TẮT
-
-[ Kích hoạt 4 ]   [ Tắt 4 ]
+7/12 sản phẩm hiện không có biến thể hoạt động.
+2/12 sản phẩm đang là thành phần set/composite và sẽ được mở catalog riêng.
+Bật catalog không tự kích hoạt biến thể.
 ```
 
-### Bulk variant behavior inside one product
+### Bulk publication-risk confirmation freshness
 
-The generic browser-selected variant batch limit is **100 unique variants per submitted mutation**. The repository does not establish a `<=100 variants per product` invariant, so the UI must not imply that an arbitrarily large product can be submitted as one selected batch.
+Bulk `Bật catalog` uses the same two-phase principle as single-product enable.
 
-For products with **100 or fewer** present variants, the editor supports:
+**Prepare** validates the exact selected IDs, computes current warning state, and returns an opaque server-authenticated proof bound to:
 
-- select/deselect individual variants;
-- `Chọn tất cả biến thể` for the whole product;
-- `Chọn biến thể có hàng` for all current variants whose summed mirrored stock is greater than zero;
-- activate selected variants;
-- deactivate selected variants;
-- clear selection;
-- accessible selected-count feedback.
+- exact selected product IDs;
+- the `enable` operation;
+- the exact set of selected products with zero active present variants;
+- the exact set of selected products with incoming composite membership.
 
-For products with **more than 100** present variants, the variant table is divided into deterministic pages/windows of at most 100 variants using the existing stable editor order (`color`, `size`, then `id`). In this mode:
+**Commit** re-reads all selected targets and warning-relevant state before any write and validates against the proof.
+
+If selected targets differ, the proof is missing/invalid/expired, or either warning-relevant set changed after prepare, the server returns `RECONFIRM_REQUIRED`, performs **zero writes for the whole batch**, and returns a fresh summary for a new confirmation.
+
+This no-write rule applies even if every product still exists/is present and enabling would otherwise be valid.
+
+Example stale confirmation:
+
+```text
+prepare: 0/12 composite children
+sync adds an incoming edge to 1 selected product
+submit old confirmation
+→ RECONFIRM_REQUIRED
+→ 0 products updated
+→ fresh summary: 1/12 composite children
+```
+
+Browser-rendered counts/sets are UX only and cannot serve as confirmation proof.
+
+Bulk `Tắt catalog` does not need the publication-risk reconfirmation handshake, but still validates every target atomically.
+
+## Feature E — Compact product editor
+
+Target order:
+
+```text
+← Sản phẩm
+
+TÊN SẢN PHẨM
+
+CATALOG       EDITORIAL      VARIANTS       STOCK
+Đang tắt      Nháp           0 / 4 active   1
+
+[ Bật catalog ]
+[ Bật sản phẩm + variant có hàng ]
+
+Website commerce
+  Biến thể website
+  Collection
+
+Nội dung
+  Trạng thái
+  Mô tả
+  Chăm sóc
+  Size guide
+
+SEO
+  Title
+  Description
+
+Slug
+
+▸ Dữ liệu Pancake · chỉ đọc
+```
+
+Move long read-only Pancake context into a semantic `<details>` collapsed by default. Preserve, rather than delete:
+
+- source description;
+- source images;
+- price/stock summary/detail;
+- raw source variant table;
+- composite source/reference data not needed for immediate activation controls.
+
+## Feature F — Operational health indicators and filters
+
+Add actionable directory indicators/filters for at least:
+
+- `Có hàng nhưng variant đang tắt`;
+- `0 variant hoạt động`;
+- `Không có collection`;
+- `Catalog đang tắt`;
+- `Thiếu ảnh`.
+
+Each row shows activation coverage such as `1 / 4 active`, plus a warning when positive-stock variants are inactive.
+
+Do not add a synthetic numeric health score.
+
+## Security and hardening
+
+Always:
+
+- require authenticated `ADMIN` server-side;
+- validate shapes, counts, uniqueness, bounded IDs, ownership, and presence before writes;
+- use route-owned product identity for product-editor mutations;
+- validate collections against current definitions;
+- re-read current relation state when publication safety depends on it;
+- require server-authenticated confirmation freshness for catalog-enable writes;
+- return `RECONFIRM_REQUIRED` with zero writes when warning-relevant state changed;
+- use atomic transactions for multi-record operations;
+- return operator-safe errors without database internals.
+
+Never:
+
+- trust hidden product IDs for authorization;
+- trust stale browser stock/relation state as mutation eligibility;
+- trust raw browser confirmation counts/sets as proof that risk was acknowledged;
+- commit catalog enable after warning-relevant state changed since the shown confirmation;
+- let generic browser-selected variant batches exceed 100 IDs or silently truncate them;
+- mutate Pancake price, stock, source identity, images, or relation edges;
+- auto-publish a product because a variant was activated;
+- auto-activate variants because a product was activated.
+
+## Accessibility and UX
+
+- use native buttons, checkboxes, selects, tables, and `<details>` where possible;
+- expose select-all checked/unchecked/indeterminate state programmatically;
+- keep descriptive accessible names and visible focus;
+- success uses `role="status"`; failures/reconfirmation use `role="alert"` or equivalent;
+- confirmation/reconfirmation is keyboard reachable and cancellable;
+- variant pagination/window range and selected count are announced accessibly;
+- no page-level horizontal overflow;
+- relevant Axe checks use the shared tag set including `best-practice`;
+- critical activation/bulk flows retain browser + VoiceOver coverage.
+
+## Testing strategy
+
+Use RED → GREEN for changed behavior.
+
+### Domain/database coverage
+
+At minimum prove:
+
+- non-admin rejected before writes;
+- malformed/duplicate/oversized product/variant batches rejected;
+- route-owned product identity cannot be replaced by browser input;
+- generic activation works for ordinary and composite variants;
+- cross-product/stale/not-present/mixed-invalid variant batches produce zero writes;
+- product activation changes only `ProductMirror.isActive`;
+- variant activation changes only `VariantMirror.isActive`;
+- quick action activates only current positive-stock variants and rejects current incoming composite membership;
+- stale quick-action case: edge added after render → zero writes;
+- single-product catalog prepare → relation/warning state changes → old proof returns `RECONFIRM_REQUIRED`, product unchanged;
+- bulk catalog prepare → one selected product's warning-relevant relation state changes → old proof returns `RECONFIRM_REQUIRED`, zero batch writes;
+- missing/stale bulk target causes zero batch writes;
+- collection add/remove preserves unrelated memberships/content/mirrored fields;
+- >100-variant product: first page select-all submits exactly 100 IDs, later page submits the remainder, forged 101-ID request is rejected before writes.
+
+### Reported ordinary-product regression
+
+Fixture:
+
+```text
+normal product
+product isPresent = true
+product isActive = true
+variant XL isPresent = true
+variant XL stock = 1
+variant XL isActive = false
+no composite relation
+```
+
+Expected:
+
+```text
+admin activates XL
+→ VariantMirror.isActive = true
+→ storefront may include XL subject to existing price/stock guards
+```
+
+### Browser/accessibility coverage
+
+Verify at minimum:
+
+- ordinary product displays variant controls;
+- select-all + indeterminate state;
+- >100 variant page/window labels, range feedback, page-scoped selection, reset on page change;
+- select-positive-stock is page-scoped when >100;
+- bulk variant activate/deactivate;
+- quick-action confirmation and stale-relation rejection;
+- single-product stale catalog confirmation → accessible `RECONFIRM_REQUIRED` + fresh warning + zero write;
+- bulk catalog warning includes zero-active and composite-publication exposure;
+- bulk stale confirmation → accessible `RECONFIRM_REQUIRED` + fresh summary + zero batch writes;
+- bulk add/remove collection;
+- compact editor + collapsed Pancake disclosure;
+- Axe + VoiceOver + no page-level overflow.
+
+## Implementation slicing
+
+### PR-A — Generic commerce activation
+
+- product catalog toggle;
+- two-phase single-product catalog enable confirmation freshness;
+- generic single/bulk variant activation;
+- deterministic <=100 variant page/window contract;
+- select-positive-stock convenience;
+- combined quick action;
+- ordinary-variant and stale-relation regressions.
+
+### PR-B — Compact editor
+
+- unified Website Commerce presentation;
+- compact summary metrics;
+- collapsed Pancake source disclosure;
+- remove duplicate composite activation UI after generic controls cover it;
+- preserve editorial/slug/source behavior.
+
+### PR-C — Bulk product operations and health
+
+- add/remove collection;
+- bulk catalog enable/disable;
+- zero-active + composite-publication warnings;
+- two-phase server-authenticated bulk confirmation freshness;
+- `RECONFIRM_REQUIRED` zero-write stale-confirmation behavior;
+- activation coverage and health filters.
+
+Each PR must leave the application working and pass focused verification before the next slice.
+
+## Boundaries
+
+### Always
+
+- TDD for changed behavior;
+- server-side authorization and input validation;
+- preserve Pancake ownership;
+- product/variant activation remain independent except the explicit combined action;
+- current persisted relation state is authoritative;
+- catalog-enable confirmation must be fresh at commit time;
+- multi-record writes are atomic;
+- reuse existing parser/service/repository patterns;
+- revalidate affected admin/storefront routes after successful writes;
+- preserve accessibility gates.
+
+### Ask first
+
+- schema migration;
+- new dependency;
+- CI workflow changes;
+- sync behavior changes;
+- auto-activation during sync;
+- persistent/cross-page selection;
+- audit-history schema;
+- price/inventory ownership changes;
+- composite identity/persistence changes.
+
+### Never
+
+- auto-publish because one variant was activated;
+- auto-activate variants because product catalog was enabled;
+- run the combined quick action when current incoming composite membership exists;
+- trust render-time eligibility as mutation-time authorization;
+- commit catalog enable after warning-relevant state changed since confirmation prepare;
+- submit/truncate >100 generic browser-selected variant IDs;
+- mutate Pancake-owned price/stock/relation/source data;
+- silently accept partial success in an atomic batch.
+
+## Success criteria
+
+V3 is complete only when:
+
+1. ordinary present variants can be activated/deactivated from their editor;
+2. multiple variants can be activated/deactivated atomically per submitted batch;
+3. ordinary/composite-parent/composite-child variants use one consistent control model;
+4. product and variant activation remain independent;
+5. combined quick action activates the product plus only current positive-stock variants and fails closed for current composite children;
+6. stale quick-action forms fail closed after relation changes;
+7. single-product `Bật catalog` uses server-authenticated prepare/commit confirmation; stale warning state returns `RECONFIRM_REQUIRED` with zero writes;
+8. products with >100 variants use deterministic <=100 page/window selection and never create oversized generic submissions;
+9. `/admin` can bulk add/remove one collection without disturbing unrelated membership;
+10. `/admin` can bulk enable/disable catalog without changing variant state;
+11. bulk enable warns about zero-active variants and standalone publication of current composite children;
+12. bulk enable uses server-authenticated prepare/commit confirmation; warning-state changes return `RECONFIRM_REQUIRED` with zero batch writes;
+13. compact editor prioritizes commerce/editorial controls and collapses long Pancake context;
+14. directory exposes activation coverage and actionable health filters;
+15. no flow mutates Pancake-owned price, inventory, source identity, images, or composite relations;
+16. focused regressions fail without the new behavior;
+17. existing tests, lint, typecheck, build, security smokes, and relevant Axe/VoiceOver checks are green for each implementation slice;
+18. no schema/dependency/sync change is introduced without a separate approved decision.
+
+## Open questions
+
+None blocking specification approval. Scope expansion beyond these boundaries requires a separate decision before implementation.
