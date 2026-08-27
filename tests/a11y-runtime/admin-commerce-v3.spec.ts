@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { voiceOverTest as test } from "@guidepup/playwright";
 
 import { auth } from "../../src/auth/server.ts";
@@ -143,6 +143,54 @@ function expectSpokenPhrase(spokenPhrase: string, expected: string, label: strin
     spokenPhrase.includes(expected),
     `${label}; captured VoiceOver output: ${JSON.stringify(spokenPhrase)}`,
   ).toBe(true);
+}
+
+async function expectNoPageOverflow(page: Page) {
+  const diagnostics = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const offenders = Array.from(document.querySelectorAll("body *"))
+      .flatMap((element) => {
+        if (!(element instanceof HTMLElement)) return [];
+        const rect = element.getBoundingClientRect();
+        if (rect.left >= -1 && rect.right <= viewportWidth + 1) return [];
+
+        let ancestor = element.parentElement;
+        while (ancestor && ancestor !== document.body) {
+          const style = getComputedStyle(ancestor);
+          const containsHorizontalScroll =
+            (style.overflowX === "auto" || style.overflowX === "scroll") &&
+            ancestor.scrollWidth > ancestor.clientWidth;
+          if (containsHorizontalScroll) return [];
+          ancestor = ancestor.parentElement;
+        }
+
+        return [
+          {
+            tag: element.tagName.toLowerCase(),
+            id: element.id,
+            className: element.className,
+            ariaLabel: element.getAttribute("aria-label"),
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width),
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+          },
+        ];
+      })
+      .slice(0, 12);
+
+    return {
+      viewportWidth,
+      rootScrollWidth: document.documentElement.scrollWidth,
+      offenders,
+    };
+  });
+
+  expect(
+    diagnostics.rootScrollWidth,
+    `Page-level horizontal overflow: ${JSON.stringify(diagnostics)}`,
+  ).toBeLessThanOrEqual(diagnostics.viewportWidth);
 }
 
 test.beforeAll(async () => {
@@ -388,9 +436,7 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true,
-  );
+  await expectNoPageOverflow(page);
 
   const selectAll = page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" });
   await page.getByRole("checkbox", { name: "Chọn biến thể ORD-001" }).check();
@@ -460,8 +506,11 @@ test("A4 ordinary inactive stocked XL can be activated without publishing the pr
 
   await expect(page.getByRole("heading", { level: 2, name: "Website commerce" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Biến thể website" })).toBeVisible();
-  const xlRow = page.getByRole("row").filter({ hasText: "REG-XL" });
-  await expect(xlRow.getByText("1", { exact: true })).toBeVisible();
+  const websiteVariantTable = page.locator(
+    '[aria-label="Bảng biến thể website, cuộn ngang khi cần"]',
+  );
+  const xlRow = websiteVariantTable.getByRole("row").filter({ hasText: "REG-XL" });
+  await expect(xlRow.getByRole("cell", { name: "1", exact: true })).toBeVisible();
   await xlRow.getByRole("button", { name: "Kích hoạt biến thể REG-XL" }).click();
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
