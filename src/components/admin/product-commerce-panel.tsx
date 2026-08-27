@@ -83,7 +83,8 @@ export function ProductCommercePanel({
 }: ProductCommercePanelProps) {
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [quickConfirming, setQuickConfirming] = useState(false);
+  const [quickConfirmationOriginState, setQuickConfirmationOriginState] =
+    useState<ProductCommerceActionState | null>(null);
   const [catalogDismissed, setCatalogDismissed] = useState(false);
   const [commerceState, commerceFormAction, commercePending] = useActionState(
     commerceAction,
@@ -102,6 +103,7 @@ export function ProductCommercePanel({
   const activeCount = variants.filter((variant) => variant.isActive).length;
   const positiveStockCount = variants.filter((variant) => variant.stock > 0).length;
   const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
+  const quickConfirming = quickConfirmationOriginState === commerceState;
 
   const feedback = useMemo(() => {
     if (commerceState.kind === "success") {
@@ -250,7 +252,7 @@ export function ProductCommercePanel({
             <button
               className={buttonClassName(true)}
               disabled={commercePending}
-              onClick={() => setQuickConfirming(true)}
+              onClick={() => setQuickConfirmationOriginState(commerceState)}
               type="button"
             >
               Bật sản phẩm + kích hoạt biến thể có hàng
@@ -303,7 +305,6 @@ export function ProductCommercePanel({
                 className={buttonClassName(true)}
                 disabled={commercePending}
                 name="intent"
-                onClick={() => setQuickConfirming(false)}
                 type="submit"
                 value="quick-activate"
               >
@@ -312,7 +313,7 @@ export function ProductCommercePanel({
               <button
                 className={buttonClassName()}
                 disabled={commercePending}
-                onClick={() => setQuickConfirming(false)}
+                onClick={() => setQuickConfirmationOriginState(null)}
                 type="button"
               >
                 Hủy
