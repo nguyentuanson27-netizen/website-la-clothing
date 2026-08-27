@@ -86,11 +86,14 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [ ] active/total variant metrics
   - [ ] health parser/URL/page-reset contract
   - [ ] no N+1 product reads
-  - [ ] `missing-image` uses `ProductMirror.primaryImageUrl` + present variants' `pancakeImageUrls`
-  - [ ] existing `parseTrustedProductImageUrl()` determines whether a candidate counts
-  - [ ] null primary + trusted present-variant image => not missing
-  - [ ] absent/rejected candidates or trusted stale-variant-only media => missing
-  - [ ] any DB-side image predicate is parity-tested against the trusted parser
+  - [ ] `missing-image` matches `resolveStorefrontProductMedia(...).primary === null`
+  - [ ] media inputs match storefront: primary first, then `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`
+  - [ ] existing `parseTrustedProductImageUrl()` remains the per-candidate trust predicate
+  - [ ] effective scan bound/order matches `MAX_MEDIA_CANDIDATES_SCANNED = 100`
+  - [ ] null primary + trusted in-bound active/present variant image => not missing
+  - [ ] first 100 rejected candidates + trusted candidate #101 => missing
+  - [ ] trusted media only on inactive/stale variants => missing
+  - [ ] any DB-side image predicate is parity-tested against `resolveStorefrontProductMedia()` including order/bounds
 
 - [ ] **C4 — Expand current-page bulk toolbar**
   - [ ] existing editorial bulk behavior preserved
@@ -103,7 +106,8 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [ ] `Biến thể: X / N active`
   - [ ] stocked-but-inactive warning
   - [ ] zero-active / no-collection / catalog-inactive / missing-image filters
-  - [ ] `missing-image` browser result/count follows trusted primary + present-variant fallback semantics
+  - [ ] `missing-image` browser result/count follows storefront resolver semantics
+  - [ ] browser regression covers trusted candidate #101 remaining missing after 100 rejected candidates
   - [ ] facet count/href/query truth stays aligned
   - [ ] no synthetic health score
 
