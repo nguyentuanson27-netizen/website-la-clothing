@@ -18,7 +18,6 @@ const customerSession = {
 } as const;
 
 const validInput = {
-  productId: "product-1",
   variantIds: ["variant-1", "variant-2"],
   isActive: true,
 } as const;
@@ -67,7 +66,7 @@ test("generic variant activation requires ADMIN before repository access", async
     [customerSession, "FORBIDDEN"],
   ] as const) {
     await assert.rejects(
-      () => service.setVariantActivation(session, validInput),
+      () => service.setVariantActivation(session, "product-1", validInput),
       (error: unknown) => {
         assert.ok(error instanceof AuthorizationError);
         assert.equal(error.code, expectedCode);
@@ -79,7 +78,7 @@ test("generic variant activation requires ADMIN before repository access", async
   assert.equal(calls, 0);
 });
 
-test("generic variant activation rejects malformed duplicate and oversized browser input", async () => {
+test("generic variant activation rejects malformed route identity and malformed duplicate or oversized browser input", async () => {
   let calls = 0;
   const service = createProductCommerceAdminService(
     commerceDependencies(async () => {
@@ -88,12 +87,20 @@ test("generic variant activation rejects malformed duplicate and oversized brows
     }),
   );
 
+  for (const productId of [
+    "",
+    " product-1",
+    "p".repeat(PRODUCT_COMMERCE_ADMIN_LIMITS.productId + 1),
+  ]) {
+    assert.deepEqual(await service.setVariantActivation(adminSession, productId, validInput), {
+      ok: false,
+      reason: "INVALID_INPUT",
+    });
+  }
+
   const invalidInputs: unknown[] = [
     null,
     [],
-    { ...validInput, productId: "" },
-    { ...validInput, productId: " product-1" },
-    { ...validInput, productId: "p".repeat(PRODUCT_COMMERCE_ADMIN_LIMITS.productId + 1) },
     { ...validInput, variantIds: [] },
     { ...validInput, variantIds: ["variant-1", "variant-1"] },
     {
@@ -114,7 +121,7 @@ test("generic variant activation rejects malformed duplicate and oversized brows
   ];
 
   for (const input of invalidInputs) {
-    assert.deepEqual(await service.setVariantActivation(adminSession, input), {
+    assert.deepEqual(await service.setVariantActivation(adminSession, "product-1", input), {
       ok: false,
       reason: "INVALID_INPUT",
     });
@@ -123,7 +130,7 @@ test("generic variant activation rejects malformed duplicate and oversized brows
   assert.equal(calls, 0);
 });
 
-test("generic variant activation passes only route-owned product, unique IDs, and exact boolean state", async () => {
+test("generic variant activation binds the persisted route product and ignores a forged browser productId", async () => {
   const calls: unknown[] = [];
   const service = createProductCommerceAdminService(
     commerceDependencies(async (input) => {
@@ -133,8 +140,8 @@ test("generic variant activation passes only route-owned product, unique IDs, an
   );
 
   assert.deepEqual(
-    await service.setVariantActivation(adminSession, {
-      productId: "product-1",
+    await service.setVariantActivation(adminSession, "route-product", {
+      productId: "forged-product",
       variantIds: ["variant-2", "variant-1"],
       isActive: false,
       forgedProductActive: true,
@@ -148,7 +155,7 @@ test("generic variant activation passes only route-owned product, unique IDs, an
   );
   assert.deepEqual(calls, [
     {
-      productId: "product-1",
+      productId: "route-product",
       variantIds: ["variant-2", "variant-1"],
       isActive: false,
     },
@@ -158,7 +165,7 @@ test("generic variant activation passes only route-owned product, unique IDs, an
 test("generic variant activation fails closed when any requested variant is unavailable", async () => {
   const service = createProductCommerceAdminService(commerceDependencies(async () => false));
 
-  assert.deepEqual(await service.setVariantActivation(adminSession, validInput), {
+  assert.deepEqual(await service.setVariantActivation(adminSession, "product-1", validInput), {
     ok: false,
     reason: "VARIANT_NOT_AVAILABLE",
   });
