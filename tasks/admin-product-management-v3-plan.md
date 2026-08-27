@@ -26,6 +26,7 @@ The plan is based on current `main` behavior and boundaries:
 - `/admin` already has current-page multi-select in `src/components/admin/admin-product-bulk-table.tsx`, with an atomic bulk editorial-status Server Action in `src/app/admin/actions.ts`.
 - `src/commerce/product-content-admin.ts` / `product-content-repository.ts` own website editorial state and collection membership. `CollectionDefinition` validation/resolution already exists in `collection-definition-repository.ts`.
 - `ProductMirror.isActive` and `VariantMirror.isActive` are existing website-owned commerce fields. No schema change is needed for V3.
+- `src/commerce/product-media.ts` owns the reviewed image-trust predicate via `parseTrustedProductImageUrl()`. V3 health classification must use that trust contract across `ProductMirror.primaryImageUrl` plus `VariantMirror.pancakeImageUrls` from present variants; it must not infer `Thiếu ảnh` from `primaryImageUrl` alone.
 - CI already runs Prisma validation/generation/migrations, DB tests, HTTP/security/auth smokes, lint, typecheck, domain tests, build, release/start smokes, and the macOS admin Axe/VoiceOver runtime.
 
 ## Architecture decisions for implementation
@@ -79,745 +80,382 @@ Generic activation mutates only global `isActive` fields. It must not create, de
 ```text
 A1 confirmation proof contract
 
-A2 generic variant backend
+A2 generic variant activation backend
+  └─> A4 generic variant editor UI
 
 A1 + A2
-  -> A3 product catalog + quick-action backend
+  └─> A3 product catalog + quick-action backend
+        └─> A5 catalog/quick-action editor UI
 
-A2
-  -> A4 unified variant table
+A4 + A5
+  └─> Checkpoint A / PR-A
+        └─> B1 compact editor IA
+              └─> B2 collapse source + remove duplicate composite activation UI
+                    └─> Checkpoint B / PR-B
 
-A3 + A4
-  -> A5 catalog + quick-action editor UX
-  -> Checkpoint A
-
-Checkpoint A
-  -> B1 compact editor IA
-  -> B2 collapsed Pancake source + duplicate activation cleanup
-  -> Checkpoint B
-
-Checkpoint A
-  -> C1 bulk collection backend
-  -> C2 bulk catalog backend  (also depends on A1/A3 confirmation/catalog primitives)
-  -> C3 directory health read model
-
-C1 + C2 + C3
-  -> C4 bulk toolbar expansion
-  -> C5 health indicators/filters UI
-  -> Checkpoint C / V3 implementation complete
+C1 bulk collection backend ───────────────┐
+A1 + A3 -> C2 bulk catalog backend ──────┼─> C4 bulk toolbar UI
+C3 directory health read model ──────────┘       └─> C5 browser/runtime convergence
+                                                    └─> Checkpoint C / PR-C
 ```
 
-PR-B and the backend-first part of PR-C may be developed in parallel after Checkpoint A if they use separate branches. PR-C UI must integrate all accepted C1–C3 contracts before completion.
+C1 and C3 may start in parallel with late PR-A work because they do not depend on the product-editor UI. C2 waits for the shared confirmation/commerce contracts from PR-A. PR-B and PR-C backend work may proceed in parallel, but avoid concurrent edits to the same admin page/component branch.
 
 ---
 
 # PR-A — Generic commerce activation
 
-PR-A closes the P0 operational gap first: ordinary variants must become manageable without weakening the composite relation or storefront boundaries.
+## Task A1 — Implement the catalog confirmation proof primitive
 
-## A1 — Implement the catalog confirmation proof primitive
+**Description:** Create the server-authenticated prepare/commit proof primitive required by the approved stale-confirmation contract. This task contains no product write logic yet; it establishes the security boundary reused by single-product and bulk catalog enable.
 
-**Description**
+**Acceptance criteria:**
+- [ ] proof is bound to actor, operation, exact target(s), warning state, version, and expiry;
+- [ ] tampered, malformed, expired, wrong-actor, wrong-operation, and wrong-target proofs fail closed;
+- [ ] canonicalization is deterministic, including sorted bulk target/warning sets.
 
-Create a pure server-side helper for the two-phase single/bulk catalog-enable confirmation contract. This task does not update products.
+**Verification:**
+- [ ] RED/GREEN focused domain tests for sign/verify and every rejection class;
+- [ ] `pnpm test:domain`;
+- [ ] security review confirms no raw secret/proof payload is logged and comparison is timing-safe.
 
-The proof payload should carry only bounded, non-secret fields required to detect stale risk acknowledgement:
+**Dependencies:** None.
 
-- purpose/version;
-- admin actor ID;
-- operation (`enable` only for this contract);
-- canonical exact target product IDs;
-- canonical warning state:
-  - IDs of selected products with zero active present variants;
-  - IDs of selected products with incoming composite membership;
-- issued-at and expiry.
+**Files likely touched:**
+- `src/commerce/admin-catalog-confirmation.ts`
+- `tests/domain/admin-catalog-confirmation.test.ts`
+- `src/auth/config.ts` only if a narrow read-only secret accessor is needed; do not change auth semantics.
 
-Use stable canonical serialization before signing. Bulk target/warning ID sets must be sorted and duplicate-free before signing or comparison.
+**Estimated scope:** S–M.
 
-**Acceptance criteria**
+## Task A2 — Add generic variant activation service/repository
 
-- [ ] no database write in proof helper;
-- [ ] proof cannot be replayed for a different admin, operation, or product selection;
-- [ ] warning-state drift invalidates commit freshness;
-- [ ] malformed/tampered/expired proof fails closed;
-- [ ] raw browser counts are never accepted as authoritative proof;
-- [ ] no new dependency/schema/secret is introduced without approval.
+**Description:** Add ADMIN-only generic activation for `1..100` unique variants belonging to one route-owned product. Unlike the current composite-specific paths, membership in a composite relation is not required.
 
-**Verification**
+**Acceptance criteria:**
+- [ ] ordinary, composite-parent, and composite-child present variants can be activated/deactivated through the same service;
+- [ ] cross-product, duplicate, malformed, >100, stale, and `isPresent=false` targets produce zero writes;
+- [ ] the write changes only `VariantMirror.isActive` and is atomic/idempotent per submitted batch.
 
-RED/GREEN domain tests for:
+**Verification:**
+- [ ] RED/GREEN domain parser/auth tests;
+- [ ] RED/GREEN PostgreSQL repository tests including mixed-valid/invalid atomic rollback;
+- [ ] regression fixture for the reported normal product with stock and inactive XL;
+- [ ] `pnpm test:domain` and `pnpm test:db`.
 
-- valid prepare/verify round trip;
-- payload/signature tampering;
-- expired proof;
-- wrong actor;
-- wrong operation;
-- one target added/removed;
-- zero-active set changed;
-- composite-child set changed;
-- different bulk ID order canonicalizes to the same logical state;
-- duplicate IDs are rejected before signing/verifying.
+**Dependencies:** None.
 
-Security review confirms domain separation, bounded payloads, non-secret failure messages, and constant-time signature comparison.
-
-**Dependencies:** approved V3 spec.
-
-**Likely files**
-
-- `src/commerce/admin-catalog-confirmation.ts` (new)
-- `tests/domain/admin-catalog-confirmation.test.ts` (new)
-- `src/auth/config.ts` only if a narrow existing-config accessor is needed; do not broaden auth behavior.
-
-**Estimated scope:** Small–Medium.
-
----
-
-## A2 — Add the generic variant activation service/repository
-
-**Description**
-
-Introduce generic variant activation for every present variant of one route-owned product. This replaces the *need* for composite-specific activation semantics, but PR-A does not delete the old composite UI yet.
-
-Parser/service contract:
-
-- ADMIN required before repository access;
-- `1..100` unique variant IDs;
-- strict bounded IDs;
-- exact boolean target state;
-- product ID comes from server-owned route context.
-
-Repository transaction:
-
-1. read/count all requested `VariantMirror` rows constrained by exact `productId` and `isPresent=true`;
-2. if count differs from requested IDs, return fail-closed result before update;
-3. update `VariantMirror.isActive` only for that exact set;
-4. require update count equals target count or roll back.
-
-Composite membership is not an activation precondition.
-
-**Acceptance criteria**
-
-- [ ] ordinary variant can activate/deactivate;
-- [ ] composite parent and component variants also work through the same generic service;
-- [ ] wrong-product, missing, stale, `isPresent=false`, duplicate, oversized, malformed input produces zero writes;
-- [ ] product state, price, stock, source fields, and composite edges remain unchanged;
-- [ ] idempotent requested state is success.
-
-**Verification**
-
-TDD with domain + PostgreSQL tests, including the reported regression fixture:
-
-```text
-normal product active/present
-XL present
-stock sum = 1
-XL isActive = false
-no composite relation
-```
-
-GREEN proves generic admin activation sets XL active and current storefront detail/projection may expose XL under existing price/stock guards.
-
-Also cover a mixed batch with one valid and one wrong-product/stale variant => zero writes.
-
-**Dependencies:** none beyond approved spec; can develop in parallel with A1.
-
-**Likely files**
-
-- `src/commerce/product-commerce-admin.ts` (new)
-- `src/commerce/product-commerce-repository.ts` (new)
-- `tests/domain/product-commerce-admin.test.ts` (new)
-- `tests/database/product-commerce-repository.test.ts` (new)
-- one storefront convergence DB test only if required to prove the ordinary-product regression.
-
-**Estimated scope:** Medium.
-
----
-
-## A3 — Add product catalog enable/disable and combined quick-action backend
-
-**Description**
-
-Extend the new generic commerce boundary with two distinct product operations.
-
-### Ordinary catalog toggle
-
-`Tắt catalog`:
-
-- ADMIN;
-- route-owned product ID;
-- product exists + `isPresent=true`;
-- update only `ProductMirror.isActive=false`;
-- no confirmation proof required because exposure is reduced.
-
-`Bật catalog`:
-
-- prepare operation reads current warning state and emits server-authenticated confirmation proof from A1;
-- commit re-reads current warning state in the same transaction before any write;
-- stale/invalid proof => `RECONFIRM_REQUIRED`, zero writes, fresh warning state returned;
-- valid/current proof => update only `ProductMirror.isActive=true`.
-
-### Combined quick action
-
-`Bật sản phẩm + kích hoạt biến thể có hàng`:
-
-- no browser variant IDs;
-- transaction verifies product present;
-- transaction checks current incoming composite membership across its variants; any current incoming edge => fail closed, zero writes;
-- server computes present variants whose **summed** `WarehouseStock.quantity > 0`;
-- updates product active + those variants active atomically;
-- zero-stock variants stay unchanged.
-
-**Acceptance criteria**
-
-- [ ] product toggle never changes variant state;
-- [ ] variant activation never changes product state;
-- [ ] valid catalog-enable proof is target/actor/state-bound;
-- [ ] relation/zero-active warning state change after prepare returns `RECONFIRM_REQUIRED` and product stays unchanged;
-- [ ] quick action is impossible for current relation-linked child product;
-- [ ] quick action can handle >100 eligible variants because the server computes them inside the transaction;
-- [ ] positive stock means summed warehouse quantity `>0`, not merely “a stock row exists”.
-
-**Verification**
-
-Domain/DB tests:
-
-- prepare + current commit success;
-- prepare no relation → add incoming edge → old commit => reconfirm, zero write;
-- prepare zero-active → activate a variant elsewhere → old commit => reconfirm;
-- disable idempotency;
-- quick action product inactive + stocked/unstocked variants;
-- quick action child relation added before mutation => zero writes;
-- multi-warehouse sum around zero/negative/positive;
-- all unrelated mirrored fields/edges unchanged.
-
-**Dependencies:** A1, A2 architecture boundary.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/commerce/product-commerce-admin.ts`
 - `src/commerce/product-commerce-repository.ts`
-- `src/commerce/admin-catalog-confirmation.ts`
-- corresponding domain/database tests.
+- `tests/domain/product-commerce-admin.test.ts`
+- `tests/database/product-commerce-repository.test.ts`
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+## Task A3 — Add product catalog enable/disable and combined quick-action backend
 
-## A4 — Build the unified `Biến thể website` editor table
+**Description:** Extend the generic commerce boundary with product catalog state, two-phase single-product enable confirmation, and the combined `Bật sản phẩm + kích hoạt biến thể có hàng` transaction.
 
-**Description**
+**Acceptance criteria:**
+- [ ] plain enable/disable mutates only `ProductMirror.isActive`;
+- [ ] enable prepare returns current warning state + proof; commit re-reads current state and returns `RECONFIRM_REQUIRED` with zero writes on warning drift;
+- [ ] quick action recomputes current positive summed stock, activates product + only eligible present variants atomically, and rejects any current incoming composite membership before writes.
 
-Create a focused client interaction boundary for variant selection while keeping the product page Server Component as data/action owner.
+**Verification:**
+- [ ] domain tests for ADMIN/auth/input/result contracts;
+- [ ] DB stale-confirmation regression: prepare as ordinary/no-warning → add incoming composite edge → old proof commit → zero writes + reconfirm result;
+- [ ] DB quick-action regression including zero-stock unchanged and edge-added-after-render failure;
+- [ ] `pnpm test:domain` and `pnpm test:db`.
 
-Rows show:
+**Dependencies:** A1, A2.
 
-- SKU/fallback label;
-- color;
-- size;
-- summed stock;
-- active/inactive/presence status;
-- context badge (`Thường`, `Set cha`, `Thành phần set`);
-- single-row action.
+**Files likely touched:**
+- `src/commerce/product-commerce-admin.ts`
+- `src/commerce/product-commerce-repository.ts`
+- `tests/domain/product-commerce-admin.test.ts`
+- `tests/database/product-commerce-repository.test.ts`
+- existing storefront composite/normal projection DB test only if needed to prove convergence end-to-end.
 
-Selection behavior:
+**Estimated scope:** M.
 
-- <=100 present variants: whole-product `Chọn tất cả biến thể`, `Chọn biến thể có hàng`;
-- >100 present variants: deterministic <=100 windows in existing `color,size,id` order;
-- page-scoped labels explicitly say `trên trang này`;
-- page/window change clears selection;
-- no more than 100 browser IDs can be selected/submitted;
-- no silent truncation;
-- single-row activation remains available on every page.
+## Task A4 — Build the unified variant table with bounded selection
 
-Do not remove the existing composite activation sections in this task; that cleanup waits for PR-B.
+**Description:** Add a small client boundary for the product editor's `Biến thể website` table. Keep the page server-rendered and pass route-bound Server Actions into the client component.
 
-**Acceptance criteria**
+**Acceptance criteria:**
+- [ ] every present ordinary/composite variant appears with stock, activation state, and context badges;
+- [ ] <=100 products support whole-product select-all/select-stocked; >100 products use stable <=100 windows with page-scoped selection, range feedback, and selection reset on page change;
+- [ ] single-row and selected-batch activation/deactivation use the generic service and never submit >100 IDs or silently truncate.
 
-- [ ] ordinary product now exposes activation controls;
-- [ ] single and bulk activation use A2;
-- [ ] >100 product cannot generate a >100-ID request through UI;
-- [ ] indeterminate/select-all semantics are programmatic and keyboard accessible;
-- [ ] selection does not survive variant-page change;
-- [ ] stock is display-only and not submitted as authority.
-
-**Verification**
-
-Browser/Axe test fixture covers:
-
-- normal product inactive XL activation;
-- select one / indeterminate / select all;
-- select stocked;
-- bulk activate/deactivate;
-- 245-variant fixture: `1–100 / 245`, first page exactly 100 selected/submitted, page change resets, final page remainder;
-- no page-level horizontal overflow;
-- shared `BUYER_AXE_TAGS`.
-
-Domain/DB tests continue to prove forged 101 IDs are rejected even if UI is bypassed.
+**Verification:**
+- [ ] component/browser regression for select-all, indeterminate state, select-stocked, page/window behavior, and forged 101-ID server rejection;
+- [ ] ordinary product XL can be activated from admin and persists as active;
+- [ ] no page-level horizontal overflow and Axe shared tags remain clean.
 
 **Dependencies:** A2.
 
-**Likely files**
-
-- `src/components/admin/product-variant-commerce-table.tsx` (new)
+**Files likely touched:**
+- `src/components/admin/admin-product-variant-table.tsx`
 - `src/app/admin/products/[productId]/page.tsx`
-- `tests/a11y-runtime/admin-editor.spec.ts` or a focused new admin variant spec
-- Playwright allowlist only if a new spec file is created.
+- `tests/a11y-runtime/admin-editor.spec.ts`
+- `tests/a11y-runtime/playwright.config.ts` only if a new spec file is introduced instead of extending the existing one.
 
-**Estimated scope:** Medium; keep UI/client state out of repository/service files.
+**Estimated scope:** M.
 
----
+## Task A5 — Add catalog controls and quick-action confirmation to the editor
 
-## A5 — Wire product catalog and combined quick-action UX
+**Description:** Add compact product catalog controls plus the explicit combined quick action using the A1/A3 prepare/commit contracts. Relation-linked child products keep generic variant controls but do not get the combined shortcut.
 
-**Description**
+**Acceptance criteria:**
+- [ ] `Bật catalog` uses fresh server confirmation and surfaces `RECONFIRM_REQUIRED` with a new warning when relation/zero-active state changes;
+- [ ] `Tắt catalog` requires normal ADMIN/current-target validation but no publication-risk handshake;
+- [ ] combined quick action is absent for current composite children and succeeds for ordinary products using server-computed stock.
 
-Add the product-level Website Commerce controls to the editor and use A3 for mutations.
+**Verification:**
+- [ ] browser test covers single-product confirmation, stale confirmation, quick-action eligibility, success/failure focus, and VoiceOver announcement;
+- [ ] storefront projection includes the newly activated normal variant subject to existing price/stock guards;
+- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build`.
 
-Catalog enable uses the two-phase contract:
+**Dependencies:** A1, A3, A4.
 
-1. request server-prepared current summary/proof;
-2. render explicit confirmation;
-3. submit proof to commit;
-4. if commit returns `RECONFIRM_REQUIRED`, do not write; render the fresh summary and require another confirmation.
-
-Combined quick action:
-
-- show only when current read model says there is no incoming composite membership;
-- confirmation states how many current positive-stock variants are expected to activate;
-- server still revalidates everything;
-- current composite child rejection is handled clearly/accessibly if state changed after render.
-
-Revalidate:
-
-- current editor;
-- `/admin`;
-- `/shop`;
-- current `/shop/[slug]` after successful commerce mutation.
-
-**Acceptance criteria**
-
-- [ ] product toggle and quick action are visually distinct;
-- [ ] quick action is absent for relation-linked child product;
-- [ ] catalog enable warning explicitly names standalone publication risk for child products;
-- [ ] stale single-product confirmation receives focused/announced reconfirmation, not silent mutation;
-- [ ] success/failure/reconfirmation has accessible feedback;
-- [ ] storefront reflects successful product/variant activation without changing Pancake-owned fields.
-
-**Verification**
-
-Browser + DB assertions cover:
-
-- enable ordinary product with no warning drift;
-- child catalog enable with explicit publication warning;
-- stale relation warning → `RECONFIRM_REQUIRED`, zero write, fresh warning;
-- quick action ordinary product;
-- quick action becomes child after render → fail closed;
-- VoiceOver announcement + focus;
-- Axe + overflow.
-
-**Dependencies:** A3, A4.
-
-**Likely files**
-
+**Files likely touched:**
+- `src/components/admin/admin-product-commerce-panel.tsx`
 - `src/app/admin/products/[productId]/page.tsx`
-- one small client confirmation component if interaction complexity warrants it
-- product commerce service/repository only for behavior bugs exposed by tests
-- admin browser spec.
+- `tests/a11y-runtime/admin-editor.spec.ts`
+- one focused DB/storefront regression file if A3 did not already cover public projection.
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+### Checkpoint A — PR-A quality gate
 
-## Checkpoint A — Generic commerce activation accepted
+Before PR-A is merge-ready:
 
-Before PR-A is considered implementation-complete:
-
-- [ ] exact-head DB/domain/security/auth/lint/typecheck/build/release/start checks green;
-- [ ] admin Axe/VoiceOver exact-head green;
-- [ ] normal-product reported regression is proven end-to-end;
-- [ ] composite parent/component activation still works through generic controls;
-- [ ] confirmation proof gets focused security review;
-- [ ] fresh review has **0 Critical / 0 Required**;
-- [ ] ADR 0005 effective changed-line scope reviewed; split further if independent concerns or >800 changed lines without atomic justification.
-
-Only then remove duplicated old composite UI in PR-B or reuse A-primitives in PR-C.
+- [ ] exact-head CI `verify` and `admin-a11y-runtime` are green;
+- [ ] Catalog indexation and P18 runtime workflows are green when triggered;
+- [ ] fresh review has 0 Critical / 0 Required findings;
+- [ ] diff remains one coherent commerce-activation concern under ADR 0005; if it exceeds the reviewability threshold, split at the pre-defined backend/UI boundary rather than cutting tests away from behavior;
+- [ ] no schema/dependency/sync behavior change was introduced.
 
 ---
 
 # PR-B — Compact product editor
 
-PR-B is presentation/convergence work after commerce behavior is accepted. It must not silently introduce new mutation semantics.
+## Task B1 — Reorder the editor around operator-critical commerce/editorial state
 
-## B1 — Reorder editor around a compact operational summary
+**Description:** Restructure the product editor information architecture without changing mutation semantics. Put compact summary + Website Commerce first, then editorial/collections/SEO, with slug and source data later.
 
-**Description**
+**Acceptance criteria:**
+- [ ] top summary shows catalog, editorial status, active variant coverage, stock, and collection count;
+- [ ] Website Commerce and variant actions are reachable before long source content;
+- [ ] existing editorial save, collection membership edit, slug edit, and all commerce actions retain behavior.
 
-Refactor the product editor information architecture without changing accepted service/repository behavior.
+**Verification:**
+- [ ] browser checks heading/order and keyboard focus order;
+- [ ] existing admin editor runtime remains green;
+- [ ] Axe/VoiceOver and mobile overflow checks remain green.
 
-Target top area:
+**Dependencies:** Checkpoint A accepted or A4/A5 contracts stable.
 
-- product name + slug/back link;
-- catalog state;
-- editorial state;
-- active variants `X/N`;
-- positive-stock variant count / total stock;
-- collection count;
-- Website Commerce actions/table.
-
-Then:
-
-- editorial content;
-- collections;
-- SEO;
-- slug management;
-- source disclosure last.
-
-Prefer small extracted Server/Client components only when they reduce page complexity; do not introduce a new state-management layer.
-
-**Acceptance criteria**
-
-- [ ] commerce/edit actions are reachable before long source data;
-- [ ] all existing editorial, collection, SEO, slug, and commerce behavior remains functional;
-- [ ] no source data or controls disappear;
-- [ ] semantic heading order remains logical;
-- [ ] narrow layout has no page-level horizontal overflow.
-
-**Verification**
-
-Focused browser regression for information order, keyboard focus, existing save flows, variant actions and responsive layout; typecheck/build.
-
-**Dependencies:** Checkpoint A.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/app/admin/products/[productId]/page.tsx`
-- optional small `src/components/admin/product-editor-*.tsx` components
-- `tests/a11y-runtime/admin-editor.spec.ts`.
+- `src/components/admin/admin-product-commerce-panel.tsx`
+- optional `src/components/admin/admin-product-editor-summary.tsx`
+- `tests/a11y-runtime/admin-editor.spec.ts`
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+## Task B2 — Collapse Pancake source context and remove duplicate composite activation UI
 
-## B2 — Collapse read-only Pancake source and remove duplicate activation sections
+**Description:** Move long read-only Pancake/source content into a semantic collapsed `<details>` and remove the old composite-specific activation sections once the generic variant table proves equivalent controls. Preserve composite relation/reference information as read-only context.
 
-**Description**
+**Acceptance criteria:**
+- [ ] source description, images, price/stock detail, raw variant data, and non-action composite reference data remain available inside the collapsed disclosure;
+- [ ] duplicate `Kích hoạt biến thể set` / `Kích hoạt biến thể bán qua set` control sections are gone;
+- [ ] generic table context badges still expose ordinary/set-parent/set-component identity without changing relation persistence.
 
-Move current source-heavy content into semantic `<details>` collapsed by default:
+**Verification:**
+- [ ] browser test proves `<details>` is collapsed by default and source data remains accessible after expansion;
+- [ ] composite parent/child activation still works from the generic table;
+- [ ] no source/Pancake mutation path is introduced.
 
-- source description;
-- source images;
-- raw price/stock context;
-- raw variant/source table;
-- composite source/reference details not required for immediate activation.
+**Dependencies:** B1, A4.
 
-Now that A4 is accepted, remove duplicate composite-specific activation sections from the page. Keep composite relation/reference data read-only in the disclosure; generic variant table remains the only activation control model.
-
-Do **not** delete the old composite activation backend in the same change unless it is proven unreachable and removing it is independently small/reviewable. Dead backend cleanup can be a separate follow-up if necessary.
-
-**Acceptance criteria**
-
-- [ ] source disclosure collapsed by default and keyboard accessible;
-- [ ] no Pancake-owned source data becomes editable;
-- [ ] parent/component context still visible;
-- [ ] no duplicate activation controls remain;
-- [ ] generic table still activates normal, parent and component variants.
-
-**Verification**
-
-Browser/Axe/VoiceOver regression verifies `<details>`, source preservation, no duplicate action names, composite activation through generic table, focus/overflow.
-
-**Dependencies:** B1, Checkpoint A.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/app/admin/products/[productId]/page.tsx`
-- extracted admin editor components if already introduced in B1
-- admin browser test.
+- `src/components/admin/admin-product-commerce-panel.tsx` or a small source-disclosure component
+- `tests/a11y-runtime/admin-editor.spec.ts`
 
-**Estimated scope:** Small–Medium.
+**Estimated scope:** S–M.
 
----
+### Checkpoint B — PR-B quality gate
 
-## Checkpoint B — Compact editor accepted
-
-- [ ] exact-head CI + admin browser gates green;
+- [ ] exact-head CI + admin browser/Axe/VoiceOver green;
 - [ ] fresh review has 0 Critical / 0 Required;
-- [ ] no business-logic changes hidden in the layout PR;
-- [ ] source/editorial/slug/composite data remains present;
-- [ ] ADR 0005 scope reviewed.
+- [ ] no business-logic rewrite is hidden inside the layout PR;
+- [ ] all editor capabilities present before PR-B remain available.
 
 ---
 
 # PR-C — Bulk product operations and health
 
-PR-C extends the already-existing `/admin` current-page selection model. It does not add persistent or cross-page selection.
+## Task C1 — Add atomic bulk collection add/remove backend
 
-## C1 — Add atomic bulk collection add/remove backend
+**Description:** Extend the existing website-owned content boundary with `1..100` selected-product add/remove semantics for one validated collection definition.
 
-**Description**
+**Acceptance criteria:**
+- [ ] add preserves existing memberships and creates only minimal missing `ProductContent` rows;
+- [ ] remove deletes only the selected slug and preserves all other content/memberships;
+- [ ] invalid collection, missing target, duplicate/oversized/malformed IDs, or persistence failure causes zero partial writes.
 
-Extend the editorial/content boundary with explicit bulk membership operations rather than reusing full snapshot save.
+**Verification:**
+- [ ] domain tests for auth/input/canonical collection resolution;
+- [ ] DB tests prove add/remove idempotence, preservation, and atomic failure;
+- [ ] `pnpm test:domain` + `pnpm test:db`.
 
-Input:
+**Dependencies:** None after plan approval.
 
-- ADMIN;
-- `1..100` unique product IDs;
-- one collection slug;
-- operation `add | remove`.
-
-Server validates the collection via existing definitions before persistence.
-
-Repository transaction:
-
-- verify every product exists/present per spec contract;
-- add: create minimal `ProductContent` for missing rows when needed, append only requested slug if absent;
-- remove: remove only requested slug; missing content/already absent is idempotent;
-- preserve all other memberships and editorial fields;
-- any invalid/missing target => zero batch writes.
-
-Use a DB-safe mutation strategy that does not reconstruct entire `ProductContent` rows from stale browser/current-page data.
-
-**Acceptance criteria**
-
-- [ ] add/remove exactly one validated collection;
-- [ ] existing other collections preserved;
-- [ ] editorial/SEO/mirrored fields preserved;
-- [ ] missing ProductContent handled only as specified;
-- [ ] atomic batch failure;
-- [ ] no replace-all bulk operation.
-
-**Verification**
-
-Domain + PostgreSQL tests for add, remove, idempotency, missing content, invalid collection, missing/stale product, mixed batch, preservation of unrelated fields.
-
-**Dependencies:** Checkpoint A for scheduling only; behavior is otherwise independent.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/commerce/product-content-admin.ts`
 - `src/commerce/product-content-repository.ts`
-- `src/app/admin/actions.ts`
-- focused domain/database bulk collection tests.
+- `tests/domain/product-content-bulk-collection-admin.test.ts`
+- `tests/database/product-content-bulk-collection-repository.test.ts`
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+## Task C2 — Add bulk catalog enable/disable backend with reconfirmation
 
-## C2 — Add bulk catalog enable/disable with freshness proof
+**Description:** Reuse the generic product-commerce and confirmation contracts for current-page selected products. Bulk enable prepare binds exact selected IDs and the exact warning sets; commit re-reads current state and fails the entire batch on warning drift.
 
-**Description**
+**Acceptance criteria:**
+- [ ] enable prepare reports exact zero-active and incoming-composite target sets and returns a proof bound to them;
+- [ ] relation/zero-active/target changes after prepare return `RECONFIRM_REQUIRED` with zero writes for the whole batch;
+- [ ] disable changes only `ProductMirror.isActive`, validates all selected targets atomically, and never changes variant state.
 
-Reuse A1/A3 primitives for exact current-page selected product IDs.
+**Verification:**
+- [ ] domain tests for 1..100 input/auth/proof handling;
+- [ ] DB stale-confirmation regression where one selected product gains an incoming edge after prepare;
+- [ ] missing/stale target causes zero batch writes;
+- [ ] `pnpm test:domain` + `pnpm test:db`.
 
-Prepare `Bật catalog`:
+**Dependencies:** A1, A3.
 
-- validate `1..100` unique product IDs;
-- verify current targets exist/present;
-- compute exact current set with zero active present variants;
-- compute exact current set with incoming composite membership;
-- return operator summary + proof bound to actor, `enable`, exact selected IDs, exact warning sets, expiry.
-
-Commit:
-
-- revalidate all targets and warning sets inside one transaction before write;
-- proof mismatch/drift => `RECONFIRM_REQUIRED`, zero batch writes, fresh summary;
-- current proof => update only selected `ProductMirror.isActive=true` atomically.
-
-Bulk disable:
-
-- no publication-risk proof;
-- current target validation + atomic update only `ProductMirror.isActive=false`.
-
-**Acceptance criteria**
-
-- [ ] bulk catalog never changes variant state;
-- [ ] old confirmation cannot publish a product after warning-relevant relation/zero-active state changes;
-- [ ] one stale/missing target => zero writes;
-- [ ] exact target set is proof-bound;
-- [ ] browser counts are not authoritative.
-
-**Verification**
-
-Domain/DB tests:
-
-- valid prepare/commit;
-- relation added/removed after prepare;
-- active-variant warning changes after prepare;
-- selected target changed/missing;
-- proof for different selection/actor rejected;
-- whole-batch zero writes on reconfirm;
-- disable atomic/idempotent.
-
-**Dependencies:** A1, A3 confirmation/catalog primitives, Checkpoint A.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/commerce/product-commerce-admin.ts`
 - `src/commerce/product-commerce-repository.ts`
-- `src/commerce/admin-catalog-confirmation.ts`
 - `src/app/admin/actions.ts`
-- focused domain/database tests.
+- `tests/domain/product-commerce-admin.test.ts`
+- `tests/database/product-commerce-repository.test.ts`
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+## Task C3 — Add exact admin health read model and filters
 
-## C3 — Add exact directory health read model and filters
+**Description:** Extend directory query/read logic with actionable health states while preserving correct pagination/count semantics. Implement the exact positive **summed** stock rule; do not substitute “any warehouse row > 0” unless a separately proven invariant makes them equivalent.
 
-**Description**
+**Health contract:**
 
-Extend the server-owned directory query/read model so health filters are real database predicates, not post-filtering of the current 40 rows.
+- `stocked-inactive` — at least one present inactive variant whose summed warehouse stock is >0;
+- `zero-active` — no present active variants;
+- `no-collection` — reuse existing uncategorized semantics;
+- `catalog-inactive` — reuse existing activity=false semantics;
+- `missing-image` — there is no image candidate accepted by the existing `parseTrustedProductImageUrl()` contract across `ProductMirror.primaryImageUrl` and `VariantMirror.pancakeImageUrls` belonging to variants with `isPresent=true`. A trusted present-variant image clears this health state even when the product primary image is absent; media found only on stale `isPresent=false` variants does not. Variant `isActive` is intentionally irrelevant because this health state measures mirrored media readiness, not commerce activation.
 
-Add one bounded `health` dimension to `AdminProductDirectoryQuery` with values equivalent to:
+Use one explicit `health` query dimension for V3 rather than stacking multiple health predicates in one URL. Existing search/status/collection/activity/sort state remains composable. The `missing-image` list/count predicate must be evaluated before pagination. If the repository implements a DB-side equivalent instead of invoking the pure parser directly, its accepted/rejected URL semantics must be proven against `parseTrustedProductImageUrl()` fixtures; do not replace the rule with `primaryImageUrl IS NULL` and do not post-filter only the current page.
 
-- `stocked-inactive` — at least one present inactive variant whose **summed** warehouse stock is `>0`;
-- `zero-active` — zero present active variants;
-- `no-collection` — current uncategorized semantics;
-- `catalog-inactive` — `ProductMirror.isActive=false`;
-- `missing-image` — `primaryImageUrl` absent in the current admin read model.
+**Acceptance criteria:**
+- [ ] each health filter is parsed/serialized deterministically and resets page to 1 when changed;
+- [ ] counts/list results use the same predicate so chips never advertise a different result set than their links;
+- [ ] `stocked-inactive` uses DB-side aggregate truth compatible with pagination rather than post-filtering the current page;
+- [ ] `missing-image` follows the approved source fields/trust rule exactly: null primary + trusted image on a present variant is **not** missing; only absent/blank/rejected candidates (or images only on stale variants) are missing.
 
-The existing `activity`/`uncategorized` dimensions remain compatible. If a health chip is a semantic alias of an existing filter, serialize to one canonical URL representation rather than creating two competing meanings.
+**Verification:**
+- [ ] domain tests for parser/href behavior;
+- [ ] DB tests for every health predicate, especially multi-warehouse positive-sum/zero-sum cases;
+- [ ] DB image-health fixtures cover trusted primary, trusted variant-only media with null primary, untrusted/malformed URLs, and stale-variant-only media;
+- [ ] any DB-side image predicate is parity-tested against `parseTrustedProductImageUrl()` for the same URL fixtures;
+- [ ] pagination/facet count regression remains correct.
 
-Directory row projection must return server-derived metrics needed by UI:
+**Dependencies:** None for read-model work; coordinate with C4 UI.
 
-- total present variants;
-- active present variants;
-- count of present inactive variants with summed stock `>0`;
-- collection count / image presence already available as needed.
-
-For `stocked-inactive`, use an exact DB-side aggregate/correlated query or a proven equivalent. Do not implement `warehouseStocks: { some: { quantity: { gt: 0 }}}` because multiple warehouses can sum to zero or negative.
-
-**Acceptance criteria**
-
-- [ ] filter applies to full catalog before pagination;
-- [ ] counts and own filter URL describe the same result set;
-- [ ] health can compose with query/status/collection/activity where semantically valid;
-- [ ] filter changes reset page to 1;
-- [ ] no N+1 per-product DB reads;
-- [ ] row reports `active / total` accurately for present variants.
-
-**Verification**
-
-Domain URL parser/serializer tests and PostgreSQL directory tests covering:
-
-- multi-warehouse summed-stock edge cases;
-- inactive stocked variant;
-- no active variants;
-- catalog inactive;
-- missing image;
-- composition with search/status/collection;
-- page reset/canonical serialization;
-- metrics match filter truth.
-
-**Dependencies:** can start after Checkpoint A; independent of C1/C2.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/commerce/admin-product-directory.ts`
-- `src/commerce/product-content-repository.ts` or a dedicated admin-directory repository helper if SQL complexity warrants separation
-- `src/app/admin/page.tsx`
-- directory domain/database tests.
+- `src/commerce/product-content-repository.ts`
+- `tests/domain/admin-product-directory.test.ts`
+- one existing/new DB admin-directory test file.
 
-**Estimated scope:** Medium.
+**Estimated scope:** M; this is the highest query-complexity task in PR-C and should fail fast before UI work.
 
----
+## Task C4 — Extend the bulk toolbar for collection and catalog operations
 
-## C4 — Expand the existing bulk toolbar
+**Description:** Reuse the existing current-page selection boundary. Add operation choice, collection selector, prepare/confirm/reconfirm state for catalog enable, and explicit catalog disable confirmation without creating a second selection model.
 
-**Description**
+**Acceptance criteria:**
+- [ ] selected products can add/remove one existing collection and enable/disable catalog;
+- [ ] catalog enable confirmation exposes zero-active + composite-publication warnings and `RECONFIRM_REQUIRED` refreshes the summary without losing selected IDs;
+- [ ] success clears selection; recoverable error/reconfirm preserves selection; all feedback is accessible.
 
-Extend `AdminProductBulkTable` instead of building a second selection system.
+**Verification:**
+- [ ] browser runtime covers add/remove, enable/disable, stale bulk confirmation, cancel/reconfirm, current-page select-all/indeterminate state;
+- [ ] no operation changes unrelated editorial fields or variants;
+- [ ] Axe shared tags + VoiceOver + overflow checks pass.
 
-Operation families:
+**Dependencies:** C1, C2.
 
-- existing editorial status;
-- add collection;
-- remove collection;
-- enable catalog;
-- disable catalog.
-
-Pass bounded collection choices from server. Keep current-page selection only.
-
-For bulk catalog enable:
-
-1. request current server-prepared warning/proof;
-2. show zero-active + composite-publication summaries;
-3. operator confirms;
-4. commit;
-5. stale state => accessible `RECONFIRM_REQUIRED` + fresh summary, keep selection, require another confirmation.
-
-Collection/catalog actions should use a clear operation selector rather than exposing many always-visible destructive buttons.
-
-**Acceptance criteria**
-
-- [ ] existing bulk status still works;
-- [ ] add/remove collection uses C1;
-- [ ] enable/disable catalog uses C2;
-- [ ] selection stays current-page only and resets on directory navigation as it does today;
-- [ ] success clears selection; recoverable error/reconfirmation keeps useful selection;
-- [ ] confirmations are cancellable and keyboard accessible.
-
-**Verification**
-
-Browser/Axe/VoiceOver covers each operation, selection/indeterminate, reconfirm freshness, focus/announcements, no horizontal overflow, and preserved existing bulk-status behavior.
-
-**Dependencies:** C1, C2, accepted current bulk selection behavior.
-
-**Likely files**
-
+**Files likely touched:**
 - `src/components/admin/admin-product-bulk-table.tsx`
 - `src/app/admin/actions.ts`
 - `src/app/admin/page.tsx`
-- `tests/a11y-runtime/admin-bulk-status.spec.ts` (rename/split only if it improves scope clarity)
-- Playwright config if test file names change/add.
+- `tests/a11y-runtime/admin-bulk-status.spec.ts` or a renamed/split bulk-operations spec
+- `tests/a11y-runtime/playwright.config.ts` only if adding a new spec file.
 
-**Estimated scope:** Medium–Large. Split collection and catalog UI into separate PR-C sub-slices if effective diff exceeds ADR 0005 reviewability guidance or review surface becomes mixed.
+**Estimated scope:** M.
 
----
+## Task C5 — Surface health metrics/filters in the directory
 
-## C5 — Surface health metrics and operational filters
+**Description:** Wire the C3 read model into `/admin` rows and controls. Show activation coverage and stocked-inactive warning counts without duplicating business rules in the client.
 
-**Description**
+**Acceptance criteria:**
+- [ ] each row shows `active / total present` variant coverage and a stocked-inactive warning count when applicable;
+- [ ] health filters open the exact server-filtered result set and compose with current query dimensions;
+- [ ] current-page selection resets on directory navigation exactly as it does today.
 
-Render C3 server-owned metrics in the directory:
+**Verification:**
+- [ ] browser tests for each health filter URL/result and row metrics;
+- [ ] `missing-image` browser fixture includes a product with null primary + trusted present-variant media and proves it is excluded, plus a product with only rejected/stale media and proves it is included;
+- [ ] no stale page carry-over when a health filter shortens result count;
+- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build` and admin browser runtime green.
 
-- `Biến thể: X / N active`;
-- warning count `N variant có hàng nhưng đang tắt` when >0;
-- health filter/chip controls for the approved blockers.
+**Dependencies:** C3, C4 UI structure stable.
 
-Use the same query-target/count source of truth pattern already used by status/collection facets so chip labels, counts, and links cannot drift.
-
-Do not add a numeric synthetic health score.
-
-**Acceptance criteria**
-
-- [ ] operator can find stocked-but-inactive products without opening editors;
-- [ ] `0 active`, no collection, catalog inactive, missing image filters work against full catalog;
-- [ ] row health matches DB truth and editor state;
-- [ ] filters preserve compatible search/status/etc and reset pagination;
-- [ ] existing URL parsing remains fail-closed for malformed/duplicate values.
-
-**Verification**
-
-Domain/DB/browser regressions for filters, row metrics, links/counts, current-page selection reset after navigation, Axe/keyboard/overflow.
-
-**Dependencies:** C3; integrate after C4 if same branch or independently before final PR-C convergence.
-
-**Likely files**
-
-- `src/commerce/admin-product-directory.ts`
-- repository directory query
+**Files likely touched:**
 - `src/app/admin/page.tsx`
 - `src/components/admin/admin-product-bulk-table.tsx`
-- domain/database/a11y runtime tests.
+- `src/commerce/product-content-repository.ts`
+- `tests/a11y-runtime/admin-bulk-status.spec.ts` or bulk-operations equivalent.
 
-**Estimated scope:** Medium.
+**Estimated scope:** M.
 
----
+### Checkpoint C — PR-C / V3 implementation quality gate
 
-## Checkpoint C — Admin Product Management V3 implementation complete
+Before V3 implementation is considered complete:
 
-Automated exact-head gate for the final implementation slice:
+- [ ] exact-head CI `verify` and `admin-a11y-runtime` green;
+- [ ] Catalog indexation / P18 runtime checks green when triggered;
+- [ ] fresh review has 0 Critical / 0 Required;
+- [ ] current production/staging deployment then receives trusted real-catalog acceptance for:
+  - normal product single + bulk variant activation;
+  - composite parent/component activation through the generic table;
+  - product catalog enable/disable and quick action;
+  - bulk collection add/remove;
+  - bulk catalog warnings/reconfirmation;
+  - health filters/metrics;
+- [ ] Pancake-owned price, inventory, source identity, images, and composite relations remain unchanged by every new mutation;
+- [ ] no schema/dependency/sync behavior change was introduced without a separate approved decision.
+
+## Verification commands
+
+Focused tests should be run while developing each task, followed by the repository gates appropriate to the slice.
 
 ```bash
 pnpm install --frozen-lockfile --ignore-scripts
@@ -825,85 +463,69 @@ pnpm prisma:validate
 pnpm prisma:generate
 pnpm prisma:migrate:deploy
 pnpm test:db
+pnpm test
 pnpm lint
 pnpm typecheck
-pnpm test
 pnpm build
 ```
 
-Also require existing CI HTTP/security/admin auth smokes, release/start smokes, and admin browser runtime:
+CI also runs the existing HTTP/security/auth smokes, shipping/release/start checks, and on macOS:
 
 ```bash
 cd tests/a11y-runtime
 npm ci --ignore-scripts --no-audit --no-fund
 npx playwright install chromium
+./node_modules/.bin/guidepup setup
+./node_modules/.bin/guidepup install
 npx playwright test --config playwright.config.ts
 ```
 
-CI remains the canonical evidence for steps requiring its PostgreSQL/macOS/VoiceOver environment.
+Do not claim local/browser/live verification unless the exact command/run was actually observed.
 
-Final behavioral acceptance:
+## Risks and mitigations
 
-- [ ] ordinary product variants can be activated singly/in bulk;
-- [ ] composite parent/component variants use the same generic table;
-- [ ] product and variant activation remain independent;
-- [ ] combined quick action activates current positive-stock variants only and cannot publish current composite children;
-- [ ] single and bulk catalog enable are confirmation-fresh at commit time;
-- [ ] >100 variant UI never creates an oversized generic batch;
-- [ ] bulk collection add/remove preserves unrelated membership/content;
-- [ ] bulk catalog enable/disable never changes variant state;
-- [ ] compact editor prioritizes operational controls and source disclosure is collapsed;
-- [ ] health filters/metrics reflect full-catalog DB truth;
-- [ ] Pancake-owned price, stock, media/source identity, and composite edges remain unchanged;
-- [ ] no schema/dependency/sync behavior change occurred without separate approval;
-- [ ] fresh final review: 0 Critical / 0 Required;
-- [ ] trusted real-catalog smoke after deployment verifies at least one normal product and one composite product through admin → storefront.
-
-## Risk register and stop conditions
-
-| Risk | Mitigation / stop condition |
+| Risk | Mitigation |
 |---|---|
-| Catalog confirmation proof can be forged/replayed | A1 domain separation + actor/target/state/expiry binding + security review. Stop before adding new secret/schema if existing-secret reuse is rejected. |
-| Stale confirmation publishes an unacknowledged composite child | prepare/commit reread + exact warning-state proof + `RECONFIRM_REQUIRED` zero-write path. |
-| >100 variants break selection semantics | page/window <=100; page-scoped selection; forged oversized input rejects server-side. |
-| Generic activation weakens composite safety | activation changes only `VariantMirror.isActive`; relation edges stay source-owned/read-only; cart/storefront guards unchanged. |
-| Bulk collection update overwrites editorial content | narrow add/remove repository operation; never reconstruct full content snapshot from browser data. |
-| Health filter lies due to current-page computation | DB-side full-catalog predicate before pagination; exact aggregate stock semantics. |
-| PR becomes hard to review | apply ADR 0005 after each slice; split independent UI/backend work rather than crossing >800 changed lines by default. |
-| Editor refactor hides behavior changes | PR-B must reuse accepted A services/actions and carry browser regressions; no new business rule in layout-only task. |
+| stale operator confirmation publishes a newly-linked composite child | server-authenticated two-phase proof + current-state comparison + `RECONFIRM_REQUIRED` zero-write path |
+| >100 variants creates impossible select-all contract | deterministic <=100 selection windows; no silent truncation; quick action remains server-computed |
+| generic activation weakens composite guards | mutate only `VariantMirror.isActive`; composite edges remain read-only source identity |
+| product editor PR becomes an unrelated redesign | behavior first in PR-A, layout-only convergence in PR-B |
+| bulk operations overwrite stale editorial data | narrow repository patch operations; never reconstruct whole `ProductContent` from table state |
+| health filter breaks pagination/count truth | exact DB-side predicate shared by list/count; dedicated DB regression before UI |
+| `missing-image` drifts from the existing media trust contract | source fields are explicit; present variant media counts; DB predicate must prove parity with `parseTrustedProductImageUrl()` instead of checking primary-image nullability only |
+| confirmation proof introduces secret/key risk | reuse existing validated server config only with domain separation; stop for approval if a new secret/config is required |
+| PR scope becomes too large | use ADR 0005 effective-line reviewability; split at pre-defined vertical boundaries, never by separating directly affected tests from behavior |
 
-## Parallelization and ownership
+## Parallelization
 
-Safe after Checkpoint A:
+Safe after plan approval:
 
-```text
-Lane 1: B1 -> B2
-Lane 2: C1 + C3, then C2/C4/C5 convergence
-```
+- A1 confirmation helper and A2 generic variant backend can be developed in parallel if they do not edit the same new service file.
+- C1 bulk collection backend can proceed independently of PR-A.
+- C3 health read-model work can proceed independently of PR-A UI.
+- PR-B UI cleanup can overlap with C1/C2 backend work after A4/A5 contracts are stable.
 
-Rules:
+Must be sequential:
 
-- A1 confirmation helper has one owner; C2 reuses it rather than forking a second proof format.
-- `src/app/admin/products/[productId]/page.tsx` should not be concurrently modified by PR-A and PR-B branches without rebasing after A acceptance.
-- `src/components/admin/admin-product-bulk-table.tsx` is PR-C-owned once C4 starts.
-- `product-content-repository.ts` changes from C1 and C3 must be coordinated; if both become non-trivial, extract directory/commerce helpers rather than merge conflicting broad repository edits.
+- A3 waits for A1/A2.
+- A5 waits for A3/A4.
+- B2 waits for generic variant controls before deleting composite-specific controls.
+- C2 waits for the shared proof/commerce contracts.
+- C4 waits for C1/C2 backend contracts.
 
 ## Definition of Done overlay
 
-In addition to each task's acceptance criteria, every implementation PR must satisfy the repository Definition of Done:
+Per-task acceptance criteria are necessary but not sufficient. Before any implementation PR is called complete, also apply the repository standing DoD:
 
-- spec/plan scope traceable;
-- security boundary explicit;
-- no unrelated refactor;
-- test evidence discriminates the changed behavior;
-- exact-head CI green before completion claim;
-- browser-facing changes have relevant Axe/VoiceOver evidence;
-- PR scope/reviewability checked against ADR 0005;
-- fresh review has no Critical/Required finding;
-- no deployment/live-catalog claim without actual runtime evidence.
+- runtime correctness where relevant, not only typecheck;
+- RED/GREEN tests for changed behavior plus existing tests green;
+- no unrelated refactor/dead/debug code;
+- authorization/input validation on every admin mutation;
+- integration with storefront/admin paths verified;
+- accessibility/browser coverage for changed operator flows;
+- docs/current-truth updated if implementation decisions change;
+- rollback/revert remains straightforward because each PR is a coherent vertical slice.
 
 ## Human gate
 
-This plan is intentionally **not approved by its own creation**. The spec is approved; the plan requires human review/approval before `/build` begins.
-
-No runtime code, migration, dependency, sync behavior, or deployment is authorized by adding this planning document alone.
+The V3 spec is approved. This plan is **not yet an implementation authorization** until the human reviews/approves this plan. After approval, `/build` should begin with Task A1/A2 (or one of the explicitly safe parallel backend tasks) and follow TDD + incremental implementation.
