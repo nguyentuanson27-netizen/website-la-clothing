@@ -16,6 +16,7 @@ const PORT = 3212;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+const SHOP_ID = 920_013;
 
 const runId = `${Date.now()}-${process.pid}`;
 const adminEmail = `admin-commerce-v3-${runId}@example.invalid`;
@@ -23,16 +24,30 @@ const password = "admin-commerce-v3-runtime-password-123";
 const ordinaryExternalId = `admin-commerce-v3-ordinary-${runId}`;
 const ordinarySlug = `admin-commerce-v3-ordinary-${runId}`;
 const ordinaryName = `Admin Commerce Ordinary ${runId}`;
+const regressionExternalId = `admin-commerce-v3-regression-${runId}`;
+const regressionSlug = `admin-commerce-v3-regression-${runId}`;
+const regressionName = `Admin Commerce Regression ${runId}`;
 const staleExternalId = `admin-commerce-v3-stale-${runId}`;
 const staleSlug = `admin-commerce-v3-stale-${runId}`;
 const staleName = `Admin Commerce Stale ${runId}`;
+const childExternalId = `admin-commerce-v3-child-${runId}`;
+const childSlug = `admin-commerce-v3-child-${runId}`;
+const childName = `Admin Commerce Child ${runId}`;
+const quickStaleExternalId = `admin-commerce-v3-quick-stale-${runId}`;
+const quickStaleSlug = `admin-commerce-v3-quick-stale-${runId}`;
+const quickStaleName = `Admin Commerce Quick Stale ${runId}`;
 const parentExternalId = `admin-commerce-v3-parent-${runId}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let ordinaryProductId = "";
+let regressionProductId = "";
+let regressionXlVariantId = "";
 let staleProductId = "";
 let staleVariantId = "";
+let childProductId = "";
+let quickStaleProductId = "";
+let quickStaleVariantId = "";
 let parentVariantId = "";
 let stockedVariantIds: string[] = [];
 let adminCookies: Array<{ name: string; value: string; url: string }> = [];
@@ -90,7 +105,16 @@ async function cleanupDatabase() {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
   await prisma.productMirror.deleteMany({
     where: {
-      pancakeProductId: { in: [ordinaryExternalId, staleExternalId, parentExternalId] },
+      pancakeProductId: {
+        in: [
+          ordinaryExternalId,
+          regressionExternalId,
+          staleExternalId,
+          childExternalId,
+          quickStaleExternalId,
+          parentExternalId,
+        ],
+      },
     },
   });
 }
@@ -144,29 +168,49 @@ test.beforeAll(async () => {
     })),
   });
 
-  const stale = await prisma.productMirror.create({
+  const regression = await prisma.productMirror.create({
     data: {
-      pancakeProductId: staleExternalId,
-      slug: staleSlug,
-      name: staleName,
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: regressionExternalId,
+      slug: regressionSlug,
+      name: regressionName,
       isPresent: true,
       isActive: false,
       syncedAt,
+      content: {
+        create: {
+          editorialDescription: "Ordinary inactive stocked-variant regression fixture.",
+        },
+      },
     },
   });
-  staleProductId = stale.id;
-  const staleVariant = await prisma.variantMirror.create({
-    data: {
-      pancakeVariationId: `admin-commerce-v3-stale-variant-${runId}`,
-      productId: stale.id,
-      sku: "STALE-M",
-      size: "M",
-      isPresent: true,
-      isActive: true,
-      syncedAt,
-    },
-  });
-  staleVariantId = staleVariant.id;
+  regressionProductId = regression.id;
+  for (const size of ["L", "M", "XL", "XXL"] as const) {
+    const variant = await prisma.variantMirror.create({
+      data: {
+        pancakeVariationId: `admin-commerce-v3-regression-${runId}-${size}`,
+        productId: regression.id,
+        sku: `REG-${size}`,
+        size,
+        isPresent: true,
+        isActive: false,
+        pancakeRetailPrice: 790_000,
+        pancakeRetailPriceAfterDiscount: 790_000,
+        syncedAt,
+      },
+    });
+    if (size === "XL") {
+      regressionXlVariantId = variant.id;
+      await prisma.warehouseStock.create({
+        data: {
+          variantId: variant.id,
+          pancakeWarehouseId: `admin-commerce-v3-regression-wh-${runId}`,
+          quantity: 1,
+          syncedAt,
+        },
+      });
+    }
+  }
 
   const parent = await prisma.productMirror.create({
     data: {
@@ -191,6 +235,93 @@ test.beforeAll(async () => {
   });
   parentVariantId = parentVariant.id;
 
+  const stale = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: staleExternalId,
+      slug: staleSlug,
+      name: staleName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  staleProductId = stale.id;
+  const staleVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-commerce-v3-stale-variant-${runId}`,
+      productId: stale.id,
+      sku: "STALE-M",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  staleVariantId = staleVariant.id;
+
+  const child = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: childExternalId,
+      slug: childSlug,
+      name: childName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  childProductId = child.id;
+  const childVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-commerce-v3-child-variant-${runId}`,
+      productId: child.id,
+      sku: "CHILD-L",
+      size: "L",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId,
+      componentVariantId: childVariant.id,
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const quickStale = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: quickStaleExternalId,
+      slug: quickStaleSlug,
+      name: quickStaleName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  quickStaleProductId = quickStale.id;
+  const quickStaleVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `admin-commerce-v3-quick-stale-variant-${runId}`,
+      productId: quickStale.id,
+      sku: "QUICK-XL",
+      size: "XL",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  quickStaleVariantId = quickStaleVariant.id;
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: quickStaleVariant.id,
+      pancakeWarehouseId: `admin-commerce-v3-quick-stale-wh-${runId}`,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
     headers: new Headers({ "x-ci-client-ip": "203.0.113.31" }),
@@ -205,7 +336,11 @@ test.beforeAll(async () => {
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    env: {
+      ...process.env,
+      PANCAKE_SHOP_ID: String(SHOP_ID),
+      NEXT_TELEMETRY_DISABLED: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", captureServerOutput);
@@ -219,10 +354,9 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation accessibly", async ({
+test("A4 manages bounded selection, stocked selection, bulk on/off and final-page single activation", async ({
   page,
   context,
-  voiceOver,
 }) => {
   await context.addCookies(adminCookies);
   const editorPath = `/admin/products/${encodeURIComponent(ordinaryProductId)}`;
@@ -230,7 +364,6 @@ test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation acc
 
   await expect(page.getByRole("heading", { level: 2, name: "Biến thể website" })).toBeVisible();
   await expect(page.getByText("1–100 / 245", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" })).toBeVisible();
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
@@ -238,7 +371,14 @@ test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation acc
     true,
   );
 
-  await page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" }).check();
+  const selectAll = page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" });
+  await page.getByRole("checkbox", { name: "Chọn biến thể ORD-001" }).check();
+  await expect(page.getByText("Đã chọn 1 biến thể", { exact: true })).toBeVisible();
+  expect(
+    await selectAll.evaluate((element) => (element as HTMLInputElement).indeterminate),
+  ).toBe(true);
+
+  await selectAll.check();
   await expect(page.getByText("Đã chọn 100 biến thể", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Kích hoạt đã chọn" }).click();
   await page.waitForURL(
@@ -251,11 +391,29 @@ test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation acc
     await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
   ).toBe(100);
 
+  await page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" }).check();
+  await page.getByRole("button", { name: "Tắt đã chọn" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
+  );
+  expect(
+    await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
+  ).toBe(0);
+
   await page.getByRole("button", { name: "Trang biến thể tiếp theo" }).click();
   await expect(page.getByText("101–200 / 245", { exact: true })).toBeVisible();
   await expect(page.getByText(/Đã chọn \d+ biến thể/)).toHaveCount(0);
   await page.getByRole("button", { name: "Trang biến thể tiếp theo" }).click();
   await expect(page.getByText("201–245 / 245", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Chọn biến thể có hàng" }).click();
+  await expect(page.getByText("Đã chọn 3 biến thể", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Chọn biến thể ORD-241" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Chọn biến thể ORD-242" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Chọn biến thể ORD-243" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Chọn biến thể ORD-244" })).not.toBeChecked();
+  await page.getByRole("button", { name: "Bỏ chọn" }).click();
+
   await page.getByRole("button", { name: "Kích hoạt biến thể ORD-245" }).click();
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
@@ -268,16 +426,49 @@ test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation acc
       })
     ).isActive,
   ).toBe(true);
+});
+
+test("A4 ordinary inactive stocked XL can be activated without publishing the product", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(regressionProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { level: 2, name: "Biến thể website" })).toBeVisible();
+  const xlRow = page.getByRole("row").filter({ hasText: "REG-XL" });
+  await expect(xlRow.getByText("1", { exact: true })).toBeVisible();
+  await xlRow.getByRole("button", { name: "Kích hoạt biến thể REG-XL" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
+  );
+
+  const state = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: regressionXlVariantId },
+    select: { isActive: true, product: { select: { isActive: true } } },
+  });
+  expect(state).toEqual({ isActive: true, product: { isActive: false } });
+});
+
+test("A5 ordinary quick action publishes stocked variants and storefront converges under existing guards", async ({
+  page,
+  context,
+  voiceOver,
+}) => {
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(regressionProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
 
   await page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" }).click();
-  await expect(page.getByText(/3 biến thể có hàng/)).toBeVisible();
+  await expect(page.getByText(/1 biến thể có hàng/)).toBeVisible();
   await voiceOver.navigateToWebContent({ capture: false });
   const quickCapture = await voiceOver.capture(
     async () => {
       await page.getByRole("button", { name: "Xác nhận bật sản phẩm và biến thể có hàng" }).click();
       const success = page
         .getByRole("status")
-        .filter({ hasText: "Đã bật sản phẩm và kích hoạt 3 biến thể có hàng." });
+        .filter({ hasText: "Đã bật sản phẩm và kích hoạt 1 biến thể có hàng." });
       await expect(success).toBeVisible();
       await expect(success).toBeFocused();
       await delay(500);
@@ -286,29 +477,41 @@ test("A4/A5 manages bounded ordinary variants and fresh catalog confirmation acc
   );
   expectSpokenPhrase(
     quickCapture.spokenPhrase,
-    "Đã bật sản phẩm và kích hoạt 3 biến thể có hàng",
+    "Đã bật sản phẩm và kích hoạt 1 biến thể có hàng",
     "VoiceOver must announce the combined quick-action result",
   );
+
+  await page.goto(`${BASE_URL}/shop/${regressionSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: regressionName })).toBeVisible();
+  const xl = page.getByRole("radio", { name: "XL" });
+  await expect(xl).toBeVisible();
+  await page.getByText("XL", { exact: true }).click();
+  await expect(xl).toBeChecked();
+  await expect(page.getByRole("button", { name: "Thêm vào túi" })).toBeEnabled();
+});
+
+test("A5 initial composite child catalog enable warns about standalone publication before writes", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(childProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await expect(
+    page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Bật catalog" }).click();
+  await expect(page.getByText(/thành phần của set\/composite/)).toBeVisible();
+  await expect(page.getByText(/mở catalog riêng/)).toBeVisible();
   expect(
     (
       await prisma.productMirror.findUniqueOrThrow({
-        where: { id: ordinaryProductId },
+        where: { id: childProductId },
         select: { isActive: true },
       })
     ).isActive,
-  ).toBe(true);
-  expect(
-    await prisma.variantMirror.count({
-      where: { id: { in: stockedVariantIds }, isActive: true },
-    }),
-  ).toBe(3);
-
-  await page.getByRole("button", { name: "Tắt catalog" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Đã tắt catalog." })).toBeFocused();
-  await page.getByRole("button", { name: "Bật catalog" }).click();
-  await expect(page.getByText("Bật catalog không tự kích hoạt biến thể.", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Xác nhận bật catalog" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Đã bật catalog." })).toBeFocused();
+  ).toBe(false);
 });
 
 test("A5 stale catalog confirmation reconfirms current composite publication risk with zero writes", async ({
@@ -362,4 +565,64 @@ test("A5 stale catalog confirmation reconfirms current composite publication ris
   await expect(
     page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" }),
   ).toHaveCount(0);
+});
+
+test("A5 quick action rendered ordinary fails closed if product becomes composite child before submit", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(quickStaleProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" }).click();
+  await expect(page.getByText(/1 biến thể có hàng/)).toBeVisible();
+
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId,
+      componentVariantId: quickStaleVariantId,
+      quantity: 1,
+      syncedAt: new Date(),
+    },
+  });
+
+  await page.getByRole("button", { name: "Xác nhận bật sản phẩm và biến thể có hàng" }).click();
+  const error = page
+    .getByRole("alert")
+    .filter({ hasText: "Sản phẩm hiện là thành phần của set/composite" });
+  await expect(error).toBeVisible();
+  await expect(error).toBeFocused();
+
+  const state = await prisma.productMirror.findUniqueOrThrow({
+    where: { id: quickStaleProductId },
+    select: {
+      isActive: true,
+      variants: { where: { id: quickStaleVariantId }, select: { isActive: true } },
+    },
+  });
+  expect(state).toEqual({ isActive: false, variants: [{ isActive: false }] });
+});
+
+test("A5 catalog enable and disable remain independent from variant activation", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(ordinaryProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "Bật catalog" }).click();
+  await expect(page.getByText("Bật catalog không tự kích hoạt biến thể.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Xác nhận bật catalog" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã bật catalog." })).toBeFocused();
+  expect(
+    await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
+  ).toBe(1);
+
+  await page.getByRole("button", { name: "Tắt catalog" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã tắt catalog." })).toBeFocused();
+  expect(
+    await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
+  ).toBe(1);
 });
