@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <section className="min-h-[70vh] min-w-0 max-w-full overflow-x-clip px-6 py-10 md:px-10 md:py-14">
+    <section className="min-h-[70vh] min-w-0 max-w-full overflow-x-hidden px-6 py-10 md:px-10 md:py-14">
       <header className="mb-12 flex flex-col gap-6 border-b border-black/20 pb-6 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="eyebrow">LA Clothing / Admin</p>
