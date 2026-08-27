@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type AdminFormStatusProps = {
   kind: "success" | "error" | null;
@@ -14,13 +14,20 @@ export function AdminFormStatus({
   errorMessage = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
 }: AdminFormStatusProps) {
   const statusRef = useRef<HTMLDivElement>(null);
+  const [renderedKind, setRenderedKind] = useState<AdminFormStatusProps["kind"]>(null);
+  const visibleKind = renderedKind === kind ? renderedKind : null;
 
   useEffect(() => {
-    if (!kind) return;
+    const frame = requestAnimationFrame(() => setRenderedKind(kind));
+    return () => cancelAnimationFrame(frame);
+  }, [kind]);
+
+  useEffect(() => {
+    if (!visibleKind) return;
 
     const frame = requestAnimationFrame(() => statusRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [kind]);
+  }, [visibleKind]);
 
   return (
     <div
@@ -29,14 +36,14 @@ export function AdminFormStatus({
       role={kind === "error" ? "alert" : "status"}
       aria-live={kind === "error" ? "assertive" : "polite"}
       aria-atomic="true"
-      tabIndex={kind ? -1 : undefined}
+      tabIndex={visibleKind ? -1 : undefined}
     >
-      {kind === "success" ? (
+      {visibleKind === "success" ? (
         <p className="border-l-2 border-black pl-4 text-sm font-semibold">
           {successMessage}
         </p>
       ) : null}
-      {kind === "error" ? (
+      {visibleKind === "error" ? (
         <p className="border-l-2 border-black pl-4 text-sm font-semibold">
           {errorMessage}
         </p>
