@@ -30,10 +30,13 @@ type AdminSessionCandidate =
   | null
   | undefined;
 
-export type ProductVariantActivationInput = ProductVariantActivationUpdate;
+export type ProductVariantActivationInput = {
+  variantIds: readonly string[];
+  isActive: boolean;
+};
 
 type ProductCommerceAdminDependencies = {
-  setVariantActivation(input: ProductVariantActivationInput): Promise<boolean>;
+  setVariantActivation(input: ProductVariantActivationUpdate): Promise<boolean>;
   readCatalogEnableWarningState(productId: string): Promise<CatalogEnableWarningState | null>;
   commitCatalogEnable(input: CatalogEnableCommitInput): Promise<CatalogEnableCommitResult>;
   disableCatalog(productId: string): Promise<boolean>;
@@ -51,18 +54,14 @@ function isBoundedTrimmedId(value: unknown, maxLength: number): value is string 
   );
 }
 
-function parseProductInput(input: unknown): { productId: string } | null {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const record = input as Record<string, unknown>;
-  if (!isBoundedTrimmedId(record.productId, PRODUCT_COMMERCE_ADMIN_LIMITS.productId)) {
-    return null;
-  }
-  return { productId: record.productId };
+function parseRouteProductId(productId: unknown): string | null {
+  return isBoundedTrimmedId(productId, PRODUCT_COMMERCE_ADMIN_LIMITS.productId)
+    ? productId
+    : null;
 }
 
-function parseCatalogCommitInput(input: unknown): { productId: string; proof: string } | null {
-  const product = parseProductInput(input);
-  if (!product || !input || typeof input !== "object" || Array.isArray(input)) return null;
+function parseCatalogProof(input: unknown): string | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const proof = (input as Record<string, unknown>).proof;
   if (
     typeof proof !== "string" ||
@@ -71,7 +70,7 @@ function parseCatalogCommitInput(input: unknown): { productId: string; proof: st
   ) {
     return null;
   }
-  return { ...product, proof };
+  return proof;
 }
 
 function parseVariantActivationInput(input: unknown): ProductVariantActivationInput | null {
@@ -81,7 +80,6 @@ function parseVariantActivationInput(input: unknown): ProductVariantActivationIn
 
   const record = input as Record<string, unknown>;
   if (
-    !isBoundedTrimmedId(record.productId, PRODUCT_COMMERCE_ADMIN_LIMITS.productId) ||
     !Array.isArray(record.variantIds) ||
     record.variantIds.length < 1 ||
     record.variantIds.length > PRODUCT_COMMERCE_ADMIN_LIMITS.variantCount ||
@@ -104,7 +102,6 @@ function parseVariantActivationInput(input: unknown): ProductVariantActivationIn
   }
 
   return {
-    productId: record.productId,
     variantIds,
     isActive: record.isActive,
   };
@@ -119,15 +116,52 @@ export function createProductCommerceAdminService({
   readConfirmationSecret,
   nowMs,
 }: ProductCommerceAdminDependencies) {
-  async function setVariantActivationForProduct(session: AdminSessionCandidate, input: unknown) {
+  function issueCatalogEnableConfirmation(
+    actorId: string,
+    productId: string,
+    warningState: CatalogEnableWarningState,
+  ) {
+    return issueAdminCatalogConfirmationProof({
+      secret: readConfirmationSecret(),
+      nowMs: nowMs(),
+      actorId,
+      operation: "enable",
+      targetProductIds: [productId],
+      zeroActiveProductIds: warningState.zeroActiveProductIds,
+      compositeChildProductIds: warningState.compositeChildProductIds,
+    });
+  }
+
+  async function reconfirmCatalogEnable(actorId: string, productId: string) {
+    const warningState = await readCatalogEnableWarningState(productId);
+    if (!warningState) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+
+    const issued = issueCatalogEnableConfirmation(actorId, productId, warningState);
+    return {
+      ok: false,
+      reason: "RECONFIRM_REQUIRED",
+      warningState,
+      proof: issued.proof,
+      expiresAtMs: issued.expiresAtMs,
+    } as const;
+  }
+
+  async function setVariantActivationForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+    input: unknown,
+  ) {
     requireAdminSession(session);
 
+    const productId = parseRouteProductId(routeProductId);
     const parsed = parseVariantActivationInput(input);
-    if (!parsed) {
+    if (!productId || !parsed) {
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
 
-    if (!(await setVariantActivation(parsed))) {
+    if (!(await setVariantActivation({ productId, ...parsed }))) {
       return { ok: false, reason: "VARIANT_NOT_AVAILABLE" } as const;
     }
 
@@ -138,28 +172,19 @@ export function createProductCommerceAdminService({
     } as const;
   }
 
-  async function prepareCatalogEnable(session: AdminSessionCandidate, input: unknown) {
+  async function prepareCatalogEnable(session: AdminSessionCandidate, routeProductId: string) {
     const admin = requireAdminSession(session);
-    const parsed = parseProductInput(input);
-    if (!parsed) {
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
 
-    const warningState = await readCatalogEnableWarningState(parsed.productId);
+    const warningState = await readCatalogEnableWarningState(productId);
     if (!warningState) {
       return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
     }
 
-    const issued = issueAdminCatalogConfirmationProof({
-      secret: readConfirmationSecret(),
-      nowMs: nowMs(),
-      actorId: admin.user.id,
-      operation: "enable",
-      targetProductIds: [parsed.productId],
-      zeroActiveProductIds: warningState.zeroActiveProductIds,
-      compositeChildProductIds: warningState.compositeChildProductIds,
-    });
-
+    const issued = issueCatalogEnableConfirmation(admin.user.id, productId, warningState);
     return {
       ok: true,
       warningState,
@@ -168,30 +193,31 @@ export function createProductCommerceAdminService({
     } as const;
   }
 
-  async function commitCatalogEnableForProduct(session: AdminSessionCandidate, input: unknown) {
+  async function commitCatalogEnableForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+    input: unknown,
+  ) {
     const admin = requireAdminSession(session);
-    const parsed = parseCatalogCommitInput(input);
-    if (!parsed) {
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
 
+    const proof = parseCatalogProof(input);
+    if (!proof) {
+      return reconfirmCatalogEnable(admin.user.id, productId);
+    }
+
     const result = await commitCatalogEnable({
-      productId: parsed.productId,
+      productId,
       actorId: admin.user.id,
-      proof: parsed.proof,
+      proof,
       secret: readConfirmationSecret(),
       nowMs: nowMs(),
     });
     if (!result.ok && result.reason === "RECONFIRM_REQUIRED") {
-      const issued = issueAdminCatalogConfirmationProof({
-        secret: readConfirmationSecret(),
-        nowMs: nowMs(),
-        actorId: admin.user.id,
-        operation: "enable",
-        targetProductIds: [parsed.productId],
-        zeroActiveProductIds: result.warningState.zeroActiveProductIds,
-        compositeChildProductIds: result.warningState.compositeChildProductIds,
-      });
+      const issued = issueCatalogEnableConfirmation(admin.user.id, productId, result.warningState);
       return {
         ...result,
         proof: issued.proof,
@@ -202,25 +228,31 @@ export function createProductCommerceAdminService({
     return result;
   }
 
-  async function disableCatalogForProduct(session: AdminSessionCandidate, input: unknown) {
+  async function disableCatalogForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+  ) {
     requireAdminSession(session);
-    const parsed = parseProductInput(input);
-    if (!parsed) {
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
-    if (!(await disableCatalog(parsed.productId))) {
+    if (!(await disableCatalog(productId))) {
       return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
     }
     return { ok: true } as const;
   }
 
-  async function activateStockedVariantsForProduct(session: AdminSessionCandidate, input: unknown) {
+  async function activateStockedVariantsForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+  ) {
     requireAdminSession(session);
-    const parsed = parseProductInput(input);
-    if (!parsed) {
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
       return { ok: false, reason: "INVALID_INPUT" } as const;
     }
-    return activateProductAndStockedVariants(parsed.productId);
+    return activateProductAndStockedVariants(productId);
   }
 
   return {
