@@ -327,7 +327,7 @@ Add actionable directory indicators/filters for at least:
 
 For V3, `Thiếu ảnh` means the **effective storefront media resolution returns no trusted primary image** for that product.
 
-The source of truth is the current `resolveStorefrontProductMedia()` behavior in `src/commerce/product-media.ts` together with the storefront caller's media inputs in `src/commerce/storefront-catalog-repository.ts`. Health/list/count must match that effective contract, including candidate eligibility, order, and scan bounds.
+The source of truth is the current `resolveStorefrontProductMedia()` behavior in `src/commerce/product-media.ts` together with the actual storefront caller in `src/commerce/storefront-catalog.ts`: `productSelection.variants` defines active/present eligibility and `pancakeVariationId ASC` ordering, while `toStorefrontProduct()` passes each selected variant's `pancakeImageUrls` to the resolver. Health/list/count must match that effective contract, including candidate eligibility, order, and scan bounds.
 
 Current storefront-equivalent inputs are:
 
