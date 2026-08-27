@@ -1,10 +1,10 @@
 # Admin Product Management V3 — implementation plan
 
-Status: **DRAFT PLAN — spec approved 2026-08-27; awaiting plan review before /build**
+Status: **APPROVED PLAN — product owner approved 2026-08-27; /build authorized**
 
-Source spec: `docs/design/admin-product-management-v3.md` on PR #136.
+Source spec: `docs/design/admin-product-management-v3.md`, merged via PR #136.
 
-Baseline: `main@e2855d73ad43c8d644d090bdbb5344093e8980f2` after PR #135. Planning is docs-only; no runtime implementation is performed in PR #136.
+Baseline: `main@73c59980a038818e84282b09893e2e7594b0894a` after PR #136. The planning gate is approved; runtime implementation proceeds only through the downstream PR-A / PR-B / PR-C slices defined here.
 
 ## Planning objective
 
@@ -26,7 +26,7 @@ The plan is based on current `main` behavior and boundaries:
 - `/admin` already has current-page multi-select in `src/components/admin/admin-product-bulk-table.tsx`, with an atomic bulk editorial-status Server Action in `src/app/admin/actions.ts`.
 - `src/commerce/product-content-admin.ts` / `product-content-repository.ts` own website editorial state and collection membership. `CollectionDefinition` validation/resolution already exists in `collection-definition-repository.ts`.
 - `ProductMirror.isActive` and `VariantMirror.isActive` are existing website-owned commerce fields. No schema change is needed for V3.
-- `src/commerce/product-media.ts` owns both per-candidate trust (`parseTrustedProductImageUrl()`) and bounded storefront media resolution (`resolveStorefrontProductMedia()`, `MAX_MEDIA_CANDIDATES_SCANNED=100`). `src/commerce/storefront-catalog-repository.ts` supplies primary media first, then `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`. V3 `Thiếu ảnh` must match that effective resolver contract, not merely “any trusted candidate exists”.
+- `src/commerce/product-media.ts` owns both per-candidate trust (`parseTrustedProductImageUrl()`) and bounded storefront media resolution (`resolveStorefrontProductMedia()`, `MAX_MEDIA_CANDIDATES_SCANNED=100`). The actual caller is `src/commerce/storefront-catalog.ts`: `productSelection.variants` supplies `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`, and `toStorefrontProduct()` passes their `pancakeImageUrls` into the resolver. V3 `Thiếu ảnh` must match that effective resolver contract, not merely “any trusted candidate exists”.
 - CI already runs Prisma validation/generation/migrations, DB tests, HTTP/security/auth smokes, lint, typecheck, domain tests, build, release/start smokes, and the macOS admin Axe/VoiceOver runtime.
 
 ## Architecture decisions for implementation
@@ -929,6 +929,4 @@ In addition to each task's acceptance criteria, every implementation PR must sat
 
 ## Human gate
 
-This plan is intentionally **not approved by its own creation**. The spec is approved; the plan requires human review/approval before `/build` begins.
-
-No runtime code, migration, dependency, sync behavior, or deployment is authorized by adding this planning document alone.
+**APPROVED 2026-08-27 by the product owner.** `/build` is authorized for PR-A, subject to the task-level TDD, security, verification, and review gates in this plan. PR-B and PR-C remain dependent on their listed checkpoints; this approval does not waive any downstream quality gate.
