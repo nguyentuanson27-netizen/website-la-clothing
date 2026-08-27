@@ -128,15 +128,6 @@ export function ProductCommercePanel({
     }
   }, [feedback]);
 
-  useEffect(() => {
-    if (commerceState.kind === "success" || commerceState.kind === "error") {
-      setQuickConfirming(false);
-    }
-    if (commerceState.kind === "catalog-confirm" || commerceState.kind === "catalog-reconfirm") {
-      setCatalogDismissed(false);
-    }
-  }, [commerceState]);
-
   function changePage(nextPage: number) {
     setPageIndex(Math.max(0, Math.min(nextPage, pageCount - 1)));
     setSelectedIds(new Set());
@@ -312,6 +303,7 @@ export function ProductCommercePanel({
                 className={buttonClassName(true)}
                 disabled={commercePending}
                 name="intent"
+                onClick={() => setQuickConfirming(false)}
                 type="submit"
                 value="quick-activate"
               >
