@@ -97,6 +97,11 @@ async function cleanupDatabase() {
   });
 }
 
+// The website-variant activation buttons live inside a labelled scroll container and a data
+// table, so VoiceOver first speaks the button plus its group/table context before it reaches the
+// status announcement. Give the screen reader room to queue that follow-up phrase.
+const SPOKEN_PHRASE_SETTLE_MS = 2_000;
+
 function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
   expect(
     spokenPhrase.includes(expected),
@@ -283,7 +288,7 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
         .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
-      await delay(500);
+      await delay(SPOKEN_PHRASE_SETTLE_MS);
     },
     { capture: true },
   );
@@ -338,7 +343,7 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
         .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
-      await delay(500);
+      await delay(SPOKEN_PHRASE_SETTLE_MS);
     },
     { capture: true },
   );
