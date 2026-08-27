@@ -97,15 +97,34 @@ async function cleanupDatabase() {
   });
 }
 
-// The website-variant activation buttons live inside a labelled scroll container and a data
-// table, so VoiceOver first speaks the button plus its group/table context before it reaches the
-// status announcement. Give the screen reader room to queue that follow-up phrase.
-const SPOKEN_PHRASE_SETTLE_MS = 2_000;
-
 function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
   expect(
     spokenPhrase.includes(expected),
     `${label}; captured VoiceOver output: ${JSON.stringify(spokenPhrase)}`,
+  ).toBe(true);
+}
+
+// Same assertion, but when it fails it reports everything VoiceOver actually said during the
+// test rather than just the one captured phrase. The activation buttons sit inside the website
+// variant scroll region, so a miss here needs the full transcript to tell "VoiceOver announced
+// something else" apart from "VoiceOver announced nothing at all".
+async function expectCapturedPhrase(
+  voiceOver: { spokenPhraseLog: () => Promise<string[]> },
+  capture: { itemText: string; spokenPhrase: string },
+  expected: string,
+  label: string,
+) {
+  if (capture.spokenPhrase.includes(expected)) return;
+
+  const spokenPhraseLog = await voiceOver.spokenPhraseLog();
+  expect(
+    false,
+    [
+      label,
+      `captured spoken phrase: ${JSON.stringify(capture.spokenPhrase)}`,
+      `captured item text: ${JSON.stringify(capture.itemText)}`,
+      `full spoken phrase log: ${JSON.stringify(spokenPhraseLog)}`,
+    ].join("; "),
   ).toBe(true);
 }
 
@@ -288,12 +307,13 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
         .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
-      await delay(SPOKEN_PHRASE_SETTLE_MS);
+      await delay(500);
     },
     { capture: true },
   );
-  expectSpokenPhrase(
-    activationCapture.spokenPhrase,
+  await expectCapturedPhrase(
+    voiceOver,
+    activationCapture,
     "Đã cập nhật trạng thái biến thể website",
     "VoiceOver must announce generic child activation success",
   );
@@ -343,12 +363,13 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
         .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
-      await delay(SPOKEN_PHRASE_SETTLE_MS);
+      await delay(500);
     },
     { capture: true },
   );
-  expectSpokenPhrase(
-    parentActivationCapture.spokenPhrase,
+  await expectCapturedPhrase(
+    voiceOver,
+    parentActivationCapture,
     "Đã cập nhật trạng thái biến thể website",
     "VoiceOver must announce generic parent activation success",
   );
