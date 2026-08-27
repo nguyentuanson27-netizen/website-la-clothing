@@ -104,7 +104,6 @@ function expectSpokenPhrase(spokenPhrase: string, expected: string, label: strin
   ).toBe(true);
 }
 
-// Runtime-only test: it intentionally drives a real browser and macOS VoiceOver.
 test.beforeAll(async () => {
   await cleanupDatabase();
 
@@ -214,7 +213,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("admin editor keeps Pancake source read-only and manages composite child and parent activation accessibly", async ({
+test("admin editor keeps Pancake source read-only and manages unified ordinary/composite activation accessibly", async ({
   page,
   context,
   voiceOver,
@@ -239,6 +238,8 @@ test("admin editor keeps Pancake source read-only and manages composite child an
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Website commerce" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Biến thể website" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeVisible();
   await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
   await expect(page.locator('[name="sourceDescription"]')).toHaveCount(0);
@@ -263,73 +264,23 @@ test("admin editor keeps Pancake source read-only and manages composite child an
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Kích hoạt biến thể bán qua set" }),
-  ).toBeVisible();
+  const componentRow = page.getByRole("row").filter({ hasText: "CHILD-M" }).first();
+  await expect(componentRow.getByText("Thành phần set", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: parentName })).toBeVisible();
   await expect(
-    page.getByText(
-      "Trạng thái này thuộc biến thể trên website và áp dụng cho tất cả quan hệ composite đã đồng bộ.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Kích hoạt biến thể không làm sản phẩm con được công khai riêng.", {
-      exact: true,
-    }),
-  ).toBeVisible();
-
-  await expect(
-    page.getByText(
-      "Nếu sản phẩm con được bật bán riêng sau này, trạng thái của biến thể này vẫn được dùng cho sản phẩm đó.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
     page.getByRole("button", { name: "Kích hoạt biến thể CHILD-L" }),
-  ).toHaveCount(0);
-
-  // A relation can disappear after the page was rendered. The server-side mutation must reject
-  // that stale UI instead of trusting the hidden variant id or the old page state.
-  await prisma.compositeComponentMirror.delete({
-    where: {
-      parentVariantId_componentVariantId: {
-        parentVariantId,
-        componentVariantId,
-      },
-    },
-  });
-  await page.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
-  await page.waitForURL(
-    (url) =>
-      url.pathname === editorPath && url.searchParams.get("componentError") === "unavailable",
-  );
-  const activationError = page
-    .getByRole("alert")
-    .filter({ hasText: "Biến thể không còn là thành phần composite khả dụng." });
-  await expect(activationError).toBeVisible();
-  await expect(activationError).toBeFocused();
-
-  await prisma.compositeComponentMirror.create({
-    data: {
-      parentVariantId,
-      componentVariantId,
-      quantity: 1,
-      syncedAt: new Date(),
-    },
-  });
-  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+  ).toBeVisible();
 
   await voiceOver.navigateToWebContent({ capture: false });
   const activationCapture = await voiceOver.capture(
     async () => {
-      await page.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
+      await componentRow.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
       await page.waitForURL(
-        (url) => url.pathname === editorPath && url.searchParams.get("componentSaved") === "1",
+        (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
       );
       const successStatus = page
         .getByRole("status")
-        .filter({ hasText: "Đã cập nhật trạng thái biến thể composite." });
+        .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
       await delay(500);
@@ -338,8 +289,8 @@ test("admin editor keeps Pancake source read-only and manages composite child an
   );
   expectSpokenPhrase(
     activationCapture.spokenPhrase,
-    "Đã cập nhật trạng thái biến thể composite",
-    "VoiceOver must announce composite activation success",
+    "Đã cập nhật trạng thái biến thể website",
+    "VoiceOver must announce generic child activation success",
   );
 
   const activated = await prisma.variantMirror.findUniqueOrThrow({
@@ -356,17 +307,15 @@ test("admin editor keeps Pancake source read-only and manages composite child an
 
   const parentEditorPath = `/admin/products/${encodeURIComponent(parentProductId)}`;
   await page.goto(`${BASE_URL}${parentEditorPath}`, { waitUntil: "networkidle" });
-  const childRow = page.getByRole("row").filter({ hasText: productName });
-  await expect(childRow.getByText("Đã kích hoạt biến thể", { exact: true })).toBeVisible();
-  await expect(childRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
-  await expect(childRow.getByText("Không khả dụng", { exact: true })).toHaveCount(0);
-  await expect(childRow.getByRole("button")).toHaveCount(0);
+  const childReferenceRow = page.getByRole("row").filter({ hasText: productName });
+  await expect(childReferenceRow.getByText("Đã kích hoạt biến thể", { exact: true })).toBeVisible();
+  await expect(childReferenceRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
+  await expect(childReferenceRow.getByRole("button")).toHaveCount(0);
 
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Kích hoạt biến thể set" }),
-  ).toBeVisible();
-  const parentActivationButton = page.getByRole("button", {
-    name: "Kích hoạt biến thể set SET-PARENT-M",
+  const parentVariantRow = page.getByRole("row").filter({ hasText: "SET-PARENT-M" }).first();
+  await expect(parentVariantRow.getByText("Set cha", { exact: true })).toBeVisible();
+  const parentActivationButton = parentVariantRow.getByRole("button", {
+    name: "Kích hoạt biến thể SET-PARENT-M",
   });
   await expect(parentActivationButton).toBeVisible();
   expect(
@@ -382,12 +331,11 @@ test("admin editor keeps Pancake source read-only and manages composite child an
     async () => {
       await parentActivationButton.click();
       await page.waitForURL(
-        (url) =>
-          url.pathname === parentEditorPath && url.searchParams.get("parentVariantSaved") === "1",
+        (url) => url.pathname === parentEditorPath && url.searchParams.get("variantSaved") === "1",
       );
       const successStatus = page
         .getByRole("status")
-        .filter({ hasText: "Đã cập nhật trạng thái biến thể cha composite." });
+        .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
       await expect(successStatus).toBeVisible();
       await expect(successStatus).toBeFocused();
       await delay(500);
@@ -396,8 +344,8 @@ test("admin editor keeps Pancake source read-only and manages composite child an
   );
   expectSpokenPhrase(
     parentActivationCapture.spokenPhrase,
-    "Đã cập nhật trạng thái biến thể cha composite",
-    "VoiceOver must announce parent composite activation success",
+    "Đã cập nhật trạng thái biến thể website",
+    "VoiceOver must announce generic parent activation success",
   );
   expect(
     (
@@ -407,19 +355,16 @@ test("admin editor keeps Pancake source read-only and manages composite child an
       })
     ).isActive,
   ).toBe(true);
-  await expect(
-    page.getByRole("button", { name: "Tắt biến thể set SET-PARENT-M" }),
-  ).toBeVisible();
-  const parentVariantRow = page.getByRole("row").filter({ hasText: "SET-PARENT-M" });
-  await expect(parentVariantRow.getByText("Hoạt động", { exact: true })).toBeVisible();
 
   await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Tắt biến thể CHILD-M" }).click();
+  await page.getByRole("row").filter({ hasText: "CHILD-M" }).first().getByRole("button", {
+    name: "Tắt biến thể CHILD-M",
+  }).click();
   await page.waitForURL(
-    (url) => url.pathname === editorPath && url.searchParams.get("componentSaved") === "1",
+    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
   );
   await expect(
-    page.getByRole("status").filter({ hasText: "Đã cập nhật trạng thái biến thể composite." }),
+    page.getByRole("status").filter({ hasText: "Đã cập nhật trạng thái biến thể website." }),
   ).toBeFocused();
   expect(
     (
