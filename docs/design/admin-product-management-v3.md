@@ -38,7 +38,7 @@ V3 addresses four problems:
 8. Price/inventory remain Pancake-owned and are never edited by these admin actions.
 9. No sync-time auto-activation.
 10. Browser-rendered counts, relation state, stock, eligibility, and confirmation summaries are advisory only; privileged writes use current server/database truth.
-11. `Thiếu ảnh` is an approved trusted-media health predicate across product primary media plus images on present variants; it is not equivalent to `primaryImageUrl == null`.
+11. `Thiếu ảnh` follows the effective storefront media-resolution contract: it is true exactly when the current storefront media inputs/order/bounds would produce no trusted primary image. It is not equivalent to `primaryImageUrl == null` or to “any trusted image exists somewhere in the mirror.”
 
 ## Feature A — Unified Website Commerce controls
 
@@ -325,22 +325,25 @@ Add actionable directory indicators/filters for at least:
 
 ### Authoritative `Thiếu ảnh` predicate
 
-For V3, `Thiếu ảnh` means the product has **no trusted source image candidate** in the current mirror.
+For V3, `Thiếu ảnh` means the **effective storefront media resolution returns no trusted primary image** for that product.
 
-Candidate sources are exactly:
+The source of truth is the current `resolveStorefrontProductMedia()` behavior in `src/commerce/product-media.ts` together with the storefront caller's media inputs in `src/commerce/storefront-catalog-repository.ts`. Health/list/count must match that effective contract, including candidate eligibility, order, and scan bounds.
 
-- `ProductMirror.primaryImageUrl`; and
-- `VariantMirror.pancakeImageUrls` for variants of that product with `isPresent=true`.
+Current storefront-equivalent inputs are:
 
-A candidate counts as an image only when the existing `parseTrustedProductImageUrl()` contract in `src/commerce/product-media.ts` accepts it. Therefore:
+- `ProductMirror.primaryImageUrl` first; then
+- `VariantMirror.pancakeImageUrls` from variants with `isPresent=true` **and** `isActive=true`, ordered by `pancakeVariationId ASC`; within each variant, image-array order is preserved.
 
-- a null, blank, malformed, or untrusted `primaryImageUrl` does not by itself decide the health state;
-- a trusted image on any present variant means the product is **not** `Thiếu ảnh`, even when `primaryImageUrl` is absent;
-- media that exists only on stale `isPresent=false` variants does not clear the health state;
-- `VariantMirror.isActive` is intentionally irrelevant because this health signal measures mirrored media readiness, not current commerce activation;
+Candidate trust is still determined by the existing `parseTrustedProductImageUrl()` contract, but candidate existence alone is insufficient. The resolver scans at most `MAX_MEDIA_CANDIDATES_SCANNED = 100` raw candidates and stops according to its reviewed bounds. Therefore:
+
+- a trusted primary image resolves media immediately and is **not** `Thiếu ảnh`;
+- null primary + a trusted candidate encountered within the resolver's effective first 100 candidates is **not** `Thiếu ảnh`;
+- if the first 100 scanned raw candidates are rejected and candidate #101 is trusted, the product **is** `Thiếu ảnh` because storefront resolution still returns `primary=null`;
+- trusted media only on `isPresent=false` or `isActive=false` variants does not clear `Thiếu ảnh`, because those variants are not part of the current storefront media input;
+- parser acceptance, duplicate handling, candidate ordering, and scan-bound behavior must stay aligned with the resolver rather than being independently reinterpreted by the admin directory;
 - this classification is read-only and never mutates, copies, or republishes Pancake media.
 
-The directory list/count implementation must apply the same predicate before pagination. If it uses a DB-side equivalent instead of calling the pure parser directly, parity with `parseTrustedProductImageUrl()` is part of acceptance. Do not substitute `primaryImageUrl IS NULL` and do not post-filter only the current page.
+The directory list/count implementation must apply the same effective predicate before pagination. If it uses a DB-side equivalent instead of invoking the resolver directly, parity with `resolveStorefrontProductMedia()` is part of acceptance, including `parseTrustedProductImageUrl()` semantics, active/present variant eligibility, candidate order, and the 100-candidate scan bound. Do not substitute `primaryImageUrl IS NULL`, “any trusted candidate exists”, or post-filter only the current page.
 
 Each row shows activation coverage such as `1 / 4 active`, plus a warning when positive-stock variants are inactive.
 
@@ -405,8 +408,9 @@ At minimum prove:
 - missing/stale bulk target causes zero batch writes;
 - collection add/remove preserves unrelated memberships/content/mirrored fields;
 - >100-variant product: first page select-all submits exactly 100 IDs, later page submits the remainder, forged 101-ID request is rejected before writes;
-- `Thiếu ảnh`: trusted primary => not missing; null primary + trusted image on a present variant => not missing; only absent/blank/malformed/untrusted candidates or trusted media only on stale variants => missing;
-- directory list/count/pagination use the same `Thiếu ảnh` predicate, and any DB-side URL predicate is parity-tested against `parseTrustedProductImageUrl()` fixtures.
+- `Thiếu ảnh`: trusted primary => not missing; null primary + trusted active/present variant image encountered within the effective first 100 scanned candidates => not missing; trusted media only on inactive/stale variants => missing;
+- resolver-bound regression: first 100 scanned raw candidates rejected + candidate #101 trusted => storefront `primary=null` and admin `missing-image=true`;
+- directory list/count/pagination use the same `Thiếu ảnh` predicate, and any DB-side implementation is parity-tested against `resolveStorefrontProductMedia()` fixtures, including parser acceptance, candidate order, active/present eligibility, and the 100-candidate bound.
 
 ### Reported ordinary-product regression
 
@@ -444,7 +448,7 @@ Verify at minimum:
 - bulk catalog warning includes zero-active and composite-publication exposure;
 - bulk stale confirmation → accessible `RECONFIRM_REQUIRED` + fresh summary + zero batch writes;
 - bulk add/remove collection;
-- `Thiếu ảnh` filter/count excludes a product with null primary + trusted present-variant media and includes a product with only absent/rejected/stale media;
+- `Thiếu ảnh` filter/count matches current storefront media resolution, including a null-primary product with an in-bound trusted active-variant fallback and a product whose only trusted candidate is #101 after 100 rejected candidates;
 - compact editor + collapsed Pancake disclosure;
 - Axe + VoiceOver + no page-level overflow.
 
@@ -475,7 +479,7 @@ Verify at minimum:
 - zero-active + composite-publication warnings;
 - two-phase server-authenticated bulk confirmation freshness;
 - `RECONFIRM_REQUIRED` zero-write stale-confirmation behavior;
-- activation coverage and health filters, including the authoritative trusted-candidate `Thiếu ảnh` rule.
+- activation coverage and health filters, including resolver-parity `Thiếu ảnh` semantics.
 
 Each PR must leave the application working and pass focused verification before the next slice.
 
@@ -534,7 +538,7 @@ V3 is complete only when:
 11. bulk enable warns about zero-active variants and standalone publication of current composite children;
 12. bulk enable uses server-authenticated prepare/commit confirmation; warning-state changes return `RECONFIRM_REQUIRED` with zero batch writes;
 13. compact editor prioritizes commerce/editorial controls and collapses long Pancake context;
-14. directory exposes activation coverage and actionable health filters; `Thiếu ảnh` follows the explicit trusted-candidate rule across product primary + present-variant image sources;
+14. directory exposes activation coverage and actionable health filters; `Thiếu ảnh` matches effective storefront media resolution, including active/present candidate eligibility, ordering, parser trust rules, and the 100-candidate scan bound;
 15. no flow mutates Pancake-owned price, inventory, source identity, images, or composite relations;
 16. focused regressions fail without the new behavior;
 17. existing tests, lint, typecheck, build, security smokes, and relevant Axe/VoiceOver checks are green for each implementation slice;
