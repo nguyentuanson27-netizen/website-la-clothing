@@ -439,6 +439,9 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
   await expectNoPageOverflow(page);
 
   const selectAll = page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" });
+  const variantSuccessStatus = page
+    .getByRole("status")
+    .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
   await page.getByRole("checkbox", { name: "Chọn biến thể ORD-001" }).check();
   await expect(page.getByText("Đã chọn 1 biến thể", { exact: true })).toBeVisible();
   expect(
@@ -451,20 +454,20 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
   );
-  await expect(
-    page.getByRole("status").filter({ hasText: "Đã cập nhật trạng thái biến thể website." }),
-  ).toBeFocused();
+  await expect(variantSuccessStatus).toBeFocused();
   expect(
     await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
   ).toBe(100);
 
   await page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" }).check();
   await page.getByRole("button", { name: "Tắt đã chọn" }).click();
+  await expect(variantSuccessStatus).toBeFocused();
   await expect
     .poll(() =>
       prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
     )
     .toBe(0);
+  await expect(page.getByText(/Đã chọn \d+ biến thể/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Trang biến thể tiếp theo" }).click();
   await expect(page.getByText("101–200 / 245", { exact: true })).toBeVisible();
@@ -481,17 +484,17 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
   await page.getByRole("button", { name: "Bỏ chọn" }).click();
 
   await page.getByRole("button", { name: "Kích hoạt biến thể ORD-245" }).click();
-  await page.waitForURL(
-    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
-  );
-  expect(
-    (
-      await prisma.variantMirror.findFirstOrThrow({
-        where: { productId: ordinaryProductId, sku: "ORD-245" },
-        select: { isActive: true },
-      })
-    ).isActive,
-  ).toBe(true);
+  await expect(variantSuccessStatus).toBeFocused();
+  await expect
+    .poll(async () =>
+      (
+        await prisma.variantMirror.findFirstOrThrow({
+          where: { productId: ordinaryProductId, sku: "ORD-245" },
+          select: { isActive: true },
+        })
+      ).isActive,
+    )
+    .toBe(true);
 });
 
 test("A4 ordinary inactive stocked XL can be activated without publishing the product", async ({
