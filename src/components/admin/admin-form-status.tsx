@@ -16,9 +16,10 @@ export function AdminFormStatus({
   const statusRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (kind) {
-      statusRef.current?.focus();
-    }
+    if (!kind) return;
+
+    const frame = requestAnimationFrame(() => statusRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [kind]);
 
   return (
