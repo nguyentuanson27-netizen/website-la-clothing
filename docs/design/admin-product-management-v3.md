@@ -38,6 +38,7 @@ V3 addresses four problems:
 8. Price/inventory remain Pancake-owned and are never edited by these admin actions.
 9. No sync-time auto-activation.
 10. Browser-rendered counts, relation state, stock, eligibility, and confirmation summaries are advisory only; privileged writes use current server/database truth.
+11. `Thiếu ảnh` is an approved trusted-media health predicate across product primary media plus images on present variants; it is not equivalent to `primaryImageUrl == null`.
 
 ## Feature A — Unified Website Commerce controls
 
