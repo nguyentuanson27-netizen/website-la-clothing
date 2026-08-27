@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 export type ProductVariantActivationUpdate = {
   productId: string;
@@ -21,14 +21,14 @@ export function createProductCommerceRepository(client: PrismaClient) {
   }: ProductVariantActivationUpdate): Promise<boolean> {
     try {
       return await client.$transaction(async (tx) => {
-        const where = {
+        const where: Prisma.VariantMirrorWhereInput = {
           id: { in: [...variantIds] },
           productId,
           isPresent: true,
           product: {
             isPresent: true,
           },
-        } as const;
+        };
 
         const targetCount = await tx.variantMirror.count({ where });
         if (targetCount !== variantIds.length) {
