@@ -10,15 +10,23 @@ import {
 const secret = "test-admin-catalog-confirmation-secret-1234567890";
 const nowMs = Date.parse("2026-08-27T08:10:00.000Z");
 
-const expected = {
+type ConfirmationState = {
+  actorId: string;
+  operation: "enable";
+  targetProductIds: readonly string[];
+  zeroActiveProductIds: readonly string[];
+  compositeChildProductIds: readonly string[];
+};
+
+const expected: ConfirmationState = {
   actorId: "admin-1",
   operation: "enable",
   targetProductIds: ["product-b", "product-a"],
   zeroActiveProductIds: ["product-b"],
   compositeChildProductIds: ["product-a"],
-} as const;
+};
 
-function issue(overrides: Partial<typeof expected> = {}) {
+function issue(overrides: Partial<ConfirmationState> = {}) {
   return issueAdminCatalogConfirmationProof({
     secret,
     nowMs,
@@ -29,7 +37,7 @@ function issue(overrides: Partial<typeof expected> = {}) {
 
 function verify(
   proof: string,
-  overrides: Partial<typeof expected> & { nowMs?: number; secret?: string } = {},
+  overrides: Partial<ConfirmationState> & { nowMs?: number; secret?: string } = {},
 ) {
   return verifyAdminCatalogConfirmationProof({
     secret: overrides.secret ?? secret,
