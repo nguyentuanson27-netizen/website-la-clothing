@@ -1,6 +1,6 @@
 # Admin Product Management V3 — task checklist
 
-Status: **DRAFT TODO — spec approved; plan awaiting human review**
+Status: **APPROVED TODO — plan approved 2026-08-27; PR-A /build authorized**
 
 Spec: `docs/design/admin-product-management-v3.md`
 Plan: `tasks/admin-product-management-v3-plan.md`
@@ -123,6 +123,6 @@ Plan: `tasks/admin-product-management-v3-plan.md`
 
 ## Human approval gate
 
-- [ ] **Plan approved for `/build`**
+- [x] **Plan approved for `/build` — product owner, 2026-08-27**
 
-Do not start implementation only because this checklist exists. The V3 spec is approved; this plan/todo must be reviewed and approved before PR-A build work begins.
+PR-A implementation is authorized. Downstream PR-B / PR-C still require their listed checkpoint dependencies and do not inherit completion from this approval.
