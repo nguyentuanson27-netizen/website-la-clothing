@@ -14,40 +14,53 @@ export function AdminFormStatus({
   errorMessage = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
 }: AdminFormStatusProps) {
   const statusRef = useRef<HTMLDivElement>(null);
-  const [renderedKind, setRenderedKind] = useState<AdminFormStatusProps["kind"]>(null);
-  const visibleKind = renderedKind === kind ? renderedKind : null;
+  const [announcement, setAnnouncement] = useState("");
+  const message =
+    kind === "success" ? successMessage : kind === "error" ? errorMessage : "";
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setRenderedKind(kind));
-    return () => cancelAnimationFrame(frame);
-  }, [kind]);
+    let focusFrame: number | undefined;
+    const announcementFrame = requestAnimationFrame(() => {
+      setAnnouncement(message);
+      if (kind) {
+        focusFrame = requestAnimationFrame(() => statusRef.current?.focus());
+      }
+    });
 
-  useEffect(() => {
-    if (!visibleKind) return;
-
-    const frame = requestAnimationFrame(() => statusRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [visibleKind]);
+    return () => {
+      cancelAnimationFrame(announcementFrame);
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+    };
+  }, [kind, message]);
 
   return (
-    <div
-      ref={statusRef}
-      className="mt-8 min-h-6 focus-visible:outline-2 focus-visible:outline-offset-4"
-      role={kind === "error" ? "alert" : "status"}
-      aria-live={kind === "error" ? "assertive" : "polite"}
-      aria-atomic="true"
-      tabIndex={visibleKind ? -1 : undefined}
-    >
-      {visibleKind === "success" ? (
-        <p className="border-l-2 border-black pl-4 text-sm font-semibold">
-          {successMessage}
-        </p>
-      ) : null}
-      {visibleKind === "error" ? (
-        <p className="border-l-2 border-black pl-4 text-sm font-semibold">
-          {errorMessage}
-        </p>
-      ) : null}
-    </div>
+    <>
+      <div
+        ref={statusRef}
+        className="mt-8 min-h-6 focus-visible:outline-2 focus-visible:outline-offset-4"
+        role={kind === "error" ? "alert" : "status"}
+        aria-live={kind === "error" ? "assertive" : "polite"}
+        aria-atomic="true"
+        tabIndex={kind ? -1 : undefined}
+      >
+        {kind === "success" ? (
+          <p className="border-l-2 border-black pl-4 text-sm font-semibold">
+            {successMessage}
+          </p>
+        ) : null}
+        {kind === "error" ? (
+          <p className="border-l-2 border-black pl-4 text-sm font-semibold">
+            {errorMessage}
+          </p>
+        ) : null}
+      </div>
+      <div
+        aria-live={kind === "error" ? "assertive" : "polite"}
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
+    </>
   );
 }
