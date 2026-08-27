@@ -26,7 +26,7 @@ The plan is based on current `main` behavior and boundaries:
 - `/admin` already has current-page multi-select in `src/components/admin/admin-product-bulk-table.tsx`, with an atomic bulk editorial-status Server Action in `src/app/admin/actions.ts`.
 - `src/commerce/product-content-admin.ts` / `product-content-repository.ts` own website editorial state and collection membership. `CollectionDefinition` validation/resolution already exists in `collection-definition-repository.ts`.
 - `ProductMirror.isActive` and `VariantMirror.isActive` are existing website-owned commerce fields. No schema change is needed for V3.
-- `src/commerce/product-media.ts` owns the reviewed image-trust predicate via `parseTrustedProductImageUrl()`. The V3 `Thiếu ảnh` health state must use that trust contract across `ProductMirror.primaryImageUrl` plus `VariantMirror.pancakeImageUrls` from present variants; it must not infer missing media from `primaryImageUrl` alone.
+- `src/commerce/product-media.ts` owns both per-candidate trust (`parseTrustedProductImageUrl()`) and bounded storefront media resolution (`resolveStorefrontProductMedia()`, `MAX_MEDIA_CANDIDATES_SCANNED=100`). `src/commerce/storefront-catalog-repository.ts` supplies primary media first, then `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`. V3 `Thiếu ảnh` must match that effective resolver contract, not merely “any trusted candidate exists”.
 - CI already runs Prisma validation/generation/migrations, DB tests, HTTP/security/auth smokes, lint, typecheck, domain tests, build, release/start smokes, and the macOS admin Axe/VoiceOver runtime.
 
 ## Architecture decisions for implementation
@@ -675,14 +675,17 @@ Add one bounded `health` dimension to `AdminProductDirectoryQuery` with values e
 - `zero-active` — zero present active variants;
 - `no-collection` — current uncategorized semantics;
 - `catalog-inactive` — `ProductMirror.isActive=false`;
-- `missing-image` — there is no image candidate accepted by the existing `parseTrustedProductImageUrl()` contract across `ProductMirror.primaryImageUrl` and `VariantMirror.pancakeImageUrls` for variants with `isPresent=true`.
+- `missing-image` — the current storefront-equivalent call to `resolveStorefrontProductMedia()` would return `primary=null` for that product.
 
-Authoritative image-health details from the approved spec:
+Authoritative image-health details from the approved spec and current runtime:
 
-- a trusted image on any present variant clears `missing-image` even when `primaryImageUrl` is null;
-- media found only on stale `isPresent=false` variants does not clear it;
-- `VariantMirror.isActive` is irrelevant to this health state;
-- absent/blank/malformed/untrusted candidates do not count as images.
+- use the same effective media inputs as storefront: `ProductMirror.primaryImageUrl` first, then `VariantMirror.pancakeImageUrls` from variants with `isPresent=true && isActive=true`, ordered by `pancakeVariationId ASC`, preserving each image-array order;
+- `parseTrustedProductImageUrl()` remains the per-candidate trust predicate;
+- resolver bounds are part of the contract: at most `MAX_MEDIA_CANDIDATES_SCANNED = 100` raw candidates are scanned;
+- a trusted image encountered within the effective scan window clears `missing-image`;
+- if the first 100 scanned candidates are rejected and candidate #101 is trusted, `missing-image` remains true because storefront still resolves no primary;
+- trusted media only on stale (`isPresent=false`) or inactive (`isActive=false`) variants does not clear the health state;
+- “any trusted candidate exists” and `primaryImageUrl IS NULL` are both insufficient approximations.
 
 The existing `activity`/`uncategorized` dimensions remain compatible. If a health chip is a semantic alias of an existing filter, serialize to one canonical URL representation rather than creating two competing meanings.
 
@@ -691,11 +694,11 @@ Directory row projection must return server-derived metrics needed by UI:
 - total present variants;
 - active present variants;
 - count of present inactive variants with summed stock `>0`;
-- collection count and trusted-image health as needed.
+- collection count and resolver-parity image health as needed.
 
 For `stocked-inactive`, use an exact DB-side aggregate/correlated query or a proven equivalent. Do not implement `warehouseStocks: { some: { quantity: { gt: 0 }}}` because multiple warehouses can sum to zero or negative.
 
-For `missing-image`, the list/count predicate must run before pagination. If implementation uses a DB-side equivalent rather than invoking the pure parser directly, its accepted/rejected URL semantics must be parity-tested against `parseTrustedProductImageUrl()` fixtures. Do not fall back to `primaryImageUrl IS NULL` and do not post-filter the current page.
+For `missing-image`, the list/count predicate must run before pagination. If implementation uses a DB-side equivalent rather than invoking the resolver directly, its behavior must be parity-tested against `resolveStorefrontProductMedia()` on the same fixtures, including parser acceptance, active/present variant eligibility, `pancakeVariationId` ordering, within-array order, duplicate behavior where relevant, and the 100-candidate scan bound. Do not fall back to `primaryImageUrl IS NULL`, an unbounded existential trusted-URL query, or post-filtering the current page.
 
 **Acceptance criteria**
 
@@ -705,7 +708,9 @@ For `missing-image`, the list/count predicate must run before pagination. If imp
 - [ ] filter changes reset page to 1;
 - [ ] no N+1 per-product DB reads;
 - [ ] row reports `active / total` accurately for present variants;
-- [ ] null primary + trusted present-variant image is not `missing-image`; only absent/rejected candidates or stale-variant-only media are missing.
+- [ ] null primary + trusted active/present variant image within the first 100 effective scanned candidates is not `missing-image`;
+- [ ] first 100 rejected raw candidates + trusted candidate #101 is `missing-image`;
+- [ ] trusted media only on inactive/stale variants is `missing-image`.
 
 **Verification**
 
@@ -716,10 +721,12 @@ Domain URL parser/serializer tests and PostgreSQL directory tests covering:
 - no active variants;
 - catalog inactive;
 - trusted primary image => not missing;
-- null primary + trusted present-variant image => not missing;
-- only malformed/untrusted/absent media => missing;
+- null primary + trusted active/present variant image inside the effective scan window => not missing;
+- trusted candidate at the last in-bound position (#100) => not missing;
+- first 100 rejected candidates + trusted candidate #101 => missing, matching storefront `primary=null`;
 - trusted media only on `isPresent=false` variant => missing;
-- any DB-side image predicate matches `parseTrustedProductImageUrl()` on the same accepted/rejected URL fixtures;
+- trusted media only on `isActive=false` variant => missing;
+- any DB-side image predicate matches `resolveStorefrontProductMedia()` across accepted/rejected URL fixtures, candidate ordering, and the scan boundary;
 - composition with search/status/collection;
 - page reset/canonical serialization;
 - metrics match filter truth.
@@ -730,6 +737,7 @@ Domain URL parser/serializer tests and PostgreSQL directory tests covering:
 
 - `src/commerce/admin-product-directory.ts`
 - `src/commerce/product-content-repository.ts` or a dedicated admin-directory repository helper if SQL complexity warrants separation
+- `src/commerce/product-media.ts` only if a small shared pure resolver predicate can be reused without changing storefront behavior
 - `src/app/admin/page.tsx`
 - directory domain/database tests.
 
@@ -808,14 +816,14 @@ Do not add a numeric synthetic health score.
 
 - [ ] operator can find stocked-but-inactive products without opening editors;
 - [ ] `0 active`, no collection, catalog inactive, missing image filters work against full catalog;
-- [ ] `missing-image` excludes a product with null primary + trusted present-variant media and includes products whose only candidates are absent/rejected/stale;
+- [ ] `missing-image` exactly reflects current storefront resolver semantics, including active/present candidate eligibility and the 100-candidate bound;
 - [ ] row health matches DB truth and editor state;
 - [ ] filters preserve compatible search/status/etc and reset pagination;
 - [ ] existing URL parsing remains fail-closed for malformed/duplicate values.
 
 **Verification**
 
-Domain/DB/browser regressions for filters, row metrics, links/counts, current-page selection reset after navigation, Axe/keyboard/overflow. The browser fixture must include both a null-primary/trusted-variant product that is excluded from `missing-image` and a rejected/stale-media-only product that is included.
+Domain/DB/browser regressions for filters, row metrics, links/counts, current-page selection reset after navigation, Axe/keyboard/overflow. The browser fixture must include both an in-bound trusted active-variant fallback that is excluded from `missing-image` and a product whose first 100 candidates are rejected while candidate #101 is trusted, which must remain included because storefront resolution has no primary.
 
 **Dependencies:** C3; integrate after C4 if same branch or independently before final PR-C convergence.
 
@@ -869,7 +877,7 @@ Final behavioral acceptance:
 - [ ] bulk collection add/remove preserves unrelated membership/content;
 - [ ] bulk catalog enable/disable never changes variant state;
 - [ ] compact editor prioritizes operational controls and source disclosure is collapsed;
-- [ ] health filters/metrics reflect full-catalog DB truth, including the approved trusted-candidate `missing-image` rule;
+- [ ] health filters/metrics reflect full-catalog DB truth, including resolver-parity `missing-image` behavior and the 100-candidate scan bound;
 - [ ] Pancake-owned price, stock, media/source identity, and composite edges remain unchanged;
 - [ ] no schema/dependency/sync behavior change occurred without separate approval;
 - [ ] fresh final review: 0 Critical / 0 Required;
@@ -885,7 +893,7 @@ Final behavioral acceptance:
 | Generic activation weakens composite safety | activation changes only `VariantMirror.isActive`; relation edges stay source-owned/read-only; cart/storefront guards unchanged. |
 | Bulk collection update overwrites editorial content | narrow add/remove repository operation; never reconstruct full content snapshot from browser data. |
 | Health filter lies due to current-page computation | DB-side full-catalog predicate before pagination; exact aggregate stock semantics. |
-| `missing-image` drifts from media truth | source fields are explicit; present variant images count; DB-side predicate must prove parity with `parseTrustedProductImageUrl()` instead of checking primary-image nullability only. |
+| `missing-image` drifts from storefront media truth | parity is against `resolveStorefrontProductMedia()`, not parser-only existence; use identical active/present eligibility, candidate order and 100-candidate scan bound, with explicit #100/#101 regressions. |
 | PR becomes hard to review | apply ADR 0005 after each slice; split independent UI/backend work rather than crossing >800 changed lines by default. |
 | Editor refactor hides behavior changes | PR-B must reuse accepted A services/actions and carry browser regressions; no new business rule in layout-only task. |
 
