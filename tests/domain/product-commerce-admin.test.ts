@@ -23,14 +23,44 @@ const validInput = {
   isActive: true,
 } as const;
 
-test("generic variant activation requires ADMIN before repository access", async () => {
-  let calls = 0;
-  const service = createProductCommerceAdminService({
-    async setVariantActivation() {
-      calls += 1;
+function commerceDependencies(
+  setVariantActivation: (input: {
+    productId: string;
+    variantIds: readonly string[];
+    isActive: boolean;
+  }) => Promise<boolean>,
+) {
+  return {
+    setVariantActivation,
+    async readCatalogEnableWarningState() {
+      return { zeroActiveProductIds: [], compositeChildProductIds: [] };
+    },
+    async commitCatalogEnable() {
+      return { ok: true } as const;
+    },
+    async disableCatalog() {
       return true;
     },
-  });
+    async activateProductAndStockedVariants() {
+      return { ok: true, activatedVariantCount: 0 } as const;
+    },
+    readConfirmationSecret() {
+      return "product-commerce-admin-test-secret-123456789";
+    },
+    nowMs() {
+      return Date.parse("2026-08-27T09:30:00.000Z");
+    },
+  };
+}
+
+test("generic variant activation requires ADMIN before repository access", async () => {
+  let calls = 0;
+  const service = createProductCommerceAdminService(
+    commerceDependencies(async () => {
+      calls += 1;
+      return true;
+    }),
+  );
 
   for (const [session, expectedCode] of [
     [null, "UNAUTHENTICATED"],
@@ -51,12 +81,12 @@ test("generic variant activation requires ADMIN before repository access", async
 
 test("generic variant activation rejects malformed duplicate and oversized browser input", async () => {
   let calls = 0;
-  const service = createProductCommerceAdminService({
-    async setVariantActivation() {
+  const service = createProductCommerceAdminService(
+    commerceDependencies(async () => {
       calls += 1;
       return true;
-    },
-  });
+    }),
+  );
 
   const invalidInputs: unknown[] = [
     null,
@@ -95,12 +125,12 @@ test("generic variant activation rejects malformed duplicate and oversized brows
 
 test("generic variant activation passes only route-owned product, unique IDs, and exact boolean state", async () => {
   const calls: unknown[] = [];
-  const service = createProductCommerceAdminService({
-    async setVariantActivation(input) {
+  const service = createProductCommerceAdminService(
+    commerceDependencies(async (input) => {
       calls.push(input);
       return true;
-    },
-  });
+    }),
+  );
 
   assert.deepEqual(
     await service.setVariantActivation(adminSession, {
@@ -126,11 +156,7 @@ test("generic variant activation passes only route-owned product, unique IDs, an
 });
 
 test("generic variant activation fails closed when any requested variant is unavailable", async () => {
-  const service = createProductCommerceAdminService({
-    async setVariantActivation() {
-      return false;
-    },
-  });
+  const service = createProductCommerceAdminService(commerceDependencies(async () => false));
 
   assert.deepEqual(await service.setVariantActivation(adminSession, validInput), {
     ok: false,
