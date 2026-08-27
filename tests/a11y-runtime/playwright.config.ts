@@ -7,6 +7,7 @@ export default defineConfig({
   testMatch: [
     "admin-bulk-status.spec.ts",
     "admin-collections.spec.ts",
+    "admin-commerce-v3.spec.ts",
     "admin-editor.spec.ts",
     "checkout.spec.ts",
     "collection-breadcrumb.spec.ts",
