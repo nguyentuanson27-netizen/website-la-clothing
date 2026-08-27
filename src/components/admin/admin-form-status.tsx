@@ -25,8 +25,9 @@ export function AdminFormStatus({
     <div
       ref={statusRef}
       className="mt-8 min-h-6 focus-visible:outline-2 focus-visible:outline-offset-4"
-      role={kind ? (kind === "error" ? "alert" : "status") : undefined}
-      aria-atomic={kind ? "true" : undefined}
+      role={kind === "error" ? "alert" : "status"}
+      aria-live={kind === "error" ? "assertive" : "polite"}
+      aria-atomic="true"
       tabIndex={kind ? -1 : undefined}
     >
       {kind === "success" ? (
