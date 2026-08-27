@@ -1,6 +1,6 @@
 # LA Clothing Admin Product Management V3
 
-Status: **DRAFT SPEC — docs-only; no implementation in this PR**
+Status: **APPROVED SPEC — product owner approved 2026-08-27; docs-only; no runtime implementation in this PR**
 
 This spec extends `docs/design/admin-product-management-v2.md`. It defines the next admin-product-management scope without changing Pancake source ownership or claiming runtime behavior that is not already implemented.
 
@@ -322,6 +322,25 @@ Add actionable directory indicators/filters for at least:
 - `Catalog đang tắt`;
 - `Thiếu ảnh`.
 
+### Authoritative `Thiếu ảnh` predicate
+
+For V3, `Thiếu ảnh` means the product has **no trusted source image candidate** in the current mirror.
+
+Candidate sources are exactly:
+
+- `ProductMirror.primaryImageUrl`; and
+- `VariantMirror.pancakeImageUrls` for variants of that product with `isPresent=true`.
+
+A candidate counts as an image only when the existing `parseTrustedProductImageUrl()` contract in `src/commerce/product-media.ts` accepts it. Therefore:
+
+- a null, blank, malformed, or untrusted `primaryImageUrl` does not by itself decide the health state;
+- a trusted image on any present variant means the product is **not** `Thiếu ảnh`, even when `primaryImageUrl` is absent;
+- media that exists only on stale `isPresent=false` variants does not clear the health state;
+- `VariantMirror.isActive` is intentionally irrelevant because this health signal measures mirrored media readiness, not current commerce activation;
+- this classification is read-only and never mutates, copies, or republishes Pancake media.
+
+The directory list/count implementation must apply the same predicate before pagination. If it uses a DB-side equivalent instead of calling the pure parser directly, parity with `parseTrustedProductImageUrl()` is part of acceptance. Do not substitute `primaryImageUrl IS NULL` and do not post-filter only the current page.
+
 Each row shows activation coverage such as `1 / 4 active`, plus a warning when positive-stock variants are inactive.
 
 Do not add a synthetic numeric health score.
@@ -384,7 +403,9 @@ At minimum prove:
 - bulk catalog prepare → one selected product's warning-relevant relation state changes → old proof returns `RECONFIRM_REQUIRED`, zero batch writes;
 - missing/stale bulk target causes zero batch writes;
 - collection add/remove preserves unrelated memberships/content/mirrored fields;
-- >100-variant product: first page select-all submits exactly 100 IDs, later page submits the remainder, forged 101-ID request is rejected before writes.
+- >100-variant product: first page select-all submits exactly 100 IDs, later page submits the remainder, forged 101-ID request is rejected before writes;
+- `Thiếu ảnh`: trusted primary => not missing; null primary + trusted image on a present variant => not missing; only absent/blank/malformed/untrusted candidates or trusted media only on stale variants => missing;
+- directory list/count/pagination use the same `Thiếu ảnh` predicate, and any DB-side URL predicate is parity-tested against `parseTrustedProductImageUrl()` fixtures.
 
 ### Reported ordinary-product regression
 
@@ -422,6 +443,7 @@ Verify at minimum:
 - bulk catalog warning includes zero-active and composite-publication exposure;
 - bulk stale confirmation → accessible `RECONFIRM_REQUIRED` + fresh summary + zero batch writes;
 - bulk add/remove collection;
+- `Thiếu ảnh` filter/count excludes a product with null primary + trusted present-variant media and includes a product with only absent/rejected/stale media;
 - compact editor + collapsed Pancake disclosure;
 - Axe + VoiceOver + no page-level overflow.
 
@@ -452,7 +474,7 @@ Verify at minimum:
 - zero-active + composite-publication warnings;
 - two-phase server-authenticated bulk confirmation freshness;
 - `RECONFIRM_REQUIRED` zero-write stale-confirmation behavior;
-- activation coverage and health filters.
+- activation coverage and health filters, including the authoritative trusted-candidate `Thiếu ảnh` rule.
 
 Each PR must leave the application working and pass focused verification before the next slice.
 
@@ -511,7 +533,7 @@ V3 is complete only when:
 11. bulk enable warns about zero-active variants and standalone publication of current composite children;
 12. bulk enable uses server-authenticated prepare/commit confirmation; warning-state changes return `RECONFIRM_REQUIRED` with zero batch writes;
 13. compact editor prioritizes commerce/editorial controls and collapses long Pancake context;
-14. directory exposes activation coverage and actionable health filters;
+14. directory exposes activation coverage and actionable health filters; `Thiếu ảnh` follows the explicit trusted-candidate rule across product primary + present-variant image sources;
 15. no flow mutates Pancake-owned price, inventory, source identity, images, or composite relations;
 16. focused regressions fail without the new behavior;
 17. existing tests, lint, typecheck, build, security smokes, and relevant Axe/VoiceOver checks are green for each implementation slice;
