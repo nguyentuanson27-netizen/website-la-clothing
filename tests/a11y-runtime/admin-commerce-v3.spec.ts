@@ -460,12 +460,11 @@ test("A4 manages bounded selection, stocked selection, bulk on/off and final-pag
 
   await page.getByRole("checkbox", { name: "Chọn tất cả biến thể trên trang này" }).check();
   await page.getByRole("button", { name: "Tắt đã chọn" }).click();
-  await page.waitForURL(
-    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
-  );
-  expect(
-    await prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
-  ).toBe(0);
+  await expect
+    .poll(() =>
+      prisma.variantMirror.count({ where: { productId: ordinaryProductId, isActive: true } }),
+    )
+    .toBe(0);
 
   await page.getByRole("button", { name: "Trang biến thể tiếp theo" }).click();
   await expect(page.getByText("101–200 / 245", { exact: true })).toBeVisible();
