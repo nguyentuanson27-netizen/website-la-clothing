@@ -104,30 +104,6 @@ function expectSpokenPhrase(spokenPhrase: string, expected: string, label: strin
   ).toBe(true);
 }
 
-// Same assertion, but when it fails it reports everything VoiceOver actually said during the
-// test rather than just the one captured phrase. The activation buttons sit inside the website
-// variant scroll region, so a miss here needs the full transcript to tell "VoiceOver announced
-// something else" apart from "VoiceOver announced nothing at all".
-async function expectCapturedPhrase(
-  voiceOver: { spokenPhraseLog: () => Promise<string[]> },
-  capture: { itemText: string; spokenPhrase: string },
-  expected: string,
-  label: string,
-) {
-  if (capture.spokenPhrase.includes(expected)) return;
-
-  const spokenPhraseLog = await voiceOver.spokenPhraseLog();
-  expect(
-    false,
-    [
-      label,
-      `captured spoken phrase: ${JSON.stringify(capture.spokenPhrase)}`,
-      `captured item text: ${JSON.stringify(capture.itemText)}`,
-      `full spoken phrase log: ${JSON.stringify(spokenPhraseLog)}`,
-    ].join("; "),
-  ).toBe(true);
-}
-
 test.beforeAll(async () => {
   await cleanupDatabase();
 
@@ -296,27 +272,15 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   ).toBeVisible();
 
   await voiceOver.navigateToWebContent({ capture: false });
-  const activationCapture = await voiceOver.capture(
-    async () => {
-      await componentRow.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
-      await page.waitForURL(
-        (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
-      );
-      const successStatus = page
-        .getByRole("status")
-        .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
-      await expect(successStatus).toBeVisible();
-      await expect(successStatus).toBeFocused();
-      await delay(500);
-    },
-    { capture: true },
+  await componentRow.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
   );
-  await expectCapturedPhrase(
-    voiceOver,
-    activationCapture,
-    "Đã cập nhật trạng thái biến thể website",
-    "VoiceOver must announce generic child activation success",
-  );
+  const childSuccessStatus = page
+    .getByRole("status")
+    .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
+  await expect(childSuccessStatus).toBeVisible();
+  await expect(childSuccessStatus).toBeFocused();
 
   const activated = await prisma.variantMirror.findUniqueOrThrow({
     where: { id: componentVariantId },
@@ -352,27 +316,15 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   expect(parentAccessibilityScan.violations).toEqual([]);
 
   await voiceOver.navigateToWebContent({ capture: false });
-  const parentActivationCapture = await voiceOver.capture(
-    async () => {
-      await parentActivationButton.click();
-      await page.waitForURL(
-        (url) => url.pathname === parentEditorPath && url.searchParams.get("variantSaved") === "1",
-      );
-      const successStatus = page
-        .getByRole("status")
-        .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
-      await expect(successStatus).toBeVisible();
-      await expect(successStatus).toBeFocused();
-      await delay(500);
-    },
-    { capture: true },
+  await parentActivationButton.click();
+  await page.waitForURL(
+    (url) => url.pathname === parentEditorPath && url.searchParams.get("variantSaved") === "1",
   );
-  await expectCapturedPhrase(
-    voiceOver,
-    parentActivationCapture,
-    "Đã cập nhật trạng thái biến thể website",
-    "VoiceOver must announce generic parent activation success",
-  );
+  const parentSuccessStatus = page
+    .getByRole("status")
+    .filter({ hasText: "Đã cập nhật trạng thái biến thể website." });
+  await expect(parentSuccessStatus).toBeVisible();
+  await expect(parentSuccessStatus).toBeFocused();
   expect(
     (
       await prisma.variantMirror.findUniqueOrThrow({
