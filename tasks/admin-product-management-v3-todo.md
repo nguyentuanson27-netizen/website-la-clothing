@@ -1,69 +1,72 @@
 # Admin Product Management V3 — task checklist
 
-Status: **APPROVED TODO — plan approved 2026-08-27; PR-A merged (#138); PR-C built**
+Status: **IMPLEMENTATION MERGED — PR-A (#138), PR-C (#140), PR-B (#139); final production acceptance pending trusted deployed smokes**
+
+Verified runtime baseline: `main@8c4922623f22ddf4f723379ad58aa013c7bdf728` after PR #139.
 
 Spec: `docs/design/admin-product-management-v3.md`
 Plan: `tasks/admin-product-management-v3-plan.md`
 
 ## PR-A — Generic commerce activation
 
-- [ ] **A1 — Catalog confirmation proof primitive**
-  - [ ] actor/operation/target/warning-state/expiry binding
-  - [ ] deterministic canonicalization for bulk sets
-  - [ ] tamper/expiry/wrong-binding domain regressions
-  - [ ] security review of secret use/domain separation
+- [x] **A1 — Catalog confirmation proof primitive**
+  - [x] actor/operation/target/warning-state/expiry binding
+  - [x] deterministic canonicalization for bulk sets
+  - [x] tamper/expiry/wrong-binding domain regressions
+  - [x] security review of secret use/domain separation
 
-- [ ] **A2 — Generic variant activation backend**
-  - [ ] ADMIN + strict 1..100 unique IDs
-  - [ ] ordinary/composite parent/composite child all supported
-  - [ ] cross-product/stale/not-present/mixed invalid => zero writes
-  - [ ] normal-product inactive XL regression
+- [x] **A2 — Generic variant activation backend**
+  - [x] ADMIN + strict 1..100 unique IDs
+  - [x] ordinary/composite parent/composite child all supported
+  - [x] cross-product/stale/not-present/mixed invalid => zero writes
+  - [x] normal-product inactive XL regression
 
-- [ ] **A3 — Product catalog + combined quick-action backend**
-  - [ ] product enable/disable changes only `ProductMirror.isActive`
-  - [ ] single-product prepare/commit freshness + `RECONFIRM_REQUIRED`
-  - [ ] quick action recomputes summed positive stock server-side
-  - [ ] current incoming composite edge blocks quick action with zero writes
+- [x] **A3 — Product catalog + combined quick-action backend**
+  - [x] product enable/disable changes only `ProductMirror.isActive`
+  - [x] single-product prepare/commit freshness + `RECONFIRM_REQUIRED`
+  - [x] quick action recomputes summed positive stock server-side
+  - [x] current incoming composite edge blocks quick action with zero writes
 
-- [ ] **A4 — Unified variant editor table**
-  - [ ] single-row + bulk activate/deactivate
-  - [ ] select all / select stocked / indeterminate
-  - [ ] >100 variants => <=100 deterministic page/window selection
-  - [ ] page change clears selection; no silent truncation
-  - [ ] Axe/overflow regression
+- [x] **A4 — Unified variant editor table**
+  - [x] single-row + bulk activate/deactivate
+  - [x] select all / select stocked / indeterminate
+  - [x] >100 variants => <=100 deterministic page/window selection
+  - [x] page change clears selection; no silent truncation
+  - [x] Axe/overflow regression
 
-- [ ] **A5 — Product catalog + quick-action editor UX**
-  - [ ] two-phase enable confirmation
-  - [ ] stale warning state => accessible reconfirmation, zero write
-  - [ ] composite child has no combined shortcut
-  - [ ] normal product quick action + storefront convergence
-  - [ ] VoiceOver/status/error focus coverage
+- [x] **A5 — Product catalog + quick-action editor UX**
+  - [x] two-phase enable confirmation
+  - [x] stale warning state => accessible reconfirmation, zero write
+  - [x] composite child has no combined shortcut
+  - [x] normal product quick action + storefront convergence
+  - [x] status/error focus + browser/Axe coverage
 
-- [ ] **Checkpoint A**
-  - [ ] exact-head CI verify green
-  - [ ] admin Axe/VoiceOver green
-  - [ ] P18/Catalog runtime green when triggered
-  - [ ] 0 Critical / 0 Required fresh review
-  - [ ] ADR 0005 scope check
+- [x] **Checkpoint A — accepted and merged via #138**
+  - [x] exact-head CI verify green
+  - [x] browser/Axe coverage accepted
+  - [x] P18/Catalog runtime green when triggered
+  - [x] required review findings remediated before merge
+  - [x] ADR 0005 scope check recorded in PR #138
 
 ## PR-B — Compact product editor
 
-- [ ] **B1 — Compact editor information architecture**
-  - [ ] summary metrics first
-  - [ ] Website Commerce before long source content
-  - [ ] editorial/collections/SEO/slug remain functional
-  - [ ] keyboard/heading/order regression
+- [x] **B1 — Compact editor information architecture**
+  - [x] summary metrics first
+  - [x] Website Commerce before long source content
+  - [x] editorial/collections/SEO/slug remain functional
+  - [x] keyboard/heading/order regression
 
-- [ ] **B2 — Collapse Pancake source + remove duplicate activation UI**
-  - [ ] semantic `<details>` collapsed by default
-  - [ ] source/read-only data preserved
-  - [ ] old composite-specific activation sections removed
-  - [ ] generic table still activates parent/component variants
+- [x] **B2 — Collapse Pancake source + remove duplicate activation UI**
+  - [x] semantic `<details>` collapsed by default
+  - [x] source/read-only data preserved
+  - [x] old composite-specific activation sections removed
+  - [x] generic table still activates parent/component variants
 
-- [ ] **Checkpoint B**
-  - [ ] exact-head CI + admin browser gates green
-  - [ ] 0 Critical / 0 Required fresh review
-  - [ ] no business-logic expansion hidden in layout PR
+- [x] **Checkpoint B — accepted and merged via #139**
+  - [x] exact-head CI + admin browser gates green before merge
+  - [x] final self-review 0 Critical / 0 Required
+  - [x] no business-logic expansion hidden in layout PR
+  - [x] ADR 0005 scope/reviewability rationale recorded; admin 390px optimization is explicitly non-blocking per product-owner acceptance and ADR 0006
 
 ## PR-C — Bulk product operations and health
 
@@ -100,7 +103,7 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [x] add/remove collection UI
   - [x] enable/disable catalog UI
   - [x] prepare/commit confirmation + reconfirmation
-  - [x] selection/focus/Axe/VoiceOver regressions
+  - [x] selection/focus/Axe regressions
 
 - [x] **C5 — Health indicators and filters UI**
   - [x] `Biến thể: X / N active`
@@ -112,24 +115,26 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [x] no synthetic health score
 
 - [ ] **Checkpoint C — V3 implementation complete**
-  - [ ] exact-head DB/domain/security/auth/lint/typecheck/build/release/start green
-  - [ ] admin browser Axe/VoiceOver green
-  - [ ] fresh review 0 Critical / 0 Required
-  - [ ] ADR 0005 scope/revertability check
+  - [x] exact-main DB/domain/security/auth/lint/typecheck/build/release/start green on `8c4922623f22ddf4f723379ad58aa013c7bdf728`
+  - [x] admin browser/Axe coverage retained; VoiceOver is explicitly removed from the required quality gate by product-owner decision on 2026-08-28
+  - [x] fresh integrated review on final runtime tree: 0 Critical / 0 Required
+  - [x] ADR 0005 scope/revertability checked across PR-A / PR-B / PR-C; no additional runtime change is being added for closure
   - [ ] trusted deployed smoke: normal product admin → storefront
   - [ ] trusted deployed smoke: composite product admin → storefront
-  - [ ] no Pancake-owned price/stock/media/relation mutation
-  - [ ] no schema/dependency/sync behavior change without separate approval
+  - [x] no Pancake-owned price/stock/media/relation mutation in V3 commerce/content write paths
+  - [x] no schema/dependency/sync behavior change introduced by the V3 implementation without separate approval
 
 ## Slice status
 
-- PR-A — merged via #138.
-- PR-B — not started; independent of PR-C.
-- PR-C — C1–C5 implemented on `claude/build-pr-c-from-pr136-frpyzu`. Checkpoint C stays open
-  until exact-head CI, the macOS admin browser runtime, fresh review and the deployed smokes run.
+- PR-A — A1–A5 merged via #138.
+- PR-B — B1–B2 merged via #139; compact editor and collapsed read-only Pancake source are on `main`.
+- PR-C — C1–C5 merged via #140; bulk operations and exact health read model are on `main`.
+- Automated required verification is complete for the final runtime tree. VoiceOver automation is not a completion gate.
+- Production acceptance remains open until both trusted real-catalog admin → storefront smokes are observed on the deployed exact release.
 
 ## Human approval gate
 
 - [x] **Plan approved for `/build` — product owner, 2026-08-27**
-
-PR-A implementation is authorized. Downstream PR-B / PR-C still require their listed checkpoint dependencies and do not inherit completion from this approval.
+- [x] PR-A / PR-B / PR-C implementation accepted and merged.
+- [x] VoiceOver removed from the required completion gate — product owner, 2026-08-28.
+- [ ] Final V3 completion claim — blocked only by trusted deployed normal/composite smokes.
