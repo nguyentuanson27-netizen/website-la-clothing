@@ -72,6 +72,12 @@ async function cleanup() {
 }
 
 async function expectRuntimePageClean(page: import("@playwright/test").Page) {
+  // Callers reach this helper through client-side navigations, where the App Router applies the
+  // route's <title> asynchronously once the RSC payload resolves. Waiting for a URL and an h1 does
+  // not cover that, so Axe could observe the document after the old title was cleared and before
+  // the new one landed, and fail `document-title` on a page that does declare one.
+  await page.waitForFunction(() => document.title.trim().length > 0);
+
   const overflow = await page.evaluate(() => {
     const scrollWidth = document.documentElement.scrollWidth;
     const innerWidth = window.innerWidth;
