@@ -1,0 +1,185 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+import { expect, test } from "@playwright/test";
+
+import { auth } from "../../src/auth/server.ts";
+import { prisma } from "../../src/db/prisma.ts";
+
+const HOST = "127.0.0.1";
+const PORT = 3212;
+const BASE_URL = `http://${HOST}:${PORT}`;
+const APP_ROOT = resolve(import.meta.dirname, "../..");
+const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+
+const runId = `${Date.now()}-${process.pid}`;
+const adminEmail = `admin-compact-${runId}@example.invalid`;
+const password = "admin-compact-runtime-password-123";
+const productExternalId = `admin-compact-product-${runId}`;
+const productSlug = `admin-compact-product-${runId}`;
+const productName = `Admin Compact Product ${runId}`;
+
+let server: ChildProcess | undefined;
+let serverOutput = "";
+let productId = "";
+let adminCookies: Array<{ name: string; value: string; url: string }> = [];
+
+function captureServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
+}
+
+function cookiesFrom(headers: Headers) {
+  return headers.getSetCookie().map((header) => {
+    const pair = header.split(";", 1)[0];
+    const separator = pair.indexOf("=");
+    if (separator < 1) throw new Error("Better Auth returned a malformed Set-Cookie header");
+    return {
+      name: pair.slice(0, separator),
+      value: pair.slice(separator + 1),
+      url: BASE_URL,
+    };
+  });
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Next.js compact-editor server exited with ${server.exitCode}\n${serverOutput}`);
+    }
+    try {
+      const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // Next dev may still be compiling.
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for compact-editor server\n${serverOutput}`);
+}
+
+async function waitForServerExit(timeoutMs: number) {
+  if (!server || server.exitCode !== null) return true;
+  return Promise.race([
+    once(server, "exit").then(() => true),
+    delay(timeoutMs).then(() => false),
+  ]);
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+  server.kill("SIGTERM");
+  if (await waitForServerExit(5_000)) return;
+  server.kill("SIGKILL");
+  await waitForServerExit(5_000);
+}
+
+async function cleanupDatabase() {
+  await prisma.user.deleteMany({ where: { email: adminEmail } });
+  await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
+}
+
+test.beforeAll(async () => {
+  await cleanupDatabase();
+
+  const syncedAt = new Date();
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: productExternalId,
+      slug: productSlug,
+      name: productName,
+      sourceDescription: "Read-only source must stay after website-owned controls.",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+      variants: {
+        create: [
+          {
+            pancakeVariationId: `compact-active-${runId}`,
+            sku: "ACTIVE-M",
+            size: "M",
+            isPresent: true,
+            isActive: true,
+            syncedAt,
+          },
+          {
+            pancakeVariationId: `compact-inactive-${runId}`,
+            sku: "INACTIVE-L",
+            size: "L",
+            isPresent: true,
+            isActive: false,
+            syncedAt,
+          },
+        ],
+      },
+    },
+  });
+  productId = product.id;
+
+  const { headers } = await auth.api.signUpEmail({
+    returnHeaders: true,
+    headers: new Headers({ "x-ci-client-ip": "203.0.113.31" }),
+    body: {
+      name: "Admin Compact Runtime",
+      email: adminEmail,
+      password,
+    },
+  });
+  adminCookies = cookiesFrom(headers);
+  await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
+
+  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+    cwd: APP_ROOT,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", captureServerOutput);
+  server.stderr?.on("data", captureServerOutput);
+  await waitForServer();
+});
+
+test.afterAll(async () => {
+  await stopServer();
+  await cleanupDatabase();
+  await prisma.$disconnect();
+});
+
+test("B1 puts compact operational summary and website-owned editing before Pancake source", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/products/${encodeURIComponent(productId)}`, {
+    waitUntil: "networkidle",
+  });
+
+  await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
+  const summary = page.getByRole("group", { name: "Tóm tắt vận hành sản phẩm" });
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText("Catalog");
+  await expect(summary).toContainText("Editorial");
+  await expect(summary).toContainText("1 / 2 active");
+  await expect(summary).toContainText("Collection");
+
+  const orderIsCompact = await page.evaluate(() => {
+    const byHeading = (name: string) =>
+      [...document.querySelectorAll("h2")].find((heading) => heading.textContent?.trim() === name) ?? null;
+    const nodes = [
+      document.querySelector('[role="group"][aria-label="Tóm tắt vận hành sản phẩm"]'),
+      byHeading("Website commerce"),
+      byHeading("Nội dung editorial"),
+      byHeading("Collections"),
+      byHeading("SEO"),
+      byHeading("Quản lý URL sản phẩm"),
+      byHeading("Nguồn mô tả từ Pancake"),
+    ];
+    if (nodes.some((node) => node === null)) return false;
+    return nodes.slice(1).every((node, index) =>
+      Boolean(nodes[index]!.compareDocumentPosition(node!) & Node.DOCUMENT_POSITION_FOLLOWING),
+    );
+  });
+
+  expect(orderIsCompact).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
