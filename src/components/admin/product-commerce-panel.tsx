@@ -406,7 +406,6 @@ export function ProductCommercePanel({
             <div
               aria-label="Bảng biến thể website, cuộn ngang khi cần"
               className="w-full min-w-0 max-w-full overflow-x-auto border-y border-black/20"
-              role="region"
               style={{ contain: "inline-size" }}
               tabIndex={0}
             >
