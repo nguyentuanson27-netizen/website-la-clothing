@@ -184,7 +184,8 @@ function variantStockCte(productIds: readonly string[] | null): Prisma.Sql {
  *
  * The sum is the point: several warehouses can cancel each other out, so
  * `warehouseStocks: { some: { quantity: { gt: 0 } } }` would call a variant stocked when nothing
- * is sellable. A non-finite mirrored quantity makes the sum unusable rather than positive.
+ * is sellable. A non-finite mirrored quantity makes the sum unusable rather than positive, which
+ * is the same reading the combined quick action applies before it activates anything.
  */
 export function stockedInactiveCondition(productAlias: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`

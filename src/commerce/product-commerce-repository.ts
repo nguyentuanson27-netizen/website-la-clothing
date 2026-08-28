@@ -91,6 +91,24 @@ async function runSerializable<T>(
   throw new Error("Serializable transaction retry loop exhausted");
 }
 
+/**
+ * A malformed mirrored quantity makes the total unusable rather than positive.
+ *
+ * Summing straight through would let a single `Infinity` quantity read as sellable and activate
+ * the variant, and the storefront's own `sumWarehouseStocks` then throws on that exact row while
+ * rendering it. This matches the directory's `stocked-inactive` predicate, so the quick action
+ * activates precisely the variants the health filter counts.
+ */
+function hasPositiveSellableStock(stocks: readonly { quantity: number }[]): boolean {
+  let total = 0;
+  for (const stock of stocks) {
+    if (!Number.isFinite(stock.quantity)) return false;
+    total += stock.quantity;
+    if (!Number.isFinite(total)) return false;
+  }
+  return total > 0;
+}
+
 async function readWarningState(
   tx: Prisma.TransactionClient,
   productId: string,
@@ -389,10 +407,7 @@ export function createProductCommerceRepository(client: PrismaClient) {
         }
 
         const eligibleVariantIds = product.variants
-          .filter(
-            (variant) =>
-              variant.warehouseStocks.reduce((sum, stock) => sum + stock.quantity, 0) > 0,
-          )
+          .filter((variant) => hasPositiveSellableStock(variant.warehouseStocks))
           .map((variant) => variant.id);
 
         const productUpdate = await tx.productMirror.updateMany({

@@ -272,6 +272,44 @@ test("combined quick action uses summed stock, activates product plus positive-s
   );
 });
 
+test("combined quick action treats a malformed mirrored quantity as unsellable", async () => {
+  const { ordinary, stocked, zeroStock } = await createBaseFixture();
+
+  // A single non-finite quantity makes the whole variant total unusable. Summing straight through
+  // would read it as sellable, and the storefront resolver then throws on that exact row.
+  const malformed = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "catalog-ordinary-malformed",
+      productId: ordinary.id,
+      sku: "MALFORMED",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+      warehouseStocks: {
+        create: { pancakeWarehouseId: "wh-malformed", quantity: Number.POSITIVE_INFINITY, syncedAt },
+      },
+    },
+  });
+
+  assert.deepEqual(await repository.activateProductAndStockedVariants(ordinary.id), {
+    ok: true,
+    activatedVariantCount: 1,
+  });
+
+  assert.deepEqual(
+    await prisma.variantMirror.findMany({
+      where: { id: { in: [stocked.id, zeroStock.id, malformed.id] } },
+      orderBy: { sku: "asc" },
+      select: { sku: true, isActive: true },
+    }),
+    [
+      { sku: "MALFORMED", isActive: false },
+      { sku: "STOCKED", isActive: true },
+      { sku: "ZERO", isActive: false },
+    ],
+  );
+});
+
 test("combined quick action fails closed when an incoming composite edge exists at mutation time", async () => {
   const { parentVariant, child, childVariant } = await createBaseFixture();
   await prisma.compositeComponentMirror.create({
