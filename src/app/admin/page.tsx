@@ -4,12 +4,18 @@ import Link from "next/link";
 import { requireCurrentAdminPage } from "@/auth/current-admin";
 import {
   ADMIN_PRODUCT_DIRECTORY_LIMITS,
+  ADMIN_PRODUCT_HEALTH_KEYS,
   ADMIN_PRODUCT_UNCATEGORIZED,
   buildAdminProductDirectoryHref,
   buildAdminProductFacetHref,
   buildAdminProductFacetTargets,
+  buildAdminProductHealthClearTarget,
+  buildAdminProductHealthTargets,
   hasActiveAdminProductFilters,
+  hasActiveAdminProductHealthFilter,
+  isAdminProductHealthKeyActive,
   parseAdminProductDirectorySearchParams,
+  type AdminProductHealthKey,
 } from "@/commerce/admin-product-directory";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
@@ -35,6 +41,14 @@ const statusLabels = {
   REVIEWED: "Đã duyệt",
   PUBLISHED: "Đã xuất bản",
 } as const;
+
+const healthLabels: Record<AdminProductHealthKey, string> = {
+  "stocked-inactive": "Có hàng nhưng variant đang tắt",
+  "zero-active": "0 variant hoạt động",
+  "no-collection": "Không có collection",
+  "catalog-inactive": "Catalog đang tắt",
+  "missing-image": "Thiếu ảnh",
+};
 
 const sortLabels = {
   "name-asc": "Tên A → Z",
@@ -84,14 +98,20 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
   // One source for both the chip links and their counts, so a chip cannot advertise a total
   // that its own link does not open.
   const facetTargets = buildAdminProductFacetTargets(query);
-  const [directory, facets, collections] = await Promise.all([
-    repository.listDirectoryPage({ query }),
-    repository.countDirectoryFacets(facetTargets),
+  const healthTargets = buildAdminProductHealthTargets(query);
+
+  // One database-resolved health scope feeds the filtered page, the facet counts and every health
+  // chip count, so a chip can never advertise a total that its own link does not open.
+  const healthScope = await repository.loadHealthScope();
+  const [directory, facets, healthCounts, collections] = await Promise.all([
+    repository.listDirectoryPage({ query, healthScope }),
+    repository.countDirectoryFacets(facetTargets, healthScope),
+    repository.countDirectoryFacets(healthTargets, healthScope),
     collectionRepository.listForAdmin(100),
   ]);
   const collectionCounts = await repository.countProductsByCollectionSlug();
 
-  const { products, page, totalCount, totalPages, pageSize } = directory;
+  const { products, metrics, page, totalCount, totalPages, pageSize } = directory;
   const collectionTitles = new Map(collections.map((c) => [c.slug, c.title]));
   const filtered = hasActiveAdminProductFilters(query);
   const firstIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -118,6 +138,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
 
   const bulkRows = products.map((product) => {
     const slugs = product.content?.collectionSlugs ?? [];
+    const health = metrics.get(product.id);
     return {
       id: product.id,
       name: product.name,
@@ -134,9 +155,21 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
         }),
       })),
       price: priceRange(product.variants),
-      variantCount: product.variants.length,
+      variantCount: health?.presentVariantCount ?? 0,
+      activeVariantCount: health?.activeVariantCount ?? 0,
+      stockedInactiveCount: health?.stockedInactiveCount ?? 0,
+      missingImage: health?.missingImage ?? false,
     };
   });
+
+  const healthChips = ADMIN_PRODUCT_HEALTH_KEYS.map((key) => ({
+    key,
+    label: healthLabels[key],
+    count: healthCounts[key],
+    active: isAdminProductHealthKeyActive(query, key),
+    href: buildAdminProductDirectoryHref(healthTargets[key], 1),
+  }));
+  const healthFiltered = hasActiveAdminProductHealthFilter(query);
 
   return (
     <div className="mx-auto max-w-[1500px]">
@@ -162,6 +195,9 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
         </h2>
 
         <form action="/admin" className="grid gap-4 md:grid-cols-[2fr_1fr_1.4fr_1fr_1.2fr_auto]" method="get">
+          {/* The health dimension is chosen by its own chips; carry it through the search form so
+              refining the query cannot silently drop the operator's current blocker view. */}
+          {query.health ? <input name="health" type="hidden" value={query.health} /> : null}
           <label className="block">
             <span className="text-xs font-semibold uppercase tracking-[0.13em]">Tìm kiếm</span>
             <input
@@ -254,6 +290,41 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
             </Link>
           ))}
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <h3 className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55" id="product-health-title">
+            Tình trạng vận hành
+          </h3>
+          <ul aria-labelledby="product-health-title" className="flex flex-wrap gap-2">
+            {healthChips.map((chip) => (
+              <li key={chip.key}>
+                <Link
+                  aria-current={chip.active ? "true" : undefined}
+                  className={`${chipClassName} ${
+                    chip.active
+                      ? "border-black bg-black text-white"
+                      : "border-black/25 text-black/70 hover:border-black hover:text-black"
+                  }`}
+                  href={chip.href}
+                  style={chip.active ? { color: "var(--white)" } : undefined}
+                >
+                  {chip.label}
+                  <span className={chip.active ? "text-white/70" : "text-black/45"}>
+                    {chip.count}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {healthFiltered ? (
+            <Link
+              className="min-h-9 self-center text-xs font-semibold uppercase tracking-[0.13em] text-black/60 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+              href={buildAdminProductDirectoryHref(buildAdminProductHealthClearTarget(query), 1)}
+            >
+              Xóa tình trạng
+            </Link>
+          ) : null}
+        </div>
       </section>
 
       <p className="py-4 text-sm text-black/65" role="status">
@@ -282,7 +353,11 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
           ) : null}
         </section>
       ) : (
-        <AdminProductBulkTable key={directoryStateKey} products={bulkRows} />
+        <AdminProductBulkTable
+          collections={collections.map(({ slug, title }) => ({ slug, title }))}
+          key={directoryStateKey}
+          products={bulkRows}
+        />
       )}
 
       {totalPages > 1 ? (

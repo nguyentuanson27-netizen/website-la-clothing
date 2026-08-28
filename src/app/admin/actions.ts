@@ -2,18 +2,37 @@
 
 import { revalidatePath } from "next/cache";
 
+import { readAuthServerConfig } from "@/auth/config";
 import { requireCurrentAdmin } from "@/auth/current-admin";
 import { AuthorizationError } from "@/auth/authorization";
 import {
+  createProductContentBulkCollectionAdminService,
   createProductContentBulkStatusAdminService,
+  type ProductContentCollectionOperation,
   type ProductContentStatus,
 } from "@/commerce/product-content-admin";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
+import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
+import { createProductCatalogBulkAdminService } from "@/commerce/product-commerce-admin";
+import { createProductCommerceRepository } from "@/commerce/product-commerce-repository";
 import { prisma } from "@/db/prisma";
 
 const repository = createProductContentRepository(prisma);
+const collectionRepository = createCollectionDefinitionRepository(prisma);
+const commerceRepository = createProductCommerceRepository(prisma);
 const bulkStatusAdminService = createProductContentBulkStatusAdminService({
   updateStatusesAtomically: repository.updateStatusesAtomically,
+});
+const bulkCollectionAdminService = createProductContentBulkCollectionAdminService({
+  resolveCollectionSlugs: collectionRepository.resolveMembershipSlugs,
+  updateCollectionMembershipAtomically: repository.updateCollectionMembershipAtomically,
+});
+const bulkCatalogAdminService = createProductCatalogBulkAdminService({
+  readBulkCatalogEnableWarningState: commerceRepository.readBulkCatalogEnableWarningState,
+  commitBulkCatalogEnable: commerceRepository.commitBulkCatalogEnable,
+  disableBulkCatalog: commerceRepository.disableBulkCatalog,
+  readConfirmationSecret: () => readAuthServerConfig().secret,
+  nowMs: () => Date.now(),
 });
 
 export type BulkProductStatusActionState =
@@ -21,8 +40,54 @@ export type BulkProductStatusActionState =
   | { kind: "success"; updatedCount: number; status: ProductContentStatus }
   | { kind: "error"; message: string };
 
+export type BulkProductCollectionActionState =
+  | { kind: "idle" }
+  | {
+      kind: "success";
+      operation: ProductContentCollectionOperation;
+      collectionSlug: string;
+      matchedCount: number;
+      changedCount: number;
+    }
+  | { kind: "error"; message: string };
+
+export type BulkProductCatalogActionState =
+  | { kind: "idle" }
+  | {
+      kind: "confirm" | "reconfirm";
+      productIds: string[];
+      zeroActiveCount: number;
+      compositeChildCount: number;
+      proof: string;
+      expiresAtMs: number;
+    }
+  | { kind: "success"; operation: "enable" | "disable"; updatedCount: number }
+  | { kind: "error"; message: string };
+
 const genericBulkStatusError =
   "Không thể cập nhật trạng thái lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+const genericBulkCollectionError =
+  "Không thể cập nhật collection lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+const genericBulkCatalogError =
+  "Không thể cập nhật catalog lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+const expiredSessionError =
+  "Phiên quản trị không còn hợp lệ. Tải lại trang và đăng nhập lại.";
+const staleSelectionError = "Có sản phẩm không còn tồn tại. Tải lại danh sách rồi thử lại.";
+
+type AdminSession = Awaited<ReturnType<typeof requireCurrentAdmin>>;
+
+async function readAdminSession(): Promise<AdminSession | null> {
+  try {
+    return await requireCurrentAdmin();
+  } catch {
+    return null;
+  }
+}
+
+function revalidateDirectory(): void {
+  revalidatePath("/admin");
+  revalidatePath("/shop");
+}
 
 export async function bulkUpdateProductStatusAction(
   _previousState: BulkProductStatusActionState,
@@ -35,7 +100,7 @@ export async function bulkUpdateProductStatusAction(
     if (error instanceof AuthorizationError) {
       return {
         kind: "error",
-        message: "Phiên quản trị không còn hợp lệ. Tải lại trang và đăng nhập lại.",
+        message: expiredSessionError,
       };
     }
     return { kind: "error", message: genericBulkStatusError };
@@ -56,7 +121,7 @@ export async function bulkUpdateProductStatusAction(
       kind: "error",
       message:
         result.reason === "PRODUCT_NOT_FOUND"
-          ? "Có sản phẩm không còn tồn tại. Tải lại danh sách rồi thử lại."
+          ? staleSelectionError
           : result.reason === "UNAVAILABLE"
             ? genericBulkStatusError
             : "Lựa chọn hoặc trạng thái không hợp lệ. Kiểm tra lại rồi thử lại.",
@@ -73,4 +138,146 @@ export async function bulkUpdateProductStatusAction(
 
   revalidatePath("/admin");
   return { kind: "success", updatedCount: result.updatedCount, status };
+}
+
+export async function bulkUpdateProductCollectionAction(
+  _previousState: BulkProductCollectionActionState,
+  formData: FormData,
+): Promise<BulkProductCollectionActionState> {
+  const adminSession = await readAdminSession();
+  if (!adminSession) return { kind: "error", message: expiredSessionError };
+
+  const operation = formData.get("operation");
+  const collectionSlug = formData.get("collectionSlug");
+
+  let result: Awaited<ReturnType<typeof bulkCollectionAdminService.update>>;
+  try {
+    result = await bulkCollectionAdminService.update(adminSession, {
+      productIds: formData.getAll("productId"),
+      collectionSlug,
+      operation,
+    });
+  } catch {
+    return { kind: "error", message: genericBulkCollectionError };
+  }
+
+  if (!result.ok) {
+    return {
+      kind: "error",
+      message:
+        result.reason === "PRODUCT_NOT_FOUND"
+          ? staleSelectionError
+          : result.reason === "COLLECTION_NOT_FOUND"
+            ? "Collection không còn tồn tại. Tải lại trang rồi thử lại."
+            : result.reason === "COLLECTION_LIMIT_REACHED"
+              ? "Có sản phẩm đã đạt giới hạn collection. Gỡ bớt collection trước khi thêm."
+              : result.reason === "UNAVAILABLE"
+                ? genericBulkCollectionError
+                : "Lựa chọn hoặc collection không hợp lệ. Kiểm tra lại rồi thử lại.",
+    };
+  }
+
+  if (
+    typeof collectionSlug !== "string" ||
+    (operation !== "add" && operation !== "remove")
+  ) {
+    return { kind: "error", message: genericBulkCollectionError };
+  }
+
+  revalidateDirectory();
+  return {
+    kind: "success",
+    operation,
+    collectionSlug,
+    matchedCount: result.matchedCount,
+    changedCount: result.changedCount,
+  };
+}
+
+/**
+ * Bulk catalog activation is two-phase: `catalog-prepare` returns the current server-computed
+ * warning summary plus a proof bound to it, and `catalog-commit` re-validates that proof against
+ * freshly read state. A drifted warning state comes back as a reconfirmation with a new proof and
+ * zero writes, so the operator acknowledges what is true at commit time rather than at render
+ * time. Disabling carries no publication risk and needs no handshake.
+ */
+export async function bulkProductCatalogAction(
+  _previousState: BulkProductCatalogActionState,
+  formData: FormData,
+): Promise<BulkProductCatalogActionState> {
+  const adminSession = await readAdminSession();
+  if (!adminSession) return { kind: "error", message: expiredSessionError };
+
+  const intent = formData.get("intent");
+  const productIds = formData.getAll("productId");
+
+  try {
+    if (intent === "catalog-prepare") {
+      const result = await bulkCatalogAdminService.prepareEnable(adminSession, { productIds });
+      if (!result.ok) {
+        return {
+          kind: "error",
+          message:
+            result.reason === "PRODUCT_NOT_AVAILABLE"
+              ? staleSelectionError
+              : "Lựa chọn không hợp lệ. Kiểm tra lại rồi thử lại.",
+        };
+      }
+      return {
+        kind: "confirm",
+        productIds: result.productIds,
+        zeroActiveCount: result.warningState.zeroActiveProductIds.length,
+        compositeChildCount: result.warningState.compositeChildProductIds.length,
+        proof: result.proof,
+        expiresAtMs: result.expiresAtMs,
+      };
+    }
+
+    if (intent === "catalog-commit") {
+      const result = await bulkCatalogAdminService.commitEnable(adminSession, {
+        productIds,
+        proof: formData.get("proof"),
+      });
+      if (result.ok) {
+        revalidateDirectory();
+        return { kind: "success", operation: "enable", updatedCount: result.updatedCount };
+      }
+      if (result.reason === "RECONFIRM_REQUIRED") {
+        return {
+          kind: "reconfirm",
+          productIds: [...result.productIds],
+          zeroActiveCount: result.warningState.zeroActiveProductIds.length,
+          compositeChildCount: result.warningState.compositeChildProductIds.length,
+          proof: result.proof,
+          expiresAtMs: result.expiresAtMs,
+        };
+      }
+      return {
+        kind: "error",
+        message:
+          result.reason === "PRODUCT_NOT_AVAILABLE"
+            ? staleSelectionError
+            : "Lựa chọn không hợp lệ. Kiểm tra lại rồi thử lại.",
+      };
+    }
+
+    if (intent === "catalog-disable") {
+      const result = await bulkCatalogAdminService.disable(adminSession, { productIds });
+      if (!result.ok) {
+        return {
+          kind: "error",
+          message:
+            result.reason === "PRODUCT_NOT_AVAILABLE"
+              ? staleSelectionError
+              : "Lựa chọn không hợp lệ. Kiểm tra lại rồi thử lại.",
+        };
+      }
+      revalidateDirectory();
+      return { kind: "success", operation: "disable", updatedCount: result.updatedCount };
+    }
+  } catch {
+    return { kind: "error", message: genericBulkCatalogError };
+  }
+
+  return { kind: "error", message: genericBulkCatalogError };
 }
