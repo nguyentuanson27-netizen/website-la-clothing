@@ -264,8 +264,17 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Website commerce" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Biến thể website" })).toBeVisible();
+  const sourceDisclosure = page.locator("details").filter({
+    has: page.locator("summary", { hasText: "Nguồn Pancake" }),
+  });
+  await expect(sourceDisclosure).not.toHaveAttribute("open", "");
+  await expect(sourceDisclosure.locator("summary")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeHidden();
+  await expect(page.getByText(sourceDescription, { exact: true })).toBeHidden();
+  await sourceDisclosure.locator("summary").click();
   await expect(page.getByRole("heading", { level: 2, name: "Nguồn mô tả từ Pancake" })).toBeVisible();
   await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
+  await expect(sourceDisclosure.getByRole("button", { name: /^(Kích hoạt|Tắt) biến thể/ })).toHaveCount(0);
   await expect(page.locator('[name="sourceDescription"]')).toHaveCount(0);
   const slugTextbox = page.getByRole("textbox", { name: "Slug sản phẩm", exact: true });
   await expect(slugTextbox).toHaveValue(productSlug);
@@ -332,6 +341,11 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
 
   const parentEditorPath = `/admin/products/${encodeURIComponent(parentProductId)}`;
   await page.goto(`${BASE_URL}${parentEditorPath}`, { waitUntil: "networkidle" });
+  const parentSourceDisclosure = page.locator("details").filter({
+    has: page.locator("summary", { hasText: "Nguồn Pancake" }),
+  });
+  await expect(parentSourceDisclosure).not.toHaveAttribute("open", "");
+  await parentSourceDisclosure.locator("summary").click();
   const childReferenceRow = page.getByRole("row").filter({ hasText: productName });
   await expect(childReferenceRow.getByText("Đã kích hoạt biến thể", { exact: true })).toBeVisible();
   await expect(childReferenceRow.getByText("Catalog riêng: tắt", { exact: true })).toBeVisible();
