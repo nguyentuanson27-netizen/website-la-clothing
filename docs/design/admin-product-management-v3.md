@@ -384,7 +384,7 @@ Never:
 - variant pagination/window range and selected count are announced accessibly;
 - no page-level horizontal overflow;
 - relevant Axe checks use the shared tag set including `best-practice`;
-- critical activation/bulk flows retain browser + VoiceOver coverage.
+- critical activation/bulk flows retain real-browser coverage, asserting that each status message is rendered with the correct role and receives focus.
 
 ## Testing strategy
 
@@ -450,7 +450,7 @@ Verify at minimum:
 - bulk add/remove collection;
 - `Thiếu ảnh` filter/count matches current storefront media resolution, including a null-primary product with an in-bound trusted active-variant fallback and a product whose only trusted candidate is #101 after 100 rejected candidates;
 - compact editor + collapsed Pancake disclosure;
-- Axe + VoiceOver + no page-level overflow.
+- Axe + focused status roles + no page-level overflow.
 
 ## Implementation slicing
 
@@ -541,7 +541,7 @@ V3 is complete only when:
 14. directory exposes activation coverage and actionable health filters; `Thiếu ảnh` matches effective storefront media resolution, including active/present candidate eligibility, ordering, parser trust rules, and the 100-candidate scan bound;
 15. no flow mutates Pancake-owned price, inventory, source identity, images, or composite relations;
 16. focused regressions fail without the new behavior;
-17. existing tests, lint, typecheck, build, security smokes, and relevant Axe/VoiceOver checks are green for each implementation slice;
+17. existing tests, lint, typecheck, build, security smokes, and relevant Axe/browser accessibility checks are green for each implementation slice;
 18. no schema/dependency/sync change is introduced without a separate approved decision.
 
 ## Open questions

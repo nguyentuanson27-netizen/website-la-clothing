@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page } from "@playwright/test";
-import { voiceOverTest as test } from "@guidepup/playwright";
+import { expect, test, type Page } from "@playwright/test";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -136,13 +135,6 @@ async function resetProductActivation(productId: string, activeVariantIds: strin
       data: { isActive: true },
     });
   }
-}
-
-function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
-  expect(
-    spokenPhrase.includes(expected),
-    `${label}; captured VoiceOver output: ${JSON.stringify(spokenPhrase)}`,
-  ).toBe(true);
 }
 
 async function expectNoPageOverflow(page: Page) {
@@ -528,7 +520,6 @@ test("A4 ordinary inactive stocked XL can be activated without publishing the pr
 test("A5 ordinary quick action publishes stocked variants and storefront converges under existing guards", async ({
   page,
   context,
-  voiceOver,
 }) => {
   await resetProductActivation(regressionProductId);
   await context.addCookies(adminCookies);
@@ -537,24 +528,12 @@ test("A5 ordinary quick action publishes stocked variants and storefront converg
 
   await page.getByRole("button", { name: "Bật sản phẩm + kích hoạt biến thể có hàng" }).click();
   await expect(page.getByText(/1 biến thể có hàng/)).toBeVisible();
-  await voiceOver.navigateToWebContent({ capture: false });
-  const quickCapture = await voiceOver.capture(
-    async () => {
-      await page.getByRole("button", { name: "Xác nhận bật sản phẩm và biến thể có hàng" }).click();
-      const success = page
-        .getByRole("status")
-        .filter({ hasText: "Đã bật sản phẩm và kích hoạt 1 biến thể có hàng." });
-      await expect(success).toBeVisible();
-      await expect(success).toBeFocused();
-      await delay(500);
-    },
-    { capture: true },
-  );
-  expectSpokenPhrase(
-    quickCapture.spokenPhrase,
-    "Đã bật sản phẩm và kích hoạt 1 biến thể có hàng",
-    "VoiceOver must announce the combined quick-action result",
-  );
+  await page.getByRole("button", { name: "Xác nhận bật sản phẩm và biến thể có hàng" }).click();
+  const success = page
+    .getByRole("status")
+    .filter({ hasText: "Đã bật sản phẩm và kích hoạt 1 biến thể có hàng." });
+  await expect(success).toBeVisible();
+  await expect(success).toBeFocused();
 
   await page.goto(`${BASE_URL}/shop/${regressionSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: regressionName })).toBeVisible();

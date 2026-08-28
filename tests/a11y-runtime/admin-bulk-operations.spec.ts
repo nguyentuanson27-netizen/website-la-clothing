@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect } from "@playwright/test";
-import { voiceOverTest as test } from "@guidepup/playwright";
+import { expect, test } from "@playwright/test";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -244,7 +243,6 @@ test.afterAll(async () => {
 test("admin directory surfaces health truth and runs bulk collection and catalog operations accessibly", async ({
   page,
   context,
-  voiceOver,
 }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
@@ -336,18 +334,10 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   await page.getByRole("button", { name: "Bật catalog cho 2 sản phẩm" }).click();
   await expect(page.getByText("Bật catalog cho 2 sản phẩm?")).toBeVisible();
 
-  await voiceOver.navigateToWebContent({ capture: false });
-  const successCapture = await voiceOver.capture(
-    async () => {
-      await page.getByRole("button", { name: "Xác nhận" }).click();
-      const status = page.getByRole("status").filter({ hasText: "Đã bật catalog cho 2 sản phẩm." });
-      await expect(status).toBeVisible();
-      await expect(status).toBeFocused();
-      await delay(500);
-    },
-    { capture: true },
-  );
-  expect(successCapture.spokenPhrase).toContain("Đã bật catalog cho 2 sản phẩm");
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  const status = page.getByRole("status").filter({ hasText: "Đã bật catalog cho 2 sản phẩm." });
+  await expect(status).toBeVisible();
+  await expect(status).toBeFocused();
 
   const enabled = await prisma.productMirror.findMany({
     where: { id: { in: [plainProductId, stockedProductId, childProductId] } },

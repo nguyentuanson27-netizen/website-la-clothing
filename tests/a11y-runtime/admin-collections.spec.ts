@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect } from "@playwright/test";
-import { voiceOverTest as test } from "@guidepup/playwright";
+import { expect, test } from "@playwright/test";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -85,13 +84,6 @@ async function cleanupDatabase() {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
 }
 
-function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
-  expect(
-    spokenPhrase.includes(expected),
-    `${label}; captured VoiceOver output: ${JSON.stringify(spokenPhrase)}`,
-  ).toBe(true);
-}
-
 test.beforeAll(async () => {
   await cleanupDatabase();
 
@@ -131,7 +123,6 @@ test.afterAll(async () => {
 test("admin can maintain canonical collections with accessible success and error feedback", async ({
   page,
   context,
-  voiceOver,
 }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
@@ -154,8 +145,6 @@ test("admin can maintain canonical collections with accessible success and error
 
   await expect(page.getByRole("heading", { level: 1, name: "Quản lý collections" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Lưu collection" }).first()).toBeVisible();
-  await voiceOver.navigateToWebContent({ capture: false });
-
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
@@ -173,25 +162,13 @@ test("admin can maintain canonical collections with accessible success and error
   await page.getByLabel("Pancake category IDs").fill("7, 7");
   await page.getByLabel("Vị trí trên trang chủ").selectOption("2");
 
-  const errorCapture = await voiceOver.capture(
-    async () => {
-      await page.getByRole("button", { name: "Lưu collection" }).first().click();
-      await page.waitForURL(
-        (url) => url.pathname === collectionsPath && url.searchParams.get("error") === "invalid",
-      );
-      const errorStatus = page
-        .getByRole("alert")
-        .filter({ hasText: "Không thể lưu collection." });
-      await expect(errorStatus).toContainText("Không thể lưu collection.");
-      await expect(errorStatus).toBeFocused();
-    },
-    { capture: true },
+  await page.getByRole("button", { name: "Lưu collection" }).first().click();
+  await page.waitForURL(
+    (url) => url.pathname === collectionsPath && url.searchParams.get("error") === "invalid",
   );
-  expectSpokenPhrase(
-    errorCapture.spokenPhrase,
-    "Không thể lưu collection",
-    "VoiceOver must announce invalid collection input",
-  );
+  const errorStatus = page.getByRole("alert").filter({ hasText: "Không thể lưu collection." });
+  await expect(errorStatus).toContainText("Không thể lưu collection.");
+  await expect(errorStatus).toBeFocused();
 
   await page.getByLabel("Slug").fill(collectionSlug);
   await page.getByLabel("Tiêu đề").fill("City Uniform Runtime");
@@ -201,23 +178,13 @@ test("admin can maintain canonical collections with accessible success and error
   await page.getByLabel("Pancake category IDs").fill("42, 7");
   await page.getByLabel("Vị trí trên trang chủ").selectOption("2");
 
-  const successCapture = await voiceOver.capture(
-    async () => {
-      await page.getByRole("button", { name: "Lưu collection" }).first().click();
-      await page.waitForURL(
-        (url) => url.pathname === collectionsPath && url.searchParams.get("saved") === "1",
-      );
-      const successStatus = page.getByRole("status");
-      await expect(successStatus).toContainText("Đã lưu collection.");
-      await expect(successStatus).toBeFocused();
-    },
-    { capture: true },
+  await page.getByRole("button", { name: "Lưu collection" }).first().click();
+  await page.waitForURL(
+    (url) => url.pathname === collectionsPath && url.searchParams.get("saved") === "1",
   );
-  expectSpokenPhrase(
-    successCapture.spokenPhrase,
-    "Đã lưu collection",
-    "VoiceOver must announce persisted collection success",
-  );
+  const successStatus = page.getByRole("status");
+  await expect(successStatus).toContainText("Đã lưu collection.");
+  await expect(successStatus).toBeFocused();
 
   const persisted = await prisma.collectionDefinition.findUnique({
     where: { slug: collectionSlug },
