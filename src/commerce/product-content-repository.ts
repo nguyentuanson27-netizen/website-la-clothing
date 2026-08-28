@@ -2,10 +2,13 @@ import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
 import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
 import type {
+  BulkProductCollectionResult,
+  BulkProductCollectionUpdate,
   BulkProductContentStatusResult,
   BulkProductContentStatusUpdate,
   ProductContentSnapshot,
 } from "./product-content-admin.ts";
+import { PRODUCT_CONTENT_LIMITS } from "./product-content-admin.ts";
 
 const MAX_ADMIN_PRODUCTS = 100;
 
@@ -162,6 +165,74 @@ export function createProductContentRepository(client: PrismaClient) {
       });
 
       return { ok: true, updatedCount: productIds.length } as const;
+    });
+  }
+
+  /**
+   * Adds or removes exactly one validated collection slug for the selected products.
+   *
+   * The membership array is patched database-side (`array_append` / `array_remove`) instead of
+   * being rebuilt from directory data, so a product's other collections, editorial fields, SEO
+   * text and mirrored Pancake columns are never rewritten from a stale browser snapshot. Any
+   * missing or no-longer-present target aborts the whole batch before the first write.
+   */
+  async function updateCollectionMembershipAtomically(
+    input: BulkProductCollectionUpdate,
+  ): Promise<BulkProductCollectionResult> {
+    const { productIds, collectionSlug, operation } = input;
+
+    return client.$transaction(async (tx) => {
+      const presentCount = await tx.productMirror.count({
+        where: { id: { in: productIds }, isPresent: true },
+      });
+      if (presentCount !== productIds.length) {
+        return { ok: false, reason: "PRODUCT_NOT_FOUND" } as const;
+      }
+
+      if (operation === "remove") {
+        const changedCount = await tx.$executeRaw(Prisma.sql`
+          UPDATE "ProductContent"
+          SET "collectionSlugs" = ARRAY_REMOVE("collectionSlugs", ${collectionSlug}),
+              "updatedAt" = NOW()
+          WHERE "productId" = ANY(${productIds}::text[])
+            AND ${collectionSlug} = ANY("collectionSlugs")
+        `);
+        return { ok: true, matchedCount: productIds.length, changedCount } as const;
+      }
+
+      // The editor accepts at most `collectionCount` memberships per product, so an append that
+      // would exceed it has to fail the batch rather than write content the editor can no longer
+      // save back.
+      const overflowRows = await tx.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "ProductContent"
+        WHERE "productId" = ANY(${productIds}::text[])
+          AND NOT (${collectionSlug} = ANY("collectionSlugs"))
+          AND COALESCE(ARRAY_LENGTH("collectionSlugs", 1), 0) >= ${PRODUCT_CONTENT_LIMITS.collectionCount}
+      `);
+      const overflowCount = overflowRows[0] ? membershipCountToNumber(overflowRows[0].count) : 0;
+      if (overflowCount > 0) {
+        return { ok: false, reason: "COLLECTION_LIMIT_REACHED" } as const;
+      }
+
+      // Products without content yet get a minimal DRAFT row carrying only the requested slug.
+      const created = await tx.productContent.createMany({
+        data: productIds.map((productId) => ({ productId, collectionSlugs: [collectionSlug] })),
+        skipDuplicates: true,
+      });
+      const appended = await tx.$executeRaw(Prisma.sql`
+        UPDATE "ProductContent"
+        SET "collectionSlugs" = ARRAY_APPEND("collectionSlugs", ${collectionSlug}),
+            "updatedAt" = NOW()
+        WHERE "productId" = ANY(${productIds}::text[])
+          AND NOT (${collectionSlug} = ANY("collectionSlugs"))
+      `);
+
+      return {
+        ok: true,
+        matchedCount: productIds.length,
+        changedCount: created.count + appended,
+      } as const;
     });
   }
 
@@ -381,6 +452,7 @@ export function createProductContentRepository(client: PrismaClient) {
     productExists,
     saveContent,
     updateStatusesAtomically,
+    updateCollectionMembershipAtomically,
     findForEditor,
     listForAdmin,
     listDirectoryPage,
