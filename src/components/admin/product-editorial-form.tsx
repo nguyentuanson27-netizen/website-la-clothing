@@ -107,7 +107,7 @@ export function ProductEditorialForm({
         <section aria-labelledby="collections-heading" className="border-t border-black/20 pt-10">
           <p className="eyebrow">Discovery</p>
           <h2 id="collections-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
-            Collections
+            Bộ sưu tập
           </h2>
           {collectionChoices.length === 0 ? (
             <p className="mt-8 max-w-2xl text-sm leading-6 text-black/65">
@@ -158,7 +158,7 @@ export function ProductEditorialForm({
         </section>
 
         <section aria-labelledby="seo-heading" className="border-t border-black/20 pt-10">
-          <p className="eyebrow">Search</p>
+          <p className="eyebrow">Tìm kiếm</p>
           <h2 id="seo-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
             SEO
           </h2>
