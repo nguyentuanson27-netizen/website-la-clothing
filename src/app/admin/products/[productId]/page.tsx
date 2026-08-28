@@ -396,38 +396,39 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         errorMessage={variantErrorMessage}
       />
 
-      <dl
-        aria-label="Tóm tắt vận hành sản phẩm"
-        className="mt-8 grid gap-3 border border-black/20 bg-black/[0.02] p-4 text-xs sm:grid-cols-3 lg:grid-cols-6"
-        role="group"
-      >
-        <div>
-          <dt className="text-black/55">Catalog</dt>
-          <dd className="mt-1 font-semibold">{product.isActive ? "Đang bật" : "Đang tắt"}</dd>
-        </div>
-        <div>
-          <dt className="text-black/55">Editorial</dt>
-          <dd className="mt-1 font-semibold">{product.content?.status ?? "DRAFT"}</dd>
-        </div>
-        <div>
-          <dt className="text-black/55">Variants</dt>
-          <dd className="mt-1 font-semibold">
-            {activeVariantCount} / {commerceVariants.length} active
-          </dd>
-        </div>
-        <div>
-          <dt className="text-black/55">Có hàng</dt>
-          <dd className="mt-1 font-semibold">{positiveStockVariantCount}</dd>
-        </div>
-        <div>
-          <dt className="text-black/55">Tổng kho</dt>
-          <dd className="mt-1 font-semibold">{totalStock}</dd>
-        </div>
-        <div>
-          <dt className="text-black/55">Collection</dt>
-          <dd className="mt-1 font-semibold">{assignedSlugs.size}</dd>
-        </div>
-      </dl>
+      <section aria-labelledby="product-operational-summary-heading" className="mt-8">
+        <h2 id="product-operational-summary-heading" className="sr-only">
+          Tóm tắt vận hành sản phẩm
+        </h2>
+        <dl className="grid gap-3 border border-black/20 bg-black/[0.02] p-4 text-xs sm:grid-cols-3 lg:grid-cols-6">
+          <div>
+            <dt className="text-black/55">Catalog</dt>
+            <dd className="mt-1 font-semibold">{product.isActive ? "Đang bật" : "Đang tắt"}</dd>
+          </div>
+          <div>
+            <dt className="text-black/55">Editorial</dt>
+            <dd className="mt-1 font-semibold">{product.content?.status ?? "DRAFT"}</dd>
+          </div>
+          <div>
+            <dt className="text-black/55">Variants</dt>
+            <dd className="mt-1 font-semibold">
+              {activeVariantCount} / {commerceVariants.length} active
+            </dd>
+          </div>
+          <div>
+            <dt className="text-black/55">Có hàng</dt>
+            <dd className="mt-1 font-semibold">{positiveStockVariantCount}</dd>
+          </div>
+          <div>
+            <dt className="text-black/55">Tổng kho</dt>
+            <dd className="mt-1 font-semibold">{totalStock}</dd>
+          </div>
+          <div>
+            <dt className="text-black/55">Collection</dt>
+            <dd className="mt-1 font-semibold">{assignedSlugs.size}</dd>
+          </div>
+        </dl>
+      </section>
 
       <ProductCommercePanel
         commerceAction={manageProductCommerce}
