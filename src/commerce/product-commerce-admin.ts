@@ -1,0 +1,265 @@
+import { requireAdminSession } from "../auth/authorization.ts";
+import {
+  ADMIN_CATALOG_CONFIRMATION_LIMITS,
+  issueAdminCatalogConfirmationProof,
+} from "./admin-catalog-confirmation.ts";
+import type {
+  CatalogEnableCommitInput,
+  CatalogEnableCommitResult,
+  CatalogEnableWarningState,
+  ProductVariantActivationUpdate,
+  StockedQuickActionResult,
+} from "./product-commerce-repository.ts";
+
+export const PRODUCT_COMMERCE_ADMIN_LIMITS = {
+  productId: 128,
+  variantId: 128,
+  variantCount: 100,
+} as const;
+
+type AdminSessionCandidate =
+  | {
+      user: {
+        id: string;
+        role?: string | null;
+      };
+      session: {
+        id: string;
+      };
+    }
+  | null
+  | undefined;
+
+export type ProductVariantActivationInput = {
+  variantIds: readonly string[];
+  isActive: boolean;
+};
+
+type ProductCommerceAdminDependencies = {
+  setVariantActivation(input: ProductVariantActivationUpdate): Promise<boolean>;
+  readCatalogEnableWarningState(productId: string): Promise<CatalogEnableWarningState | null>;
+  commitCatalogEnable(input: CatalogEnableCommitInput): Promise<CatalogEnableCommitResult>;
+  disableCatalog(productId: string): Promise<boolean>;
+  activateProductAndStockedVariants(productId: string): Promise<StockedQuickActionResult>;
+  readConfirmationSecret(): string;
+  nowMs(): number;
+};
+
+function isBoundedTrimmedId(value: unknown, maxLength: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maxLength &&
+    value === value.trim()
+  );
+}
+
+function parseRouteProductId(productId: unknown): string | null {
+  return isBoundedTrimmedId(productId, PRODUCT_COMMERCE_ADMIN_LIMITS.productId)
+    ? productId
+    : null;
+}
+
+function parseCatalogProof(input: unknown): string | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const proof = (input as Record<string, unknown>).proof;
+  if (
+    typeof proof !== "string" ||
+    proof.length < 1 ||
+    proof.length > ADMIN_CATALOG_CONFIRMATION_LIMITS.proofLength
+  ) {
+    return null;
+  }
+  return proof;
+}
+
+function parseVariantActivationInput(input: unknown): ProductVariantActivationInput | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const record = input as Record<string, unknown>;
+  if (
+    !Array.isArray(record.variantIds) ||
+    record.variantIds.length < 1 ||
+    record.variantIds.length > PRODUCT_COMMERCE_ADMIN_LIMITS.variantCount ||
+    typeof record.isActive !== "boolean"
+  ) {
+    return null;
+  }
+
+  const variantIds: string[] = [];
+  const seen = new Set<string>();
+  for (const variantId of record.variantIds) {
+    if (
+      !isBoundedTrimmedId(variantId, PRODUCT_COMMERCE_ADMIN_LIMITS.variantId) ||
+      seen.has(variantId)
+    ) {
+      return null;
+    }
+    seen.add(variantId);
+    variantIds.push(variantId);
+  }
+
+  return {
+    variantIds,
+    isActive: record.isActive,
+  };
+}
+
+export function createProductCommerceAdminService({
+  setVariantActivation,
+  readCatalogEnableWarningState,
+  commitCatalogEnable,
+  disableCatalog,
+  activateProductAndStockedVariants,
+  readConfirmationSecret,
+  nowMs,
+}: ProductCommerceAdminDependencies) {
+  function issueCatalogEnableConfirmation(
+    actorId: string,
+    productId: string,
+    warningState: CatalogEnableWarningState,
+  ) {
+    return issueAdminCatalogConfirmationProof({
+      secret: readConfirmationSecret(),
+      nowMs: nowMs(),
+      actorId,
+      operation: "enable",
+      targetProductIds: [productId],
+      zeroActiveProductIds: warningState.zeroActiveProductIds,
+      compositeChildProductIds: warningState.compositeChildProductIds,
+    });
+  }
+
+  async function reconfirmCatalogEnable(actorId: string, productId: string) {
+    const warningState = await readCatalogEnableWarningState(productId);
+    if (!warningState) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+
+    const issued = issueCatalogEnableConfirmation(actorId, productId, warningState);
+    return {
+      ok: false,
+      reason: "RECONFIRM_REQUIRED",
+      warningState,
+      proof: issued.proof,
+      expiresAtMs: issued.expiresAtMs,
+    } as const;
+  }
+
+  async function setVariantActivationForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+    input: unknown,
+  ) {
+    requireAdminSession(session);
+
+    const productId = parseRouteProductId(routeProductId);
+    const parsed = parseVariantActivationInput(input);
+    if (!productId || !parsed) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    if (!(await setVariantActivation({ productId, ...parsed }))) {
+      return { ok: false, reason: "VARIANT_NOT_AVAILABLE" } as const;
+    }
+
+    return {
+      ok: true,
+      variantIds: parsed.variantIds,
+      isActive: parsed.isActive,
+    } as const;
+  }
+
+  async function prepareCatalogEnable(session: AdminSessionCandidate, routeProductId: string) {
+    const admin = requireAdminSession(session);
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const warningState = await readCatalogEnableWarningState(productId);
+    if (!warningState) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+
+    const issued = issueCatalogEnableConfirmation(admin.user.id, productId, warningState);
+    return {
+      ok: true,
+      warningState,
+      proof: issued.proof,
+      expiresAtMs: issued.expiresAtMs,
+    } as const;
+  }
+
+  async function commitCatalogEnableForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+    input: unknown,
+  ) {
+    const admin = requireAdminSession(session);
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const proof = parseCatalogProof(input);
+    if (!proof) {
+      return reconfirmCatalogEnable(admin.user.id, productId);
+    }
+
+    const result = await commitCatalogEnable({
+      productId,
+      actorId: admin.user.id,
+      proof,
+      secret: readConfirmationSecret(),
+      nowMs: nowMs(),
+    });
+    if (!result.ok && result.reason === "RECONFIRM_REQUIRED") {
+      const issued = issueCatalogEnableConfirmation(admin.user.id, productId, result.warningState);
+      return {
+        ...result,
+        proof: issued.proof,
+        expiresAtMs: issued.expiresAtMs,
+      } as const;
+    }
+
+    return result;
+  }
+
+  async function disableCatalogForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+  ) {
+    requireAdminSession(session);
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+    if (!(await disableCatalog(productId))) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+    return { ok: true } as const;
+  }
+
+  async function activateStockedVariantsForProduct(
+    session: AdminSessionCandidate,
+    routeProductId: string,
+  ) {
+    requireAdminSession(session);
+    const productId = parseRouteProductId(routeProductId);
+    if (!productId) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+    return activateProductAndStockedVariants(productId);
+  }
+
+  return {
+    setVariantActivation: setVariantActivationForProduct,
+    prepareCatalogEnable,
+    commitCatalogEnable: commitCatalogEnableForProduct,
+    disableCatalog: disableCatalogForProduct,
+    activateProductAndStockedVariants: activateStockedVariantsForProduct,
+  };
+}

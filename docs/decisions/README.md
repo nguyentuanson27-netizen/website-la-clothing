@@ -7,5 +7,6 @@
 | [0003](./0003-shared-host-npm-edge.md) | **Accepted, amended by ADR 0004** | Shared-host nginx-proxy-manager edge in front of internal Caddy |
 | [0004](./0004-temporary-production-domain.md) | **Accepted** | Temporary production domain (`la.lanadesign.vn`) and non-indexable search exposure policy |
 | [0005](./0005-pr-scope-reviewability.md) | **Accepted** | PR scope is governed by atomicity, risk, and reviewability rather than a hard file-count limit |
+| [0006](./0006-admin-mobile-overflow-non-blocking.md) | **Accepted** | Keep mobile admin UI unchanged; the known mobile-only overflow is non-blocking for V3 |
 
-ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005.
+ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005 and the V3 mobile-admin overflow scope documented by ADR 0006.

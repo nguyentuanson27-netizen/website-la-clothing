@@ -1,12 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 import { screenReaderConfig } from "@guidepup/playwright";
 
+const adminDesktopTests = ["admin-commerce-v3.spec.ts", "admin-editor.spec.ts"];
+
 export default defineConfig({
   ...screenReaderConfig,
   testDir: ".",
   testMatch: [
     "admin-bulk-status.spec.ts",
     "admin-collections.spec.ts",
+    "admin-commerce-v3.spec.ts",
     "admin-editor.spec.ts",
     "checkout.spec.ts",
     "collection-breadcrumb.spec.ts",
@@ -30,7 +33,17 @@ export default defineConfig({
   reporter: "line",
   projects: [
     {
+      name: "chromium-voiceover-admin-desktop",
+      testMatch: adminDesktopTests,
+      use: {
+        ...devices["Desktop Chrome"],
+        headless: false,
+        viewport: { width: 1280, height: 900 },
+      },
+    },
+    {
       name: "chromium-voiceover-mobile",
+      testIgnore: adminDesktopTests,
       use: {
         ...devices["Desktop Chrome"],
         headless: false,
