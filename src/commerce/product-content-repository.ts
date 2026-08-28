@@ -1,6 +1,18 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
-import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
-import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
+import type {
+  AdminProductDirectoryQuery,
+  AdminProductHealth,
+  AdminProductHealthSqlFilter,
+} from "./admin-product-directory.ts";
+import {
+  ADMIN_PRODUCT_DIRECTORY_LIMITS,
+  ADMIN_PRODUCT_HEALTH_SQL_FILTERS,
+} from "./admin-product-directory.ts";
+import {
+  directoryHealthMetricsSql,
+  missingImageProductIdsSql,
+  stockedInactiveProductIdsSql,
+} from "./admin-product-health.ts";
 import type {
   BulkProductCollectionResult,
   BulkProductCollectionUpdate,
@@ -76,12 +88,36 @@ function adminCollectionCondition(
   return null;
 }
 
-function adminWhere(query: AdminProductDirectoryQuery): Prisma.ProductMirrorWhereInput {
+/**
+ * Health is a full-catalog predicate, never a filter over the current page.
+ *
+ * `zero-active` is exactly expressible as a Prisma relation predicate. The other two are not —
+ * summed multi-warehouse stock and storefront-equivalent media resolution both need SQL — so
+ * they arrive as the database-resolved ID set for that dimension and compose with every other
+ * condition through the same `where`.
+ */
+function adminHealthCondition(
+  query: AdminProductDirectoryQuery,
+  healthScope: AdminProductHealthScope | null,
+): Prisma.ProductMirrorWhereInput | null {
+  if (query.health === null) return null;
+  if (query.health === "zero-active") {
+    return { variants: { none: { isPresent: true, isActive: true } } };
+  }
+  return { id: { in: [...(healthScope?.get(query.health) ?? [])] } };
+}
+
+function adminWhere(
+  query: AdminProductDirectoryQuery,
+  healthScope: AdminProductHealthScope | null = null,
+): Prisma.ProductMirrorWhereInput {
   const conditions = adminBaseConditions(query);
   const status = adminStatusCondition(query.status);
   if (status) conditions.push(status);
   const collection = adminCollectionCondition(query);
   if (collection) conditions.push(collection);
+  const health = adminHealthCondition(query, healthScope);
+  if (health) conditions.push(health);
   return conditions.length > 0 ? { AND: conditions } : {};
 }
 
@@ -101,6 +137,41 @@ function adminOrderBy(
 }
 
 type CollectionMembershipRow = { slug: string; count: bigint };
+type HealthProductIdRow = { id: string };
+type DirectoryHealthMetricsRow = {
+  id: string;
+  presentVariantCount: bigint;
+  activeVariantCount: bigint;
+  stockedInactiveCount: bigint;
+  missingImage: boolean;
+};
+
+/** Database-resolved product IDs per health dimension that has no Prisma-expressible predicate. */
+export type AdminProductHealthScope = ReadonlyMap<AdminProductHealthSqlFilter, readonly string[]>;
+
+export type AdminProductDirectoryMetrics = {
+  presentVariantCount: number;
+  activeVariantCount: number;
+  stockedInactiveCount: number;
+  missingImage: boolean;
+};
+
+function isHealthSqlFilter(
+  health: AdminProductHealth | null,
+): health is AdminProductHealthSqlFilter {
+  return (
+    health !== null &&
+    (ADMIN_PRODUCT_HEALTH_SQL_FILTERS as readonly string[]).includes(health)
+  );
+}
+
+function metricCountToNumber(value: bigint): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("Admin directory metric is outside safe integer bounds");
+  }
+  return parsed;
+}
 
 function membershipCountToNumber(value: bigint): number {
   const parsed = Number(value);
@@ -369,12 +440,72 @@ export function createProductContentRepository(client: PrismaClient) {
     });
   }
 
+  /**
+   * Resolves the product IDs for the health dimensions that need database-side SQL.
+   *
+   * One statement per requested dimension over the whole catalog — never a per-product read —
+   * so the directory keeps a fixed query count no matter how many rows the page shows.
+   */
+  async function loadHealthScope(
+    healthFilters: readonly AdminProductHealthSqlFilter[] = ADMIN_PRODUCT_HEALTH_SQL_FILTERS,
+  ): Promise<AdminProductHealthScope> {
+    const requested = [...new Set(healthFilters)];
+    const resolved = await Promise.all(
+      requested.map(async (health) => {
+        const rows = await client.$queryRaw<HealthProductIdRow[]>(
+          health === "missing-image" ? missingImageProductIdsSql : stockedInactiveProductIdsSql,
+        );
+        return [health, rows.map(({ id }) => id)] as const;
+      }),
+    );
+    return new Map(resolved);
+  }
+
+  async function resolveHealthScope(
+    query: AdminProductDirectoryQuery,
+    healthScope: AdminProductHealthScope | null,
+  ): Promise<AdminProductHealthScope | null> {
+    if (healthScope || !isHealthSqlFilter(query.health)) return healthScope;
+    return loadHealthScope([query.health]);
+  }
+
+  /**
+   * Server-derived row metrics for the products actually shown, in one bounded query. The row
+   * health an operator reads therefore comes from the same database truth as the filters and
+   * their counts, not from a second client-side interpretation of the mirrored data.
+   */
+  async function readDirectoryMetrics(
+    productIds: readonly string[],
+  ): Promise<ReadonlyMap<string, AdminProductDirectoryMetrics>> {
+    if (productIds.length === 0) return new Map();
+
+    const rows = await client.$queryRaw<DirectoryHealthMetricsRow[]>(
+      directoryHealthMetricsSql(productIds),
+    );
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          presentVariantCount: metricCountToNumber(row.presentVariantCount),
+          activeVariantCount: metricCountToNumber(row.activeVariantCount),
+          stockedInactiveCount: metricCountToNumber(row.stockedInactiveCount),
+          missingImage: row.missingImage,
+        },
+      ]),
+    );
+  }
+
   async function listDirectoryPage({
     query,
     pageSize = ADMIN_PRODUCT_DIRECTORY_LIMITS.pageSize,
-  }: Readonly<{ query: AdminProductDirectoryQuery; pageSize?: number }>) {
+    healthScope = null,
+  }: Readonly<{
+    query: AdminProductDirectoryQuery;
+    pageSize?: number;
+    healthScope?: AdminProductHealthScope | null;
+  }>) {
     const take = parseAdminPageSize(pageSize);
-    const where = adminWhere(query);
+    const where = adminWhere(query, await resolveHealthScope(query, healthScope));
     const totalCount = await client.productMirror.count({ where });
     const totalPages = Math.max(Math.ceil(totalCount / take), 1);
     const page = Math.min(query.page, totalPages);
@@ -409,7 +540,9 @@ export function createProductContentRepository(client: PrismaClient) {
       },
     });
 
-    return { products, page, pageSize: take, totalCount, totalPages };
+    const metrics = await readDirectoryMetrics(products.map(({ id }) => id));
+
+    return { products, metrics, page, pageSize: take, totalCount, totalPages };
   }
 
   /**
@@ -419,12 +552,23 @@ export function createProductContentRepository(client: PrismaClient) {
    */
   async function countDirectoryFacets<Key extends string>(
     targets: Readonly<Record<Key, AdminProductDirectoryQuery>>,
+    healthScope: AdminProductHealthScope | null = null,
   ): Promise<Record<Key, number>> {
     const entries = Object.entries(targets) as [Key, AdminProductDirectoryQuery][];
+    const scope =
+      healthScope ??
+      (entries.some(([, target]) => isHealthSqlFilter(target.health))
+        ? await loadHealthScope(
+            entries
+              .map(([, target]) => target.health)
+              .filter((health): health is AdminProductHealthSqlFilter => isHealthSqlFilter(health)),
+          )
+        : null);
+
     const counted = await Promise.all(
       entries.map(
         async ([key, target]) =>
-          [key, await client.productMirror.count({ where: adminWhere(target) })] as const,
+          [key, await client.productMirror.count({ where: adminWhere(target, scope) })] as const,
       ),
     );
     return Object.fromEntries(counted) as Record<Key, number>;
@@ -456,6 +600,8 @@ export function createProductContentRepository(client: PrismaClient) {
     findForEditor,
     listForAdmin,
     listDirectoryPage,
+    loadHealthScope,
+    readDirectoryMetrics,
     countDirectoryFacets,
     countProductsByCollectionSlug,
   };
