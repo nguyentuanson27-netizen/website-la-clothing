@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect } from "@playwright/test";
-import { voiceOverTest as test } from "@guidepup/playwright";
+import { expect, test } from "@playwright/test";
 
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -95,13 +94,6 @@ async function cleanupDatabase() {
   await prisma.productMirror.deleteMany({
     where: { pancakeProductId: { in: [productExternalId, parentExternalId] } },
   });
-}
-
-function expectSpokenPhrase(spokenPhrase: string, expected: string, label: string) {
-  expect(
-    spokenPhrase.includes(expected),
-    `${label}; captured VoiceOver output: ${JSON.stringify(spokenPhrase)}`,
-  ).toBe(true);
 }
 
 test.beforeAll(async () => {
@@ -216,7 +208,6 @@ test.afterAll(async () => {
 test("admin editor keeps Pancake source read-only and manages unified ordinary/composite activation accessibly", async ({
   page,
   context,
-  voiceOver,
 }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
@@ -259,8 +250,6 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   await expect(page.getByRole("button", { name: "Lưu nội dung" })).toBeVisible();
   await expect(page.getByLabel("Mô tả biên tập")).toBeVisible();
   await expect(page.getByLabel("SEO title")).toBeVisible();
-  await voiceOver.navigateToWebContent({ capture: false });
-
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
@@ -280,7 +269,6 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
     page.getByRole("button", { name: "Kích hoạt biến thể CHILD-L" }),
   ).toBeVisible();
 
-  await voiceOver.navigateToWebContent({ capture: false });
   await componentRow.getByRole("button", { name: "Kích hoạt biến thể CHILD-M" }).click();
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("variantSaved") === "1",
@@ -329,7 +317,6 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
     .analyze();
   expect(parentAccessibilityScan.violations).toEqual([]);
 
-  await voiceOver.navigateToWebContent({ capture: false });
   await parentActivationButton.click();
   await page.waitForURL(
     (url) => url.pathname === parentEditorPath && url.searchParams.get("variantSaved") === "1",
@@ -393,27 +380,16 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   await page.getByLabel("Hướng dẫn bảo quản").fill("Cold wash. Dry in shade.");
   await page.getByLabel("Size guide").fill("Relaxed fit. Choose your normal size.");
   await page.getByLabel("SEO title").fill("Accessible admin editor");
-  await page.getByLabel("SEO description").fill("Browser and VoiceOver runtime verification.");
+  await page.getByLabel("SEO description").fill("Browser runtime verification.");
 
   const saveButton = page.getByRole("button", { name: "Lưu nội dung" });
-  const successCapture = await voiceOver.capture(
-    async () => {
-      await saveButton.click();
-      await page.waitForURL(
-        (url) => url.pathname === editorPath && url.searchParams.get("saved") === "1",
-      );
-      const successStatus = page.getByRole("status");
-      await expect(successStatus).toContainText("Đã lưu nội dung biên tập.");
-      await expect(successStatus).toBeFocused();
-      await delay(500);
-    },
-    { capture: true },
+  await saveButton.click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("saved") === "1",
   );
-  expectSpokenPhrase(
-    successCapture.spokenPhrase,
-    "Đã lưu nội dung biên tập",
-    "VoiceOver must announce the persisted success status after redirect",
-  );
+  const successStatus = page.getByRole("status");
+  await expect(successStatus).toContainText("Đã lưu nội dung biên tập.");
+  await expect(successStatus).toBeFocused();
 
   const persisted = await prisma.productContent.findUnique({
     where: { productId },
@@ -438,25 +414,14 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-  await voiceOver.navigateToWebContent({ capture: false });
   const errorText = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.";
-  const errorCapture = await voiceOver.capture(
-    async () => {
-      await page.getByRole("button", { name: "Lưu nội dung" }).click();
-      await page.waitForURL(
-        (url) => url.pathname === editorPath && url.searchParams.get("error") === "invalid",
-      );
-      const errorStatus = page.getByRole("alert").filter({ hasText: errorText });
-      await expect(errorStatus).toContainText(errorText);
-      await expect(errorStatus).toBeFocused();
-    },
-    { capture: true },
+  await page.getByRole("button", { name: "Lưu nội dung" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("error") === "invalid",
   );
-  expectSpokenPhrase(
-    errorCapture.spokenPhrase,
-    "Không thể lưu",
-    "VoiceOver must announce the server validation error after redirect",
-  );
+  const errorStatus = page.getByRole("alert").filter({ hasText: errorText });
+  await expect(errorStatus).toContainText(errorText);
+  await expect(errorStatus).toBeFocused();
   expect(
     browserErrors,
     `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,

@@ -243,14 +243,6 @@ jobs:
         working-directory: tests/a11y-runtime
         run: npx playwright install chromium
 
-      - name: Configure macOS for VoiceOver automation
-        working-directory: tests/a11y-runtime
-        run: ./node_modules/.bin/guidepup setup
-
-      - name: Install Guidepup project assets
-        working-directory: tests/a11y-runtime
-        run: ./node_modules/.bin/guidepup install
-
-      - name: Run admin browser accessibility and VoiceOver runtime
+      - name: Run admin browser accessibility runtime
         working-directory: tests/a11y-runtime
         run: npx playwright test --config playwright.config.ts

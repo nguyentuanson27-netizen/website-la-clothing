@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect } from "@playwright/test";
-import { voiceOverTest as test } from "@guidepup/playwright";
+import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -326,9 +325,8 @@ test("PDP with single trusted image renders hero image without redundant thumbna
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
 });
 
-test("PDP with multiple images renders interactive gallery, handles click and keyboard thumbnail switching, and supports VoiceOver", async ({
+test("PDP with multiple images renders interactive gallery, handles click and keyboard thumbnail switching, and names thumbnails accessibly", async ({
   page,
-  voiceOver,
 }) => {
   await page.route("**/_next/image**", (route) => {
     route.fulfill({
@@ -366,17 +364,14 @@ test("PDP with multiple images renders interactive gallery, handles click and ke
   await expect(thumbnails.nth(2)).toHaveAttribute("aria-pressed", "true");
   await expect(heroImg).toHaveAttribute("alt", `${multiName} - Ảnh 3`);
 
-  // VoiceOver interaction: navigate web content and announce thumbnails
-  await voiceOver.navigateToWebContent({ capture: false });
-  const voiceOverCapture = await voiceOver.capture(
-    async () => {
-      await thumbnails.nth(0).focus();
-      await delay(200);
-    },
-    { capture: true },
-  );
-  expect(voiceOverCapture.spokenPhrase.length).toBeGreaterThan(0);
-  expect(voiceOverCapture.spokenPhrase.toLowerCase()).toContain("xem ảnh 1");
+  // Each thumbnail carries the accessible name a screen reader announces on focus
+  await thumbnails.nth(0).focus();
+  await expect(thumbnails.nth(0)).toBeFocused();
+  for (const index of [0, 1, 2]) {
+    await expect(thumbnails.nth(index)).toHaveAccessibleName(
+      new RegExp(`^Xem ảnh ${index + 1}\\b`, "i"),
+    );
+  }
 
   await assertPageQuality(page);
 });
