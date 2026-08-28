@@ -163,23 +163,36 @@ test("B1/B2 keeps operational editing first and Pancake source collapsed, keyboa
   await expect(summary).toContainText("1 / 2 active");
   await expect(summary).toContainText("Collection");
 
-  const orderIsCompact = await page.evaluate(() => {
-    const selectors = [
-      "#product-operational-summary-heading",
-      "#website-commerce-heading",
-      "#editorial-heading",
-      "#collections-heading",
-      "#seo-heading",
-      "#product-slug-heading",
-      "details > summary",
+  const orderProblems = await page.evaluate(() => {
+    const entries: Array<[string, Element | null]> = [
+      ["operational summary", document.querySelector("#product-operational-summary-heading")],
+      ["Website commerce", document.querySelector("#website-commerce-heading")],
+      ["editorial", document.querySelector("#editorial-heading")],
+      ["collections", document.querySelector("#collections-heading")],
+      ["SEO", document.querySelector("#seo-heading")],
+      ["slug", document.querySelector("#product-slug-heading")],
+      [
+        "Pancake source disclosure",
+        [...document.querySelectorAll("details > summary")].find((summary) =>
+          summary.textContent?.includes("Nguồn Pancake"),
+        ) ?? null,
+      ],
     ];
-    const nodes = selectors.map((selector) => document.querySelector(selector));
-    if (nodes.some((node) => node === null)) return false;
-    return nodes.slice(1).every((node, index) =>
-      Boolean(nodes[index]!.compareDocumentPosition(node!) & Node.DOCUMENT_POSITION_FOLLOWING),
-    );
+    const problems = entries
+      .filter(([, node]) => node === null)
+      .map(([label]) => `missing: ${label}`);
+    if (problems.length > 0) return problems;
+
+    for (let index = 0; index < entries.length - 1; index += 1) {
+      const [currentLabel, current] = entries[index]!;
+      const [nextLabel, next] = entries[index + 1]!;
+      if (!(current!.compareDocumentPosition(next!) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+        problems.push(`out of order: ${currentLabel} -> ${nextLabel}`);
+      }
+    }
+    return problems;
   });
-  expect(orderIsCompact).toBe(true);
+  expect(orderProblems).toEqual([]);
 
   const sourceDisclosure = page.locator("details").filter({
     has: page.locator("summary", { hasText: "Nguồn Pancake" }),
