@@ -6,8 +6,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { createCompositeComponentAdminService } from "../../src/commerce/composite-component-admin.ts";
-import { createCompositeComponentRepository } from "../../src/commerce/composite-component-repository.ts";
+import { createProductCommerceAdminService } from "../../src/commerce/product-commerce-admin.ts";
+import { createProductCommerceRepository } from "../../src/commerce/product-commerce-repository.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -33,9 +33,18 @@ let serverOutput = "";
 let componentProductId = "";
 let componentVariantId = "";
 
-const activationRepository = createCompositeComponentRepository(prisma);
-const activationService = createCompositeComponentAdminService({
-  setLinkedVariantActivation: activationRepository.setLinkedVariantActivation,
+const activationSecret = "composite-fixture-confirmation-secret-1234";
+const commerceRepository = createProductCommerceRepository(prisma);
+// The fixtures drive the same generic activation service the admin editor uses, so a regression
+// in the real path shows up here instead of in a service nothing ships.
+const commerceService = createProductCommerceAdminService({
+  setVariantActivation: commerceRepository.setVariantActivation,
+  readCatalogEnableWarningState: commerceRepository.readCatalogEnableWarningState,
+  commitCatalogEnable: commerceRepository.commitCatalogEnable,
+  disableCatalog: commerceRepository.disableCatalog,
+  activateProductAndStockedVariants: commerceRepository.activateProductAndStockedVariants,
+  readConfirmationSecret: () => activationSecret,
+  nowMs: () => Date.now(),
 });
 const adminSession = {
   user: { id: "composite-browser-admin", role: "ADMIN" },
@@ -238,14 +247,13 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
 
   expect(
-    await activationService.setActivation(adminSession, {
-      productId: componentProductId,
-      variantId: componentVariantId,
+    await commerceService.setVariantActivation(adminSession, componentProductId, {
+      variantIds: [componentVariantId],
       isActive: true,
     }),
   ).toEqual({
     ok: true,
-    variantId: componentVariantId,
+    variantIds: [componentVariantId],
     isActive: true,
   });
 
@@ -301,14 +309,13 @@ test("composite activation opens and closes the real child purchase path while p
   await assertPageQuality(page);
 
   expect(
-    await activationService.setActivation(adminSession, {
-      productId: componentProductId,
-      variantId: componentVariantId,
+    await commerceService.setVariantActivation(adminSession, componentProductId, {
+      variantIds: [componentVariantId],
       isActive: false,
     }),
   ).toEqual({
     ok: true,
-    variantId: componentVariantId,
+    variantIds: [componentVariantId],
     isActive: false,
   });
 
