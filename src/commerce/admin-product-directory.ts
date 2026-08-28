@@ -16,12 +16,27 @@ export const ADMIN_PRODUCT_CONTENT_STATES = ["DRAFT", "REVIEWED", "PUBLISHED"] a
 
 export const ADMIN_PRODUCT_ACTIVITIES = ["active", "inactive"] as const;
 
+/**
+ * Health dimensions that own their own URL value.
+ *
+ * `Không có collection` and `Catalog đang tắt` are deliberately absent: they are exact aliases of
+ * the existing `collection=none` and `activity=inactive` parameters, so they keep serializing to
+ * those instead of gaining a second, competing representation of the same result set.
+ */
+export const ADMIN_PRODUCT_HEALTH_FILTERS = [
+  "stocked-inactive",
+  "zero-active",
+  "missing-image",
+] as const;
+
+
 /** Sentinel accepted by the `collection` parameter to list products with no membership. */
 export const ADMIN_PRODUCT_UNCATEGORIZED = "none";
 
 export type AdminProductDirectorySort = (typeof ADMIN_PRODUCT_DIRECTORY_SORTS)[number];
 export type AdminProductContentState = (typeof ADMIN_PRODUCT_CONTENT_STATES)[number];
 export type AdminProductActivity = (typeof ADMIN_PRODUCT_ACTIVITIES)[number];
+export type AdminProductHealth = (typeof ADMIN_PRODUCT_HEALTH_FILTERS)[number];
 
 export type AdminProductDirectoryQuery = {
   query: string | null;
@@ -29,6 +44,7 @@ export type AdminProductDirectoryQuery = {
   collection: string | null;
   uncategorized: boolean;
   activity: AdminProductActivity | null;
+  health: AdminProductHealth | null;
   sort: AdminProductDirectorySort;
   page: number;
 };
@@ -40,6 +56,7 @@ const COLLECTION_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SORTS = new Set<string>(ADMIN_PRODUCT_DIRECTORY_SORTS);
 const STATES = new Set<string>(ADMIN_PRODUCT_CONTENT_STATES);
 const ACTIVITIES = new Set<string>(ADMIN_PRODUCT_ACTIVITIES);
+const HEALTH_FILTERS = new Set<string>(ADMIN_PRODUCT_HEALTH_FILTERS);
 
 function invalid(): never {
   throw new RangeError("Invalid admin product directory parameters");
@@ -88,6 +105,13 @@ function parseActivity(value: SearchParamValue): AdminProductActivity | null {
   return raw as AdminProductActivity;
 }
 
+function parseHealth(value: SearchParamValue): AdminProductHealth | null {
+  const raw = one(value);
+  if (raw === undefined || raw === "") return null;
+  if (!HEALTH_FILTERS.has(raw)) invalid();
+  return raw as AdminProductHealth;
+}
+
 export function parseAdminProductDirectorySearchParams(
   searchParams: AdminProductDirectorySearchParams,
 ): AdminProductDirectoryQuery {
@@ -104,6 +128,7 @@ export function parseAdminProductDirectorySearchParams(
     collection: uncategorized ? null : collectionRaw,
     uncategorized,
     activity: parseActivity(searchParams.activity),
+    health: parseHealth(searchParams.health),
     sort: parseSort(searchParams.sort),
     page: parsePage(searchParams.page),
   };
@@ -128,6 +153,7 @@ export function buildAdminProductDirectoryHref(
   if (query.uncategorized) params.set("collection", ADMIN_PRODUCT_UNCATEGORIZED);
   else if (query.collection) params.set("collection", query.collection);
   if (query.activity) params.set("activity", query.activity);
+  if (query.health) params.set("health", query.health);
   if (query.sort !== "name-asc") params.set("sort", query.sort);
   if (page !== 1) params.set("page", String(page));
 
@@ -180,7 +206,12 @@ export function buildAdminProductFacetTargets(
 export function buildAdminProductFacetHref(
   query: AdminProductDirectoryQuery,
   facet: Readonly<
-    Partial<Pick<AdminProductDirectoryQuery, "status" | "collection" | "uncategorized" | "activity">>
+    Partial<
+      Pick<
+        AdminProductDirectoryQuery,
+        "status" | "collection" | "uncategorized" | "activity" | "health"
+      >
+    >
   >,
 ): string {
   return buildAdminProductDirectoryHref({ ...query, ...facet, page: 1 }, 1);
@@ -192,6 +223,79 @@ export function hasActiveAdminProductFilters(query: AdminProductDirectoryQuery):
     query.status !== null ||
     query.collection !== null ||
     query.uncategorized ||
-    query.activity !== null
+    query.activity !== null ||
+    query.health !== null
   );
+}
+
+/**
+ * The switch-to target for every health chip, and — exactly like the status/collection facets —
+ * the single source both its link and its count come from.
+ *
+ * Two of the five approved blockers are aliases of dimensions the directory already owns, so they
+ * select `collection=none` and `activity=inactive` rather than inventing a second URL spelling of
+ * the same query. Every chip selects only its own dimension, retains the rest, and returns to
+ * page 1; `buildAdminProductHealthClearTarget` is the single way back out.
+ */
+export const ADMIN_PRODUCT_HEALTH_KEYS = [
+  "stocked-inactive",
+  "zero-active",
+  "no-collection",
+  "catalog-inactive",
+  "missing-image",
+] as const;
+
+export type AdminProductHealthKey = (typeof ADMIN_PRODUCT_HEALTH_KEYS)[number];
+
+export function buildAdminProductHealthTargets(
+  query: AdminProductDirectoryQuery,
+): Readonly<Record<AdminProductHealthKey, AdminProductDirectoryQuery>> {
+  const selectHealth = (health: AdminProductHealth): AdminProductDirectoryQuery => ({
+    ...query,
+    health,
+    page: 1,
+  });
+
+  return {
+    "stocked-inactive": selectHealth("stocked-inactive"),
+    "zero-active": selectHealth("zero-active"),
+    "no-collection": { ...query, collection: null, uncategorized: true, page: 1 },
+    "catalog-inactive": { ...query, activity: "inactive", page: 1 },
+    "missing-image": selectHealth("missing-image"),
+  };
+}
+
+/**
+ * Clears every health-carrying dimension, including the two aliased ones — but only the aliased
+ * *values*. `activity=active` is not a health blocker, so clearing the health row must leave it
+ * alone rather than silently dropping a filter the operator set elsewhere.
+ */
+export function buildAdminProductHealthClearTarget(
+  query: AdminProductDirectoryQuery,
+): AdminProductDirectoryQuery {
+  return {
+    ...query,
+    health: null,
+    uncategorized: false,
+    activity: query.activity === "inactive" ? null : query.activity,
+    page: 1,
+  };
+}
+
+export function isAdminProductHealthKeyActive(
+  query: AdminProductDirectoryQuery,
+  key: AdminProductHealthKey,
+): boolean {
+  switch (key) {
+    case "no-collection":
+      return query.uncategorized;
+    case "catalog-inactive":
+      return query.activity === "inactive";
+    default:
+      return query.health === key;
+  }
+}
+
+export function hasActiveAdminProductHealthFilter(query: AdminProductDirectoryQuery): boolean {
+  return ADMIN_PRODUCT_HEALTH_KEYS.some((key) => isAdminProductHealthKeyActive(query, key));
 }

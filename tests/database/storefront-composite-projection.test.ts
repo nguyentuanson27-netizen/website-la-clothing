@@ -4,11 +4,8 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
-import {
-  createCompositeComponentAdminService,
-  createCompositeParentVariantAdminService,
-} from "../../src/commerce/composite-component-admin.ts";
-import { createCompositeComponentRepository } from "../../src/commerce/composite-component-repository.ts";
+import { createProductCommerceAdminService } from "../../src/commerce/product-commerce-admin.ts";
+import { createProductCommerceRepository } from "../../src/commerce/product-commerce-repository.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
@@ -19,12 +16,18 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const productRepository = createStorefrontProductDetailRepository(prisma);
-const activationRepository = createCompositeComponentRepository(prisma);
-const componentActivationService = createCompositeComponentAdminService({
-  setLinkedVariantActivation: activationRepository.setLinkedVariantActivation,
-});
-const parentActivationService = createCompositeParentVariantAdminService({
-  setParentVariantActivation: activationRepository.setParentVariantActivation,
+const activationSecret = "composite-fixture-confirmation-secret-1234";
+const commerceRepository = createProductCommerceRepository(prisma);
+// The fixtures drive the same generic activation service the admin editor uses, so a regression
+// in the real path shows up here instead of in a service nothing ships.
+const commerceService = createProductCommerceAdminService({
+  setVariantActivation: commerceRepository.setVariantActivation,
+  readCatalogEnableWarningState: commerceRepository.readCatalogEnableWarningState,
+  commitCatalogEnable: commerceRepository.commitCatalogEnable,
+  disableCatalog: commerceRepository.disableCatalog,
+  activateProductAndStockedVariants: commerceRepository.activateProductAndStockedVariants,
+  readConfirmationSecret: () => activationSecret,
+  nowMs: () => Date.now(),
 });
 const adminSession = {
   user: { id: "composite-convergence-admin", role: "ADMIN" },
@@ -134,14 +137,13 @@ test("admin activation converges inactive real parent and child through PDP, car
   );
 
   assert.deepEqual(
-    await componentActivationService.setActivation(adminSession, {
-      productId: component.id,
-      variantId: componentVariant.id,
+    await commerceService.setVariantActivation(adminSession, component.id, {
+      variantIds: [componentVariant.id],
       isActive: true,
     }),
     {
       ok: true,
-      variantId: componentVariant.id,
+      variantIds: [componentVariant.id],
       isActive: true,
     },
   );
@@ -155,14 +157,13 @@ test("admin activation converges inactive real parent and child through PDP, car
   assert.deepEqual(childOnlyActivated.projection.options, []);
 
   assert.deepEqual(
-    await parentActivationService.setActivation(adminSession, {
-      productId: parent.id,
-      variantId: parentVariant.id,
+    await commerceService.setVariantActivation(adminSession, parent.id, {
+      variantIds: [parentVariant.id],
       isActive: true,
     }),
     {
       ok: true,
-      variantId: parentVariant.id,
+      variantIds: [parentVariant.id],
       isActive: true,
     },
   );
@@ -264,14 +265,13 @@ test("admin activation converges inactive real parent and child through PDP, car
   );
 
   assert.deepEqual(
-    await componentActivationService.setActivation(adminSession, {
-      productId: component.id,
-      variantId: componentVariant.id,
+    await commerceService.setVariantActivation(adminSession, component.id, {
+      variantIds: [componentVariant.id],
       isActive: false,
     }),
     {
       ok: true,
-      variantId: componentVariant.id,
+      variantIds: [componentVariant.id],
       isActive: false,
     },
   );

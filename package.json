@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test:domain": "node --experimental-strip-types --test tests/domain/*.test.ts",
     "test": "node --experimental-strip-types --test tests/domain/*.test.ts tests/integrations/*.test.ts",
-    "test:db": "node --experimental-strip-types --test tests/database/*.test.ts",
+    "test:db": "node --experimental-strip-types --test --test-concurrency=1 tests/database/*.test.ts",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",

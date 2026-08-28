@@ -37,6 +37,11 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
+// `syncSnapshot` adopts *every* `pancakeShopId = 0` row into the shop being synced — that is the
+// C4 legacy sentinel contract, and production has one configured shop. It also makes the legacy
+// row a database-global fixture: any other file's sync running between this fixture's insert and
+// its assertion would adopt the row into that shop instead. `pnpm test:db` therefore runs its
+// files one at a time; do not re-parallelize it without giving this test its own database.
 test("catalog mirror adopts and reconciles ProductMirror rows that predate shop scoping", async () => {
   const legacySyncedAt = new Date("2026-08-10T00:00:00.000Z");
   const c4SyncedAt = new Date("2026-08-11T00:00:00.000Z");

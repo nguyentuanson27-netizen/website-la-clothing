@@ -16,7 +16,6 @@ import { createProductCommerceAdminService } from "@/commerce/product-commerce-a
 import { createProductCommerceRepository } from "@/commerce/product-commerce-repository";
 import { AdminFormStatus } from "@/components/admin/admin-form-status";
 import {
-  initialProductCommerceActionState,
   ProductCommercePanel,
   type ProductCommerceActionState,
   type ProductCommerceVariantRow,
