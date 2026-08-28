@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { screenReaderConfig } from "@guidepup/playwright";
 
 const adminDesktopTests = [
+  "admin-bulk-operations.spec.ts",
   "admin-commerce-v3.spec.ts",
   "admin-editor.spec.ts",
   "admin-editor-compact.spec.ts",
@@ -11,6 +12,7 @@ export default defineConfig({
   ...screenReaderConfig,
   testDir: ".",
   testMatch: [
+    "admin-bulk-operations.spec.ts",
     "admin-bulk-status.spec.ts",
     "admin-collections.spec.ts",
     "admin-commerce-v3.spec.ts",
