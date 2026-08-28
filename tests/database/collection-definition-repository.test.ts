@@ -173,13 +173,16 @@ test("P7 public repository reads expose only published allowlisted definition fi
   });
 });
 
+// `CollectionDefinition.homepagePosition` is globally unique, so slots are a shared resource
+// between database test files running in parallel. This file owns 2, 3 and 5;
+// `collection-definition-schema.test.ts` owns 1 and 6.
 test("U2 homepage merchandising uses explicit positions, ignores slug order, and fails closed on duplicate slots", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-homepage-a",
-    title: "Position Six",
-    description: "Homepage position six.",
+    title: "Position Five",
+    description: "Homepage position five.",
     isPublished: true,
-    homepagePosition: 6,
+    homepagePosition: 5,
   });
   await repository.saveDefinition({
     slug: "p7-repo-homepage-z",
@@ -196,10 +199,10 @@ test("U2 homepage merchandising uses explicit positions, ignores slug order, and
   });
   await repository.saveDefinition({
     slug: "p7-repo-homepage-draft",
-    title: "Draft Position One",
+    title: "Draft Position Three",
     description: "Draft must not render on homepage.",
     isPublished: false,
-    homepagePosition: 1,
+    homepagePosition: 3,
   });
 
   const homepage = await repository.listHomepageMerchandising();

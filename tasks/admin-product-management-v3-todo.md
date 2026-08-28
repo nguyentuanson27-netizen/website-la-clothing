@@ -1,6 +1,6 @@
 # Admin Product Management V3 — task checklist
 
-Status: **APPROVED TODO — plan approved 2026-08-27; PR-A /build authorized**
+Status: **APPROVED TODO — plan approved 2026-08-27; PR-A merged (#138); PR-C built**
 
 Spec: `docs/design/admin-product-management-v3.md`
 Plan: `tasks/admin-product-management-v3-plan.md`
@@ -67,49 +67,49 @@ Plan: `tasks/admin-product-management-v3-plan.md`
 
 ## PR-C — Bulk product operations and health
 
-- [ ] **C1 — Bulk collection add/remove backend**
-  - [ ] strict 1..100 selected products
-  - [ ] existing collection validation
-  - [ ] add/remove only selected slug
-  - [ ] preserve unrelated content/memberships
-  - [ ] atomic failure regression
+- [x] **C1 — Bulk collection add/remove backend**
+  - [x] strict 1..100 selected products
+  - [x] existing collection validation
+  - [x] add/remove only selected slug
+  - [x] preserve unrelated content/memberships
+  - [x] atomic failure regression
 
-- [ ] **C2 — Bulk catalog enable/disable backend**
-  - [ ] exact target/warning sets in prepare proof
-  - [ ] relation/zero-active/target drift => `RECONFIRM_REQUIRED`
-  - [ ] zero writes for stale whole batch
-  - [ ] disable is atomic/idempotent and changes only product state
+- [x] **C2 — Bulk catalog enable/disable backend**
+  - [x] exact target/warning sets in prepare proof
+  - [x] relation/zero-active/target drift => `RECONFIRM_REQUIRED`
+  - [x] zero writes for stale whole batch
+  - [x] disable is atomic/idempotent and changes only product state
 
-- [ ] **C3 — Exact directory health read model**
-  - [ ] full-catalog DB-side predicates before pagination
-  - [ ] exact summed-stock semantics for `stocked-inactive`
-  - [ ] active/total variant metrics
-  - [ ] health parser/URL/page-reset contract
-  - [ ] no N+1 product reads
-  - [ ] `missing-image` matches `resolveStorefrontProductMedia(...).primary === null`
-  - [ ] media inputs match storefront: primary first, then `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`
-  - [ ] existing `parseTrustedProductImageUrl()` remains the per-candidate trust predicate
-  - [ ] effective scan bound/order matches `MAX_MEDIA_CANDIDATES_SCANNED = 100`
-  - [ ] null primary + trusted in-bound active/present variant image => not missing
-  - [ ] first 100 rejected candidates + trusted candidate #101 => missing
-  - [ ] trusted media only on inactive/stale variants => missing
-  - [ ] any DB-side image predicate is parity-tested against `resolveStorefrontProductMedia()` including order/bounds
+- [x] **C3 — Exact directory health read model**
+  - [x] full-catalog DB-side predicates before pagination
+  - [x] exact summed-stock semantics for `stocked-inactive`
+  - [x] active/total variant metrics
+  - [x] health parser/URL/page-reset contract
+  - [x] no N+1 product reads
+  - [x] `missing-image` matches `resolveStorefrontProductMedia(...).primary === null`
+  - [x] media inputs match storefront: primary first, then `isPresent=true && isActive=true` variants ordered by `pancakeVariationId ASC`
+  - [x] existing `parseTrustedProductImageUrl()` remains the per-candidate trust predicate
+  - [x] effective scan bound/order matches `MAX_MEDIA_CANDIDATES_SCANNED = 100`
+  - [x] null primary + trusted in-bound active/present variant image => not missing
+  - [x] first 100 rejected candidates + trusted candidate #101 => missing
+  - [x] trusted media only on inactive/stale variants => missing
+  - [x] any DB-side image predicate is parity-tested against `resolveStorefrontProductMedia()` including order/bounds
 
-- [ ] **C4 — Expand current-page bulk toolbar**
-  - [ ] existing editorial bulk behavior preserved
-  - [ ] add/remove collection UI
-  - [ ] enable/disable catalog UI
-  - [ ] prepare/commit confirmation + reconfirmation
-  - [ ] selection/focus/Axe/VoiceOver regressions
+- [x] **C4 — Expand current-page bulk toolbar**
+  - [x] existing editorial bulk behavior preserved
+  - [x] add/remove collection UI
+  - [x] enable/disable catalog UI
+  - [x] prepare/commit confirmation + reconfirmation
+  - [x] selection/focus/Axe/VoiceOver regressions
 
-- [ ] **C5 — Health indicators and filters UI**
-  - [ ] `Biến thể: X / N active`
-  - [ ] stocked-but-inactive warning
-  - [ ] zero-active / no-collection / catalog-inactive / missing-image filters
-  - [ ] `missing-image` browser result/count follows storefront resolver semantics
-  - [ ] browser regression covers trusted candidate #101 remaining missing after 100 rejected candidates
-  - [ ] facet count/href/query truth stays aligned
-  - [ ] no synthetic health score
+- [x] **C5 — Health indicators and filters UI**
+  - [x] `Biến thể: X / N active`
+  - [x] stocked-but-inactive warning
+  - [x] zero-active / no-collection / catalog-inactive / missing-image filters
+  - [x] `missing-image` browser result/count follows storefront resolver semantics
+  - [x] browser regression covers trusted candidate #101 remaining missing after 100 rejected candidates
+  - [x] facet count/href/query truth stays aligned
+  - [x] no synthetic health score
 
 - [ ] **Checkpoint C — V3 implementation complete**
   - [ ] exact-head DB/domain/security/auth/lint/typecheck/build/release/start green
@@ -120,6 +120,13 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [ ] trusted deployed smoke: composite product admin → storefront
   - [ ] no Pancake-owned price/stock/media/relation mutation
   - [ ] no schema/dependency/sync behavior change without separate approval
+
+## Slice status
+
+- PR-A — merged via #138.
+- PR-B — not started; independent of PR-C.
+- PR-C — C1–C5 implemented on `claude/build-pr-c-from-pr136-frpyzu`. Checkpoint C stays open
+  until exact-head CI, the macOS admin browser runtime, fresh review and the deployed smokes run.
 
 ## Human approval gate
 

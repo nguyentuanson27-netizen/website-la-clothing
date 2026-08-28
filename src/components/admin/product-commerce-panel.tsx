@@ -124,11 +124,14 @@ export function ProductCommercePanel({
     }
   }, [partlySelected]);
 
+  // Keyed on the action state's identity, not on the derived message: repeating an operation with
+  // the same outcome produces the same string, and keying on that would leave focus and the
+  // announcement stuck on the previous attempt as though nothing had happened.
   useEffect(() => {
     if (feedback) {
       requestAnimationFrame(() => feedbackRef.current?.focus());
     }
-  }, [feedback]);
+  }, [commerceState, feedback]);
 
   function changePage(nextPage: number) {
     setPageIndex(Math.max(0, Math.min(nextPage, pageCount - 1)));

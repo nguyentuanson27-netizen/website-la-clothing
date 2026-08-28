@@ -10,8 +10,12 @@ export const PRODUCT_CONTENT_LIMITS = {
 } as const;
 
 export const PRODUCT_CONTENT_BULK_STATUS_LIMIT = 100;
+export const PRODUCT_CONTENT_BULK_COLLECTION_LIMIT = 100;
 export const PRODUCT_CONTENT_STATUSES = ["DRAFT", "REVIEWED", "PUBLISHED"] as const;
+export const PRODUCT_CONTENT_COLLECTION_OPERATIONS = ["add", "remove"] as const;
 export type ProductContentStatus = (typeof PRODUCT_CONTENT_STATUSES)[number];
+export type ProductContentCollectionOperation =
+  (typeof PRODUCT_CONTENT_COLLECTION_OPERATIONS)[number];
 
 const COLLECTION_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -48,6 +52,16 @@ export type BulkProductContentStatusResult =
   | { ok: true; updatedCount: number }
   | { ok: false; reason: "PRODUCT_NOT_FOUND" };
 
+export type BulkProductCollectionUpdate = {
+  productIds: string[];
+  collectionSlug: string;
+  operation: ProductContentCollectionOperation;
+};
+
+export type BulkProductCollectionResult =
+  | { ok: true; matchedCount: number; changedCount: number }
+  | { ok: false; reason: "PRODUCT_NOT_FOUND" | "COLLECTION_LIMIT_REACHED" };
+
 type ProductContentAdminDependencies = {
   productExists(productId: string): Promise<boolean>;
   resolveCollectionSlugs(collectionSlugs: string[]): Promise<string[] | null>;
@@ -58,6 +72,13 @@ type ProductContentBulkStatusAdminDependencies = {
   updateStatusesAtomically(
     input: BulkProductContentStatusUpdate,
   ): Promise<BulkProductContentStatusResult>;
+};
+
+type ProductContentBulkCollectionAdminDependencies = {
+  resolveCollectionSlugs(collectionSlugs: string[]): Promise<string[] | null>;
+  updateCollectionMembershipAtomically(
+    input: BulkProductCollectionUpdate,
+  ): Promise<BulkProductCollectionResult>;
 };
 
 type ParsedTextField = { ok: true; value: string | null } | { ok: false };
@@ -203,6 +224,54 @@ function parseBulkProductContentStatusInput(
   return { productIds: canonicalProductIds, status };
 }
 
+
+function parseCollectionOperation(value: unknown): ProductContentCollectionOperation | null {
+  if (typeof value !== "string") return null;
+  return PRODUCT_CONTENT_COLLECTION_OPERATIONS.find((operation) => operation === value) ?? null;
+}
+
+function parseSingleCollectionSlug(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > PRODUCT_CONTENT_LIMITS.collectionSlug ||
+    !COLLECTION_SLUG_PATTERN.test(value)
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function parseBulkProductIds(value: unknown, limit: number): string[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > limit) {
+    return null;
+  }
+
+  const parsed = value.map(parseProductId);
+  if (parsed.some((productId) => productId === null)) {
+    return null;
+  }
+
+  const canonical = parsed as string[];
+  return new Set(canonical).size === canonical.length ? canonical : null;
+}
+
+function parseBulkProductCollectionInput(input: unknown): BulkProductCollectionUpdate | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const record = input as Record<string, unknown>;
+  const productIds = parseBulkProductIds(record.productIds, PRODUCT_CONTENT_BULK_COLLECTION_LIMIT);
+  const collectionSlug = parseSingleCollectionSlug(record.collectionSlug);
+  const operation = parseCollectionOperation(record.operation);
+  if (productIds === null || collectionSlug === null || operation === null) {
+    return null;
+  }
+
+  return { productIds, collectionSlug, operation };
+}
+
 export function createProductContentAdminService({
   productExists,
   resolveCollectionSlugs,
@@ -253,6 +322,38 @@ export function createProductContentBulkStatusAdminService({
 
     try {
       return await updateStatusesAtomically(parsed);
+    } catch {
+      return { ok: false, reason: "UNAVAILABLE" } as const;
+    }
+  }
+
+  return { update };
+}
+
+/**
+ * Bulk membership is an explicit add/remove of exactly one validated collection. It never
+ * reconstructs a full `ProductContent` snapshot from browser data, so unrelated memberships,
+ * editorial text, SEO and mirrored fields cannot be overwritten by a stale directory page.
+ */
+export function createProductContentBulkCollectionAdminService({
+  resolveCollectionSlugs,
+  updateCollectionMembershipAtomically,
+}: ProductContentBulkCollectionAdminDependencies) {
+  async function update(session: AdminSessionCandidate, input: unknown) {
+    requireAdminSession(session);
+
+    const parsed = parseBulkProductCollectionInput(input);
+    if (!parsed) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const resolved = await resolveCollectionSlugs([parsed.collectionSlug]);
+    if (resolved === null || resolved.length !== 1 || resolved[0] !== parsed.collectionSlug) {
+      return { ok: false, reason: "COLLECTION_NOT_FOUND" } as const;
+    }
+
+    try {
+      return await updateCollectionMembershipAtomically(parsed);
     } catch {
       return { ok: false, reason: "UNAVAILABLE" } as const;
     }
