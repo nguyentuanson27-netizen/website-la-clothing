@@ -1,7 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { screenReaderConfig } from "@guidepup/playwright";
 
-const adminDesktopTests = ["admin-commerce-v3.spec.ts", "admin-editor.spec.ts"];
+const adminDesktopTests = [
+  "admin-commerce-v3.spec.ts",
+  "admin-editor.spec.ts",
+  "admin-editor-compact.spec.ts",
+];
 
 export default defineConfig({
   ...screenReaderConfig,
@@ -11,6 +15,7 @@ export default defineConfig({
     "admin-collections.spec.ts",
     "admin-commerce-v3.spec.ts",
     "admin-editor.spec.ts",
+    "admin-editor-compact.spec.ts",
     "checkout.spec.ts",
     "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
