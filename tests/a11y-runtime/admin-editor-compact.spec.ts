@@ -164,18 +164,16 @@ test("B1/B2 keeps operational editing first and Pancake source collapsed, keyboa
   await expect(summary).toContainText("Collection");
 
   const orderIsCompact = await page.evaluate(() => {
-    const byHeading = (name: string) =>
-      [...document.querySelectorAll("h2")].find((heading) => heading.textContent?.trim() === name) ?? null;
-    const summaryHeading = document.querySelector("#product-operational-summary-heading");
-    const nodes = [
-      summaryHeading?.closest("section") ?? null,
-      byHeading("Website commerce"),
-      byHeading("Nội dung editorial"),
-      byHeading("Bộ sưu tập"),
-      byHeading("SEO"),
-      byHeading("Quản lý URL sản phẩm"),
-      document.querySelector("details > summary"),
+    const selectors = [
+      "#product-operational-summary-heading",
+      "#website-commerce-heading",
+      "#editorial-heading",
+      "#collections-heading",
+      "#seo-heading",
+      "#product-slug-heading",
+      "details > summary",
     ];
+    const nodes = selectors.map((selector) => document.querySelector(selector));
     if (nodes.some((node) => node === null)) return false;
     return nodes.slice(1).every((node, index) =>
       Boolean(nodes[index]!.compareDocumentPosition(node!) & Node.DOCUMENT_POSITION_FOLLOWING),
