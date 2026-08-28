@@ -70,17 +70,29 @@ const genericBulkCollectionError =
   "Không thể cập nhật collection lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
 const genericBulkCatalogError =
   "Không thể cập nhật catalog lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+const genericBulkError =
+  "Không thể thực hiện thao tác lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
 const expiredSessionError =
   "Phiên quản trị không còn hợp lệ. Tải lại trang và đăng nhập lại.";
 const staleSelectionError = "Có sản phẩm không còn tồn tại. Tải lại danh sách rồi thử lại.";
 
 type AdminSession = Awaited<ReturnType<typeof requireCurrentAdmin>>;
 
-async function readAdminSession(): Promise<AdminSession | null> {
+/**
+ * Only an authorization failure means the operator has to sign in again. Any other failure is an
+ * infrastructure fault, and telling a valid admin their session expired would send them to
+ * re-authenticate over a problem that has nothing to do with their session.
+ */
+async function readAdminSession(): Promise<
+  { ok: true; session: AdminSession } | { ok: false; message: string }
+> {
   try {
-    return await requireCurrentAdmin();
-  } catch {
-    return null;
+    return { ok: true, session: await requireCurrentAdmin() };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof AuthorizationError ? expiredSessionError : genericBulkError,
+    };
   }
 }
 
@@ -144,8 +156,9 @@ export async function bulkUpdateProductCollectionAction(
   _previousState: BulkProductCollectionActionState,
   formData: FormData,
 ): Promise<BulkProductCollectionActionState> {
-  const adminSession = await readAdminSession();
-  if (!adminSession) return { kind: "error", message: expiredSessionError };
+  const admin = await readAdminSession();
+  if (!admin.ok) return { kind: "error", message: admin.message };
+  const adminSession = admin.session;
 
   const operation = formData.get("operation");
   const collectionSlug = formData.get("collectionSlug");
@@ -205,8 +218,9 @@ export async function bulkProductCatalogAction(
   _previousState: BulkProductCatalogActionState,
   formData: FormData,
 ): Promise<BulkProductCatalogActionState> {
-  const adminSession = await readAdminSession();
-  if (!adminSession) return { kind: "error", message: expiredSessionError };
+  const admin = await readAdminSession();
+  if (!admin.ok) return { kind: "error", message: admin.message };
+  const adminSession = admin.session;
 
   const intent = formData.get("intent");
   const productIds = formData.getAll("productId");

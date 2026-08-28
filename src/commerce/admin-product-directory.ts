@@ -29,8 +29,6 @@ export const ADMIN_PRODUCT_HEALTH_FILTERS = [
   "missing-image",
 ] as const;
 
-/** Health dimensions with no Prisma-expressible predicate, resolved by database-side SQL. */
-export const ADMIN_PRODUCT_HEALTH_SQL_FILTERS = ["stocked-inactive", "missing-image"] as const;
 
 /** Sentinel accepted by the `collection` parameter to list products with no membership. */
 export const ADMIN_PRODUCT_UNCATEGORIZED = "none";
@@ -39,7 +37,6 @@ export type AdminProductDirectorySort = (typeof ADMIN_PRODUCT_DIRECTORY_SORTS)[n
 export type AdminProductContentState = (typeof ADMIN_PRODUCT_CONTENT_STATES)[number];
 export type AdminProductActivity = (typeof ADMIN_PRODUCT_ACTIVITIES)[number];
 export type AdminProductHealth = (typeof ADMIN_PRODUCT_HEALTH_FILTERS)[number];
-export type AdminProductHealthSqlFilter = (typeof ADMIN_PRODUCT_HEALTH_SQL_FILTERS)[number];
 
 export type AdminProductDirectoryQuery = {
   query: string | null;
@@ -268,11 +265,21 @@ export function buildAdminProductHealthTargets(
   };
 }
 
-/** Clears every health-carrying dimension, including the two aliased ones. */
+/**
+ * Clears every health-carrying dimension, including the two aliased ones — but only the aliased
+ * *values*. `activity=active` is not a health blocker, so clearing the health row must leave it
+ * alone rather than silently dropping a filter the operator set elsewhere.
+ */
 export function buildAdminProductHealthClearTarget(
   query: AdminProductDirectoryQuery,
 ): AdminProductDirectoryQuery {
-  return { ...query, health: null, uncategorized: false, activity: null, page: 1 };
+  return {
+    ...query,
+    health: null,
+    uncategorized: false,
+    activity: query.activity === "inactive" ? null : query.activity,
+    page: 1,
+  };
 }
 
 export function isAdminProductHealthKeyActive(

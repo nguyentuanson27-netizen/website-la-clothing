@@ -100,13 +100,10 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
   const facetTargets = buildAdminProductFacetTargets(query);
   const healthTargets = buildAdminProductHealthTargets(query);
 
-  // One database-resolved health scope feeds the filtered page, the facet counts and every health
-  // chip count, so a chip can never advertise a total that its own link does not open.
-  const healthScope = await repository.loadHealthScope();
   const [directory, facets, healthCounts, collections] = await Promise.all([
-    repository.listDirectoryPage({ query, healthScope }),
-    repository.countDirectoryFacets(facetTargets, healthScope),
-    repository.countDirectoryFacets(healthTargets, healthScope),
+    repository.listDirectoryPage({ query }),
+    repository.countDirectoryFacets(facetTargets),
+    repository.countDirectoryFacets(healthTargets),
     collectionRepository.listForAdmin(100),
   ]);
   const collectionCounts = await repository.countProductsByCollectionSlug();

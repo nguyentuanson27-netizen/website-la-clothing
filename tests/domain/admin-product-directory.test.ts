@@ -202,3 +202,20 @@ test("clearing health removes every health-carrying dimension, aliases included"
   assert.equal(cleared.status, "DRAFT");
   assert.equal(buildAdminProductDirectoryHref(cleared), "/admin?q=linen&status=DRAFT");
 });
+
+test("clearing health keeps an activity filter that is not a health blocker", () => {
+  const query = parseAdminProductDirectorySearchParams({
+    activity: "active",
+    health: "missing-image",
+  });
+
+  const cleared = buildAdminProductHealthClearTarget(query);
+  assert.equal(
+    cleared.activity,
+    "active",
+    "only the aliased inactive value belongs to the health row",
+  );
+  assert.equal(cleared.health, null);
+  assert.equal(hasActiveAdminProductHealthFilter(cleared), false);
+  assert.equal(buildAdminProductDirectoryHref(cleared), "/admin?activity=active");
+});

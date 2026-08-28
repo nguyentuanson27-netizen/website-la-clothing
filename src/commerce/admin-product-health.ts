@@ -102,7 +102,7 @@ function scopeCondition(column: Prisma.Sql, productIds: readonly string[] | null
  * Written as a correlated `NOT EXISTS` so the per-candidate trust normalization stops at the
  * first trusted candidate instead of being evaluated for the whole catalog's media.
  */
-function missingImageCondition(productAlias: Prisma.Sql): Prisma.Sql {
+export function missingImageCondition(productAlias: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`
     NOT EXISTS (
       SELECT 1
@@ -178,30 +178,49 @@ function variantStockCte(productIds: readonly string[] | null): Prisma.Sql {
   `;
 }
 
-const STOCKED_INACTIVE_CONDITION = Prisma.sql`
-  EXISTS (
-    SELECT 1
-    FROM "health_variant_stock" stock
-    WHERE stock."productId" = p."id"
-      AND stock."isActive" = FALSE
-      AND stock."stock" > 0
-  )
-`;
+/**
+ * `TRUE` when the product bound to `productAlias` has at least one present inactive variant whose
+ * **summed** warehouse stock is positive.
+ *
+ * The sum is the point: several warehouses can cancel each other out, so
+ * `warehouseStocks: { some: { quantity: { gt: 0 } } }` would call a variant stocked when nothing
+ * is sellable. A non-finite mirrored quantity makes the sum unusable rather than positive.
+ */
+export function stockedInactiveCondition(productAlias: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
+    EXISTS (
+      SELECT 1
+      FROM "VariantMirror" v
+      LEFT JOIN "WarehouseStock" ws ON ws."variantId" = v."id"
+      WHERE v."productId" = ${productAlias}."id"
+        AND v."isPresent" = TRUE
+        AND v."isActive" = FALSE
+      GROUP BY v."id"
+      HAVING BOOL_AND(
+          ws."quantity" IS NULL
+          OR (
+            ws."quantity" <> 'NaN'::float8
+            AND ws."quantity" <> 'Infinity'::float8
+            AND ws."quantity" <> '-Infinity'::float8
+          )
+        )
+        AND COALESCE(SUM(ws."quantity"), 0::float8) > 0
+    )
+  `;
+}
 
-/** Full-catalog product IDs whose effective storefront media resolves to no primary image. */
-export const missingImageProductIdsSql = Prisma.sql`
-  SELECT p."id"
-  FROM "ProductMirror" p
-  WHERE ${missingImageCondition(Prisma.sql`p`)}
-`;
-
-/** Full-catalog product IDs with at least one present inactive variant holding positive stock. */
-export const stockedInactiveProductIdsSql = Prisma.sql`
-  WITH ${variantStockCte(null)}
-  SELECT p."id"
-  FROM "ProductMirror" p
-  WHERE ${STOCKED_INACTIVE_CONDITION}
-`;
+/** `TRUE` when the product has no present variant that is active. */
+export function zeroActiveCondition(productAlias: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
+    NOT EXISTS (
+      SELECT 1
+      FROM "VariantMirror" v
+      WHERE v."productId" = ${productAlias}."id"
+        AND v."isPresent" = TRUE
+        AND v."isActive" = TRUE
+    )
+  `;
+}
 
 /**
  * Server-derived row metrics for one bounded set of directory rows. One query for the whole page
