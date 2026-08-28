@@ -78,6 +78,8 @@ test("P7 deployed schema enforces stable unique collection slugs", async () => {
   );
 });
 
+// Slots 1 and 6 are this file's share of the globally unique `homepagePosition` constraint;
+// `collection-definition-repository.test.ts` owns 2, 3 and 5.
 test("U2 deployed schema bounds homepage positions to unique slots 1 through 6 while allowing unassigned collections", async () => {
   await prisma.$executeRaw`
     INSERT INTO "CollectionDefinition" ("id", "slug", "title", "homepagePosition", "createdAt", "updatedAt")
