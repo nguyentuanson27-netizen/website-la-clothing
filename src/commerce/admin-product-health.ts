@@ -90,59 +90,57 @@ function scopeCondition(column: Prisma.Sql, productIds: readonly string[] | null
 }
 
 /**
- * The effective storefront media inputs, in the resolver's scan order:
- * `ProductMirror.primaryImageUrl` first, then the `pancakeImageUrls` string entries of variants
- * with `isPresent = true AND isActive = true` ordered by `pancakeVariationId ASC`, preserving
- * each array's own order. `scanIndex` reproduces `resolveStorefrontProductMedia`'s raw candidate
- * counter, so the `MAX_MEDIA_CANDIDATES_SCANNED` bound means the same thing on both sides.
+ * `TRUE` when the effective storefront media resolution would return no primary image for the
+ * product bound to `productAlias`.
+ *
+ * The candidate list is the resolver's own, in its own order: `ProductMirror.primaryImageUrl`
+ * first, then the `pancakeImageUrls` string entries of variants with `isPresent = true AND
+ * isActive = true` ordered by `pancakeVariationId ASC`, each array's order preserved. `LIMIT
+ * MAX_MEDIA_CANDIDATES_SCANNED` is the resolver's raw-candidate scan budget, so a trusted
+ * candidate at #100 clears the blocker and one at #101 does not.
+ *
+ * Written as a correlated `NOT EXISTS` so the per-candidate trust normalization stops at the
+ * first trusted candidate instead of being evaluated for the whole catalog's media.
  */
-function imageCandidateCte(productIds: readonly string[] | null): Prisma.Sql {
+function missingImageCondition(productAlias: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`
-    "health_image_candidate" AS (
-      SELECT
-        raw."productId",
-        ROW_NUMBER() OVER (
-          PARTITION BY raw."productId"
-          ORDER BY raw."sourceRank" ASC, raw."variantRank" ASC, raw."imageRank" ASC
-        ) AS "scanIndex",
-        (${TRUSTED_CANDIDATE_CONDITION}) AS "isTrusted"
+    NOT EXISTS (
+      SELECT 1
       FROM (
-        SELECT
-          p."id" AS "productId",
-          0 AS "sourceRank",
-          0::bigint AS "variantRank",
-          0::bigint AS "imageRank",
-          p."primaryImageUrl" AS "url"
-        FROM "ProductMirror" p
-        WHERE p."primaryImageUrl" IS NOT NULL
-          AND p."primaryImageUrl" <> ''
-          AND ${scopeCondition(Prisma.sql`p."id"`, productIds)}
-        UNION ALL
-        SELECT
-          ordered."productId",
-          1 AS "sourceRank",
-          ordered."variantRank",
-          image."imageRank",
-          image."value" #>> '{}' AS "url"
+        SELECT candidate."url"
         FROM (
           SELECT
-            v."productId",
-            v."pancakeImageUrls",
-            ROW_NUMBER() OVER (
-              PARTITION BY v."productId"
-              ORDER BY v."pancakeVariationId" ASC
-            ) AS "variantRank"
-          FROM "VariantMirror" v
-          WHERE v."isPresent" = TRUE
-            AND v."isActive" = TRUE
-            AND JSONB_TYPEOF(v."pancakeImageUrls") = 'array'
-            AND ${scopeCondition(Prisma.sql`v."productId"`, productIds)}
-        ) ordered
-        CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(ordered."pancakeImageUrls")
-          WITH ORDINALITY AS image("value", "imageRank")
-        WHERE JSONB_TYPEOF(image."value") = 'string'
-      ) raw
-      CROSS JOIN LATERAL (${normalizedCandidateColumns(Prisma.sql`raw."url"`)}) norm
+            0 AS "sourceRank",
+            0::bigint AS "variantRank",
+            0::bigint AS "imageRank",
+            ${productAlias}."primaryImageUrl" AS "url"
+          WHERE ${productAlias}."primaryImageUrl" IS NOT NULL
+            AND ${productAlias}."primaryImageUrl" <> ''
+          UNION ALL
+          SELECT
+            1 AS "sourceRank",
+            ordered."variantRank",
+            image."imageRank",
+            image."value" #>> '{}' AS "url"
+          FROM (
+            SELECT
+              v."pancakeImageUrls",
+              ROW_NUMBER() OVER (ORDER BY v."pancakeVariationId" ASC) AS "variantRank"
+            FROM "VariantMirror" v
+            WHERE v."productId" = ${productAlias}."id"
+              AND v."isPresent" = TRUE
+              AND v."isActive" = TRUE
+              AND JSONB_TYPEOF(v."pancakeImageUrls") = 'array'
+          ) ordered
+          CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(ordered."pancakeImageUrls")
+            WITH ORDINALITY AS image("value", "imageRank")
+          WHERE JSONB_TYPEOF(image."value") = 'string'
+        ) candidate
+        ORDER BY candidate."sourceRank" ASC, candidate."variantRank" ASC, candidate."imageRank" ASC
+        LIMIT ${MAX_MEDIA_CANDIDATES_SCANNED}
+      ) scanned
+      CROSS JOIN LATERAL (${normalizedCandidateColumns(Prisma.sql`scanned."url"`)}) norm
+      WHERE ${TRUSTED_CANDIDATE_CONDITION}
     )
   `;
 }
@@ -180,16 +178,6 @@ function variantStockCte(productIds: readonly string[] | null): Prisma.Sql {
   `;
 }
 
-const MISSING_IMAGE_CONDITION = Prisma.sql`
-  NOT EXISTS (
-    SELECT 1
-    FROM "health_image_candidate" candidate
-    WHERE candidate."productId" = p."id"
-      AND candidate."scanIndex" <= ${MAX_MEDIA_CANDIDATES_SCANNED}
-      AND candidate."isTrusted"
-  )
-`;
-
 const STOCKED_INACTIVE_CONDITION = Prisma.sql`
   EXISTS (
     SELECT 1
@@ -202,10 +190,9 @@ const STOCKED_INACTIVE_CONDITION = Prisma.sql`
 
 /** Full-catalog product IDs whose effective storefront media resolves to no primary image. */
 export const missingImageProductIdsSql = Prisma.sql`
-  WITH ${imageCandidateCte(null)}
   SELECT p."id"
   FROM "ProductMirror" p
-  WHERE ${MISSING_IMAGE_CONDITION}
+  WHERE ${missingImageCondition(Prisma.sql`p`)}
 `;
 
 /** Full-catalog product IDs with at least one present inactive variant holding positive stock. */
@@ -222,8 +209,7 @@ export const stockedInactiveProductIdsSql = Prisma.sql`
  */
 export function directoryHealthMetricsSql(productIds: readonly string[]): Prisma.Sql {
   return Prisma.sql`
-    WITH ${variantStockCte(productIds)},
-    ${imageCandidateCte(productIds)}
+    WITH ${variantStockCte(productIds)}
     SELECT
       p."id",
       COUNT(stock."id")::bigint AS "presentVariantCount",
@@ -231,7 +217,7 @@ export function directoryHealthMetricsSql(productIds: readonly string[]): Prisma
       COUNT(stock."id") FILTER (
         WHERE stock."isActive" = FALSE AND stock."stock" > 0
       )::bigint AS "stockedInactiveCount",
-      ${MISSING_IMAGE_CONDITION} AS "missingImage"
+      ${missingImageCondition(Prisma.sql`p`)} AS "missingImage"
     FROM "ProductMirror" p
     LEFT JOIN "health_variant_stock" stock ON stock."productId" = p."id"
     WHERE p."id" = ANY(${[...productIds]}::text[])
