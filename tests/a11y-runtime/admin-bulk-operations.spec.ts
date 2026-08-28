@@ -26,12 +26,14 @@ const trustedImageUrl = "https://content.pancake.vn/media/1/2/3/bulkops.jpg";
 const untrustedImageUrl = "https://cdn.example.com/media/1/2/3/bulkops.jpg";
 
 const plainName = `Bulk Ops Plain ${runId}`;
+const boundName = `Bulk Ops Scan Bound ${runId}`;
 const stockedName = `Bulk Ops Stocked ${runId}`;
 const childName = `Bulk Ops Child ${runId}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let plainProductId = "";
+let boundProductId = "";
 let stockedProductId = "";
 let childProductId = "";
 let adminCookies: Array<{ name: string; value: string; url: string }> = [];
@@ -158,6 +160,38 @@ test.beforeAll(async () => {
   });
   stockedProductId = stocked.id;
 
+  // The resolver's scan budget in the browser: 100 rejected raw candidates leave nothing for the
+  // trusted candidate at #101, so storefront resolves no primary and the row stays `Thiếu ảnh`.
+  const bound = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `bulkops-bound-${runId}`,
+      slug: `bulkops-bound-${runId}`,
+      name: boundName,
+      isActive: false,
+      syncedAt,
+      variants: {
+        create: [
+          {
+            pancakeVariationId: `bulkops-bound-${runId}-a`,
+            isPresent: true,
+            isActive: true,
+            pancakeImageUrls: Array.from({ length: 100 }, () => untrustedImageUrl),
+            syncedAt,
+          },
+          {
+            pancakeVariationId: `bulkops-bound-${runId}-b`,
+            isPresent: true,
+            isActive: true,
+            pancakeImageUrls: [trustedImageUrl],
+            syncedAt,
+          },
+        ],
+      },
+    },
+  });
+  boundProductId = bound.id;
+
   const child = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -233,6 +267,7 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   const plainRow = page.locator("tr", { hasText: plainName });
   await expect(plainRow.getByText("Thiếu ảnh")).toBeVisible();
+  await expect(page.locator("tr", { hasText: boundName }).getByText("Thiếu ảnh")).toBeVisible();
 
   // C5 — the missing-image chip opens exactly the set it counts, and trusted media on an inactive
   // variant does not clear the blocker.
@@ -242,6 +277,7 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
     missingImageChip.click(),
   ]);
   await expect(page.locator("tr", { hasText: plainName })).toHaveCount(1);
+  await expect(page.locator("tr", { hasText: boundName })).toHaveCount(1);
   await expect(page.locator("tr", { hasText: stockedName })).toHaveCount(0);
 
   const stockedChip = page.getByRole("link", { name: /^Có hàng nhưng variant đang tắt/ });
@@ -259,21 +295,23 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   // C4 — bulk collection add over the existing current-page selection.
   await page.getByRole("checkbox", { name: "Chọn tất cả sản phẩm trên trang này" }).check();
-  await expect(page.getByText("Đã chọn 3 sản phẩm", { exact: true })).toBeVisible();
+  await expect(page.getByText("Đã chọn 4 sản phẩm", { exact: true })).toBeVisible();
 
   await page.getByLabel("Thao tác").selectOption("collection-add");
-  await page.getByRole("button", { name: "Thêm collection cho 3 sản phẩm" }).click();
-  await expect(page.getByText(/^Thêm Bulk Ops Collection .* cho 3 sản phẩm\?$/)).toBeVisible();
+  await page.getByRole("button", { name: "Thêm collection cho 4 sản phẩm" }).click();
+  await expect(page.getByText(/^Thêm Bulk Ops Collection .* cho 4 sản phẩm\?$/)).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "sản phẩm thay đổi" }),
   ).toBeVisible();
 
   const membership = await prisma.productContent.findMany({
-    where: { productId: { in: [plainProductId, stockedProductId, childProductId] } },
+    where: {
+      productId: { in: [plainProductId, stockedProductId, boundProductId, childProductId] },
+    },
     select: { collectionSlugs: true },
   });
-  expect(membership).toHaveLength(3);
+  expect(membership).toHaveLength(4);
   expect(membership.every((row) => row.collectionSlugs.includes(collectionSlug))).toBe(true);
 
   // C4 — bulk catalog enable is a two-phase, confirmation-fresh handshake.
