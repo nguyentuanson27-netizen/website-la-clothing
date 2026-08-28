@@ -2,7 +2,8 @@
 
 Status: **IMPLEMENTATION MERGED — PR-A (#138), PR-C (#140), PR-B (#139); final production acceptance pending trusted deployed smokes**
 
-Verified runtime baseline: `main@8c4922623f22ddf4f723379ad58aa013c7bdf728` after PR #139.
+Verified runtime baseline: `main@2ae7432a561df66387225d3263c08fd437a0cb88` — the first commit with a
+completed, fully green CI run (`verify` + `admin-a11y-runtime`, run 1501) since #138 merged.
 
 Spec: `docs/design/admin-product-management-v3.md`
 Plan: `tasks/admin-product-management-v3-plan.md`
@@ -115,8 +116,8 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [x] no synthetic health score
 
 - [ ] **Checkpoint C — V3 implementation complete**
-  - [x] exact-main DB/domain/security/auth/lint/typecheck/build/release/start green on `8c4922623f22ddf4f723379ad58aa013c7bdf728`
-  - [x] admin browser/Axe coverage retained; VoiceOver is explicitly removed from the required quality gate by product-owner decision on 2026-08-28
+  - [x] exact-main DB/domain/security/auth/lint/typecheck/build/release/start green on `2ae7432a561df66387225d3263c08fd437a0cb88`
+  - [x] admin browser/Axe coverage retained and green on the same commit; VoiceOver automation removed from the required quality gate by product-owner decision on 2026-08-28 and deleted from CI in #144
   - [x] fresh integrated review on final runtime tree: 0 Critical / 0 Required
   - [x] ADR 0005 scope/revertability checked across PR-A / PR-B / PR-C; no additional runtime change is being added for closure
   - [ ] trusted deployed smoke: normal product admin → storefront
