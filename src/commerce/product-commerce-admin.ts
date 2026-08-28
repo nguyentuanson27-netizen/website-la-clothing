@@ -4,6 +4,9 @@ import {
   issueAdminCatalogConfirmationProof,
 } from "./admin-catalog-confirmation.ts";
 import type {
+  BulkCatalogDisableResult,
+  BulkCatalogEnableCommitInput,
+  BulkCatalogEnableCommitResult,
   CatalogEnableCommitInput,
   CatalogEnableCommitResult,
   CatalogEnableWarningState,
@@ -15,6 +18,7 @@ export const PRODUCT_COMMERCE_ADMIN_LIMITS = {
   productId: 128,
   variantId: 128,
   variantCount: 100,
+  bulkProductCount: 100,
 } as const;
 
 type AdminSessionCandidate =
@@ -33,6 +37,18 @@ type AdminSessionCandidate =
 export type ProductVariantActivationInput = {
   variantIds: readonly string[];
   isActive: boolean;
+};
+
+type ProductCatalogBulkAdminDependencies = {
+  readBulkCatalogEnableWarningState(
+    productIds: readonly string[],
+  ): Promise<CatalogEnableWarningState | null>;
+  commitBulkCatalogEnable(
+    input: BulkCatalogEnableCommitInput,
+  ): Promise<BulkCatalogEnableCommitResult>;
+  disableBulkCatalog(productIds: readonly string[]): Promise<BulkCatalogDisableResult>;
+  readConfirmationSecret(): string;
+  nowMs(): number;
 };
 
 type ProductCommerceAdminDependencies = {
@@ -71,6 +87,34 @@ function parseCatalogProof(input: unknown): string | null {
     return null;
   }
   return proof;
+}
+
+function parseBulkProductIdsInput(input: unknown): string[] | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+
+  const productIds = (input as Record<string, unknown>).productIds;
+  if (
+    !Array.isArray(productIds) ||
+    productIds.length < 1 ||
+    productIds.length > PRODUCT_COMMERCE_ADMIN_LIMITS.bulkProductCount
+  ) {
+    return null;
+  }
+
+  const canonical: string[] = [];
+  const seen = new Set<string>();
+  for (const productId of productIds) {
+    if (
+      !isBoundedTrimmedId(productId, PRODUCT_COMMERCE_ADMIN_LIMITS.productId) ||
+      seen.has(productId)
+    ) {
+      return null;
+    }
+    seen.add(productId);
+    canonical.push(productId);
+  }
+
+  return canonical;
 }
 
 function parseVariantActivationInput(input: unknown): ProductVariantActivationInput | null {
@@ -261,5 +305,123 @@ export function createProductCommerceAdminService({
     commitCatalogEnable: commitCatalogEnableForProduct,
     disableCatalog: disableCatalogForProduct,
     activateProductAndStockedVariants: activateStockedVariantsForProduct,
+  };
+}
+
+/**
+ * Bulk catalog activation for an exact current-page selection.
+ *
+ * It reuses the single-product confirmation primitive rather than forking a second proof format:
+ * one proof binds the admin actor, the `enable` operation, the exact selected product IDs and
+ * both exact warning sets, so a confirmation shown for one selection or one warning state can
+ * never commit a different one. Browser-rendered counts are never trusted as acknowledgement.
+ */
+export function createProductCatalogBulkAdminService({
+  readBulkCatalogEnableWarningState,
+  commitBulkCatalogEnable,
+  disableBulkCatalog,
+  readConfirmationSecret,
+  nowMs,
+}: ProductCatalogBulkAdminDependencies) {
+  function issueBulkConfirmation(
+    actorId: string,
+    productIds: readonly string[],
+    warningState: CatalogEnableWarningState,
+  ) {
+    return issueAdminCatalogConfirmationProof({
+      secret: readConfirmationSecret(),
+      nowMs: nowMs(),
+      actorId,
+      operation: "enable",
+      targetProductIds: productIds,
+      zeroActiveProductIds: warningState.zeroActiveProductIds,
+      compositeChildProductIds: warningState.compositeChildProductIds,
+    });
+  }
+
+  async function reconfirm(actorId: string, productIds: readonly string[]) {
+    const warningState = await readBulkCatalogEnableWarningState(productIds);
+    if (!warningState) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+
+    const issued = issueBulkConfirmation(actorId, productIds, warningState);
+    return {
+      ok: false,
+      reason: "RECONFIRM_REQUIRED",
+      productIds,
+      warningState,
+      proof: issued.proof,
+      expiresAtMs: issued.expiresAtMs,
+    } as const;
+  }
+
+  async function prepareEnable(session: AdminSessionCandidate, input: unknown) {
+    const admin = requireAdminSession(session);
+    const productIds = parseBulkProductIdsInput(input);
+    if (!productIds) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const warningState = await readBulkCatalogEnableWarningState(productIds);
+    if (!warningState) {
+      return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+    }
+
+    const issued = issueBulkConfirmation(admin.user.id, productIds, warningState);
+    return {
+      ok: true,
+      productIds,
+      warningState,
+      proof: issued.proof,
+      expiresAtMs: issued.expiresAtMs,
+    } as const;
+  }
+
+  async function commitEnable(session: AdminSessionCandidate, input: unknown) {
+    const admin = requireAdminSession(session);
+    const productIds = parseBulkProductIdsInput(input);
+    if (!productIds) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const proof = parseCatalogProof(input);
+    if (!proof) {
+      return reconfirm(admin.user.id, productIds);
+    }
+
+    const result = await commitBulkCatalogEnable({
+      productIds,
+      actorId: admin.user.id,
+      proof,
+      secret: readConfirmationSecret(),
+      nowMs: nowMs(),
+    });
+    if (!result.ok && result.reason === "RECONFIRM_REQUIRED") {
+      const issued = issueBulkConfirmation(admin.user.id, productIds, result.warningState);
+      return {
+        ...result,
+        productIds,
+        proof: issued.proof,
+        expiresAtMs: issued.expiresAtMs,
+      } as const;
+    }
+
+    return result;
+  }
+
+  async function disable(session: AdminSessionCandidate, input: unknown) {
+    requireAdminSession(session);
+    const productIds = parseBulkProductIdsInput(input);
+    if (!productIds) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+    return disableBulkCatalog(productIds);
+  }
+
+  return {
+    prepareEnable,
+    commitEnable,
+    disable,
   };
 }
