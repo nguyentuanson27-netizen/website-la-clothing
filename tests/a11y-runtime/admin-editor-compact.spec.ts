@@ -20,6 +20,7 @@ const password = "admin-compact-runtime-password-123";
 const productExternalId = `admin-compact-product-${runId}`;
 const productSlug = `admin-compact-product-${runId}`;
 const productName = `Admin Compact Product ${runId}`;
+const sourceDescription = "Read-only source must stay after website-owned controls.";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -89,7 +90,7 @@ test.beforeAll(async () => {
       pancakeProductId: productExternalId,
       slug: productSlug,
       name: productName,
-      sourceDescription: "Read-only source must stay after website-owned controls.",
+      sourceDescription,
       isPresent: true,
       isActive: false,
       syncedAt,
@@ -145,7 +146,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("B1 puts compact operational summary and website-owned editing before Pancake source", async ({
+test("B1/B2 keeps operational editing first and Pancake source collapsed, keyboard-accessible and responsive", async ({
   page,
   context,
 }) => {
@@ -155,7 +156,7 @@ test("B1 puts compact operational summary and website-owned editing before Panca
   });
 
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  const summary = page.getByRole("group", { name: "Tóm tắt vận hành sản phẩm" });
+  const summary = page.getByRole("region", { name: "Tóm tắt vận hành sản phẩm" });
   await expect(summary).toBeVisible();
   await expect(summary).toContainText("Catalog");
   await expect(summary).toContainText("Editorial");
@@ -165,21 +166,40 @@ test("B1 puts compact operational summary and website-owned editing before Panca
   const orderIsCompact = await page.evaluate(() => {
     const byHeading = (name: string) =>
       [...document.querySelectorAll("h2")].find((heading) => heading.textContent?.trim() === name) ?? null;
+    const summaryHeading = document.querySelector("#product-operational-summary-heading");
     const nodes = [
-      document.querySelector('[role="group"][aria-label="Tóm tắt vận hành sản phẩm"]'),
+      summaryHeading?.closest("section") ?? null,
       byHeading("Website commerce"),
       byHeading("Nội dung editorial"),
-      byHeading("Collections"),
+      byHeading("Bộ sưu tập"),
       byHeading("SEO"),
       byHeading("Quản lý URL sản phẩm"),
-      byHeading("Nguồn mô tả từ Pancake"),
+      document.querySelector("details > summary"),
     ];
     if (nodes.some((node) => node === null)) return false;
     return nodes.slice(1).every((node, index) =>
       Boolean(nodes[index]!.compareDocumentPosition(node!) & Node.DOCUMENT_POSITION_FOLLOWING),
     );
   });
-
   expect(orderIsCompact).toBe(true);
+
+  const sourceDisclosure = page.locator("details").filter({
+    has: page.locator("summary", { hasText: "Nguồn Pancake" }),
+  });
+  const sourceToggle = sourceDisclosure.locator("summary");
+  await expect(sourceDisclosure).not.toHaveAttribute("open", "");
+  await expect(sourceToggle).toBeVisible();
+  await expect(page.getByText(sourceDescription, { exact: true })).toBeHidden();
+
+  await sourceToggle.focus();
+  await expect(sourceToggle).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(sourceDisclosure).toHaveAttribute("open", "");
+  await expect(page.getByText(sourceDescription, { exact: true })).toBeVisible();
+  await expect(
+    sourceDisclosure.getByRole("button", { name: /^(Kích hoạt|Tắt) biến thể/ }),
+  ).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
