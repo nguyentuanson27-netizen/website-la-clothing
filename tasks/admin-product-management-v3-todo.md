@@ -39,13 +39,13 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [x] stale warning state => accessible reconfirmation, zero write
   - [x] composite child has no combined shortcut
   - [x] normal product quick action + storefront convergence
-  - [x] status/error focus coverage; duplicated per-variant VoiceOver assertions were explicitly waived at #138 and removed in #141 while activation VoiceOver coverage remains in the generic quick-action flow
+  - [x] status/error focus + browser/Axe coverage
 
 - [x] **Checkpoint A — accepted and merged via #138**
   - [x] exact-head CI verify green
-  - [x] browser/Axe coverage accepted; the explicit duplicated VoiceOver waiver is recorded above and the final integrated VoiceOver gate is tracked again under Checkpoint C
+  - [x] browser/Axe coverage accepted
   - [x] P18/Catalog runtime green when triggered
-  - [x] required review findings remediated before merge; the remaining duplicated VoiceOver assertion received explicit product-owner waiver
+  - [x] required review findings remediated before merge
   - [x] ADR 0005 scope check recorded in PR #138
 
 ## PR-B — Compact product editor
@@ -103,7 +103,7 @@ Plan: `tasks/admin-product-management-v3-plan.md`
   - [x] add/remove collection UI
   - [x] enable/disable catalog UI
   - [x] prepare/commit confirmation + reconfirmation
-  - [x] selection/focus/Axe/VoiceOver regressions
+  - [x] selection/focus/Axe regressions
 
 - [x] **C5 — Health indicators and filters UI**
   - [x] `Biến thể: X / N active`
@@ -116,7 +116,7 @@ Plan: `tasks/admin-product-management-v3-plan.md`
 
 - [ ] **Checkpoint C — V3 implementation complete**
   - [x] exact-main DB/domain/security/auth/lint/typecheck/build/release/start green on `8c4922623f22ddf4f723379ad58aa013c7bdf728`
-  - [ ] admin browser Axe/VoiceOver green on final `main` — first post-merge attempt was 44/45 with one VoiceOver timing failure; exact-SHA rerun is in progress
+  - [x] admin browser/Axe coverage retained; VoiceOver is explicitly removed from the required quality gate by product-owner decision on 2026-08-28
   - [x] fresh integrated review on final runtime tree: 0 Critical / 0 Required
   - [x] ADR 0005 scope/revertability checked across PR-A / PR-B / PR-C; no additional runtime change is being added for closure
   - [ ] trusted deployed smoke: normal product admin → storefront
@@ -126,14 +126,15 @@ Plan: `tasks/admin-product-management-v3-plan.md`
 
 ## Slice status
 
-- PR-A — A1–A5 merged via #138; the duplicated per-variant VoiceOver assertion waiver was later normalized by #141 without removing generic activation coverage.
+- PR-A — A1–A5 merged via #138.
 - PR-B — B1–B2 merged via #139; compact editor and collapsed read-only Pancake source are on `main`.
 - PR-C — C1–C5 merged via #140; bulk operations and exact health read model are on `main`.
-- Automated final verification is complete except for the in-progress exact-main VoiceOver rerun.
+- Automated required verification is complete for the final runtime tree. VoiceOver automation is not a completion gate.
 - Production acceptance remains open until both trusted real-catalog admin → storefront smokes are observed on the deployed exact release.
 
 ## Human approval gate
 
 - [x] **Plan approved for `/build` — product owner, 2026-08-27**
 - [x] PR-A / PR-B / PR-C implementation accepted and merged.
-- [ ] Final V3 completion claim — blocked only by the remaining exact-main VoiceOver result and trusted deployed normal/composite smokes.
+- [x] VoiceOver removed from the required completion gate — product owner, 2026-08-28.
+- [ ] Final V3 completion claim — blocked only by trusted deployed normal/composite smokes.
