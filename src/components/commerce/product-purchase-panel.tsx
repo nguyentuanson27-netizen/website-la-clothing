@@ -79,12 +79,12 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       try {
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
-          setMessage("Đã thêm sản phẩm vào túi.");
+          setMessage("Đã thêm sản phẩm vào giỏ hàng.");
           return;
         }
         setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");
       } catch {
-        setMessage("Không thể thêm vào túi lúc này. Vui lòng thử lại.");
+        setMessage("Không thể thêm vào giỏ hàng lúc này. Vui lòng thử lại.");
       }
     });
   }
@@ -206,7 +206,7 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
         disabled={!selection.canAdd || isPending}
         onClick={addToBag}
       >
-        {isPending ? "Đang thêm…" : "Thêm vào túi"}
+        {isPending ? "Đang thêm…" : "Thêm vào giỏ hàng"}
       </button>
 
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">

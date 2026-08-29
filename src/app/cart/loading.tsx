@@ -1,7 +1,7 @@
 export default function CartLoading() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24" aria-busy="true">
-      <p className="eyebrow">Mua sắm / Túi hàng</p>
+      <p className="eyebrow">Mua sắm / Giỏ hàng</p>
       <div className="mt-4 h-24 w-3/5 max-w-3xl animate-pulse bg-black/10 md:h-36" />
       <div className="mt-12 grid gap-8 border-t border-black/20 pt-8">
         {[0, 1].map((item) => (
@@ -15,7 +15,7 @@ export default function CartLoading() {
           </div>
         ))}
       </div>
-      <span className="sr-only">Đang tải túi hàng.</span>
+      <span className="sr-only">Đang tải giỏ hàng.</span>
     </div>
   );
 }

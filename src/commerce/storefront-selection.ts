@@ -1,3 +1,4 @@
+import { sortClothingSizes } from "./clothing-size.ts";
 import type { StorefrontSelectableOption } from "./storefront-product.ts";
 
 type StorefrontSelection = {
@@ -19,7 +20,8 @@ function uniqueMappedValues(
     const value = option[key];
     if (value) values.add(value);
   }
-  return [...values];
+  const result = [...values];
+  return key === "size" ? sortClothingSizes(result) : result;
 }
 
 function supportsSelection(

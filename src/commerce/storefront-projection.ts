@@ -1,3 +1,4 @@
+import { sortClothingSizes } from "./clothing-size.ts";
 import {
   buildStorefrontVariantOptions,
   toStorefrontSelectableOptions,
@@ -121,7 +122,7 @@ function uniqueValues(
       values.push(value);
     }
   }
-  return values;
+  return key === "size" ? sortClothingSizes(values) : values;
 }
 
 function supportsProjectedSelection(

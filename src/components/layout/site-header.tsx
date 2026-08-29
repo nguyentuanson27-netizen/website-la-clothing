@@ -45,7 +45,7 @@ export function SiteHeader() {
         <nav className="utility-nav" aria-label="Tiện ích">
           <Link href="/search">Tìm kiếm</Link>
           <Link href="/account">Tài khoản</Link>
-          <Link href="/cart">Túi hàng</Link>
+          <Link href="/cart">Giỏ hàng</Link>
         </nav>
       </div>
     </header>

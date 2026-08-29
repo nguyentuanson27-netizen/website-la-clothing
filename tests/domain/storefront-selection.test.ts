@@ -162,3 +162,19 @@ test("storefront selection keeps another purchasable color reachable when the cu
     { value: "L", disabled: true },
   ]);
 });
+
+test("storefront selection sorts sizes according to standard clothing order (S, M, L, XL, XXL)", () => {
+  const shuffledOptions = buildStorefrontVariantOptions([
+    { id: "v-l", color: null, size: "L", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-m", color: null, size: "M", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-xl", color: null, size: "XL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-s", color: null, size: "S", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-xxl", color: null, size: "XXL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+  ]);
+
+  const state = deriveStorefrontSelection(shuffledOptions, { color: null, size: null });
+  assert.deepEqual(
+    state.sizes.map((s) => s.value),
+    ["S", "M", "L", "XL", "XXL"],
+  );
+});

@@ -541,7 +541,7 @@ test("A5 ordinary quick action publishes stocked variants and storefront converg
   await expect(xl).toBeVisible();
   await page.getByText("XL", { exact: true }).click();
   await expect(xl).toBeChecked();
-  await expect(page.getByRole("button", { name: "Thêm vào túi" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
 });
 
 test("A5 initial composite child catalog enable warns about standalone publication before writes", async ({

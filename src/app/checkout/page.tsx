@@ -76,7 +76,7 @@ export default async function CheckoutPage() {
                 className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 href="/cart"
               >
-                Túi hàng
+                Giỏ hàng
               </Link>
             </li>
             <li aria-hidden="true">/</li>
@@ -89,7 +89,7 @@ export default async function CheckoutPage() {
           THANH TOÁN
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
+          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">
             Tiếp tục mua sắm ↗
           </Link>
@@ -118,7 +118,7 @@ export default async function CheckoutPage() {
                 className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 href="/cart"
               >
-                Túi hàng
+                Giỏ hàng
               </Link>
             </li>
             <li aria-hidden="true">/</li>
@@ -131,12 +131,12 @@ export default async function CheckoutPage() {
           THANH TOÁN
         </h1>
         <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Túi hàng cần được kiểm tra lại.</p>
+          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại túi hàng để cập nhật trước khi tiếp tục.
+            Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
           </p>
           <Link className="text-link mt-6 inline-block" href="/cart">
-            Quay lại túi hàng ↗
+            Quay lại giỏ hàng ↗
           </Link>
         </div>
       </div>
@@ -161,7 +161,7 @@ export default async function CheckoutPage() {
               className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               href="/cart"
             >
-              Túi hàng
+              Giỏ hàng
             </Link>
           </li>
           <li aria-hidden="true">/</li>
@@ -187,7 +187,7 @@ export default async function CheckoutPage() {
               className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               href="/cart"
             >
-              Sửa túi hàng
+              Sửa giỏ hàng
             </Link>
           </div>
 
