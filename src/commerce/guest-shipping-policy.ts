@@ -22,6 +22,7 @@ const currency = new Intl.NumberFormat("vi-VN", {
   currency: "VND",
   maximumFractionDigits: 0,
 });
+const plainInteger = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
 type ShippingPolicyEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -102,6 +103,31 @@ export function calculateGuestShippingFeeVnd(
   }
 
   return policy.feeVnd;
+}
+
+/**
+ * Rounds a threshold to the shortest phrase that still states it exactly, so the promotion bar
+ * can say "1 triệu" instead of "1.000.000 ₫". Amounts that are not whole millions or thousands
+ * keep the full currency format rather than being rounded into a claim the policy does not make.
+ */
+function describeCompactVnd(amountVnd: number): string {
+  if (amountVnd >= 1_000_000 && amountVnd % 1_000_000 === 0) {
+    return `${plainInteger.format(amountVnd / 1_000_000)} triệu`;
+  }
+  if (amountVnd >= 1_000 && amountVnd % 1_000 === 0) {
+    return `${plainInteger.format(amountVnd / 1_000)} nghìn`;
+  }
+  return currency.format(amountVnd);
+}
+
+/**
+ * Single-line headline for the promotion bar, which is pinned above every page and therefore has
+ * one line to spend. The footer and the homepage trust strip keep the full sentence from
+ * describeGuestShippingPromotion, where there is room for the exact amount.
+ */
+export function describeGuestShippingPromotionHeadline(policy: GuestShippingPolicy): string {
+  calculateGuestShippingFeeVnd({ subtotalVnd: 0, totalQuantity: 1 }, policy);
+  return `Free ship từ ${policy.freeShippingMinQuantity} sản phẩm hoặc đơn trên ${describeCompactVnd(policy.freeShippingSubtotalVnd)}`;
 }
 
 export function describeGuestShippingPromotion(policy: GuestShippingPolicy): {

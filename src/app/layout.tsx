@@ -43,8 +43,13 @@ export default async function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData) }}
         />
-        <ShippingPromotionBar />
-        <SiteHeader />
+        {/* Pinned together: the promotion and the nav stay on screen as one block while the
+            page scrolls under them. Sticky rather than fixed, so they still occupy layout
+            space and nothing has to be offset to sit below them. */}
+        <div className="site-masthead">
+          <ShippingPromotionBar />
+          <SiteHeader />
+        </div>
         <main id="main-content">{children}</main>
         <SiteFooter />
       </body>

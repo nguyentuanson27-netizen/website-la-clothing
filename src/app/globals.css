@@ -67,7 +67,6 @@ summary:focus-visible {
 }
 
 .nav-shell {
-  min-height: 78px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -563,22 +562,30 @@ body {
   font-family: var(--font-sans);
 }
 
+.site-masthead {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  background: var(--paper);
+}
+
 .promotion-shell {
   border-bottom: 1px solid var(--ink);
   background: var(--ink);
   color: var(--white);
-  padding: 0.6rem var(--shell-gutter);
+  padding: 0.5rem var(--shell-gutter);
   text-align: center;
-  font-size: 0.68rem;
+  /* Sized to hold the headline on one line down to a 320px viewport. */
+  font-size: 0.58rem;
   font-weight: 600;
   line-height: 1.35;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .nav-shell {
   width: min(100%, var(--shell-max));
-  min-height: 72px;
+  min-height: 58px;
   margin-inline: auto;
   gap: var(--space-6);
   padding-inline: var(--shell-gutter);
