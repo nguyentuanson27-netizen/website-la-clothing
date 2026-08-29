@@ -293,6 +293,10 @@ test("storefront catalog card renders trusted primary photography and fallback o
   const multiImg = multiCard.getByRole("img", { name: multiName });
   await expect(multiImg).toBeVisible();
   await expect(multiCard.locator(".product-visual")).not.toHaveAttribute("aria-hidden", "true");
+  // The hover swap shows another photo of the same product, so it carries no name of its own and
+  // stays out of the accessibility tree — one card must expose exactly one image to assistive tech.
+  await expect(multiCard.getByRole("img")).toHaveCount(1);
+  await expect(multiCard.locator("img")).toHaveCount(2);
 
   // Card with untrusted fallback: decorative fallback wrapper is aria-hidden and has no img role
   const fallbackCard = page.locator("article").filter({ hasText: fallbackName });

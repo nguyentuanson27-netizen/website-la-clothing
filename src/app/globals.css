@@ -327,7 +327,7 @@ summary:focus-visible {
 .product-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .product-visual {
@@ -661,10 +661,6 @@ body {
 .category-strip {
   padding-left: var(--shell-gutter);
   padding-right: var(--shell-gutter);
-}
-
-.product-grid {
-  gap: var(--space-4);
 }
 
 .product-visual {

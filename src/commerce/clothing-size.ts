@@ -1,4 +1,4 @@
-﻿const KNOWN_SIZE_RANKS: Readonly<Record<string, number>> = {
+const KNOWN_SIZE_RANKS: Readonly<Record<string, number>> = {
   "3xs": 5,
   "xxx-small": 5,
   "xxs": 10,

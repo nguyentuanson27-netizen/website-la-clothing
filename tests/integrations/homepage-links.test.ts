@@ -130,7 +130,7 @@ test("U2 homepage link guard rejects inert category queries and unapproved suppo
 });
 
 test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-for-byte locked", async () => {
-  const nextConfig = (await readFile(NEXT_CONFIG_SOURCE, "utf8")).replace(/\r\n/g, "\n");
+  const nextConfig = await readFile(NEXT_CONFIG_SOURCE, "utf8");
   const imgSrc = nextConfig.match(/img-src [^;]+;/)?.[0] ?? null;
   const remotePatterns = nextConfig.match(/remotePatterns: \[\n[\s\S]*?\n    \],/)?.[0] ?? null;
 

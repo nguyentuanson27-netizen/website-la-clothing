@@ -86,7 +86,8 @@ export function StorefrontProductCard({
               {secondaryImage ? (
                 <Image
                   src={secondaryImage.url}
-                  alt={secondaryImage.alt || `${name} - Ảnh chi tiết`}
+                  alt=""
+                  aria-hidden="true"
                   fill
                   sizes="(min-width: 1024px) 25vw, 50vw"
                   className="object-cover opacity-0 transition-all duration-500 group-hover:opacity-100 group-hover:scale-105"
@@ -104,7 +105,7 @@ export function StorefrontProductCard({
               <p className="mt-1 line-clamp-2 max-w-[32ch] text-black/60">{editorialDescription}</p>
             ) : null}
           </div>
-          <div className="shrink-0 text-left sm:text-right">
+          <div className="shrink-0 text-right">
             <p>{describePrice(options)}</p>
             <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/60">
               {describeAvailability(options)}
