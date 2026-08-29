@@ -90,8 +90,13 @@ export async function submitGuestCheckoutAction(
     // between the buyer and their confirmation page. `after` keeps the work alive past the
     // response without holding it up, which a bare floating promise would not survive on a
     // serverless runtime that freezes the invocation the moment it responds.
-    const metaContext = await readMetaRequestContext();
-    after(() => reportMetaPurchaseSafely(prisma, result.orderCode, metaContext));
+    // The order is already placed here. Nothing about reporting it may throw past this point: the
+    // buyer would see a generic failure for a sale that succeeded and would very likely submit it
+    // again. readStorefrontOrigin in particular throws on a misconfigured APP_DOMAIN.
+    const metaContext = await readMetaRequestContext().catch(() => null);
+    if (metaContext !== null) {
+      after(() => reportMetaPurchaseSafely(prisma, result.orderCode, metaContext));
+    }
     redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
   }
   return result;

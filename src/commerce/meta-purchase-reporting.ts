@@ -91,7 +91,13 @@ export async function reportMetaPurchaseSafely(
 ): Promise<void> {
   try {
     await reportMetaPurchase(client, orderCode, context, options);
-  } catch {
-    // Intentionally silent.
+  } catch (error) {
+    // Misconfiguration throws before the send is even attempted — a token with stray whitespace,
+    // a malformed graph version — and would otherwise disable server-side reporting for good with
+    // nothing to show for it.
+    console.warn(
+      `meta_conversions.purchase_failed order=${orderCode} reason=UNEXPECTED_ERROR` +
+        ` detail=${error instanceof Error ? error.message : "unknown"}`,
+    );
   }
 }
