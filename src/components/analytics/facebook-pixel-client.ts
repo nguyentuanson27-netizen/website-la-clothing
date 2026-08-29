@@ -6,12 +6,12 @@
  * throw into a shopper's path, so a missing pixel is a no-op rather than an error.
  */
 
-type Fbq = (
+type Fbq = ((
   method: "track" | "trackCustom",
   eventName: string,
   parameters?: Record<string, unknown>,
   options?: { eventID: string },
-) => void;
+) => void) & { callMethod?: unknown };
 
 export type FacebookPixelContent = Readonly<{
   id: string;
@@ -29,86 +29,89 @@ export type FacebookPixelEventParameters = Readonly<{
   num_items?: number;
 }>;
 
-/**
- * The pixel with `fbevents.js` actually loaded, not merely the inline snippet's stub.
- *
- * The snippet defines `fbq` immediately and queues calls; the real library then drains that queue
- * and is what sets `callMethod`. Treating the stub as ready would report an event as delivered
- * that an ad blocker is about to discard, and a caller recording it as sent would never retry.
- */
-function readLoadedFbq(): Fbq | null {
+/** `fbq` in any form: the inline snippet's queueing stub, or the loaded library. */
+function readFbq(): Fbq | null {
   if (typeof window === "undefined") return null;
   const candidate = (window as { fbq?: unknown }).fbq;
-  if (typeof candidate !== "function") return null;
-  const withCallMethod = candidate as Fbq & { callMethod?: unknown };
-  return typeof withCallMethod.callMethod === "function" ? (candidate as Fbq) : null;
+  return typeof candidate === "function" ? (candidate as Fbq) : null;
 }
 
 /**
- * The base snippet loads with `afterInteractive`, so the pixel can still be absent when a page's
- * mount effect reports its event — a race that page-level events lose most often, because they
- * fire the instant the page appears. Dropping those would quietly cost exactly the events worth
- * having: Purchase and InitiateCheckout.
+ * True once `fbevents.js` is running rather than just the snippet's stub.
  *
- * Calls made before `fbevents.js` is running are held here and replayed in order once it is. That
- * is the same condition Meta's own snippet queue waits on — it is the library that drains it — so
- * nothing is lost by holding them here instead, and unlike that queue this one can tell a caller
- * whether its event actually went out.
+ * The stub sets `loaded` itself, so that flag says nothing; the library is what defines
+ * `callMethod` and what drains the stub's queue.
+ */
+function isPixelLibraryLoaded(): boolean {
+  const fbq = readFbq();
+  return fbq !== null && typeof fbq.callMethod === "function";
+}
+
+/**
+ * Events are handed to `fbq` the moment it exists, stub included, so Meta's own pre-load queue does
+ * the buffering it was built for — the library flushes it whenever it finishes loading, however
+ * long that takes. Nothing here expires an event.
+ *
+ * Two things still need waiting on, and they are different:
+ *
+ *   - Before the snippet has run at all there is no `fbq` to hand anything to. Those calls are held
+ *     here, in order, until there is. `next/script` loads the snippet `afterInteractive`, so a
+ *     page-level event fired from a mount effect regularly lands in this window.
+ *   - A caller that records an event as sent must not do so while it sits in a queue an ad blocker
+ *     will discard. Those acknowledgements wait for the library itself.
  */
 type PendingCall = {
   eventName: string;
   parameters: FacebookPixelEventParameters | undefined;
   eventId: string | undefined;
-  onDelivered: (() => void) | undefined;
-  /** Each call gets its own budget; one queued late must not inherit an almost-spent one. */
-  expiresAtMs: number;
+  onAccepted: (() => void) | undefined;
 };
 
-const PENDING_POLL_MS = 120;
-const PENDING_GIVE_UP_MS = 10_000;
+const POLL_INTERVAL_MS = 250;
 
-let pendingCalls: PendingCall[] = [];
-let pendingPoll: ReturnType<typeof setInterval> | null = null;
+/** Calls made before `fbq` existed at all, oldest first. */
+let callsAwaitingFbq: PendingCall[] = [];
+/** Acknowledgements for calls already handed over, waiting on the library to actually load. */
+let acknowledgementsAwaitingLibrary: Array<() => void> = [];
+let poll: ReturnType<typeof setInterval> | null = null;
 
-function stopPendingPoll(): void {
-  if (pendingPoll !== null) {
-    clearInterval(pendingPoll);
-    pendingPoll = null;
+function stopPolling(): void {
+  if (poll !== null) {
+    clearInterval(poll);
+    poll = null;
   }
 }
 
-function flushPendingCalls(fbq: Fbq): void {
-  const queued = pendingCalls;
-  pendingCalls = [];
-  stopPendingPoll();
-  for (const call of queued) {
-    dispatch(fbq, call.eventName, call.parameters, call.eventId, call.onDelivered);
-  }
-}
-
-function enqueuePendingCall(call: PendingCall): void {
-  pendingCalls.push(call);
-  if (pendingPoll !== null) return;
-
-  pendingPoll = setInterval(() => {
-    const fbq = readLoadedFbq();
-    if (fbq !== null) {
-      flushPendingCalls(fbq);
-      return;
+function startPolling(): void {
+  if (poll !== null) return;
+  poll = setInterval(() => {
+    const fbq = readFbq();
+    if (fbq !== null && callsAwaitingFbq.length > 0) {
+      const queued = callsAwaitingFbq;
+      callsAwaitingFbq = [];
+      for (const call of queued) {
+        handToPixel(fbq, call.eventName, call.parameters, call.eventId, call.onAccepted);
+      }
     }
-    // Drop only what has run out its own budget; the pixel may still be blocked for the rest.
-    const now = Date.now();
-    pendingCalls = pendingCalls.filter((pending) => pending.expiresAtMs > now);
-    if (pendingCalls.length === 0) stopPendingPoll();
-  }, PENDING_POLL_MS);
+
+    if (isPixelLibraryLoaded() && acknowledgementsAwaitingLibrary.length > 0) {
+      const acknowledgements = acknowledgementsAwaitingLibrary;
+      acknowledgementsAwaitingLibrary = [];
+      for (const acknowledge of acknowledgements) acknowledge();
+    }
+
+    if (callsAwaitingFbq.length === 0 && acknowledgementsAwaitingLibrary.length === 0) {
+      stopPolling();
+    }
+  }, POLL_INTERVAL_MS);
 }
 
-function dispatch(
+function handToPixel(
   fbq: Fbq,
   eventName: string,
   parameters: FacebookPixelEventParameters | undefined,
   eventId: string | undefined,
-  onDelivered: (() => void) | undefined,
+  onAccepted: (() => void) | undefined,
 ): void {
   try {
     if (eventId === undefined) {
@@ -118,36 +121,45 @@ function dispatch(
         eventID: eventId,
       });
     }
-    // Only now has the event actually reached the pixel. Callers that record an event as sent
-    // rely on this, so a queued call that was never flushed must not look delivered.
-    onDelivered?.();
   } catch {
     // A tracking failure is never worth interrupting a shopper for.
+    return;
   }
+
+  if (onAccepted === undefined) return;
+  if (isPixelLibraryLoaded()) {
+    onAccepted();
+    return;
+  }
+  // Handed to the stub's queue. Acknowledge only once the library exists to drain it.
+  acknowledgementsAwaitingLibrary.push(onAccepted);
+  startPolling();
 }
 
 /**
+ * Reports one event to the pixel.
+ *
  * `eventId` must match the `event_id` of the Conversions API twin, which is how Meta collapses the
  * pair into one conversion instead of counting the purchase twice.
+ *
+ * `onAccepted` fires when the loaded pixel library has taken the event. That is an acknowledgement
+ * of hand-off, not of receipt: it says the event is no longer at risk of being dropped on this
+ * page, not that Meta's servers answered. It never fires while the pixel is blocked or absent,
+ * which is what lets a caller safely record an event as sent.
  */
 export function trackFacebookPixelEvent(
   eventName: string,
   parameters?: FacebookPixelEventParameters,
   eventId?: string,
-  onDelivered?: () => void,
+  onAccepted?: () => void,
 ): void {
   if (typeof window === "undefined") return;
 
-  const fbq = readLoadedFbq();
+  const fbq = readFbq();
   if (fbq === null) {
-    enqueuePendingCall({
-      eventName,
-      parameters,
-      eventId,
-      onDelivered,
-      expiresAtMs: Date.now() + PENDING_GIVE_UP_MS,
-    });
+    callsAwaitingFbq.push({ eventName, parameters, eventId, onAccepted });
+    startPolling();
     return;
   }
-  dispatch(fbq, eventName, parameters, eventId, onDelivered);
+  handToPixel(fbq, eventName, parameters, eventId, onAccepted);
 }
