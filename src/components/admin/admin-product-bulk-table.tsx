@@ -14,6 +14,7 @@ import {
   type BulkProductStatusActionState,
   type BulkProductVariantActionState,
 } from "@/app/admin/actions";
+import type { BulkVariantActivationMode } from "@/commerce/product-commerce-repository";
 import type { ProductContentStatus } from "@/commerce/product-content-admin";
 
 const statusLabels: Record<ProductContentStatus, string> = {
@@ -28,20 +29,24 @@ const statusStyles: Record<ProductContentStatus, string> = {
   PUBLISHED: "bg-emerald-100 text-emerald-900",
 };
 
-const BULK_OPERATIONS = [
-  "status",
-  "collection-add",
-  "collection-remove",
-  "catalog-enable",
-  "catalog-disable",
-  "variants-enable-all",
-  "variants-enable-stocked",
-  "variants-disable-all",
-] as const;
+const VARIANT_OPERATION_PREFIX = "variants-";
 
-type BulkOperation = (typeof BULK_OPERATIONS)[number];
+/**
+ * Variant operations are derived from the wire modes rather than spelled out again, so a mode added
+ * to `BulkVariantActivationMode` fails to compile here until it has a label, a button and a
+ * confirmation question.
+ */
+type VariantOperation = `${typeof VARIANT_OPERATION_PREFIX}${BulkVariantActivationMode}`;
 
-const operationLabels: Record<BulkOperation, string> = {
+type BulkOperation =
+  | "status"
+  | "collection-add"
+  | "collection-remove"
+  | "catalog-enable"
+  | "catalog-disable"
+  | VariantOperation;
+
+const operationLabels = {
   status: "Trạng thái nội dung",
   "collection-add": "Thêm vào collection",
   "collection-remove": "Gỡ khỏi collection",
@@ -50,7 +55,21 @@ const operationLabels: Record<BulkOperation, string> = {
   "variants-enable-all": "Kích hoạt tất cả biến thể",
   "variants-enable-stocked": "Kích hoạt biến thể có hàng",
   "variants-disable-all": "Tắt tất cả biến thể",
-};
+} as const satisfies Record<BulkOperation, string>;
+
+/** Single source of the dropdown's contents and its order. */
+const BULK_OPERATIONS = Object.keys(operationLabels) as readonly BulkOperation[];
+
+/**
+ * Sound by construction: every `BulkOperation` carrying the prefix is a `VariantOperation`, whose
+ * remainder is exactly a `BulkVariantActivationMode` — TypeScript just cannot narrow a sliced
+ * template literal.
+ */
+function variantModeOf(operation: BulkOperation): BulkVariantActivationMode | null {
+  return operation.startsWith(VARIANT_OPERATION_PREFIX)
+    ? (operation.slice(VARIANT_OPERATION_PREFIX.length) as BulkVariantActivationMode)
+    : null;
+}
 
 const initialStatusState: BulkProductStatusActionState = { kind: "idle" };
 const initialCollectionState: BulkProductCollectionActionState = { kind: "idle" };
@@ -213,7 +232,7 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     if (result.kind === "success") clearSelection();
   }
 
-  async function runVariantUpdate(mode: "enable-all" | "enable-stocked" | "disable-all") {
+  async function runVariantUpdate(mode: BulkVariantActivationMode) {
     const result = await bulkProductVariantAction(
       initialVariantState,
       selectionFormData({ mode }),
@@ -227,6 +246,7 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     if (selectedCount === 0 || isPending) return;
 
     const formData = new FormData(event.currentTarget);
+    const variantMode = variantModeOf(operation);
     setIsPending(true);
     clearFeedback();
     try {
@@ -238,22 +258,18 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
         await runCatalogIntent("catalog-disable");
       } else if (operation === "catalog-enable") {
         await runCatalogIntent("catalog-commit");
-      } else if (operation === "variants-enable-all") {
-        await runVariantUpdate("enable-all");
-      } else if (operation === "variants-enable-stocked") {
-        await runVariantUpdate("enable-stocked");
-      } else if (operation === "variants-disable-all") {
-        await runVariantUpdate("disable-all");
+      } else if (variantMode) {
+        await runVariantUpdate(variantMode);
       }
     } catch {
       if (operation === "status") {
         setStatusState({ kind: "error", message: genericBulkStatusError });
       } else if (needsCollection) {
         setCollectionState({ kind: "error", message: genericBulkError });
-      } else if (operation === "catalog-enable" || operation === "catalog-disable") {
-        setCatalogState({ kind: "error", message: genericBulkError });
-      } else {
+      } else if (variantMode) {
         setVariantState({ kind: "error", message: genericBulkError });
+      } else {
+        setCatalogState({ kind: "error", message: genericBulkError });
       }
     } finally {
       setIsPending(false);

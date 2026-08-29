@@ -23,7 +23,7 @@ export const PRODUCT_COMMERCE_ADMIN_LIMITS = {
   bulkProductCount: 100,
 } as const;
 
-export const BULK_VARIANT_ACTIVATION_MODES = [
+const BULK_VARIANT_ACTIVATION_MODES = [
   "enable-all",
   "enable-stocked",
   "disable-all",
@@ -134,24 +134,21 @@ function parseBulkProductIdsInput(input: unknown): string[] | null {
   return canonical;
 }
 
+function isBulkVariantActivationMode(value: string): value is BulkVariantActivationMode {
+  return (BULK_VARIANT_ACTIVATION_MODES as readonly string[]).includes(value);
+}
+
 function parseBulkVariantActivationInput(
   input: unknown,
 ): { productIds: string[]; mode: BulkVariantActivationMode } | null {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-
-  const record = input as Record<string, unknown>;
-  const productIds = parseBulkProductIdsInput(record);
+  // Rejects any non-object input, so reading `mode` off it below is safe.
+  const productIds = parseBulkProductIdsInput(input);
   if (!productIds) return null;
 
-  const mode = record.mode;
-  if (
-    typeof mode !== "string" ||
-    !BULK_VARIANT_ACTIVATION_MODES.includes(mode as BulkVariantActivationMode)
-  ) {
-    return null;
-  }
+  const mode = (input as Record<string, unknown>).mode;
+  if (typeof mode !== "string" || !isBulkVariantActivationMode(mode)) return null;
 
-  return { productIds, mode: mode as BulkVariantActivationMode };
+  return { productIds, mode };
 }
 
 function parseVariantActivationInput(input: unknown): ProductVariantActivationInput | null {
