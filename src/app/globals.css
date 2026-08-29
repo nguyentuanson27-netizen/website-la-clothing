@@ -304,7 +304,7 @@ summary:focus-visible {
 }
 
 .product-section {
-  padding: 4rem 1.5rem 7rem;
+  padding: 4rem var(--shell-gutter) 7rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -376,7 +376,7 @@ summary:focus-visible {
   font-size: 0.72rem;
 }
 
-.product-meta h3,
+.product-meta h2,
 .product-meta p {
   margin: 0;
   font: inherit;
@@ -504,6 +504,11 @@ summary:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 2px;
     row-gap: 1.5rem;
+    /* Photography meets the viewport edge on mobile. Listing pages wrap the grid
+       in containers with differing inline padding, so the grid escapes whatever
+       padding it sits in rather than each page having to drop its own. */
+    width: 100vw;
+    margin-inline: calc(50% - 50vw);
   }
 
   .product-meta {
@@ -513,10 +518,6 @@ summary:focus-visible {
     padding-left: 0.375rem;
     padding-right: 0.375rem;
     font-size: 0.72rem;
-  }
-
-  .product-meta .text-right {
-    text-align: left;
   }
 
   .product-section {
@@ -656,7 +657,6 @@ body {
 
 .campaign-copy,
 .collection-intro,
-.product-section,
 .lookbook-copy,
 .category-strip {
   padding-left: var(--shell-gutter);

@@ -452,7 +452,11 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     "href",
     `/shop/${productSlug}`,
   );
-  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
+  // The catalog card shows price only. Editorial copy and stock state belong to the product
+  // page, and the name stays in the document as a visually hidden heading.
+  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toHaveCount(0);
+  await expect(page.getByText("Có sẵn", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("1.290.000")).toBeVisible();
   await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
   await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
   await expectRuntimePageClean(page);
