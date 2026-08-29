@@ -43,6 +43,8 @@ test("every spelling of a Vietnamese number normalizes to the same digits", () =
     // A country code followed by the national trunk zero is a common way people write it.
     "+84 0912 345 678",
     "0084 0912345678",
+    // Written without the trunk zero at all.
+    "912345678",
   ]) {
     assert.equal(normalizeVietnamesePhone(written), expected, written);
   }

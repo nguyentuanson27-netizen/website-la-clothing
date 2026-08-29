@@ -65,7 +65,9 @@ export async function readMetaPurchaseSnapshot(
   const contents: MetaPurchaseContent[] = [];
   for (const line of order.lines) {
     const itemPrice = toSafeNumber(line.unitPriceVnd);
-    if (itemPrice === null) continue;
+    // Dropping the line while valueVnd still counts it would report an item list that contradicts
+    // its own total. An order that cannot be described exactly is not reported at all.
+    if (itemPrice === null) return null;
     contents.push({
       // Falls back to the POS variation id so a line whose product mirror has since been removed
       // is still counted rather than silently dropped from the sale.

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 
 import { readAuthServerConfig } from "../auth/config.ts";
+import { readStorefrontOrigin } from "./storefront-origin.ts";
 import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
 import {
@@ -51,7 +52,6 @@ async function createGuestCheckoutActionDependencies() {
  */
 async function readMetaRequestContext() {
   const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
-  const host = requestHeaders.get("host");
 
   return {
     // Only the proxy-owned header the rest of checkout trusts. x-forwarded-for is client-spoofable
@@ -61,7 +61,9 @@ async function readMetaRequestContext() {
     clientUserAgent: requestHeaders.get("user-agent"),
     fbp: cookieStore.get("_fbp")?.value ?? null,
     fbc: cookieStore.get("_fbc")?.value ?? null,
-    eventSourceUrl: host === null ? null : `https://${host}/checkout`,
+    // The configured canonical origin, not the request's Host header: Host is attacker-controlled
+    // and would otherwise be reported to Meta as where the sale happened.
+    eventSourceUrl: `${readStorefrontOrigin()}/checkout`,
   };
 }
 

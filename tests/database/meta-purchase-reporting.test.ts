@@ -9,8 +9,9 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 // The pixel id is captured when the config module first loads, because the Content-Security-Policy
 // is built from the same value and the two must agree. Setting it after the fact would be a no-op,
-// so it is set here and the reporting module is pulled in afterwards.
-process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID = "123456789012345";
+// so it is set here and the reporting module is pulled in afterwards. This is the key next.config
+// inlines at build time, which is what the config module actually reads.
+process.env.LA_BUILD_FACEBOOK_PIXEL_ID = "123456789012345";
 const { reportMetaPurchase, reportMetaPurchaseSafely } = await import(
   "../../src/commerce/meta-purchase-reporting.ts"
 );
@@ -127,6 +128,22 @@ test("an order that is not confirmed is not a sale", async () => {
 
   assert.equal(await readMetaPurchaseSnapshot(prisma, orderCode), null);
   assert.equal(await readMetaPurchaseSnapshot(prisma, "NO-SUCH-ORDER"), null);
+});
+
+test("an order with a line it cannot describe exactly is not reported at all", async () => {
+  await seedConfirmedOrder();
+  const order = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: orderCode },
+    select: { id: true },
+  });
+  // Past Number's exact range the price cannot be reported, and reporting the order without the
+  // line would contradict its own total.
+  await prisma.orderLineSnapshot.updateMany({
+    where: { orderId: order.id },
+    data: { unitPriceVnd: BigInt(Number.MAX_SAFE_INTEGER) + BigInt(1) },
+  });
+
+  assert.equal(await readMetaPurchaseSnapshot(prisma, orderCode), null);
 });
 
 test("the server event carries hashed identity and the order code as its dedup id", async () => {

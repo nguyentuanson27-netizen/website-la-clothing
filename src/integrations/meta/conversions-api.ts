@@ -12,6 +12,8 @@ import type { MetaConversionsConfig } from "./pixel-config.ts";
  */
 
 const VIETNAM_COUNTRY_CODE = "84";
+// Vietnamese mobile subscriber numbers are nine digits once the trunk zero is removed.
+const VIETNAM_SUBSCRIBER_DIGITS = 9;
 
 export type MetaUserIdentity = Readonly<{
   phone: string | null;
@@ -72,6 +74,11 @@ export function normalizeVietnamesePhone(rawPhone: string): string | null {
   }
   if (withoutInternationalPrefix.startsWith("0")) {
     return VIETNAM_COUNTRY_CODE + withoutInternationalPrefix.slice(1);
+  }
+  // A bare subscriber number, written without the trunk zero. The checkout phone field is free
+  // text, so this reaches us as readily as any other spelling and has to land on the same digits.
+  if (withoutInternationalPrefix.length === VIETNAM_SUBSCRIBER_DIGITS) {
+    return VIETNAM_COUNTRY_CODE + withoutInternationalPrefix;
   }
   return withoutInternationalPrefix;
 }

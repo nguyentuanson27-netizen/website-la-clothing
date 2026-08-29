@@ -67,6 +67,13 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // Frozen into the bundle at build time, from the same value that assembled the policy above.
+  // NEXT_PUBLIC_ alone is not enough: Next only inlines those keys when they exist at build, so an
+  // id supplied only at runtime would still reach the server component and render a loader script
+  // the baked policy then blocks. Declaring it here inlines it either way, including as "".
+  env: {
+    LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
+  },
   images: {
     remotePatterns: [
       {

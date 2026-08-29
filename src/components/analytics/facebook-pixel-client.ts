@@ -48,6 +48,7 @@ type PendingCall = {
   eventName: string;
   parameters: FacebookPixelEventParameters | undefined;
   eventId: string | undefined;
+  onDelivered: (() => void) | undefined;
 };
 
 const PENDING_POLL_MS = 120;
@@ -69,7 +70,7 @@ function flushPendingCalls(fbq: Fbq): void {
   pendingCalls = [];
   stopPendingPoll();
   for (const call of queued) {
-    dispatch(fbq, call.eventName, call.parameters, call.eventId);
+    dispatch(fbq, call.eventName, call.parameters, call.eventId, call.onDelivered);
   }
 }
 
@@ -98,6 +99,7 @@ function dispatch(
   eventName: string,
   parameters: FacebookPixelEventParameters | undefined,
   eventId: string | undefined,
+  onDelivered: (() => void) | undefined,
 ): void {
   try {
     if (eventId === undefined) {
@@ -107,6 +109,9 @@ function dispatch(
         eventID: eventId,
       });
     }
+    // Only now has the event actually reached the pixel. Callers that record an event as sent
+    // rely on this, so a queued call that was never flushed must not look delivered.
+    onDelivered?.();
   } catch {
     // A tracking failure is never worth interrupting a shopper for.
   }
@@ -120,13 +125,14 @@ export function trackFacebookPixelEvent(
   eventName: string,
   parameters?: FacebookPixelEventParameters,
   eventId?: string,
+  onDelivered?: () => void,
 ): void {
   if (typeof window === "undefined") return;
 
   const fbq = readFbq();
   if (fbq === null) {
-    enqueuePendingCall({ eventName, parameters, eventId });
+    enqueuePendingCall({ eventName, parameters, eventId, onDelivered });
     return;
   }
-  dispatch(fbq, eventName, parameters, eventId);
+  dispatch(fbq, eventName, parameters, eventId, onDelivered);
 }

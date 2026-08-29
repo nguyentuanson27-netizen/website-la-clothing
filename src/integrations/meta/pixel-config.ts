@@ -13,7 +13,11 @@
  * agree by construction: set at build, both on; absent at build, both off.
  */
 
-const BUILD_TIME_PIXEL_ID = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
+// next.config.mjs declares this in `env`, so Next replaces it with a literal at build time — the
+// same literal the Content-Security-Policy was assembled from. Reading the raw
+// NEXT_PUBLIC_FACEBOOK_PIXEL_ID here instead would fall through to the live runtime environment
+// whenever it was absent at build, which is exactly the mismatch this exists to prevent.
+const BUILD_TIME_PIXEL_ID = process.env.LA_BUILD_FACEBOOK_PIXEL_ID;
 
 const PIXEL_ID = /^[0-9]{15,16}$/;
 const GRAPH_API_VERSION = /^v[0-9]{1,3}\.[0-9]{1,3}$/;

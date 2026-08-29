@@ -55,12 +55,14 @@ export function FacebookPixelEvent({ name, parameters, eventId, once }: Facebook
 
     const storageKey =
       once === true && eventId !== undefined ? `${REPORTED_STORAGE_PREFIX}${eventId}` : null;
-    if (storageKey !== null) {
-      if (hasAlreadyReported(storageKey)) return;
-      markReported(storageKey);
-    }
+    if (storageKey !== null && hasAlreadyReported(storageKey)) return;
 
-    trackFacebookPixelEvent(name, parameters, eventId);
+    // Recorded only once the pixel has actually taken the event. Marking it up front would
+    // suppress a reload's retry for a call that was queued and then dropped because the pixel
+    // never loaded — turning a delivery failure into a permanently missing sale.
+    trackFacebookPixelEvent(name, parameters, eventId, () => {
+      if (storageKey !== null) markReported(storageKey);
+    });
   }, [eventId, name, once, parameters]);
 
   return null;
