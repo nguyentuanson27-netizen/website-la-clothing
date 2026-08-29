@@ -21,6 +21,8 @@ declare global {
     fbq?: ((...args: unknown[]) => void) & { callMethod?: unknown; queue?: unknown[] };
     /** Recorded by the library stub below, not by anything the app ships. */
     __fbqCalls?: unknown[][];
+    /** Installed by this spec only, to observe timers the page schedules. */
+    __timers?: { created: Array<{ id: number; delay: number }>; cleared: number[] };
   }
 }
 
@@ -102,6 +104,39 @@ const PIXEL_LIBRARY_STUB = `(function(){
 })();`;
 
 type PixelCall = unknown[];
+
+/** Matches the client's poll cadence; nothing else in the app schedules one. */
+const PIXEL_POLL_INTERVAL_MS = 250;
+
+/** Records timers so a test can prove the page left none of ours running. */
+async function recordTimers(page: Page) {
+  await page.addInitScript(() => {
+    const created: Array<{ id: number; delay: number }> = [];
+    const cleared: number[] = [];
+    window.__timers = { created, cleared };
+
+    const nativeSetInterval = window.setInterval.bind(window);
+    const nativeClearInterval = window.clearInterval.bind(window);
+    window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      const id = nativeSetInterval(handler, timeout, ...args) as unknown as number;
+      created.push({ id, delay: timeout ?? 0 });
+      return id;
+    }) as typeof window.setInterval;
+    window.clearInterval = ((id?: number) => {
+      if (id !== undefined) cleared.push(id);
+      return nativeClearInterval(id);
+    }) as typeof window.clearInterval;
+  });
+}
+
+function readLivePixelPolls(page: Page): Promise<number[]> {
+  return page.evaluate((pollDelay) => {
+    const timers = window.__timers ?? { created: [], cleared: [] };
+    return timers.created
+      .filter((timer) => timer.delay === pollDelay && !timers.cleared.includes(timer.id))
+      .map((timer) => timer.id);
+  }, PIXEL_POLL_INTERVAL_MS);
+}
 
 /**
  * @param libraryDelayMs how long `fbevents.js` takes to arrive, or `null` to never serve it, which
@@ -376,6 +411,7 @@ test("a blocked pixel records nothing as sent, so the sale can still be reported
   page,
 }) => {
   await installPixelStub(page, null);
+  await recordTimers(page);
   await page.goto(`${BASE_URL}/checkout/success?order=${orderCode}`, {
     waitUntil: "domcontentloaded",
   });
@@ -394,4 +430,10 @@ test("a blocked pixel records nothing as sent, so the sale can still be reported
   expect(state.libraryLoaded).toBe(false);
   // Recording a suppression flag here would lose the sale for good.
   expect(state.recordedAsSent).toEqual([]);
+
+  // The event itself is already in the pixel's own queue, so nothing here needs to keep waiting on
+  // a library that is never coming. Polling on for the life of the page would be the cost.
+  await expect
+    .poll(async () => (await readLivePixelPolls(page)).length, { timeout: 30_000 })
+    .toBe(0);
 });

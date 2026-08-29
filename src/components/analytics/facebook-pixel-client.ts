@@ -29,6 +29,17 @@ export type FacebookPixelEventParameters = Readonly<{
   num_items?: number;
 }>;
 
+/**
+ * Whether this build ships a pixel at all.
+ *
+ * next.config.mjs declares this in `env`, so it is a literal here — the same one the pixel
+ * component and the Content-Security-Policy are derived from. With no pixel configured the
+ * storefront renders no snippet, `fbq` will never appear, and tracking must be a true no-op:
+ * callers still fire events unconditionally, and queueing them would hold data and a timer for a
+ * page's whole life in the default configuration.
+ */
+const PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
+
 /** `fbq` in any form: the inline snippet's queueing stub, or the loaded library. */
 function readFbq(): Fbq | null {
   if (typeof window === "undefined") return null;
@@ -68,11 +79,20 @@ type PendingCall = {
 };
 
 const POLL_INTERVAL_MS = 250;
+/**
+ * How long an acknowledgement waits for the library before it is abandoned.
+ *
+ * This is not an expiry on the event: that already sits in the pixel's own queue and goes out
+ * whenever the library arrives. Abandoning an acknowledgement only means the caller does not record
+ * the event as sent, so a later visit reports it again — Meta collapses the pair by event id. The
+ * alternative, a blocked pixel leaving a timer running for the life of every page, is worse.
+ */
+const ACKNOWLEDGEMENT_WAIT_MS = 15_000;
 
 /** Calls made before `fbq` existed at all, oldest first. */
 let callsAwaitingFbq: PendingCall[] = [];
 /** Acknowledgements for calls already handed over, waiting on the library to actually load. */
-let acknowledgementsAwaitingLibrary: Array<() => void> = [];
+let acknowledgementsAwaitingLibrary: Array<{ acknowledge: () => void; expiresAtMs: number }> = [];
 let poll: ReturnType<typeof setInterval> | null = null;
 
 function stopPolling(): void {
@@ -94,10 +114,18 @@ function startPolling(): void {
       }
     }
 
-    if (isPixelLibraryLoaded() && acknowledgementsAwaitingLibrary.length > 0) {
-      const acknowledgements = acknowledgementsAwaitingLibrary;
-      acknowledgementsAwaitingLibrary = [];
-      for (const acknowledge of acknowledgements) acknowledge();
+    if (acknowledgementsAwaitingLibrary.length > 0) {
+      if (isPixelLibraryLoaded()) {
+        const acknowledgements = acknowledgementsAwaitingLibrary;
+        acknowledgementsAwaitingLibrary = [];
+        for (const { acknowledge } of acknowledgements) acknowledge();
+      } else {
+        // Blocked or never loading. Give up on the acknowledgements rather than poll forever.
+        const now = Date.now();
+        acknowledgementsAwaitingLibrary = acknowledgementsAwaitingLibrary.filter(
+          (pending) => pending.expiresAtMs > now,
+        );
+      }
     }
 
     if (callsAwaitingFbq.length === 0 && acknowledgementsAwaitingLibrary.length === 0) {
@@ -132,7 +160,10 @@ function handToPixel(
     return;
   }
   // Handed to the stub's queue. Acknowledge only once the library exists to drain it.
-  acknowledgementsAwaitingLibrary.push(onAccepted);
+  acknowledgementsAwaitingLibrary.push({
+    acknowledge: onAccepted,
+    expiresAtMs: Date.now() + ACKNOWLEDGEMENT_WAIT_MS,
+  });
   startPolling();
 }
 
@@ -153,6 +184,8 @@ export function trackFacebookPixelEvent(
   eventId?: string,
   onAccepted?: () => void,
 ): void {
+  // No pixel in this build: nothing will ever consume a queued event, so hold nothing.
+  if (!PIXEL_CONFIGURED) return;
   if (typeof window === "undefined") return;
 
   const fbq = readFbq();
