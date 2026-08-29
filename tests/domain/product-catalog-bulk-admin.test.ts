@@ -31,10 +31,11 @@ type Recorder = {
   warningReads: string[][];
   commits: BulkCatalogEnableCommitInput[];
   disables: string[][];
+  variantUpdates: Array<{ productIds: string[]; mode: string }>;
 };
 
 function recorder(): Recorder {
-  return { warningReads: [], commits: [], disables: [] };
+  return { warningReads: [], commits: [], disables: [], variantUpdates: [] };
 }
 
 function createService(
@@ -42,6 +43,9 @@ function createService(
   options: Readonly<{
     warningState?: CatalogEnableWarningState | null;
     commitWarningState?: CatalogEnableWarningState;
+    variantResult?:
+      | { ok: true; productCount: number; matchedVariantCount: number; changedVariantCount: number }
+      | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
   }> = {},
 ) {
   const warningState =
@@ -76,6 +80,17 @@ function createService(
     async disableBulkCatalog(productIds) {
       calls.disables.push([...productIds]);
       return { ok: true, updatedCount: productIds.length } as const;
+    },
+    async updateBulkVariantActivation(productIds, mode) {
+      calls.variantUpdates.push({ productIds: [...productIds], mode });
+      return (
+        options.variantResult ?? {
+          ok: true,
+          productCount: productIds.length,
+          matchedVariantCount: productIds.length * 2,
+          changedVariantCount: productIds.length,
+        }
+      );
     },
     readConfirmationSecret: () => secret,
     nowMs: () => nowMs,
@@ -281,4 +296,84 @@ test("bulk prepare and commit fail closed when a selected product is unavailable
     reason: "PRODUCT_NOT_AVAILABLE",
   });
   assert.deepEqual(calls.commits, []);
+});
+
+test("bulk variant activation requires ADMIN before any repository access", async () => {
+  const calls = recorder();
+  const service = createService(calls);
+  const input = { productIds: ["product-1"], mode: "enable-all" };
+
+  await assert.rejects(() => service.updateVariantActivation(customerSession, input), AuthorizationError);
+  await assert.rejects(() => service.updateVariantActivation(null, input), AuthorizationError);
+
+  assert.deepEqual(calls.variantUpdates, []);
+});
+
+test("bulk variant activation rejects malformed inputs", async () => {
+  const calls = recorder();
+  const service = createService(calls);
+
+  assert.deepEqual(await service.updateVariantActivation(adminSession, {}), {
+    ok: false,
+    reason: "INVALID_INPUT",
+  });
+  assert.deepEqual(await service.updateVariantActivation(adminSession, { productIds: [], mode: "enable-all" }), {
+    ok: false,
+    reason: "INVALID_INPUT",
+  });
+  assert.deepEqual(
+    await service.updateVariantActivation(adminSession, { productIds: ["p1"], mode: "invalid-mode" }),
+    { ok: false, reason: "INVALID_INPUT" },
+  );
+  assert.deepEqual(
+    await service.updateVariantActivation(adminSession, { productIds: ["p1", "p1"], mode: "enable-all" }),
+    { ok: false, reason: "INVALID_INPUT" },
+  );
+
+  assert.deepEqual(calls.variantUpdates, []);
+});
+
+test("bulk variant activation forwards validated selection and mode to repository", async () => {
+  const calls = recorder();
+  const service = createService(calls, {
+    variantResult: {
+      ok: true,
+      productCount: 2,
+      matchedVariantCount: 6,
+      changedVariantCount: 4,
+    },
+  });
+
+  const result = await service.updateVariantActivation(adminSession, {
+    productIds: ["product-1", "product-2"],
+    mode: "enable-stocked",
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    mode: "enable-stocked",
+    productCount: 2,
+    matchedVariantCount: 6,
+    changedVariantCount: 4,
+  });
+  assert.deepEqual(calls.variantUpdates, [
+    { productIds: ["product-1", "product-2"], mode: "enable-stocked" },
+  ]);
+});
+
+test("bulk variant activation reports PRODUCT_NOT_AVAILABLE when target product is missing", async () => {
+  const calls = recorder();
+  const service = createService(calls, {
+    variantResult: { ok: false, reason: "PRODUCT_NOT_AVAILABLE" },
+  });
+
+  const result = await service.updateVariantActivation(adminSession, {
+    productIds: ["gone"],
+    mode: "disable-all",
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    reason: "PRODUCT_NOT_AVAILABLE",
+  });
 });

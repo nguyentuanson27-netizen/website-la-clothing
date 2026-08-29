@@ -6,12 +6,15 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   bulkProductCatalogAction,
+  bulkProductVariantAction,
   bulkUpdateProductCollectionAction,
   bulkUpdateProductStatusAction,
   type BulkProductCatalogActionState,
   type BulkProductCollectionActionState,
   type BulkProductStatusActionState,
+  type BulkProductVariantActionState,
 } from "@/app/admin/actions";
+import type { BulkVariantActivationMode } from "@/commerce/product-commerce-repository";
 import type { ProductContentStatus } from "@/commerce/product-content-admin";
 
 const statusLabels: Record<ProductContentStatus, string> = {
@@ -26,27 +29,52 @@ const statusStyles: Record<ProductContentStatus, string> = {
   PUBLISHED: "bg-emerald-100 text-emerald-900",
 };
 
-const BULK_OPERATIONS = [
-  "status",
-  "collection-add",
-  "collection-remove",
-  "catalog-enable",
-  "catalog-disable",
-] as const;
+const VARIANT_OPERATION_PREFIX = "variants-";
 
-type BulkOperation = (typeof BULK_OPERATIONS)[number];
+/**
+ * Variant operations are derived from the wire modes rather than spelled out again, so a mode added
+ * to `BulkVariantActivationMode` fails to compile here until it has a label, a button and a
+ * confirmation question.
+ */
+type VariantOperation = `${typeof VARIANT_OPERATION_PREFIX}${BulkVariantActivationMode}`;
 
-const operationLabels: Record<BulkOperation, string> = {
+type BulkOperation =
+  | "status"
+  | "collection-add"
+  | "collection-remove"
+  | "catalog-enable"
+  | "catalog-disable"
+  | VariantOperation;
+
+const operationLabels = {
   status: "Trạng thái nội dung",
   "collection-add": "Thêm vào collection",
   "collection-remove": "Gỡ khỏi collection",
   "catalog-enable": "Bật catalog",
   "catalog-disable": "Tắt catalog",
-};
+  "variants-enable-all": "Kích hoạt tất cả biến thể",
+  "variants-enable-stocked": "Kích hoạt biến thể có hàng",
+  "variants-disable-all": "Tắt tất cả biến thể",
+} as const satisfies Record<BulkOperation, string>;
+
+/** Single source of the dropdown's contents and its order. */
+const BULK_OPERATIONS = Object.keys(operationLabels) as readonly BulkOperation[];
+
+/**
+ * Sound by construction: every `BulkOperation` carrying the prefix is a `VariantOperation`, whose
+ * remainder is exactly a `BulkVariantActivationMode` — TypeScript just cannot narrow a sliced
+ * template literal.
+ */
+function variantModeOf(operation: BulkOperation): BulkVariantActivationMode | null {
+  return operation.startsWith(VARIANT_OPERATION_PREFIX)
+    ? (operation.slice(VARIANT_OPERATION_PREFIX.length) as BulkVariantActivationMode)
+    : null;
+}
 
 const initialStatusState: BulkProductStatusActionState = { kind: "idle" };
 const initialCollectionState: BulkProductCollectionActionState = { kind: "idle" };
 const initialCatalogState: BulkProductCatalogActionState = { kind: "idle" };
+const initialVariantState: BulkProductVariantActionState = { kind: "idle" };
 
 const genericBulkStatusError =
   "Không thể cập nhật trạng thái lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
@@ -100,6 +128,8 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     useState<BulkProductCollectionActionState>(initialCollectionState);
   const [catalogState, setCatalogState] =
     useState<BulkProductCatalogActionState>(initialCatalogState);
+  const [variantState, setVariantState] =
+    useState<BulkProductVariantActionState>(initialVariantState);
   const [isPending, setIsPending] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -155,6 +185,7 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
   function clearFeedback() {
     setStatusState(initialStatusState);
     setCollectionState(initialCollectionState);
+    setVariantState(initialVariantState);
     setCatalogState((current) =>
       current.kind === "success" || current.kind === "error" ? initialCatalogState : current,
     );
@@ -201,11 +232,21 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     if (result.kind === "success") clearSelection();
   }
 
+  async function runVariantUpdate(mode: BulkVariantActivationMode) {
+    const result = await bulkProductVariantAction(
+      initialVariantState,
+      selectionFormData({ mode }),
+    );
+    setVariantState(result);
+    if (result.kind === "success") clearSelection();
+  }
+
   async function submitBulkOperation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (selectedCount === 0 || isPending) return;
 
     const formData = new FormData(event.currentTarget);
+    const variantMode = variantModeOf(operation);
     setIsPending(true);
     clearFeedback();
     try {
@@ -215,14 +256,18 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
         await runCollectionUpdate(operation === "collection-add" ? "add" : "remove");
       } else if (operation === "catalog-disable") {
         await runCatalogIntent("catalog-disable");
-      } else {
+      } else if (operation === "catalog-enable") {
         await runCatalogIntent("catalog-commit");
+      } else if (variantMode) {
+        await runVariantUpdate(variantMode);
       }
     } catch {
       if (operation === "status") {
         setStatusState({ kind: "error", message: genericBulkStatusError });
       } else if (needsCollection) {
         setCollectionState({ kind: "error", message: genericBulkError });
+      } else if (variantMode) {
+        setVariantState({ kind: "error", message: genericBulkError });
       } else {
         setCatalogState({ kind: "error", message: genericBulkError });
       }
@@ -282,8 +327,22 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     }
     if (catalogState.kind === "error") return { tone: "alert", message: catalogState.message };
 
+    if (variantState.kind === "success") {
+      const scope =
+        variantState.mode === "enable-all"
+          ? `Đã kích hoạt ${variantState.matchedVariantCount} biến thể`
+          : variantState.mode === "enable-stocked"
+            ? `Đã kích hoạt ${variantState.matchedVariantCount} biến thể có hàng`
+            : `Đã tắt ${variantState.matchedVariantCount} biến thể`;
+      return {
+        tone: "status",
+        message: `${scope} cho ${variantState.productCount} sản phẩm; ${variantState.changedVariantCount} biến thể thay đổi.`,
+      };
+    }
+    if (variantState.kind === "error") return { tone: "alert", message: variantState.message };
+
     return null;
-  }, [statusState, collectionState, catalogState, collectionTitles]);
+  }, [statusState, collectionState, catalogState, variantState, collectionTitles]);
 
   const collectionTitle = collectionTitles.get(targetCollection) ?? targetCollection;
   const primaryLabels: Record<BulkOperation, string> = {
@@ -292,6 +351,9 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     "collection-remove": `Gỡ collection khỏi ${selectedCount} sản phẩm`,
     "catalog-enable": `Bật catalog cho ${selectedCount} sản phẩm`,
     "catalog-disable": `Tắt catalog cho ${selectedCount} sản phẩm`,
+    "variants-enable-all": `Kích hoạt tất cả biến thể cho ${selectedCount} sản phẩm`,
+    "variants-enable-stocked": `Kích hoạt biến thể có hàng cho ${selectedCount} sản phẩm`,
+    "variants-disable-all": `Tắt tất cả biến thể cho ${selectedCount} sản phẩm`,
   };
   const confirmQuestions: Record<BulkOperation, string> = {
     status: `Cập nhật ${selectedCount} sản phẩm sang ${statusLabels[targetStatus]}?`,
@@ -299,6 +361,9 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     "collection-remove": `Gỡ ${collectionTitle} khỏi ${selectedCount} sản phẩm?`,
     "catalog-enable": `Bật catalog cho ${catalogConfirmation?.productIds.length ?? selectedCount} sản phẩm?`,
     "catalog-disable": `Tắt catalog cho ${selectedCount} sản phẩm?`,
+    "variants-enable-all": `Kích hoạt tất cả biến thể cho ${selectedCount} sản phẩm đã chọn?`,
+    "variants-enable-stocked": `Kích hoạt các biến thể có hàng cho ${selectedCount} sản phẩm đã chọn?`,
+    "variants-disable-all": `Tắt tất cả biến thể cho ${selectedCount} sản phẩm đã chọn?`,
   };
   const needsCollection = operation === "collection-add" || operation === "collection-remove";
   const primaryDisabled = isPending || (needsCollection && targetCollection === "");
