@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
+import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
 import {
   deriveStorefrontProjectionSelection,
   type StorefrontProjectionOption,
@@ -17,6 +18,7 @@ const currency = new Intl.NumberFormat("vi-VN", {
 
 type ProductPurchasePanelProps = {
   slug: string;
+  productName: string;
   options: StorefrontProjectionOption[];
 };
 
@@ -28,7 +30,11 @@ function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): stri
     : `Từ ${currency.format(range.minimum)}`;
 }
 
-export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProps) {
+export function ProductPurchasePanel({
+  slug,
+  productName,
+  options,
+}: ProductPurchasePanelProps) {
   const [kindKey, setKindKey] = useState<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const [size, setSize] = useState<string | null>(null);
@@ -44,6 +50,19 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
       ? defaultPriceLabel(options)
       : currency.format(selection.selectedPrice);
   const hasPurchasableVariant = options.some((option) => option.purchasable);
+  const entryPrice = useMemo(() => getStorefrontResolvedPriceRange(options)?.minimum ?? null, [options]);
+
+  // ViewContent belongs to the product page rather than this panel, but the panel is the one
+  // client component mounted exactly once per product page and it already holds the pricing.
+  useEffect(() => {
+    trackFacebookPixelEvent("ViewContent", {
+      content_ids: [slug],
+      content_name: productName,
+      content_type: "product",
+      currency: "VND",
+      ...(entryPrice === null ? {} : { value: entryPrice }),
+    });
+  }, [entryPrice, productName, slug]);
 
   function chooseKind(value: string) {
     setKindKey(value);
@@ -74,12 +93,22 @@ export function ProductPurchasePanel({ slug, options }: ProductPurchasePanelProp
     if (!selection.canAdd || !selection.selectedVariantId || isPending) return;
 
     const variantId = selection.selectedVariantId;
+    const addedPrice = selection.selectedPrice;
     setMessage("");
     startTransition(async () => {
       try {
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
           setMessage("Đã thêm sản phẩm vào giỏ hàng.");
+          // Reported only after the server confirms the line, so the funnel counts carts that
+          // actually exist rather than every click on the button.
+          trackFacebookPixelEvent("AddToCart", {
+            content_ids: [slug],
+            content_name: productName,
+            content_type: "product",
+            currency: "VND",
+            ...(addedPrice === null ? {} : { value: addedPrice }),
+          });
           return;
         }
         setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");

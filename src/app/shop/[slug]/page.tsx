@@ -100,7 +100,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <div className="mt-10">
-            <ProductPurchasePanel slug={product.slug} options={options} />
+            <ProductPurchasePanel slug={product.slug} productName={product.name} options={options} />
           </div>
 
           {(product.sizeGuide || product.careInstructions) && (

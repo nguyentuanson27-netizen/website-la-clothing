@@ -24,6 +24,11 @@ ENV DATABASE_URL=postgresql://build-only:build-only@127.0.0.1:5432/build-only
 ENV BETTER_AUTH_SECRET=build-only-placeholder-secret-0123456789abcdef
 ENV BETTER_AUTH_URL=http://localhost:3000
 ENV BETTER_AUTH_IP_HEADER=x-build-client-ip
+# The Meta pixel id is a build input, not a runtime one: next.config.mjs assembles the
+# Content-Security-Policy from it and Next bakes that policy into the build. Left empty the image
+# ships no tracking and no Facebook origin in the policy.
+ARG NEXT_PUBLIC_FACEBOOK_PIXEL_ID=""
+ENV NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${NEXT_PUBLIC_FACEBOOK_PIXEL_ID}
 RUN pnpm prisma:generate
 RUN pnpm build
 

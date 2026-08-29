@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 
+import { FacebookPixel } from "@/components/analytics/facebook-pixel";
 import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-bar";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -52,6 +53,7 @@ export default async function RootLayout({
         </div>
         <main id="main-content">{children}</main>
         <SiteFooter />
+        <FacebookPixel />
       </body>
     </html>
   );
