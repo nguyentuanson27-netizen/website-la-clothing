@@ -53,7 +53,12 @@ export type BulkCatalogDisableResult =
 export type BulkVariantActivationMode = "enable-all" | "enable-stocked" | "disable-all";
 
 export type BulkVariantActivationResult =
-  | { ok: true; updatedProductCount: number; updatedVariantCount: number }
+  | {
+      ok: true;
+      productCount: number;
+      matchedVariantCount: number;
+      changedVariantCount: number;
+    }
   | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
 
 export type StockedQuickActionResult =
@@ -451,59 +456,84 @@ export function createProductCommerceRepository(client: PrismaClient) {
     }
   }
 
+  /**
+   * Bulk variant activation for an exact selection. Touches only `VariantMirror.isActive` — product
+   * publication stays with the catalog operations and their confirmation proof.
+   *
+   * Runs serializable like `activateProductAndStockedVariants`, for the same reason: `enable-stocked`
+   * decides what to write from mirrored stock it just read, and under the default Read Committed
+   * isolation a sync that zeroes a quantity between that read and the write would publish an
+   * out-of-stock variant. Every mode also repeats the presence gate inside the mutation's own `where`
+   * rather than trusting the upfront count, so a soft-deleted row can never be written through it.
+   */
   async function updateBulkVariantActivation(
     productIds: readonly string[],
     mode: BulkVariantActivationMode,
   ): Promise<BulkVariantActivationResult> {
+    const ids = [...productIds];
+
     try {
-      return await client.$transaction(async (tx) => {
+      return await runSerializable(client, async (tx) => {
         const presentCount = await tx.productMirror.count({
-          where: { id: { in: [...productIds] }, isPresent: true },
+          where: { id: { in: ids }, isPresent: true },
         });
-        if (presentCount !== productIds.length) {
+        if (presentCount !== ids.length) {
           return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
         }
 
+        const presentVariants: Prisma.VariantMirrorWhereInput = {
+          productId: { in: ids },
+          isPresent: true,
+          product: { isPresent: true },
+        };
+
         if (mode === "enable-all" || mode === "disable-all") {
           const targetActive = mode === "enable-all";
-          const updated = await tx.variantMirror.updateMany({
-            where: { productId: { in: [...productIds] }, isPresent: true },
+          const matchedVariantCount = await tx.variantMirror.count({ where: presentVariants });
+          const changed = await tx.variantMirror.updateMany({
+            where: { ...presentVariants, isActive: !targetActive },
             data: { isActive: targetActive },
           });
 
           return {
             ok: true,
-            updatedProductCount: productIds.length,
-            updatedVariantCount: updated.count,
+            productCount: ids.length,
+            matchedVariantCount,
+            changedVariantCount: changed.count,
           } as const;
         }
 
         const variants = await tx.variantMirror.findMany({
-          where: { productId: { in: [...productIds] }, isPresent: true },
+          where: presentVariants,
           select: {
             id: true,
+            isActive: true,
             warehouseStocks: { select: { quantity: true } },
           },
         });
 
-        const eligibleVariantIds = variants
-          .filter((variant) => hasPositiveSellableStock(variant.warehouseStocks))
+        const stocked = variants.filter((variant) =>
+          hasPositiveSellableStock(variant.warehouseStocks),
+        );
+        const inactiveStockedIds = stocked
+          .filter((variant) => !variant.isActive)
           .map((variant) => variant.id);
 
-        if (eligibleVariantIds.length > 0) {
+        if (inactiveStockedIds.length > 0) {
           const updated = await tx.variantMirror.updateMany({
-            where: { id: { in: eligibleVariantIds } },
+            where: { ...presentVariants, id: { in: inactiveStockedIds }, isActive: false },
             data: { isActive: true },
           });
-          if (updated.count !== eligibleVariantIds.length) {
+          if (updated.count !== inactiveStockedIds.length) {
             throw new ProductCommerceAtomicityError();
           }
         }
 
         return {
           ok: true,
-          updatedProductCount: productIds.length,
-          updatedVariantCount: eligibleVariantIds.length,
+          productCount: ids.length,
+          matchedVariantCount: stocked.length,
+          changedVariantCount: inactiveStockedIds.length,
         } as const;
       });
     } catch (error) {

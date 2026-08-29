@@ -390,11 +390,12 @@ test("bulk variant activation enable-all and disable-all mutate all present vari
   });
   const productIds = [first, second];
 
-  // Enable all
+  // Enable all: 4 present variants matched, only the 3 inactive ones actually change.
   assert.deepEqual(await repository.updateBulkVariantActivation(productIds, "enable-all"), {
     ok: true,
-    updatedProductCount: 2,
-    updatedVariantCount: 4,
+    productCount: 2,
+    matchedVariantCount: 4,
+    changedVariantCount: 3,
   });
 
   assert.deepEqual(await readVariantActivity(first), [true, true]);
@@ -403,11 +404,20 @@ test("bulk variant activation enable-all and disable-all mutate all present vari
   assert.equal((await readProduct(first)).isActive, false);
   assert.equal((await readProduct(second)).isActive, true);
 
+  // Re-running the same mode is idempotent and reports zero changes.
+  assert.deepEqual(await repository.updateBulkVariantActivation(productIds, "enable-all"), {
+    ok: true,
+    productCount: 2,
+    matchedVariantCount: 4,
+    changedVariantCount: 0,
+  });
+
   // Disable all
   assert.deepEqual(await repository.updateBulkVariantActivation(productIds, "disable-all"), {
     ok: true,
-    updatedProductCount: 2,
-    updatedVariantCount: 4,
+    productCount: 2,
+    matchedVariantCount: 4,
+    changedVariantCount: 4,
   });
 
   assert.deepEqual(await readVariantActivity(first), [false, false]);
@@ -435,12 +445,60 @@ test("bulk variant activation enable-stocked activates only variants with positi
 
   assert.deepEqual(await repository.updateBulkVariantActivation(productIds, "enable-stocked"), {
     ok: true,
-    updatedProductCount: 2,
-    updatedVariantCount: 2,
+    productCount: 2,
+    matchedVariantCount: 2,
+    changedVariantCount: 2,
   });
 
   assert.deepEqual(await readVariantActivity(first), [true, false]);
   assert.deepEqual(await readVariantActivity(second), [true, false]);
+
+  // Variant activation never publishes the product itself.
+  assert.equal((await readProduct(first)).isActive, false);
+  assert.equal((await readProduct(second)).isActive, false);
+
+  // The stocked variants stay matched but no longer change on a repeat run.
+  assert.deepEqual(await repository.updateBulkVariantActivation(productIds, "enable-stocked"), {
+    ok: true,
+    productCount: 2,
+    matchedVariantCount: 2,
+    changedVariantCount: 0,
+  });
+});
+
+test("bulk variant activation never writes variants that are no longer present", async () => {
+  const productId = await seedProduct({
+    key: "v-absent-variant",
+    variants: [
+      { key: "v1", isActive: false, stock: 10 },
+      { key: "v2", isActive: false, isPresent: false, stock: 10 },
+    ],
+  });
+
+  assert.deepEqual(await repository.updateBulkVariantActivation([productId], "enable-all"), {
+    ok: true,
+    productCount: 1,
+    matchedVariantCount: 1,
+    changedVariantCount: 1,
+  });
+  assert.deepEqual(await readVariantActivity(productId), [true, false]);
+
+  assert.deepEqual(await repository.updateBulkVariantActivation([productId], "enable-stocked"), {
+    ok: true,
+    productCount: 1,
+    matchedVariantCount: 1,
+    changedVariantCount: 0,
+  });
+  assert.deepEqual(await readVariantActivity(productId), [true, false]);
+
+  // Disabling leaves the absent row untouched as well.
+  assert.deepEqual(await repository.updateBulkVariantActivation([productId], "disable-all"), {
+    ok: true,
+    productCount: 1,
+    matchedVariantCount: 1,
+    changedVariantCount: 1,
+  });
+  assert.deepEqual(await readVariantActivity(productId), [false, false]);
 });
 
 test("bulk variant activation fails closed when a selected product is missing or not present", async () => {

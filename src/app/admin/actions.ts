@@ -73,8 +73,9 @@ export type BulkProductVariantActionState =
   | {
       kind: "success";
       mode: BulkVariantActivationMode;
-      updatedProductCount: number;
-      updatedVariantCount: number;
+      productCount: number;
+      matchedVariantCount: number;
+      changedVariantCount: number;
     }
   | { kind: "error"; message: string };
 
@@ -348,7 +349,8 @@ export async function bulkProductVariantAction(
   return {
     kind: "success",
     mode: result.mode,
-    updatedProductCount: result.updatedProductCount,
-    updatedVariantCount: result.updatedVariantCount,
+    productCount: result.productCount,
+    matchedVariantCount: result.matchedVariantCount,
+    changedVariantCount: result.changedVariantCount,
   };
 }

@@ -472,8 +472,9 @@ export function createProductCatalogBulkAdminService({
     return {
       ok: true,
       mode: parsed.mode,
-      updatedProductCount: result.updatedProductCount,
-      updatedVariantCount: result.updatedVariantCount,
+      productCount: result.productCount,
+      matchedVariantCount: result.matchedVariantCount,
+      changedVariantCount: result.changedVariantCount,
     } as const;
   }
 

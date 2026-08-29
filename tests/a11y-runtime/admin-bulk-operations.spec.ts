@@ -360,7 +360,9 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   await expect(page.getByText("Kích hoạt tất cả biến thể cho 1 sản phẩm đã chọn?")).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Đã kích hoạt 1 biến thể cho 1 sản phẩm." }),
+    page.getByRole("status").filter({
+      hasText: "Đã kích hoạt 1 biến thể cho 1 sản phẩm; 1 biến thể thay đổi.",
+    }),
   ).toBeVisible();
   const plainVariantsAfterEnable = await prisma.variantMirror.findMany({
     where: { productId: plainProductId },
@@ -375,8 +377,18 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   await expect(page.getByText("Kích hoạt các biến thể có hàng cho 1 sản phẩm đã chọn?")).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Đã kích hoạt 1 biến thể có hàng cho 1 sản phẩm." }),
+    page.getByRole("status").filter({
+      hasText: "Đã kích hoạt 1 biến thể có hàng cho 1 sản phẩm; 1 biến thể thay đổi.",
+    }),
   ).toBeVisible();
+  // Only the variant with positive sellable stock flips; the zero-stock one stays as seeded, and
+  // variant activation never publishes the product itself.
+  const stockedVariantsAfterEnable = await prisma.variantMirror.findMany({
+    where: { productId: stockedProductId },
+    orderBy: { pancakeVariationId: "asc" },
+    select: { isActive: true },
+  });
+  expect(stockedVariantsAfterEnable.map((variant) => variant.isActive)).toEqual([true, true]);
 
   // Bulk variant disable-all
   await page.getByRole("checkbox", { name: `Chọn ${plainName}` }).check();
@@ -385,7 +397,9 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   await expect(page.getByText("Tắt tất cả biến thể cho 1 sản phẩm đã chọn?")).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Đã tắt 1 biến thể cho 1 sản phẩm." }),
+    page.getByRole("status").filter({
+      hasText: "Đã tắt 1 biến thể cho 1 sản phẩm; 1 biến thể thay đổi.",
+    }),
   ).toBeVisible();
   const plainVariantsAfterDisable = await prisma.variantMirror.findMany({
     where: { productId: plainProductId },

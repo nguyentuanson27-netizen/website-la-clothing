@@ -43,7 +43,9 @@ function createService(
   options: Readonly<{
     warningState?: CatalogEnableWarningState | null;
     commitWarningState?: CatalogEnableWarningState;
-    variantResult?: { ok: true; updatedProductCount: number; updatedVariantCount: number } | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
+    variantResult?:
+      | { ok: true; productCount: number; matchedVariantCount: number; changedVariantCount: number }
+      | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
   }> = {},
 ) {
   const warningState =
@@ -84,8 +86,9 @@ function createService(
       return (
         options.variantResult ?? {
           ok: true,
-          updatedProductCount: productIds.length,
-          updatedVariantCount: productIds.length * 2,
+          productCount: productIds.length,
+          matchedVariantCount: productIds.length * 2,
+          changedVariantCount: productIds.length,
         }
       );
     },
@@ -333,7 +336,12 @@ test("bulk variant activation rejects malformed inputs", async () => {
 test("bulk variant activation forwards validated selection and mode to repository", async () => {
   const calls = recorder();
   const service = createService(calls, {
-    variantResult: { ok: true, updatedProductCount: 2, updatedVariantCount: 6 },
+    variantResult: {
+      ok: true,
+      productCount: 2,
+      matchedVariantCount: 6,
+      changedVariantCount: 4,
+    },
   });
 
   const result = await service.updateVariantActivation(adminSession, {
@@ -344,8 +352,9 @@ test("bulk variant activation forwards validated selection and mode to repositor
   assert.deepEqual(result, {
     ok: true,
     mode: "enable-stocked",
-    updatedProductCount: 2,
-    updatedVariantCount: 6,
+    productCount: 2,
+    matchedVariantCount: 6,
+    changedVariantCount: 4,
   });
   assert.deepEqual(calls.variantUpdates, [
     { productIds: ["product-1", "product-2"], mode: "enable-stocked" },

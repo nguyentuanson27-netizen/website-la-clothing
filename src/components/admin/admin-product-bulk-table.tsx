@@ -312,15 +312,15 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     if (catalogState.kind === "error") return { tone: "alert", message: catalogState.message };
 
     if (variantState.kind === "success") {
-      const message =
+      const scope =
         variantState.mode === "enable-all"
-          ? `Đã kích hoạt ${variantState.updatedVariantCount} biến thể cho ${variantState.updatedProductCount} sản phẩm.`
+          ? `Đã kích hoạt ${variantState.matchedVariantCount} biến thể`
           : variantState.mode === "enable-stocked"
-            ? `Đã kích hoạt ${variantState.updatedVariantCount} biến thể có hàng cho ${variantState.updatedProductCount} sản phẩm.`
-            : `Đã tắt ${variantState.updatedVariantCount} biến thể cho ${variantState.updatedProductCount} sản phẩm.`;
+            ? `Đã kích hoạt ${variantState.matchedVariantCount} biến thể có hàng`
+            : `Đã tắt ${variantState.matchedVariantCount} biến thể`;
       return {
         tone: "status",
-        message,
+        message: `${scope} cho ${variantState.productCount} sản phẩm; ${variantState.changedVariantCount} biến thể thay đổi.`,
       };
     }
     if (variantState.kind === "error") return { tone: "alert", message: variantState.message };
