@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import { sortClothingSizes } from "./clothing-size.ts";
 import {
   resolveStorefrontProductMedia,
   type StorefrontProductMedia,
@@ -489,7 +490,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
 
     return {
       colors: colorRows.map(({ value }) => value),
-      sizes: sizeRows.map(({ value }) => value),
+      sizes: sortClothingSizes(sizeRows.map(({ value }) => value)),
       collections: collectionRows.map(({ value }) => value),
     };
   }

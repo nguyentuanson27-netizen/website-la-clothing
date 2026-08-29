@@ -238,7 +238,7 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
   await assertPageQuality(page);
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
@@ -246,7 +246,7 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
   const cartCookie = (await page.context().cookies()).find(({ name }) => name === "la_cart");
   expect(cartCookie?.httpOnly).toBe(true);
@@ -296,7 +296,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
   const size = page.getByRole("radio", { name: "L" });
-  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
@@ -304,7 +304,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await assertPageQuality(page);
 
   await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
@@ -338,7 +338,7 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
   await assertPageQuality(page);
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
@@ -346,7 +346,7 @@ test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart,
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
   // 2. Cart page & quantity update at 1440px
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });

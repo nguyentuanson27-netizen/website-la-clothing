@@ -32,7 +32,7 @@ test("processing and sync-unknown feedback never suggests a blind resubmit", () 
   }
 });
 
-test("retryable checkout feedback uses Túi hàng for cart drift and unavailable-cart recovery", () => {
+test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailable-cart recovery", () => {
   assert.deepEqual(
     checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "INVALID_INPUT" }),
     {
@@ -47,8 +47,8 @@ test("retryable checkout feedback uses Túi hàng for cart drift and unavailable
     checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CART_CHANGED" }),
     {
       tone: "warning",
-      title: "Túi hàng đã thay đổi",
-      message: "Giá hoặc tồn kho đã thay đổi. Hãy quay lại túi hàng để kiểm tra trước khi đặt lại.",
+      title: "Giỏ hàng đã thay đổi",
+      message: "Giá hoặc tồn kho đã thay đổi. Hãy quay lại giỏ hàng để kiểm tra trước khi đặt lại.",
       mayRetry: false,
     },
   );
@@ -57,8 +57,8 @@ test("retryable checkout feedback uses Túi hàng for cart drift and unavailable
     checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "CART_UNAVAILABLE" }),
     {
       tone: "warning",
-      title: "Túi hàng không còn sẵn sàng",
-      message: "Túi hàng hiện không thể thanh toán. Hãy quay lại túi hàng và kiểm tra sản phẩm.",
+      title: "Giỏ hàng không còn sẵn sàng",
+      message: "Giỏ hàng hiện không thể thanh toán. Hãy quay lại giỏ hàng và kiểm tra sản phẩm.",
       mayRetry: false,
     },
   );
@@ -69,12 +69,12 @@ test("retryable checkout feedback uses Túi hàng for cart drift and unavailable
   );
 });
 
-test("guest checkout recovery link uses Túi hàng terminology", async () => {
+test("guest checkout recovery link uses Giỏ hàng terminology", async () => {
   const source = await readFile(
     join(REPO_ROOT, "src/components/commerce/guest-checkout-form.tsx"),
     "utf8",
   );
 
-  assert.equal(source.includes("Quay lại túi hàng"), true);
-  assert.equal(source.includes("Quay lại giỏ hàng"), false);
+  assert.equal(source.includes("Quay lại giỏ hàng"), true);
+  assert.equal(source.includes("Quay lại túi hàng"), false);
 });

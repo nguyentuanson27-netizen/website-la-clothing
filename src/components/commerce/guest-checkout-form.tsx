@@ -418,7 +418,7 @@ export function GuestCheckoutForm() {
           <p className="mt-1 text-sm leading-6 opacity-80">{feedback.message}</p>
           {!feedback.mayRetry && !submitState?.ok ? (
             <Link className="mt-3 inline-block text-sm font-semibold underline underline-offset-4" href="/cart">
-              Quay lại túi hàng
+              Quay lại giỏ hàng
             </Link>
           ) : null}
         </div>

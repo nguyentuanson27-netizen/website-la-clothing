@@ -169,11 +169,11 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   await expect(page.getByRole("heading", { level: 3, name: "Bảo quản" })).toBeVisible();
   await expect(
     page.getByText(
-      "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào túi. Số lượng tồn kho chính xác không được hiển thị trên website.",
+      "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng. Số lượng tồn kho chính xác không được hiển thị trên website.",
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Thêm vào túi" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
   await expect(page.getByRole("link", { name: /size guide/i })).toHaveCount(0);
 
   await expect(page.getByText("Shop", { exact: true })).toHaveCount(0);

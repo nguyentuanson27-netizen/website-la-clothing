@@ -280,7 +280,7 @@ test("composite activation opens and closes the real child purchase path while p
     availability: "https://schema.org/OutOfStock",
   });
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
   await page.getByText(componentName, { exact: true }).click();
   await expect(page.getByRole("radio", { name: componentName })).toBeChecked();
@@ -291,7 +291,7 @@ test("composite activation opens and closes the real child purchase path while p
   await assertPageQuality(page);
 
   await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào túi.");
+  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
@@ -322,7 +322,7 @@ test("composite activation opens and closes the real child purchase path while p
   await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Thêm vào túi" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);

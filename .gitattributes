@@ -1,0 +1,15 @@
+# Line endings are normalised to LF in the repository so byte-exact source
+# assertions (for example the locked CSP img-src boundary in
+# tests/integrations/homepage-links.test.ts) hold on every platform.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

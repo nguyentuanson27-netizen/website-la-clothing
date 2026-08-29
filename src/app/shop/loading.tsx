@@ -12,12 +12,12 @@ export default function ShopLoading() {
         <div className="h-20 max-w-lg animate-pulse bg-black/5 md:justify-self-end md:w-full" />
       </div>
 
-      <div className="mt-16 grid gap-x-5 gap-y-14 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
-        {Array.from({ length: 6 }, (_, index) => (
+      <div className="product-grid mt-16" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
           <div key={index}>
-            <div className="aspect-[4/5] animate-pulse bg-black/5" />
-            <div className="mt-4 h-4 w-2/3 animate-pulse bg-black/5" />
-            <div className="mt-2 h-3 w-1/3 animate-pulse bg-black/5" />
+            <div className="product-visual animate-pulse bg-black/5" />
+            <div className="mt-3 h-4 w-3/4 animate-pulse bg-black/5" />
+            <div className="mt-2 h-3 w-1/2 animate-pulse bg-black/5" />
           </div>
         ))}
       </div>

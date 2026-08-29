@@ -295,3 +295,15 @@ test("resolveStorefrontProductMedia bounds candidate scan processing at MAX_MEDI
   assert.deepEqual(media.gallery, []);
 });
 
+test("resolveStorefrontProductMedia provides secondary image at gallery[1] for card hover swaps", () => {
+  const media = resolveStorefrontProductMedia({
+    productName: "Classic Blazer",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/front.jpg",
+    variantImageUrls: [["https://content.pancake.vn/images/1/2/3/back.jpg"]],
+  });
+
+  assert.equal(media.primary?.url, "https://content.pancake.vn/images/1/2/3/front.jpg");
+  assert.equal(media.gallery.length, 2);
+  assert.equal(media.gallery[1]?.url, "https://content.pancake.vn/images/1/2/3/back.jpg");
+});
+

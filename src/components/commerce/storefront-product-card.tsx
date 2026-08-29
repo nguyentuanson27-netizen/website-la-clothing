@@ -53,6 +53,10 @@ export function StorefrontProductCard({
 }: StorefrontProductCardProps) {
   const options = buildStorefrontVariantOptions(variants);
   const primaryImage = media?.primary ?? null;
+  const secondaryImage =
+    media?.gallery && media.gallery.length > 1 && media.gallery[1]?.url !== primaryImage?.url
+      ? media.gallery[1]
+      : null;
   const productHref = `/shop/${encodeURIComponent(slug)}`;
 
   return (
@@ -67,13 +71,29 @@ export function StorefrontProductCard({
           aria-hidden={primaryImage ? undefined : "true"}
         >
           {primaryImage ? (
-            <Image
-              src={primaryImage.url}
-              alt={primaryImage.alt || name}
-              fill
-              sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-            />
+            <>
+              <Image
+                src={primaryImage.url}
+                alt={primaryImage.alt || name}
+                fill
+                sizes="(min-width: 1024px) 25vw, 50vw"
+                className={`object-cover transition-all duration-500 ${
+                  secondaryImage
+                    ? "group-hover:opacity-0 group-hover:scale-105"
+                    : "group-hover:scale-105"
+                }`}
+              />
+              {secondaryImage ? (
+                <Image
+                  src={secondaryImage.url}
+                  alt=""
+                  aria-hidden="true"
+                  fill
+                  sizes="(min-width: 1024px) 25vw, 50vw"
+                  className="object-cover opacity-0 transition-all duration-500 group-hover:opacity-100 group-hover:scale-105"
+                />
+              ) : null}
+            </>
           ) : (
             <span className="garment-silhouette" />
           )}

@@ -126,7 +126,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <p className="mt-8 max-w-xl text-xs leading-5 text-black/60">
-            Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào túi. Số lượng tồn kho chính xác không được hiển thị trên website.
+            Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng. Số lượng tồn kho chính xác không được hiển thị trên website.
           </p>
         </article>
       </div>

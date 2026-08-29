@@ -313,7 +313,7 @@ test("price sorting keeps unresolved-price products browseable but places them l
 test("discovery facets stay scoped to visible products in the configured shop", async () => {
   const facets = await repository.listDiscoveryFacets({ shopId });
   assert.deepEqual(facets.colors, ["Black", "Olive", "Stone"]);
-  assert.deepEqual(facets.sizes, ["L", "M"]);
+  assert.deepEqual(facets.sizes, ["M", "L"]);
   assert.deepEqual(facets.collections, ["city-uniform", "essentials"]);
 });
 

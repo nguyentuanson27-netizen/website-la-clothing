@@ -314,7 +314,7 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   await expect(shippingPromotion).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "LA Clothing — Trang chủ" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Túi hàng", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
   const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
   await expect(footerNavigation).toBeVisible();
   await expect(footerNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
@@ -358,7 +358,7 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
   await expect(utilityNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
-  await expect(utilityNavigation.getByRole("link", { name: "Túi hàng", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
   await expectRuntimePageClean(page);
 
@@ -507,7 +507,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByText("Draft Capsule")).toHaveCount(0);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào túi" });
+  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
 
   await page.getByText("Ink", { exact: true }).click();
@@ -516,7 +516,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(page.getByText("Đã thêm sản phẩm vào túi.")).toBeVisible();
+  await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
 
   await page.getByRole("link", { name: "Essential Outerwear" }).click();
   await page.waitForURL("**/collections/essential-outerwear");

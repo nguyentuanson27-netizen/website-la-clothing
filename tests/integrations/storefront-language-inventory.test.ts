@@ -36,7 +36,7 @@ const PHRASE_TERMS = [
   "Collection này chưa có sản phẩm.",
   "Phân trang collection",
   "Add to Bag",
-  "Giỏ hàng",
+  "Túi hàng",
   "Continue shopping",
   "Color / Size unavailable",
   "Color × Size",
@@ -48,6 +48,7 @@ const PHRASE_TERMS = [
 
 const HEADING_TERMS = [
   "YOUR BAG",
+  "TÚI HÀNG",
   "CHECKOUT",
   "SEARCH",
   "NEW ARRIVALS",
@@ -281,7 +282,7 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
   );
 
   for (const expected of [
-    "Thêm vào túi",
+    "Thêm vào giỏ hàng",
     "Chọn loại × kích cỡ × màu",
     "Chọn loại × kích cỡ",
     "Chọn màu × kích cỡ",
@@ -309,7 +310,7 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
     "LA Clothing / Sản phẩm",
     "Hướng dẫn chọn kích cỡ",
     "Bảo quản",
-    "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào túi.",
+    "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
     "Số lượng tồn kho chính xác không được hiển thị trên website.",
   ]) {
     assert.equal(source.includes(expected), true, `PDP missing Vietnamese/factual copy: ${expected}`);
@@ -329,18 +330,18 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   assert.equal(source.includes('href="/size-guide"'), false, "U1b must not add /size-guide before U5");
 });
 
-test("U1c cart loading and error states use Túi hàng terminology", async () => {
+test("U1c cart loading and error states use Giỏ hàng terminology", async () => {
   const [loadingSource, errorSource] = await Promise.all([
     readFile(join(REPO_ROOT, "src/app/cart/loading.tsx"), "utf8"),
     readFile(join(REPO_ROOT, "src/app/cart/error.tsx"), "utf8"),
   ]);
 
-  for (const expected of ["Mua sắm / Túi hàng", "Đang tải túi hàng."]) {
+  for (const expected of ["Mua sắm / Giỏ hàng", "Đang tải giỏ hàng."]) {
     assert.equal(loadingSource.includes(expected), true, `cart loading missing Vietnamese copy: ${expected}`);
   }
   assert.equal(loadingSource.includes("Shopping / Bag"), false, "cart loading retained Shopping / Bag");
 
-  for (const expected of ["Mua sắm / Túi hàng", "TÚI HÀNG", "Không thể tải túi hàng lúc này."]) {
+  for (const expected of ["Mua sắm / Giỏ hàng", "GIỎ HÀNG", "Không thể tải giỏ hàng lúc này."]) {
     assert.equal(errorSource.includes(expected), true, `cart error missing Vietnamese copy: ${expected}`);
   }
   for (const oldCopy of ["Shopping / Bag", "YOUR BAG"]) {

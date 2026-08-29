@@ -8,8 +8,8 @@ import type { StorefrontCartLine } from "@/commerce/storefront-cart";
 import { CartLineControls } from "@/components/commerce/cart-line-controls";
 
 export const metadata: Metadata = {
-  title: "Túi hàng",
-  description: "Túi hàng mua sắm tại LA Clothing.",
+  title: "Giỏ hàng",
+  description: "Giỏ hàng mua sắm tại LA Clothing.",
 };
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -69,15 +69,15 @@ export default async function CartPage() {
             </li>
             <li aria-hidden="true">/</li>
             <li aria-current="page" className="text-black font-medium">
-              Túi hàng
+              Giỏ hàng
             </li>
           </ol>
         </nav>
         <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          TÚI HÀNG
+          GIỎ HÀNG
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Túi hàng của bạn đang trống.</p>
+          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>
@@ -106,13 +106,13 @@ export default async function CartPage() {
           </li>
           <li aria-hidden="true">/</li>
           <li aria-current="page" className="text-black font-medium">
-            Túi hàng
+            Giỏ hàng
           </li>
         </ol>
       </nav>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          TÚI HÀNG
+          GIỎ HÀNG
         </h1>
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">
           {lines.length} {lines.length === 1 ? "sản phẩm" : "sản phẩm"}
@@ -227,7 +227,7 @@ export default async function CartPage() {
           </div>
           {hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi túi.
+              Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi giỏ hàng.
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/75">
