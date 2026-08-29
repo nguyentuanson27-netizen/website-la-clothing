@@ -551,6 +551,9 @@ summary:focus-visible {
   --space-7: 3rem;
   --space-8: 4rem;
   --shell-gutter: clamp(1rem, 3vw, 2rem);
+  /* The pinned masthead: one promotion line over the 58px nav. Used to keep anchor targets clear
+     of it, where being a pixel or two out only changes the gap above the target. */
+  --masthead-height: 5.5rem;
   --shell-max: 100rem;
   --control-height: 2.75rem;
   --media-product-ratio: 3 / 4;
@@ -567,6 +570,24 @@ body {
   z-index: 50;
   top: 0;
   background: var(--paper);
+}
+
+/* Anchor targets land below the pinned masthead instead of underneath it; without this the skip
+   link parks the first screenful of main content behind the header. */
+html {
+  scroll-padding-top: var(--masthead-height);
+  /* The full-bleed grid below measures itself in vw, which counts a classic (layout-consuming)
+     scrollbar that the page it sits in does not have, so it can end up a few pixels wider than
+     the content box. Clip rather than hide: clip does not make this a scroll container, so the
+     masthead above still sticks to the viewport. */
+  overflow-x: clip;
+}
+
+/* Admin is a work surface, not a storefront: the promotion strip and shop nav have nothing to
+   offer while managing a catalog, and pinning them at z-index 50 would cover the bulk-action
+   toolbar that sticks to the top of its own table. */
+body:has(.admin-shell) .site-masthead {
+  position: static;
 }
 
 .promotion-shell {

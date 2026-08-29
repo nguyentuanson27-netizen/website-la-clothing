@@ -107,12 +107,16 @@ export function calculateGuestShippingFeeVnd(
 
 /**
  * Rounds a threshold to the shortest phrase that still states it exactly, so the promotion bar
- * can say "1 triệu" instead of "1.000.000 ₫". Amounts that are not whole millions or thousands
- * keep the full currency format rather than being rounded into a claim the policy does not make.
+ * can say "1 triệu" instead of "1.000.000 ₫". Anything without an exact short form keeps the
+ * full currency format rather than being rounded into a claim the policy does not make. Once the
+ * amount reaches a million the thousands form is off the table even when it would be exact:
+ * 1.500.000 as "1.500 nghìn" is longer than the number it replaces and misreads as 1.500 ₫.
  */
 function describeCompactVnd(amountVnd: number): string {
-  if (amountVnd >= 1_000_000 && amountVnd % 1_000_000 === 0) {
-    return `${plainInteger.format(amountVnd / 1_000_000)} triệu`;
+  if (amountVnd >= 1_000_000) {
+    return amountVnd % 1_000_000 === 0
+      ? `${plainInteger.format(amountVnd / 1_000_000)} triệu`
+      : currency.format(amountVnd);
   }
   if (amountVnd >= 1_000 && amountVnd % 1_000 === 0) {
     return `${plainInteger.format(amountVnd / 1_000)} nghìn`;

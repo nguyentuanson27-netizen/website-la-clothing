@@ -136,6 +136,13 @@ test("headline shortens a threshold only when the short form is exact", () => {
     describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 1_250_500 }),
     /đơn trên 1\.250\.500\s₫$/,
   );
+
+  // A whole thousand at or above a million is NOT shortened: "1.500 nghìn" would be longer than
+  // the amount it replaces and reads as 1.500 ₫ at a glance.
+  assert.match(
+    describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 1_500_000 }),
+    /đơn trên 1\.500\.000\s₫$/,
+  );
 });
 
 test("headline rejects a policy the fee calculation would reject", () => {
