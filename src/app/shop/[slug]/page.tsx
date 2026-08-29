@@ -147,7 +147,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 slug={related.slug}
                 name={related.name}
                 media={related.media}
-                editorialDescription={related.editorialDescription}
                 variants={related.variants}
                 tone={relatedTones[index % relatedTones.length]!}
               />

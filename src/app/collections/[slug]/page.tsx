@@ -244,7 +244,6 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 slug={product.slug}
                 name={product.name}
                 media={product.media}
-                editorialDescription={product.editorialDescription}
                 variants={product.variants}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />

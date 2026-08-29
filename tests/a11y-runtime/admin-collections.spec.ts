@@ -145,6 +145,14 @@ test("admin can maintain canonical collections with accessible success and error
 
   await expect(page.getByRole("heading", { level: 1, name: "Quản lý collections" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Lưu collection" }).first()).toBeVisible();
+  // The storefront masthead does not pin on admin. Pinned it sits at z-index 50 over the whole
+  // work surface, including the bulk-action toolbar that sticks to the top of the product table.
+  expect(
+    await page.evaluate(() => {
+      const masthead = document.querySelector(".site-masthead");
+      return masthead === null ? null : getComputedStyle(masthead).position;
+    }),
+  ).toBe("static");
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);

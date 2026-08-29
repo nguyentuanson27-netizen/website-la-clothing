@@ -311,7 +311,24 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
   await expect(shippingPromotion).toBeVisible();
   await expect(shippingPromotion).toHaveClass(/promotion-shell/);
-  await expect(shippingPromotion).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
+  // Still derived from the configured policy (750.000 / 4), now as the one-line headline the
+  // pinned bar has room for; 750.000 is a whole thousand, so it shortens exactly.
+  await expect(shippingPromotion).toContainText("Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn");
+  // The promotion and the nav are pinned: both stay at the top of the viewport once the page
+  // scrolls under them.
+  await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
+  await expect
+    .poll(() => page.evaluate(() => Math.round(window.scrollY)))
+    .toBeGreaterThan(400);
+  expect(
+    await page.evaluate(() => {
+      const masthead = document.querySelector(".site-masthead");
+      if (!masthead) return null;
+      const { top } = masthead.getBoundingClientRect();
+      return { top: Math.round(top), pinned: document.elementFromPoint(5, 5)?.className ?? null };
+    }),
+  ).toEqual({ top: 0, pinned: "promotion-shell" });
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "LA Clothing — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
@@ -452,7 +469,11 @@ test("homepage uses the configured local catalog and lookbook renders a complete
     "href",
     `/shop/${productSlug}`,
   );
-  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
+  // The catalog card shows price only. Editorial copy and stock state belong to the product
+  // page, and the name stays in the document as a visually hidden heading.
+  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toHaveCount(0);
+  await expect(page.getByText("Có sẵn", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("1.290.000")).toBeVisible();
   await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
   await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
   await expectRuntimePageClean(page);

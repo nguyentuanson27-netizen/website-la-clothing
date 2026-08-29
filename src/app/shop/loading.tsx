@@ -16,8 +16,8 @@ export default function ShopLoading() {
         {Array.from({ length: 8 }, (_, index) => (
           <div key={index}>
             <div className="product-visual animate-pulse bg-black/5" />
-            <div className="mt-3 h-4 w-3/4 animate-pulse bg-black/5" />
-            <div className="mt-2 h-3 w-1/2 animate-pulse bg-black/5" />
+            {/* One bar: the loaded card shows a price and nothing else. */}
+            <div className="mt-3 h-3 w-1/2 animate-pulse bg-black/5" />
           </div>
         ))}
       </div>

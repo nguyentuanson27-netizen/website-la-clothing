@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   calculateGuestShippingFeeVnd,
   describeGuestShippingPromotion,
+  describeGuestShippingPromotionHeadline,
   readGuestShippingPolicy,
 } from "../../src/commerce/guest-shipping-policy.ts";
 
@@ -103,5 +104,55 @@ test("verified free-shipping promotion copy is derived from the same policy", ()
       title: "Miễn phí vận chuyển",
       detail: "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
     },
+  );
+});
+
+test("promotion bar headline states the same policy on one line", () => {
+  assert.equal(
+    describeGuestShippingPromotionHeadline({
+      feeVnd: 30_000,
+      freeShippingSubtotalVnd: 1_000_000,
+      freeShippingMinQuantity: 3,
+    }),
+    "Free ship từ 3 sản phẩm hoặc đơn trên 1 triệu",
+  );
+});
+
+test("headline shortens a threshold only when the short form is exact", () => {
+  const base = { feeVnd: 30_000, freeShippingMinQuantity: 2 } as const;
+
+  // Whole millions and whole thousands have exact short forms.
+  assert.match(
+    describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 2_000_000 }),
+    /đơn trên 2 triệu$/,
+  );
+  assert.match(
+    describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 500_000 }),
+    /đơn trên 500 nghìn$/,
+  );
+
+  // Anything else keeps the full amount rather than rounding into a claim the policy never makes.
+  assert.match(
+    describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 1_250_500 }),
+    /đơn trên 1\.250\.500\s₫$/,
+  );
+
+  // A whole thousand at or above a million is NOT shortened: "1.500 nghìn" would be longer than
+  // the amount it replaces and reads as 1.500 ₫ at a glance.
+  assert.match(
+    describeGuestShippingPromotionHeadline({ ...base, freeShippingSubtotalVnd: 1_500_000 }),
+    /đơn trên 1\.500\.000\s₫$/,
+  );
+});
+
+test("headline rejects a policy the fee calculation would reject", () => {
+  assert.throws(
+    () =>
+      describeGuestShippingPromotionHeadline({
+        feeVnd: 30_000,
+        freeShippingSubtotalVnd: 1_000_000,
+        freeShippingMinQuantity: 0,
+      }),
+    RangeError,
   );
 });

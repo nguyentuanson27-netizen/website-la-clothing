@@ -97,7 +97,6 @@ export default async function HomePage() {
                 slug={product.slug}
                 name={product.name}
                 media={product.media}
-                editorialDescription={product.editorialDescription}
                 variants={product.variants}
                 tone={tones[index % tones.length]!}
               />

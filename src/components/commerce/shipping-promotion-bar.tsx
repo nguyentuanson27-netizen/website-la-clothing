@@ -2,18 +2,21 @@ import { connection } from "next/server";
 
 import {
   describeGuestShippingPromotion,
+  describeGuestShippingPromotionHeadline,
   readGuestShippingPolicy,
 } from "@/commerce/guest-shipping-policy";
 
 export async function ShippingPromotionBar() {
   await connection();
-  const promotion = describeGuestShippingPromotion(readGuestShippingPolicy());
+  const policy = readGuestShippingPolicy();
 
   return (
-    <aside aria-label={promotion.title} className="promotion-shell">
-      <span>{promotion.title}</span>
-      <span aria-hidden="true"> · </span>
-      <span>{promotion.detail}</span>
+    // The landmark keeps the short, stable name; the headline is the content it introduces.
+    <aside
+      aria-label={describeGuestShippingPromotion(policy).title}
+      className="promotion-shell"
+    >
+      {describeGuestShippingPromotionHeadline(policy)}
     </aside>
   );
 }
