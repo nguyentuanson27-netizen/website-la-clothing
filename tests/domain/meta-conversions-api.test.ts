@@ -34,7 +34,16 @@ function sha256(value: string): string {
 
 test("every spelling of a Vietnamese number normalizes to the same digits", () => {
   const expected = "84912345678";
-  for (const written of ["0912345678", "0912 345 678", "+84912345678", "84912345678", "0084912345678"]) {
+  for (const written of [
+    "0912345678",
+    "0912 345 678",
+    "+84912345678",
+    "84912345678",
+    "0084912345678",
+    // A country code followed by the national trunk zero is a common way people write it.
+    "+84 0912 345 678",
+    "0084 0912345678",
+  ]) {
     assert.equal(normalizeVietnamesePhone(written), expected, written);
   }
   assert.equal(normalizeVietnamesePhone("không có số"), null);

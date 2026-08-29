@@ -38,6 +38,26 @@ function isLocalBaseUrl(baseURL: string): boolean {
   }
 }
 
+/**
+ * The buyer's IP for callers that can do without one, such as analytics reporting.
+ *
+ * Same trusted-header rule as the checkout client key: only the proxy-owned single-value header
+ * counts, never x-forwarded-for, which anything upstream can append to. An absent or malformed
+ * value yields null rather than throwing, because a missing match signal is not worth failing
+ * anything over.
+ */
+export function readOptionalTrustedClientIp(
+  headers: HeaderReader,
+  config: Pick<AuthServerConfig, "ipAddressHeader">,
+): string | null {
+  if (!config.ipAddressHeader) return null;
+  try {
+    return readTrustedClientIp(headers, config.ipAddressHeader);
+  } catch {
+    return null;
+  }
+}
+
 export function deriveGuestCheckoutClientKey(
   headers: HeaderReader,
   config: Pick<AuthServerConfig, "secret" | "baseURL" | "ipAddressHeader">,

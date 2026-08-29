@@ -183,7 +183,10 @@ export default async function CheckoutPage() {
         <FacebookPixelEvent
           name="InitiateCheckout"
           parameters={{
-            content_ids: lines.flatMap((line) => (line.productSlug === null ? [] : [line.productSlug])),
+            // Every line gets an id, falling back to the variant when a product mirror has since
+            // gone: dropping a line here while `value` and `num_items` still count it would report
+            // an item list that contradicts its own totals.
+            content_ids: lines.map((line) => line.productSlug ?? line.variantId),
             content_type: "product",
             currency: "VND",
             value: totals.totalVnd,

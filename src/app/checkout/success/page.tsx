@@ -61,6 +61,7 @@ export default async function CheckoutSuccessPage({
         <FacebookPixelEvent
           name="Purchase"
           eventId={orderCode}
+          once
           parameters={{
             content_ids: purchase.contents.map((content) => content.id),
             content_type: "product",

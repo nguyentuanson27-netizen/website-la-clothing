@@ -67,7 +67,16 @@ export async function reportMetaPurchase(
     identity,
   });
 
-  await sendMetaConversionEvents(config, [event], options.fetchImpl);
+  const result = await sendMetaConversionEvents(config, [event], options.fetchImpl);
+  if (!result.ok) {
+    // Reporting is best-effort, but silence would hide a revoked token or a wrong pixel id
+    // indefinitely: sales keep completing while Meta records none of them. The order code is safe
+    // to log; nothing identifying the buyer is.
+    console.warn(
+      `meta_conversions.purchase_failed order=${orderCode} reason=${result.reason}` +
+        (result.reason === "HTTP_ERROR" ? ` status=${result.status}` : ""),
+    );
+  }
 }
 
 /**

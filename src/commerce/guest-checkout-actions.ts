@@ -2,11 +2,15 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
-import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
+import {
+  deriveGuestCheckoutClientKey,
+  readOptionalTrustedClientIp,
+} from "./guest-checkout-client-identity.ts";
 import { submitGuestCheckoutPublicAction } from "./guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
 import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
@@ -47,11 +51,13 @@ async function createGuestCheckoutActionDependencies() {
  */
 async function readMetaRequestContext() {
   const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
-  const forwardedFor = requestHeaders.get("x-forwarded-for");
   const host = requestHeaders.get("host");
 
   return {
-    clientIpAddress: forwardedFor?.split(",")[0]?.trim() || null,
+    // Only the proxy-owned header the rest of checkout trusts. x-forwarded-for is client-spoofable
+    // and this codebase rejects it as an IP source everywhere else; a wrong address is worse than
+    // none, since it attributes the sale to whoever the buyer claimed to be.
+    clientIpAddress: readOptionalTrustedClientIp(requestHeaders, readAuthServerConfig()),
     clientUserAgent: requestHeaders.get("user-agent"),
     fbp: cookieStore.get("_fbp")?.value ?? null,
     fbc: cookieStore.get("_fbc")?.value ?? null,
@@ -78,12 +84,12 @@ export async function submitGuestCheckoutAction(
   }
 
   if (result.ok) {
-    // Reported before the redirect, while the request still has the buyer's headers and Meta
-    // cookies. Awaited rather than fired and forgotten: a serverless invocation can be frozen the
-    // moment it responds, which would drop the request mid-flight. It cannot throw, and it gives
-    // up after its own short timeout, so the shopper waits on it only briefly and never fails
-    // because of it.
-    await reportMetaPurchaseSafely(prisma, result.orderCode, await readMetaRequestContext());
+    // The request context has to be read inside the request, but the reporting itself must not sit
+    // between the buyer and their confirmation page. `after` keeps the work alive past the
+    // response without holding it up, which a bare floating promise would not survive on a
+    // serverless runtime that freezes the invocation the moment it responds.
+    const metaContext = await readMetaRequestContext();
+    after(() => reportMetaPurchaseSafely(prisma, result.orderCode, metaContext));
     redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
   }
   return result;

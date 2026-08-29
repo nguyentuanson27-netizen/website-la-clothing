@@ -52,23 +52,28 @@ export function hashMetaIdentifier(value: string): string {
 
 /**
  * Meta wants digits only, including country code. Vietnamese numbers are usually written with a
- * national trunk "0" that has to become 84, and +84 / 0084 forms have to collapse to the same
- * digits or the same subscriber hashes three different ways.
+ * national trunk "0" that has to become 84, and the +84 / 0084 / 84 forms have to collapse to the
+ * same digits or the same subscriber hashes several different ways and matches none of them.
+ *
+ * The trunk zero is dropped after the country code as well: "+84 0912 345 678" is a common way to
+ * write the number people also give as "0912345678", and both have to reach the same digits.
  */
 export function normalizeVietnamesePhone(rawPhone: string): string | null {
   const digits = rawPhone.replace(/[^0-9]/g, "");
   if (digits.length === 0) return null;
 
-  if (digits.startsWith("00" + VIETNAM_COUNTRY_CODE)) {
-    return VIETNAM_COUNTRY_CODE + digits.slice(4);
+  const withoutInternationalPrefix = digits.startsWith("00" + VIETNAM_COUNTRY_CODE)
+    ? digits.slice(2)
+    : digits;
+
+  if (withoutInternationalPrefix.startsWith(VIETNAM_COUNTRY_CODE)) {
+    const subscriber = withoutInternationalPrefix.slice(VIETNAM_COUNTRY_CODE.length);
+    return VIETNAM_COUNTRY_CODE + (subscriber.startsWith("0") ? subscriber.slice(1) : subscriber);
   }
-  if (digits.startsWith(VIETNAM_COUNTRY_CODE) && digits.length >= 11) {
-    return digits;
+  if (withoutInternationalPrefix.startsWith("0")) {
+    return VIETNAM_COUNTRY_CODE + withoutInternationalPrefix.slice(1);
   }
-  if (digits.startsWith("0")) {
-    return VIETNAM_COUNTRY_CODE + digits.slice(1);
-  }
-  return digits;
+  return withoutInternationalPrefix;
 }
 
 /**

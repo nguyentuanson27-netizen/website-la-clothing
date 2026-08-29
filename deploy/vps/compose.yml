@@ -25,6 +25,11 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: runner
+      args:
+        # The pixel id has to reach the image at build time: next.config.mjs assembles the
+        # Content-Security-Policy from it and Next bakes that policy into the build. Passing it
+        # only through .env.production would ship a script the policy then blocks.
+        NEXT_PUBLIC_FACEBOOK_PIXEL_ID: ${NEXT_PUBLIC_FACEBOOK_PIXEL_ID:-}
     restart: unless-stopped
     env_file:
       - .env.production
