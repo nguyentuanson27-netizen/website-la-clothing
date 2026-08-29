@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 
 import { compareClothingSizes, sortClothingSizes } from "../../src/commerce/clothing-size.ts";
@@ -29,4 +29,10 @@ test("sortClothingSizes sorts numeric clothing sizes in ascending order", () => 
 test("sortClothingSizes places standard letter sizes before numeric and unknown sizes", () => {
   const mixed = ["Custom", "30", "M", "28", "S"];
   assert.deepEqual(sortClothingSizes(mixed), ["S", "M", "28", "30", "Custom"]);
+});
+
+test("compareClothingSizes returns correct relative order", () => {
+  assert.ok(compareClothingSizes("S", "M") < 0);
+  assert.ok(compareClothingSizes("XL", "L") > 0);
+  assert.equal(compareClothingSizes("M", "M"), 0);
 });

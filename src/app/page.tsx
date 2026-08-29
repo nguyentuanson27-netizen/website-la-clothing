@@ -15,7 +15,7 @@ const collectionRepository = createCollectionDefinitionRepository(prisma);
 
 async function loadHomepageProductEdit() {
   try {
-    return await listConfiguredStorefrontProducts(4);
+    return await listConfiguredStorefrontProducts(20);
   } catch (error) {
     if (error instanceof PancakeConfigError) return [];
     throw error;
