@@ -7,6 +7,8 @@ import type {
   BulkCatalogDisableResult,
   BulkCatalogEnableCommitInput,
   BulkCatalogEnableCommitResult,
+  BulkVariantActivationMode,
+  BulkVariantActivationResult,
   CatalogEnableCommitInput,
   CatalogEnableCommitResult,
   CatalogEnableWarningState,
@@ -20,6 +22,12 @@ export const PRODUCT_COMMERCE_ADMIN_LIMITS = {
   variantCount: 100,
   bulkProductCount: 100,
 } as const;
+
+export const BULK_VARIANT_ACTIVATION_MODES = [
+  "enable-all",
+  "enable-stocked",
+  "disable-all",
+] as const;
 
 type AdminSessionCandidate =
   | {
@@ -39,6 +47,11 @@ export type ProductVariantActivationInput = {
   isActive: boolean;
 };
 
+export type BulkVariantActivationInput = {
+  productIds: readonly string[];
+  mode: BulkVariantActivationMode;
+};
+
 type ProductCatalogBulkAdminDependencies = {
   readBulkCatalogEnableWarningState(
     productIds: readonly string[],
@@ -47,6 +60,10 @@ type ProductCatalogBulkAdminDependencies = {
     input: BulkCatalogEnableCommitInput,
   ): Promise<BulkCatalogEnableCommitResult>;
   disableBulkCatalog(productIds: readonly string[]): Promise<BulkCatalogDisableResult>;
+  updateBulkVariantActivation(
+    productIds: readonly string[],
+    mode: BulkVariantActivationMode,
+  ): Promise<BulkVariantActivationResult>;
   readConfirmationSecret(): string;
   nowMs(): number;
 };
@@ -115,6 +132,26 @@ function parseBulkProductIdsInput(input: unknown): string[] | null {
   }
 
   return canonical;
+}
+
+function parseBulkVariantActivationInput(
+  input: unknown,
+): { productIds: string[]; mode: BulkVariantActivationMode } | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+
+  const record = input as Record<string, unknown>;
+  const productIds = parseBulkProductIdsInput(record);
+  if (!productIds) return null;
+
+  const mode = record.mode;
+  if (
+    typeof mode !== "string" ||
+    !BULK_VARIANT_ACTIVATION_MODES.includes(mode as BulkVariantActivationMode)
+  ) {
+    return null;
+  }
+
+  return { productIds, mode: mode as BulkVariantActivationMode };
 }
 
 function parseVariantActivationInput(input: unknown): ProductVariantActivationInput | null {
@@ -320,6 +357,7 @@ export function createProductCatalogBulkAdminService({
   readBulkCatalogEnableWarningState,
   commitBulkCatalogEnable,
   disableBulkCatalog,
+  updateBulkVariantActivation,
   readConfirmationSecret,
   nowMs,
 }: ProductCatalogBulkAdminDependencies) {
@@ -419,9 +457,30 @@ export function createProductCatalogBulkAdminService({
     return disableBulkCatalog(productIds);
   }
 
+  async function updateVariantActivation(session: AdminSessionCandidate, input: unknown) {
+    requireAdminSession(session);
+    const parsed = parseBulkVariantActivationInput(input);
+    if (!parsed) {
+      return { ok: false, reason: "INVALID_INPUT" } as const;
+    }
+
+    const result = await updateBulkVariantActivation(parsed.productIds, parsed.mode);
+    if (!result.ok) {
+      return { ok: false, reason: result.reason } as const;
+    }
+
+    return {
+      ok: true,
+      mode: parsed.mode,
+      updatedProductCount: result.updatedProductCount,
+      updatedVariantCount: result.updatedVariantCount,
+    } as const;
+  }
+
   return {
     prepareEnable,
     commitEnable,
     disable,
+    updateVariantActivation,
   };
 }

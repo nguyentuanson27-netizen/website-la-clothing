@@ -6,11 +6,13 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   bulkProductCatalogAction,
+  bulkProductVariantAction,
   bulkUpdateProductCollectionAction,
   bulkUpdateProductStatusAction,
   type BulkProductCatalogActionState,
   type BulkProductCollectionActionState,
   type BulkProductStatusActionState,
+  type BulkProductVariantActionState,
 } from "@/app/admin/actions";
 import type { ProductContentStatus } from "@/commerce/product-content-admin";
 
@@ -32,6 +34,9 @@ const BULK_OPERATIONS = [
   "collection-remove",
   "catalog-enable",
   "catalog-disable",
+  "variants-enable-all",
+  "variants-enable-stocked",
+  "variants-disable-all",
 ] as const;
 
 type BulkOperation = (typeof BULK_OPERATIONS)[number];
@@ -42,11 +47,15 @@ const operationLabels: Record<BulkOperation, string> = {
   "collection-remove": "Gỡ khỏi collection",
   "catalog-enable": "Bật catalog",
   "catalog-disable": "Tắt catalog",
+  "variants-enable-all": "Kích hoạt tất cả biến thể",
+  "variants-enable-stocked": "Kích hoạt biến thể có hàng",
+  "variants-disable-all": "Tắt tất cả biến thể",
 };
 
 const initialStatusState: BulkProductStatusActionState = { kind: "idle" };
 const initialCollectionState: BulkProductCollectionActionState = { kind: "idle" };
 const initialCatalogState: BulkProductCatalogActionState = { kind: "idle" };
+const initialVariantState: BulkProductVariantActionState = { kind: "idle" };
 
 const genericBulkStatusError =
   "Không thể cập nhật trạng thái lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
@@ -100,6 +109,8 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     useState<BulkProductCollectionActionState>(initialCollectionState);
   const [catalogState, setCatalogState] =
     useState<BulkProductCatalogActionState>(initialCatalogState);
+  const [variantState, setVariantState] =
+    useState<BulkProductVariantActionState>(initialVariantState);
   const [isPending, setIsPending] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -155,6 +166,7 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
   function clearFeedback() {
     setStatusState(initialStatusState);
     setCollectionState(initialCollectionState);
+    setVariantState(initialVariantState);
     setCatalogState((current) =>
       current.kind === "success" || current.kind === "error" ? initialCatalogState : current,
     );
@@ -201,6 +213,15 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     if (result.kind === "success") clearSelection();
   }
 
+  async function runVariantUpdate(mode: "enable-all" | "enable-stocked" | "disable-all") {
+    const result = await bulkProductVariantAction(
+      initialVariantState,
+      selectionFormData({ mode }),
+    );
+    setVariantState(result);
+    if (result.kind === "success") clearSelection();
+  }
+
   async function submitBulkOperation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (selectedCount === 0 || isPending) return;
@@ -215,16 +236,24 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
         await runCollectionUpdate(operation === "collection-add" ? "add" : "remove");
       } else if (operation === "catalog-disable") {
         await runCatalogIntent("catalog-disable");
-      } else {
+      } else if (operation === "catalog-enable") {
         await runCatalogIntent("catalog-commit");
+      } else if (operation === "variants-enable-all") {
+        await runVariantUpdate("enable-all");
+      } else if (operation === "variants-enable-stocked") {
+        await runVariantUpdate("enable-stocked");
+      } else if (operation === "variants-disable-all") {
+        await runVariantUpdate("disable-all");
       }
     } catch {
       if (operation === "status") {
         setStatusState({ kind: "error", message: genericBulkStatusError });
       } else if (needsCollection) {
         setCollectionState({ kind: "error", message: genericBulkError });
-      } else {
+      } else if (operation === "catalog-enable" || operation === "catalog-disable") {
         setCatalogState({ kind: "error", message: genericBulkError });
+      } else {
+        setVariantState({ kind: "error", message: genericBulkError });
       }
     } finally {
       setIsPending(false);
@@ -282,8 +311,22 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     }
     if (catalogState.kind === "error") return { tone: "alert", message: catalogState.message };
 
+    if (variantState.kind === "success") {
+      const message =
+        variantState.mode === "enable-all"
+          ? `Đã kích hoạt ${variantState.updatedVariantCount} biến thể cho ${variantState.updatedProductCount} sản phẩm.`
+          : variantState.mode === "enable-stocked"
+            ? `Đã kích hoạt ${variantState.updatedVariantCount} biến thể có hàng cho ${variantState.updatedProductCount} sản phẩm.`
+            : `Đã tắt ${variantState.updatedVariantCount} biến thể cho ${variantState.updatedProductCount} sản phẩm.`;
+      return {
+        tone: "status",
+        message,
+      };
+    }
+    if (variantState.kind === "error") return { tone: "alert", message: variantState.message };
+
     return null;
-  }, [statusState, collectionState, catalogState, collectionTitles]);
+  }, [statusState, collectionState, catalogState, variantState, collectionTitles]);
 
   const collectionTitle = collectionTitles.get(targetCollection) ?? targetCollection;
   const primaryLabels: Record<BulkOperation, string> = {
@@ -292,6 +335,9 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     "collection-remove": `Gỡ collection khỏi ${selectedCount} sản phẩm`,
     "catalog-enable": `Bật catalog cho ${selectedCount} sản phẩm`,
     "catalog-disable": `Tắt catalog cho ${selectedCount} sản phẩm`,
+    "variants-enable-all": `Kích hoạt tất cả biến thể cho ${selectedCount} sản phẩm`,
+    "variants-enable-stocked": `Kích hoạt biến thể có hàng cho ${selectedCount} sản phẩm`,
+    "variants-disable-all": `Tắt tất cả biến thể cho ${selectedCount} sản phẩm`,
   };
   const confirmQuestions: Record<BulkOperation, string> = {
     status: `Cập nhật ${selectedCount} sản phẩm sang ${statusLabels[targetStatus]}?`,
@@ -299,6 +345,9 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
     "collection-remove": `Gỡ ${collectionTitle} khỏi ${selectedCount} sản phẩm?`,
     "catalog-enable": `Bật catalog cho ${catalogConfirmation?.productIds.length ?? selectedCount} sản phẩm?`,
     "catalog-disable": `Tắt catalog cho ${selectedCount} sản phẩm?`,
+    "variants-enable-all": `Kích hoạt tất cả biến thể cho ${selectedCount} sản phẩm đã chọn?`,
+    "variants-enable-stocked": `Kích hoạt các biến thể có hàng cho ${selectedCount} sản phẩm đã chọn?`,
+    "variants-disable-all": `Tắt tất cả biến thể cho ${selectedCount} sản phẩm đã chọn?`,
   };
   const needsCollection = operation === "collection-add" || operation === "collection-remove";
   const primaryDisabled = isPending || (needsCollection && targetCollection === "");

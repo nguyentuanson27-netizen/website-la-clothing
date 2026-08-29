@@ -353,6 +353,46 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   });
   expect(variantActivity.every((variant) => variant.isActive)).toBe(false);
 
+  // Bulk variant operations
+  await page.getByRole("checkbox", { name: `Chọn ${plainName}` }).check();
+  await page.getByLabel("Thao tác").selectOption("variants-enable-all");
+  await page.getByRole("button", { name: "Kích hoạt tất cả biến thể cho 1 sản phẩm" }).click();
+  await expect(page.getByText("Kích hoạt tất cả biến thể cho 1 sản phẩm đã chọn?")).toBeVisible();
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Đã kích hoạt 1 biến thể cho 1 sản phẩm." }),
+  ).toBeVisible();
+  const plainVariantsAfterEnable = await prisma.variantMirror.findMany({
+    where: { productId: plainProductId },
+    select: { isActive: true },
+  });
+  expect(plainVariantsAfterEnable.every((variant) => variant.isActive)).toBe(true);
+
+  // Bulk variant enable-stocked
+  await page.getByRole("checkbox", { name: `Chọn ${stockedName}` }).check();
+  await page.getByLabel("Thao tác").selectOption("variants-enable-stocked");
+  await page.getByRole("button", { name: "Kích hoạt biến thể có hàng cho 1 sản phẩm" }).click();
+  await expect(page.getByText("Kích hoạt các biến thể có hàng cho 1 sản phẩm đã chọn?")).toBeVisible();
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Đã kích hoạt 1 biến thể có hàng cho 1 sản phẩm." }),
+  ).toBeVisible();
+
+  // Bulk variant disable-all
+  await page.getByRole("checkbox", { name: `Chọn ${plainName}` }).check();
+  await page.getByLabel("Thao tác").selectOption("variants-disable-all");
+  await page.getByRole("button", { name: "Tắt tất cả biến thể cho 1 sản phẩm" }).click();
+  await expect(page.getByText("Tắt tất cả biến thể cho 1 sản phẩm đã chọn?")).toBeVisible();
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Đã tắt 1 biến thể cho 1 sản phẩm." }),
+  ).toBeVisible();
+  const plainVariantsAfterDisable = await prisma.variantMirror.findMany({
+    where: { productId: plainProductId },
+    select: { isActive: true },
+  });
+  expect(plainVariantsAfterDisable.every((variant) => variant.isActive)).toBe(false);
+
   // C4 — a warning-relevant change after the confirmation was shown must reconfirm with zero
   // writes for the whole batch.
   await page.reload({ waitUntil: "networkidle" });

@@ -14,7 +14,10 @@ import {
 import { createProductContentRepository } from "@/commerce/product-content-repository";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { createProductCatalogBulkAdminService } from "@/commerce/product-commerce-admin";
-import { createProductCommerceRepository } from "@/commerce/product-commerce-repository";
+import {
+  createProductCommerceRepository,
+  type BulkVariantActivationMode,
+} from "@/commerce/product-commerce-repository";
 import { prisma } from "@/db/prisma";
 
 const repository = createProductContentRepository(prisma);
@@ -31,6 +34,7 @@ const bulkCatalogAdminService = createProductCatalogBulkAdminService({
   readBulkCatalogEnableWarningState: commerceRepository.readBulkCatalogEnableWarningState,
   commitBulkCatalogEnable: commerceRepository.commitBulkCatalogEnable,
   disableBulkCatalog: commerceRepository.disableBulkCatalog,
+  updateBulkVariantActivation: commerceRepository.updateBulkVariantActivation,
   readConfirmationSecret: () => readAuthServerConfig().secret,
   nowMs: () => Date.now(),
 });
@@ -62,6 +66,16 @@ export type BulkProductCatalogActionState =
       expiresAtMs: number;
     }
   | { kind: "success"; operation: "enable" | "disable"; updatedCount: number }
+  | { kind: "error"; message: string };
+
+export type BulkProductVariantActionState =
+  | { kind: "idle" }
+  | {
+      kind: "success";
+      mode: BulkVariantActivationMode;
+      updatedProductCount: number;
+      updatedVariantCount: number;
+    }
   | { kind: "error"; message: string };
 
 const genericBulkStatusError =
@@ -294,4 +308,47 @@ export async function bulkProductCatalogAction(
   }
 
   return { kind: "error", message: genericBulkCatalogError };
+}
+
+const genericBulkVariantError =
+  "Không thể cập nhật biến thể lúc này. Danh sách đã chọn được giữ nguyên để bạn thử lại.";
+
+export async function bulkProductVariantAction(
+  _previousState: BulkProductVariantActionState,
+  formData: FormData,
+): Promise<BulkProductVariantActionState> {
+  const admin = await readAdminSession();
+  if (!admin.ok) return { kind: "error", message: admin.message };
+  const adminSession = admin.session;
+
+  const mode = formData.get("mode");
+  const productIds = formData.getAll("productId");
+
+  let result: Awaited<ReturnType<typeof bulkCatalogAdminService.updateVariantActivation>>;
+  try {
+    result = await bulkCatalogAdminService.updateVariantActivation(adminSession, {
+      productIds,
+      mode,
+    });
+  } catch {
+    return { kind: "error", message: genericBulkVariantError };
+  }
+
+  if (!result.ok) {
+    return {
+      kind: "error",
+      message:
+        result.reason === "PRODUCT_NOT_AVAILABLE"
+          ? staleSelectionError
+          : "Lựa chọn hoặc thao tác không hợp lệ. Kiểm tra lại rồi thử lại.",
+    };
+  }
+
+  revalidateDirectory();
+  return {
+    kind: "success",
+    mode: result.mode,
+    updatedProductCount: result.updatedProductCount,
+    updatedVariantCount: result.updatedVariantCount,
+  };
 }

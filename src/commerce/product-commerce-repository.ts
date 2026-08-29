@@ -50,6 +50,12 @@ export type BulkCatalogDisableResult =
   | { ok: true; updatedCount: number }
   | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
 
+export type BulkVariantActivationMode = "enable-all" | "enable-stocked" | "disable-all";
+
+export type BulkVariantActivationResult =
+  | { ok: true; updatedProductCount: number; updatedVariantCount: number }
+  | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" };
+
 export type StockedQuickActionResult =
   | { ok: true; activatedVariantCount: number }
   | { ok: false; reason: "PRODUCT_NOT_AVAILABLE" | "COMPOSITE_CHILD" };
@@ -445,6 +451,69 @@ export function createProductCommerceRepository(client: PrismaClient) {
     }
   }
 
+  async function updateBulkVariantActivation(
+    productIds: readonly string[],
+    mode: BulkVariantActivationMode,
+  ): Promise<BulkVariantActivationResult> {
+    try {
+      return await client.$transaction(async (tx) => {
+        const presentCount = await tx.productMirror.count({
+          where: { id: { in: [...productIds] }, isPresent: true },
+        });
+        if (presentCount !== productIds.length) {
+          return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" } as const;
+        }
+
+        if (mode === "enable-all" || mode === "disable-all") {
+          const targetActive = mode === "enable-all";
+          const updated = await tx.variantMirror.updateMany({
+            where: { productId: { in: [...productIds] }, isPresent: true },
+            data: { isActive: targetActive },
+          });
+
+          return {
+            ok: true,
+            updatedProductCount: productIds.length,
+            updatedVariantCount: updated.count,
+          } as const;
+        }
+
+        const variants = await tx.variantMirror.findMany({
+          where: { productId: { in: [...productIds] }, isPresent: true },
+          select: {
+            id: true,
+            warehouseStocks: { select: { quantity: true } },
+          },
+        });
+
+        const eligibleVariantIds = variants
+          .filter((variant) => hasPositiveSellableStock(variant.warehouseStocks))
+          .map((variant) => variant.id);
+
+        if (eligibleVariantIds.length > 0) {
+          const updated = await tx.variantMirror.updateMany({
+            where: { id: { in: eligibleVariantIds } },
+            data: { isActive: true },
+          });
+          if (updated.count !== eligibleVariantIds.length) {
+            throw new ProductCommerceAtomicityError();
+          }
+        }
+
+        return {
+          ok: true,
+          updatedProductCount: productIds.length,
+          updatedVariantCount: eligibleVariantIds.length,
+        } as const;
+      });
+    } catch (error) {
+      if (error instanceof ProductCommerceAtomicityError) {
+        return { ok: false, reason: "PRODUCT_NOT_AVAILABLE" };
+      }
+      throw error;
+    }
+  }
+
   return {
     setVariantActivation,
     readCatalogEnableWarningState,
@@ -454,5 +523,6 @@ export function createProductCommerceRepository(client: PrismaClient) {
     disableBulkCatalog,
     disableCatalog,
     activateProductAndStockedVariants,
+    updateBulkVariantActivation,
   };
 }
