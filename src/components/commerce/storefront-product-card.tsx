@@ -71,7 +71,7 @@ export function StorefrontProductCard({
               src={primaryImage.url}
               alt={primaryImage.alt || name}
               fill
-              sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+              sizes="(min-width: 1024px) 25vw, 50vw"
               className="object-cover transition-transform duration-500 group-hover:scale-105"
             />
           ) : (
@@ -85,7 +85,7 @@ export function StorefrontProductCard({
               <p className="mt-1 line-clamp-2 max-w-[32ch] text-black/60">{editorialDescription}</p>
             ) : null}
           </div>
-          <div className="shrink-0 text-right">
+          <div className="shrink-0 text-left sm:text-right">
             <p>{describePrice(options)}</p>
             <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/60">
               {describeAvailability(options)}

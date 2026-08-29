@@ -501,11 +501,31 @@ summary:focus-visible {
 
 @media (max-width: 520px) {
   .product-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 0.625rem;
+    row-gap: 1.5rem;
   }
 
   .product-meta {
-    font-size: 0.78rem;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-top: 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .product-meta .text-right {
+    text-align: left;
+  }
+
+  .product-section {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 2.5rem;
+    padding-bottom: 4rem;
+  }
+
+  .section-heading-row {
+    margin-bottom: 1.25rem;
   }
 }
 
