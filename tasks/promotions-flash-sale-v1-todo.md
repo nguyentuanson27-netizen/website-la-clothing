@@ -27,6 +27,11 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [x] Resolve R5 split G1/G2/G3 and rediscover analytics ownership after parallel GTM/TikTok work
 - [x] Retain S1 discovery effective-price semantics
 - [x] Retain S2 composite real-owner semantics
+- [x] Close SQL `float8` vs `numeric` percentage-rounding review gap
+- [x] Require exact-half SQL↔TS parity fixtures with fixed expected values
+- [x] Share one sanctioned SQL pricing/membership projection across `/shop` and `/flash-sale`
+- [x] Lock legal never-Active re-enable to atomically clear `disabledAt`
+- [x] Confirm fixed-price PRODUCT affected-variant runtime fallback supersedes earlier wholesale-invalid draft
 - [ ] Human approves revised PR #151 spec + plan
 - [ ] Confirm no unresolved Critical/Required review threads
 
@@ -68,6 +73,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] `effectiveStart = max(enabledAt, startsAt ?? enabledAt)`
 - [ ] Zero-traffic active window still derives Ended/terminal history correctly
 - [ ] Disabled-before-Active remains editable/re-enableable
+- [ ] Legal never-Active re-enable atomically writes fresh `enabledAt`, sets `publishState=ENABLED`, and clears `disabledAt=null`
+- [ ] Campaign whose prior enabled interval contained any Active time cannot take re-enable path
 - [ ] Disabled-after-Active terminal
 - [ ] Ended terminal
 - [ ] Copy any state → new Draft
@@ -78,6 +85,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Runtime conflict returns no promotion
 - [ ] Runtime recovery automatic
 - [ ] Bounded query-count test
+- [ ] Lifecycle regression: Draft → enable → disable-before-Active → re-enable clears stale disabled timestamp
+- [ ] Lifecycle regression: disable-after-Active remains terminal
 
 ## P4 — Concurrency-safe admin domain + activation gate
 
@@ -91,6 +100,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Scheduled edit performs full atomic validation
 - [ ] Active material price/target/time edits rejected
 - [ ] Fully expired interval cannot be newly enabled
+- [ ] Legal re-enable clears `disabledAt` atomically in same transaction as new enabled state
 - [ ] Reject PRODUCT + own covered VARIANT duplicate coverage
 - [ ] PRODUCT↔PRODUCT overlap
 - [ ] PRODUCT↔VARIANT overlap
@@ -148,7 +158,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] No per-option DB query
 - [ ] Existing composite availability/mapping regressions green
 
-## P7a — Cards + effective-price discovery SQL
+## P7a — Cards + shared effective-price storefront SQL
 
 - [ ] Card sale representative follows approved rules
 - [ ] `Từ` only when sale price is true product minimum
@@ -159,11 +169,17 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Same `requestNow` passed to effective-price SQL projection
 - [ ] Same `requestNow` used for hydrated card quote/representative selection
 - [ ] SQL does not independently use DB clock for campaign eligibility
+- [ ] Validated integer-like base is cast to PostgreSQL `numeric` before percentage multiplication/division
+- [ ] No promotion percentage formula calls `ROUND()` on a `double precision` expression
 - [ ] Price min/max use current effective price
 - [ ] `price-asc` / `price-desc` use current effective price
 - [ ] Color/size/availability constrain same candidate set
 - [ ] Conflict/invalid SQL fallback matches TS resolver
 - [ ] SQL↔TS parity tests: no-promo/%/fixed/invalid/conflict/time boundaries
+- [ ] Exact-half parity fixture: `base=150,pct=1 → 149`
+- [ ] Exact-half parity fixture: `base=350,pct=1 → 347`
+- [ ] Exact-half parity fixture: `base=110,pct=5 → 105`
+- [ ] Projection contract is reused by P7b `/flash-sale` membership rather than forked
 - [ ] Boundary test proves multi-query request stays internally consistent across transition
 - [ ] Pagination/count bounded/stable
 
@@ -172,6 +188,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Add `/flash-sale`
 - [ ] Paginate/bound query
 - [ ] Active valid Flash Sale variants only
+- [ ] Membership before pagination uses same sanctioned P7a SQL pricing/membership projection
+- [ ] No second Flash Sale-specific promotion eligibility formula/predicate
 - [ ] Exclude regular-only/Scheduled/Ended/Disabled/invalid/conflicted
 - [ ] One server `requestNow` per route render
 - [ ] Representative uses Flash Sale variants only
@@ -180,6 +198,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Refresher schedules from server timestamp only
 - [ ] `router.refresh()` at start/end boundary
 - [ ] No persistent promotion price cache
+- [ ] DB membership parity against central resolver
+- [ ] Bounded query-count proof
 - [ ] Browser scheduled→active proof
 - [ ] Browser active→ended proof
 - [ ] Countdown never authorizes transaction price
@@ -188,7 +208,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 
 - [ ] PDP/card/discovery agree for same variant/requestNow
 - [ ] Composite ownership regression green
-- [ ] SQL↔TS parity green
+- [ ] SQL↔TS parity green, including exact-half fixtures
+- [ ] `/shop` and `/flash-sale` use one sanctioned SQL promotion projection contract
 - [ ] Flash Sale boundary tests green
 - [ ] No N+1
 - [ ] 0 Critical
