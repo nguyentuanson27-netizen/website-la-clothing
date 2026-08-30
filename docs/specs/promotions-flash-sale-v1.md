@@ -9,10 +9,10 @@ The feature must not write promotional catalog prices back to Pancake.
 
 ## Current-system constraints
 - Catalog and inventory are mirrored from Pancake through `ProductMirror` / `VariantMirror`.
-- `VariantMirror.pancakeRetailPrice` is the normal website base-price read model. `pancakeRetailPriceAfterDiscount` remains mirrored external data but is not authoritative for website sale pricing.
+- `VariantMirror.pancakeRetailPrice` is the website base-price input. `pancakeRetailPriceAfterDiscount` remains mirrored external data but is not authoritative for website promotion pricing.
 - The current checkout architecture may create an `OrderMirror` in `DRAFT` as a checkout-attempt/snapshot implementation detail before Pancake submission. This spec does **not** require replacing that architecture.
-- Current order submission fetches fresh Pancake catalog facts before create-order. Promotion implementation must integrate that freshness check into the same central effective-price contract rather than comparing the persisted sale price directly to raw Pancake retail price.
-- Pancake create-order currently accepts an integer `variation_info.retail_price` field in the reviewed structural contract. Existing project evidence proves that field shape exists; it does **not** prove that Pancake will always honor an arbitrary website-owned discounted value without repricing. Production readiness therefore requires the controlled semantic verification gate below.
+- Current order submission fetches fresh Pancake catalog facts before create-order. Promotion implementation must integrate that freshness check into the same central effective-price contract rather than comparing a persisted website sale price directly to raw Pancake retail price.
+- Pancake create-order structurally accepts an integer `variation_info.retail_price`. Existing project evidence proves the field shape exists; it does **not** prove Pancake will always honor an arbitrary website-owned discounted value without repricing. Production readiness therefore requires the controlled semantic verification gate below.
 
 ## Campaign model
 A campaign has one shared rule across all of its targets:
@@ -24,7 +24,7 @@ A campaign has one shared rule across all of its targets:
 - one or more targets spanning products and/or individual variants.
 
 Target semantics:
-- `PRODUCT` means the product as a semantic scope, including variants synced later while the target remains eligible.
+- `PRODUCT` means the product as a semantic scope, including variants synced/restored later while the target remains eligible.
 - `VARIANT` means one specific variant.
 - A campaign may target multiple products and multiple variants across products.
 - A campaign must not contain duplicate targets.
@@ -37,15 +37,21 @@ Persistence must be website-owned and use integer money for website-owned VND va
 - target row: exactly one of product or variant is populated;
 - order audit money: `BigInt`/integer VND.
 
+The mirrored Pancake price columns remain external mirror fields and may remain `Float?`. This feature does **not** require converting `pancakeRetailPrice` or `pancakeRetailPriceAfterDiscount` to `BigInt`; integer-VND validation/conversion happens at the trusted website pricing boundary.
+
 Exact Prisma names may be refined in `/plan`, but database/server invariants must enforce valid target shape and campaign relationships rather than relying on UI-only checks.
 
 ## Campaign lifecycle
-Persist enough lifecycle history to distinguish all of these facts reliably, including after process restarts and after a scheduled window passes without admin traffic:
+Persistence/status logic must distinguish reliably:
 - explicit Draft versus explicitly Disabled-before-activation;
 - never Active versus Active at least once;
 - terminally Disabled/Ended after activation.
 
-A representation using fields such as `enabled`, activation history, and `disabledAt` is acceptable; `firstActivatedAt` may be part of the model but is not by itself mandatory. The implementation must make the rules below enforceable without depending on a browser session or client clock.
+This distinction must remain correct after process restarts and even when a scheduled campaign opens and closes with **zero** storefront/admin traffic.
+
+The implementation must not define “has ever been Active” by a lazy write that happens only when a request happens to observe an Active campaign. A campaign that was enabled and whose effective interval actually crossed an active period counts as having been Active even if no request was served during that interval.
+
+An implementation may satisfy this with deterministic time/lifecycle derivation, durable lifecycle transitions, or equivalent persisted facts. Any stored activation timestamp must be trustworthy history, not a traffic-dependent observation cache that can miss a zero-traffic active window.
 
 Admin-visible statuses:
 - `Draft`: explicit work-in-progress that has not been enabled/published.
@@ -55,7 +61,7 @@ Admin-visible statuses:
 - `Disabled`: explicitly disabled by admin, whether before or after it ever became Active.
 
 Lifecycle rules:
-- Draft campaigns are fully editable and may be saved even while incomplete/invalid; health/validation errors must be shown.
+- Draft campaigns are fully editable and may be saved while incomplete/invalid; health/validation errors must be shown.
 - Scheduled campaigns are fully editable, but because they are enabled every successful save must leave them valid and non-overlapping. An invalid edit is rejected atomically and the previous campaign definition remains effective.
 - A Disabled campaign that has **never** been Active may be edited and re-enabled after full activation validation.
 - An Active campaign cannot directly change targets, discount type, discount value, or material pricing/time behavior. To materially change it, disable/end the current campaign and create/copy a new one.
@@ -68,7 +74,7 @@ Copy behavior:
 - Always creates a new `Draft` with a new campaign ID.
 - Keeps kind, discount type/value, targets, and time configuration.
 - Copies the name with a visible suffix such as `- Bản sao`.
-- Does not inherit runtime status, lifecycle history, related orders, activation history, or source campaign ID as identity.
+- Does not inherit runtime status, lifecycle history, related orders, activation history, or source campaign identity.
 - Time, price validity, target validity, and overlap must be revalidated before the copy can be enabled.
 
 ## Scheduling and time semantics
@@ -100,7 +106,7 @@ Server time is authoritative for activation and checkout. Client countdowns are 
 ### Base price
 `pancakeRetailPrice` is the only Pancake price field used as website promotional base price in v1.
 
-A usable VND base price must satisfy:
+A value entering authoritative website VND pricing must satisfy:
 
 ```ts
 function isUsableBasePriceVnd(value: number | null): value is number {
@@ -108,29 +114,47 @@ function isUsableBasePriceVnd(value: number | null): value is number {
 }
 ```
 
-Therefore null, `NaN`, infinity, fractional, non-positive, or unsafe-integer values are unusable. A variant with unusable base price has `BASE_PRICE_UNAVAILABLE` and is not purchasable until a usable base price is available.
+Therefore null, `NaN`, infinity, fractional, non-positive, or unsafe-integer values are unusable for authoritative website pricing.
 
+This is an explicit v1 website-pricing rule, not merely a promotion-only check. A variant with unusable `pancakeRetailPrice` is `BASE_PRICE_UNAVAILABLE` and must not complete a website purchase until a usable integer-VND base price is available. Storefront/listing projections that currently use a looser predicate must be reconciled so they do not advertise a variant as purchasable when checkout cannot represent the same money safely.
+
+### Pre-rollout price-data audit
+Before enabling promotion behavior in production, run a read-only data audit over current mirrored variants and report counts/examples for:
+- `pancakeRetailPrice IS NULL`;
+- zero;
+- negative;
+- non-finite if such values can reach application memory;
+- non-integer;
+- values outside JavaScript safe-integer range.
+
+The rollout must explicitly account for any currently visible variant that would become unavailable under the authoritative integer-VND rule; do not discover this only from customer-facing storefront regressions.
+
+### Pancake `retailPriceAfterDiscount` clarification
 `pancakeRetailPriceAfterDiscount` must not:
 - determine storefront effective price;
 - cause `PRICE_UNRESOLVED` merely because it differs from `pancakeRetailPrice`;
 - override a website promotion;
-- be used as the final order price authority.
+- become final order price authority.
+
+This is intentional even when Pancake itself currently reports `pancakeRetailPriceAfterDiscount < pancakeRetailPrice`. With no active website promotion, website price remains `pancakeRetailPrice`, so the website may intentionally display/charge a higher price than Pancake's own discounted catalog value. That is a known consequence of making website promotions independent from Pancake discounts, not an accidental refactor side effect.
+
+Because Pancake may have its own downstream repricing semantics, the controlled custom-price acceptance gate in this spec is mandatory before declaring real discounted order submission production-ready.
 
 ### Latest Pancake base-price rule
 The business rule is always to resolve against the **latest trusted Pancake base price available to the website**.
 
 Normal storefront/cart reads use the latest successfully mirrored `VariantMirror.pancakeRetailPrice`.
 
-If checkout submission obtains a fresher trusted Pancake catalog value than the current mirror, that fresher base price must enter the **same central effective-price resolver** for that checkout attempt. It must not be used only inside the Pancake mapper as a second independent pricing authority.
+If checkout submission obtains a fresher trusted Pancake catalog value than the current mirror, that fresher base price enters the **same central effective-price resolver** for that checkout attempt. It must not be used only inside the Pancake mapper as a second independent pricing authority.
 
 Consequences:
 - `%` promotion recalculates against the fresher base price;
 - `FIXED_PRICE` keeps its configured sale price and is revalidated against the fresher base price;
 - if the resulting quote differs from what the buyer last confirmed, return `PRICE_CHANGED` before create-order;
-- the refreshed quote must be capable of becoming the next DRAFT/final pricing snapshot, so a stale mirror cannot cause an infinite `PRICE_CHANGED` loop. The implementation may update trusted mirror facts first or carry the fresh validated quote into a new/superseding DRAFT; exact orchestration belongs in `/plan`.
+- the refreshed quote must be capable of becoming the next DRAFT/final pricing snapshot, so a stale mirror cannot cause an infinite `PRICE_CHANGED` loop. Exact orchestration belongs in `/plan`.
 
-### Central effective-price resolver
-There is one server-owned pricing resolver used by storefront, cart, checkout, order snapshotting, structured data, analytics, and the final Pancake line-price mapper.
+### Central effective-price authority
+There is one semantic pricing authority used by storefront, cart, checkout, order snapshotting, structured data, analytics, and final Pancake line-price mapping.
 
 Its conceptual output contains at least:
 - `basePriceVnd`;
@@ -148,13 +172,19 @@ Rules:
 - never stack campaigns;
 - browser-provided prices are never authority.
 
+The preferred implementation is one reusable TypeScript/domain resolver operating on batch-fetched facts. However, the anti-N+1 requirement is also binding. If `/plan` demonstrates that a SQL-side price/promotion projection is necessary for bounded listing queries, one explicitly sanctioned SQL projection may mirror the central semantics. It must not become an independent business authority and must have parity tests against the central resolver for price usability, discount rounding, time boundaries, invalidation, and representative-price cases.
+
+Do not independently reimplement pricing formulas in UI, cart, checkout, SEO, analytics, or Pancake mapping modules.
+
 ### Percentage
 - Integer percentage only.
 - Allowed range: `1..99`.
 - Compute integer VND using integer-safe arithmetic equivalent to `Math.round(baseVnd * (100 - percent) / 100)`.
-- Result must satisfy `0 < effectivePriceVnd < basePriceVnd`; otherwise the campaign/target is invalid and is not applied.
+- Result must satisfy `0 < effectivePriceVnd < basePriceVnd`.
 
 Example: base changes from `500000` to `600000` while a `20%` campaign remains active → new effective price is `480000`.
+
+A percentage can become invalid for a specific low-priced variant after rounding, e.g. `base=50`, `1%` → rounded effective price `50`, which is not a discount. Runtime scope is defined in **Runtime target invalidation** below.
 
 ### Fixed price
 `FIXED_PRICE` means the final customer price, not an amount-off.
@@ -163,7 +193,7 @@ Validation for every affected variant:
 - integer VND;
 - `0 < fixedSalePriceVnd < basePriceVnd`.
 
-Product-level fixed price applies the exact same configured final price to all variants under that product while the product target is healthy.
+A product-level fixed-price target configures the same final fixed price for every covered variant that remains valid at runtime.
 
 ## Save / publish / activation validation
 Draft save:
@@ -183,14 +213,14 @@ Scheduled save:
 - rerun the same validation because Scheduled is already enabled;
 - reject the edit atomically if the resulting campaign would be invalid or overlapping.
 
-Active runtime degradation caused **after** successful activation is handled by the runtime rules below; it does not retroactively make the original activation invalid.
+Active runtime degradation caused **after** successful activation is handled by runtime rules below; it does not retroactively make original activation invalid.
 
 ## Overlap and concurrency contract
 Enabled/published campaigns must not overlap for the same affected variant, including future Scheduled intervals.
 
 Conflict examples:
 - product-level campaign on product A conflicts with any overlapping variant-level campaign on any variant under A;
-- variant-level campaign conflicts with an overlapping product-level campaign that covers its product;
+- variant-level campaign conflicts with an overlapping product-level campaign covering its product;
 - two product targets covering the same product conflict;
 - two variant targets for the same variant conflict.
 
@@ -203,20 +233,29 @@ Exact PostgreSQL locking/constraint strategy is an implementation-plan decision,
 ## Catalog changes while campaign is Scheduled/Active
 Product targets are semantic product scopes, not frozen variant lists.
 
-When Pancake sync introduces or restores a variant under a targeted product:
+When Pancake sync introduces/restores/re-associates a variant under a targeted product:
 - the variant becomes covered by that product target automatically;
 - pricing validity and overlap are evaluated dynamically;
 - no website promotion target is written back to Pancake.
 
-### Runtime fixed-price invalidation
-If a newer Pancake base price makes `FIXED_PRICE` invalid:
-- never apply the invalid fixed price;
-- for an explicit `VARIANT` target, only that variant target loses promotion;
-- for a `PRODUCT` target, if any currently covered variant makes the shared fixed price invalid, that product target is unhealthy and is not applied while invalid, preserving the one-price-for-the-whole-product target contract;
-- unrelated targets in the same campaign continue when healthy;
-- admin sees a clear health/error state naming the affected target/variant and reason.
+### Runtime target invalidation
+Runtime invalidation semantics are the same for `PERCENTAGE` and `FIXED_PRICE`.
 
-If the target later becomes valid again while the campaign is still within its enabled effective interval and no overlap exists, promotion applies again automatically and the health warning clears. Runtime invalidation is not a permanent disable.
+If a newer base price or newly covered variant makes the configured discount invalid for a specific affected variant:
+- never apply the invalid promotion to that variant;
+- an explicit `VARIANT` target loses promotion for that variant only;
+- a `PRODUCT` target is evaluated as dynamic variant coverage: only the invalid covered variant loses promotion; other covered variants that still satisfy the same campaign rule continue receiving it;
+- the product target/campaign health is reported as partially invalid when only some covered variants fail;
+- unrelated targets in the same campaign continue when healthy;
+- admin sees the affected product/variant and typed reason.
+
+This rule intentionally preserves the approved target-level fallback behavior after runtime catalog drift. A product-level fixed-price campaign still configures one shared fixed price, but it may be **partially applied** after drift: every valid covered variant receives that same fixed price, while invalid covered variants fall back to base price.
+
+For percentage campaigns, the same variant-level fallback applies when rounding yields no real discount (`effectivePriceVnd >= basePriceVnd`) or another percentage invariant fails for only some covered variants.
+
+If an invalid variant later becomes valid again while the campaign remains inside its enabled effective interval and no overlap exists, promotion reapplies automatically and the health warning clears. Runtime invalidation is not a permanent disable.
+
+If base price itself becomes unusable, the affected variant becomes `BASE_PRICE_UNAVAILABLE` and is not purchasable. This is distinct from a usable base price that merely invalidates a promotion.
 
 ### Runtime overlap discovered from catalog mutation
 A new/restored/re-associated variant can expose a conflict that did not exist when campaigns were originally published.
@@ -227,8 +266,6 @@ The system must fail closed:
 - healthy, non-conflicted variants/targets continue according to their own rules;
 - surface an admin health warning identifying all conflicting campaign IDs/targets;
 - when the conflict disappears and the remaining campaign is otherwise valid/active, pricing recovers automatically.
-
-If base price itself becomes unusable, the affected variant becomes `BASE_PRICE_UNAVAILABLE` and is not purchasable. This is distinct from a usable base price that merely invalidates a promotion.
 
 ## Admin UX
 Primary management surface: `/admin/promotions`.
@@ -242,7 +279,7 @@ Required capabilities:
 - copy;
 - choose one or more product/variant targets;
 - clearly show Draft / Scheduled / Active / Ended / Disabled;
-- show whether an Active/Scheduled campaign is healthy or has runtime-invalid/conflicting targets;
+- show whether an Active/Scheduled campaign is healthy, partially invalid, or conflicted;
 - show target-specific validation errors for overlap, unusable base price, invalid fixed price, invalid percentage, and invalid scheduling.
 
 Product admin pages do not become the primary editor. They show current/upcoming related campaigns and link to the relevant campaign in `/admin/promotions`.
@@ -270,48 +307,59 @@ A product card is considered on sale when at least one currently purchasable var
 
 On normal listings:
 1. Consider currently purchasable promoted variants.
-2. Select the promoted variant with the lowest `effectivePriceVnd` as the representative sale variant.
-3. If tied, use the repository's stable variant ordering; if no stable domain ordering exists, use a deterministic ID tie-breaker.
+2. Select the promoted variant with lowest `effectivePriceVnd` as representative sale variant.
+3. If tied, use stable repository variant ordering; if none exists, use deterministic ID tie-breaker.
 4. Strike through the **base price of the same representative variant**.
 5. Badge/kind/countdown come from that representative variant's campaign.
-6. For the common case where that sale price is also the product's minimum current effective price, display the approved form `Từ <sale price>`.
-7. If an unpromoted/currently non-sale variant is cheaper than the representative sale variant, do not falsely imply the sale price is the product-wide minimum. Use explicit sale wording such as `Sale từ <sale price>` while preserving the existing normal price/range cue as layout allows.
+6. If that sale price is also the product's minimum current effective price, display the approved form `Từ <sale price>`.
+7. If an unpromoted/currently non-sale variant is cheaper, do not falsely imply sale price is product-wide minimum. Use explicit sale wording such as `Sale từ <sale price>` while preserving normal price/range cue as layout allows.
 8. If no variant is actively promoted, fall back to existing normal product-card price behavior using base prices.
 
 On `/flash-sale`, apply the representative rule only among currently purchasable variants with a valid active `FLASH_SALE` campaign; use `FLASH SALE` presentation/countdown from that representative flash-sale variant.
 
-PDP always resolves the exact selected variant. When variant selection changes, base price, effective price, strike-through, badge, and countdown update for the selected variant. A selected variant with no valid promotion shows base price and no sale/flash-sale badge/countdown.
+PDP always resolves the exact selected variant. When variant selection changes, base price, effective price, strike-through, badge, and countdown update for selected variant. A selected variant with no valid promotion shows base price and no sale/flash-sale badge/countdown.
 
-Countdown expiry is not pricing authority. At/after expiry, server-rendered/revalidated data must stop applying the campaign. Cache/revalidation behavior must not keep stale promotional pricing authoritative past `startsAt`/`endsAt`.
+### Cache/revalidation correctness
+Countdown expiry is not pricing authority.
+
+Transactional correctness is strict:
+- add-to-cart/cart reconstruction/checkout must re-resolve server-authoritative price and campaign state;
+- a stale cached storefront page must never authorize a stale transaction price.
+
+Storefront presentation must also have a testable freshness contract. Implementation must use either:
+- campaign-boundary-aware invalidation/revalidation at relevant `startsAt`/`endsAt`; **or**
+- bounded time-based revalidation with maximum promotional display staleness of **60 seconds**.
+
+Whichever strategy `/plan` chooses must have runtime/browser coverage around start/end boundaries. A briefly stale cached badge/price may be tolerated only within that declared display bound; transaction price remains server-authoritative with no such grace period.
 
 ## Cart, checkout, and final order pricing
-The cart does not lock promotional price. Cart and checkout display the current server-resolved effective price.
+The cart does not lock promotional price. Cart and checkout display current server-resolved effective price.
 
 ### Price-change confirmation contract
-On submit, the server recomputes the authoritative effective quote from the latest trusted base-price facts + current valid website campaign state.
+On submit, server recomputes authoritative effective quote from latest trusted base-price facts + current valid website campaign state.
 
-If the recomputed quote differs from what the buyer last confirmed:
+If recomputed quote differs from what buyer last confirmed:
 - return typed `PRICE_CHANGED` with refreshed line prices and totals;
 - do not transition that stale attempt to `POS_SUBMITTING`;
 - do not call Pancake create-order;
-- require the buyer to explicitly review and submit/confirm the refreshed totals again.
+- require buyer to explicitly review and submit/confirm refreshed totals again.
 
-Compatibility with the current state machine:
+Compatibility with current state machine:
 - an `OrderMirror(DRAFT)` may already exist before this check;
-- the stale attempt may remain DRAFT, be refreshed, or be marked `REJECTED`/superseded according to the existing checkout orchestration, provided it is never submitted to Pancake at the stale price;
-- a terminal stale attempt must not block creation of a fresh DRAFT carrying the refreshed quote after the buyer confirms again;
-- no implementation may loop forever between a stale mirror snapshot and a fresher Pancake price.
+- stale attempt may remain DRAFT, be refreshed, or be marked `REJECTED`/superseded according to existing checkout orchestration, provided it is never submitted to Pancake at stale price;
+- a terminal stale attempt must not block creation of fresh DRAFT carrying refreshed quote after buyer confirms again;
+- no implementation may loop forever between stale mirror snapshot and fresher Pancake price.
 
-When the buyer submits a quote that still matches server recomputation:
-- freeze the order-line pricing facts used for final submission no later than the transition out of DRAFT into final validation/submission;
-- subsequent campaign/base-price changes do not rewrite that finalized snapshot;
-- final purchase reporting and Pancake line mapping consume the immutable snapshot.
+When buyer submits a quote that still matches server recomputation:
+- freeze order-line pricing facts used for final submission no later than transition out of DRAFT into final validation/submission;
+- subsequent campaign/base-price changes do not rewrite finalized snapshot;
+- final purchase reporting and Pancake line mapping consume immutable snapshot.
 
 ## Order-line audit snapshot
-Each finalized order line must retain enough immutable data to explain historical customer pricing without consulting the current campaign record.
+Each finalized order line must retain enough immutable data to explain historical customer pricing without consulting current campaign record.
 
 Required facts:
-- `baseUnitPriceVnd` — base price used by the effective-price resolver at confirmation time;
+- `baseUnitPriceVnd` — base price used by effective-price resolver at confirmation time;
 - existing/final `unitPriceVnd` — customer unit price;
 - `lineTotalVnd`;
 - nullable `promotionId`;
@@ -323,19 +371,40 @@ Required facts:
 
 Promotion fields are null for lines without website promotion.
 
-Campaign copy, disable, edit of a never-active campaign, deletion/absence of upstream catalog facts, or later Pancake price changes must not alter finalized order history.
+Campaign copy, disable, edit of never-active campaign, upstream catalog changes, or later Pancake price changes must not alter finalized order history.
 
 ## Pancake order submission contract
 Website catalog promotion state is never written back to Pancake.
 
-For a finalized order, the application intends to send the order's immutable final `unitPriceVnd`/effective price as line `variation_info.retail_price`, so Pancake receives the same customer unit price recorded locally.
+For a finalized order, application intends to send immutable final `unitPriceVnd`/effective price as line `variation_info.retail_price`, so Pancake receives same customer unit price recorded locally.
 
-Fresh Pancake validation before create-order may still verify required shop/variation identity and stock. Any fresh base-price fact that affects customer price must first pass through the central effective-price/`PRICE_CHANGED` contract; the Pancake mapper must not silently replace the immutable final sale price with live catalog retail price.
+Fresh Pancake validation before create-order may still verify required shop/variation identity and stock. Any fresh base-price fact affecting customer price must first pass through central effective-price/`PRICE_CHANGED` contract.
 
-The checked structural OpenAPI evidence only establishes the existence/type of `variation_info.retail_price`. Before this feature is production-ready, verification must establish that Pancake's real create-order behavior accepts and preserves a value different from catalog base price without silently repricing/rejecting it.
+### Required changes to the current submission behavior
+Implementation must explicitly audit `createPancakeOrderSubmissionService` and close all three current live-price assumptions below. These are behavioral invariants; do not rely on today's source line numbers remaining stable.
+
+1. **Price-change comparison**
+   - Current behavior compares persisted `line.unitPriceVnd` to a raw/live Pancake-resolved price.
+   - Required behavior compares the buyer-confirmed/final snapshot against the newly computed **effective website quote** using fresh trusted base facts + website promotion state.
+   - A promoted order must not reject forever merely because discounted snapshot price differs from raw Pancake base retail.
+
+2. **Subtotal/shipping/total validation**
+   - Current submission path recomputes monetary totals from the live catalog price before comparing them to persisted order totals.
+   - Required behavior validates totals from the authoritative effective/final line prices. Live base retail must not be substituted into promoted line totals.
+   - Shipping calculations that depend on merchandise subtotal must use the same authoritative effective-price subtotal used by the order snapshot.
+
+3. **Pancake request line price**
+   - Current request-line construction derives `unitPriceVnd` from the live catalog price.
+   - Required behavior passes immutable finalized order-line `unitPriceVnd` into `buildPancakeCreateOrderRequest`, which maps it to `variation_info.retail_price`.
+   - The Pancake mapper must never silently replace final website sale price with live catalog retail price.
+
+Required integration tests must independently fail if any one of those three behaviors remains on raw `livePrice`.
+
+### Pancake semantic acceptance gate
+The checked structural OpenAPI evidence only establishes existence/type of `variation_info.retail_price`. Before feature is production-ready, verification must establish Pancake create-order accepts and preserves a value different from catalog base price without silently repricing/rejecting it.
 
 Required evidence gate:
-1. Unit/integration tests prove the local mapper sends immutable final order snapshot value, not browser input, `pancakeRetailPriceAfterDiscount`, or an unrelated live retail value.
+1. Unit/integration tests prove local mapper sends immutable final order snapshot value, not browser input, `pancakeRetailPriceAfterDiscount`, or unrelated live retail.
 2. A controlled Pancake acceptance check in an approved non-destructive/testable context verifies semantic behavior for discounted `retail_price` different from catalog base.
 3. Do not introduce blind retry behavior; existing one-shot/idempotency safety rules remain authoritative.
 4. If semantic acceptance cannot be verified, local promotion implementation may exist but must not be declared production-ready for real discounted Pancake order submission.
@@ -346,7 +415,7 @@ Customer-value surfaces use website effective/final customer price, not `pancake
 - storefront/cart/checkout analytics monetary values;
 - final purchase reporting from immutable order snapshot.
 
-`/flash-sale` follows the existing repository search-indexing policy/ADR. This feature does not independently change indexing policy.
+`/flash-sale` follows existing repository search-indexing policy/ADR. This feature does not independently change indexing policy.
 
 ## Security and trust boundaries
 Assets:
@@ -360,26 +429,26 @@ Trust boundaries:
 1. Admin/browser form data is untrusted.
 2. Mirrored/direct Pancake catalog responses are external data and must be validated before privileged pricing use.
 3. Database campaign/order records are server-owned authority after validation.
-4. Pancake create-order is an external side effect and remains inside the existing one-shot safety boundary.
+4. Pancake create-order is an external side effect inside existing one-shot safety boundary.
 
 Required controls:
 - Promotion writes require existing admin authentication **and authorization**.
 - Validate campaign name/type/value, timestamps, lifecycle transition, target IDs, and target array size server-side with explicit finite bounds.
 - Product/variant IDs supplied by browser must resolve to expected website mirror records; never trust browser-supplied price/catalog facts.
 - Effective/final price is always server-computed.
-- Checkout client may submit an expected quote/version for stale detection, never an authoritative final price.
+- Checkout client may submit expected quote/version for stale detection, never authoritative final price.
 - Overlap enforcement is server-side and concurrency-safe.
-- Pancake payload remains a strict server-owned allowlist built from immutable order snapshot plus freshly validated required external identity/stock facts.
+- Pancake payload is a strict server-owned allowlist built from immutable order snapshot plus freshly validated required external identity/stock facts.
 - Do not log secrets, Pancake credentials, or unnecessary customer PII.
 
 Abuse cases that tests/review must address:
 - non-admin attempts promotion mutations;
 - forged target IDs/discount values/timestamps;
 - oversized target arrays or campaign names;
-- two concurrent publishes racing into overlap;
-- stale checkout attempting to submit old sale price;
+- concurrent publishes racing into overlap;
+- stale checkout attempting old sale price;
 - manipulated browser price/discount metadata;
-- malformed or surprising Pancake price data influencing order totals.
+- malformed/surprising Pancake price data influencing order totals.
 
 ## Performance and data-access requirements
 Promotion resolution must not add one database query per product card or per variant.
@@ -389,16 +458,19 @@ Required properties:
 - `/flash-sale` query is bounded/paginated consistent with existing listing patterns;
 - target/campaign lookup has indexes appropriate for campaign identity, target identity, enabled/lifecycle filtering, and time-window access;
 - product-target expansion does not create unbounded serial query chatter;
-- admin target selection/search is bounded rather than loading an unbounded catalog into the browser.
+- admin target selection/search is bounded rather than loading an unbounded catalog into browser.
+
+If a SQL price/promotion projection is introduced to satisfy bounded listing access, it is a sanctioned projection of central pricing semantics and must have parity tests; it is not a second authority.
 
 Performance optimization beyond these anti-N+1/bounded-query requirements should be measurement-driven.
 
 ## Observability
 Critical pricing/lifecycle failures need structured, non-PII diagnostics. Exact event plumbing may reuse existing project patterns.
 
-At minimum make these situations observable:
+At minimum make observable:
 - campaign publish/activation rejected, with reason code;
-- campaign runtime target invalidated/recovered after catalog price/variant change;
+- campaign runtime variant invalidated/recovered after catalog price/variant change;
+- campaign/product target becomes `PARTIALLY_INVALID` / recovers;
 - runtime overlap discovered/recovered;
 - checkout `PRICE_CHANGED` before Pancake create-order;
 - promotion-aware Pancake submission validation rejection.
@@ -406,7 +478,7 @@ At minimum make these situations observable:
 Useful context includes campaign ID, target type/ID, variant ID when applicable, and typed reason code. Do not log customer address/phone or secrets merely to diagnose promotion behavior.
 
 ## Project structure / expected ownership
-Exact filenames may be refined during `/plan`, but ownership should remain separated:
+Exact filenames may be refined during `/plan`, but ownership remains separated:
 - Prisma schema/migration: website-owned campaign/target and order-audit persistence.
 - Promotion domain/repository: campaign validation, lifecycle, targets, overlap, runtime health, active-campaign lookup.
 - Central pricing resolver: base/effective-price calculation and typed failure facts.
@@ -416,41 +488,47 @@ Exact filenames may be refined during `/plan`, but ownership should remain separ
 - Pancake order mapper: consumes final local snapshot and validated external identity/stock facts.
 - Tests: domain + database + integration + browser/a11y coverage in existing locations.
 
-Do not duplicate pricing formulas in UI, cart, checkout, SEO, analytics, or Pancake mapping modules.
-
 ## Testing strategy
-New behavior must have tests that would fail without the implementation.
+New behavior must have tests that would fail without implementation.
 
 Required domain/database/integration coverage:
-- percentage integer/range/rounding edges, including result that would round to base/zero;
+- percentage integer/range/rounding edges, including result that rounds to base/zero;
+- percentage runtime invalidation/recovery for one variant inside a product target while sibling variants remain promoted;
 - fixed-price validity at variant and product scope;
-- unusable base-price cases;
-- `pancakeRetailPriceAfterDiscount` mismatch no longer blocks website pricing;
+- fixed-price runtime invalidation/recovery for one variant inside a product target while sibling variants remain promoted;
+- unusable global base-price cases;
+- pre-rollout audit query/script or equivalent read-only diagnostic coverage;
+- `pancakeRetailPriceAfterDiscount` mismatch no longer blocks website pricing and does not become website price authority;
+- explicit case where Pancake after-discount is lower than website base price;
 - active/scheduled/ended/disabled interval boundaries using `[start,end)`;
+- zero-traffic scheduled window still becomes terminal `Ended` when appropriate;
 - Disabled-before-Active remains editable/re-enableable; Disabled-after-Active is terminal;
-- Draft can save invalid configuration but cannot affect storefront; activation is blocked until valid;
-- invalid Scheduled edit is rejected atomically without corrupting prior enabled definition;
+- Draft can save invalid configuration but cannot affect storefront; activation blocked until valid;
+- invalid Scheduled edit rejected atomically without corrupting prior enabled definition;
 - null regular-promotion boundaries;
 - overlap product↔variant and concurrent publish attempts;
 - copy lifecycle/history reset;
 - new/restored variant under product target;
-- active fixed-price invalidation and automatic recovery after base-price change;
-- runtime overlap from catalog mutation fails closed and recovers after conflict removal;
+- runtime overlap from catalog mutation fails closed and recovers;
 - representative card pricing/ties/mixed Promotion + Flash Sale variants;
-- card case where an unpromoted variant is cheaper than lowest promoted variant does not falsely label sale price as product-wide minimum;
+- unpromoted cheaper variant does not cause misleading product-wide `Từ` sale wording;
 - `/flash-sale` active-only membership;
+- cache/start/end boundary behavior satisfies chosen boundary-aware or ≤60s display freshness strategy;
 - cart repricing;
 - stale checkout returns `PRICE_CHANGED`, refreshed totals, does not enter `POS_SUBMITTING`, and performs no Pancake write;
-- stale DRAFT/REJECTED attempt can be superseded by a buyer-confirmed refreshed quote without infinite price-change loop;
+- stale DRAFT/REJECTED attempt can be superseded by buyer-confirmed refreshed quote without infinite loop;
 - confirmed checkout snapshots all required base/final/promotion audit facts;
-- Pancake mapper uses final local order snapshot value;
+- Pancake submission price-change comparison uses effective quote, not raw base price;
+- Pancake submission subtotal/shipping/total validation uses effective/final line values;
+- Pancake request mapper uses final local order snapshot `unitPriceVnd`;
+- if SQL price projection exists, parity tests cover central resolver edge cases;
 - structured data / analytics values use effective/final customer price;
-- admin authz, bounded input, and malformed external price handling;
+- admin authz, bounded input, malformed external price handling;
 - observability reason codes for critical rejection/invalidation paths;
 - keyboard/mobile/Axe coverage for campaign form and storefront sale UI.
 
 ## Verification commands
-Use the repository's actual gates. Implementation PRs must run the relevant subset locally and pass the full applicable CI matrix before merge.
+Use repository's actual gates. Implementation PRs must run relevant subset locally and pass full applicable CI matrix before merge.
 
 Core project gates:
 - `pnpm prisma:validate`
@@ -466,39 +544,41 @@ Core project gates:
 - `pnpm build`
 - `pnpm release:check`
 
-Browser/a11y gate follows the existing isolated runtime workspace:
+Browser/a11y gate follows existing isolated runtime workspace:
 - `cd tests/a11y-runtime && npm ci --ignore-scripts --no-audit --no-fund`
 - `cd tests/a11y-runtime && npx playwright install chromium`
 - `cd tests/a11y-runtime && npx playwright test --config playwright.config.ts`
 
-The controlled Pancake custom-sale-price semantic acceptance check is a production-readiness gate but must not be converted into an uncontrolled recurring write from CI.
+Controlled Pancake custom-sale-price semantic acceptance check is a production-readiness gate but must not become an uncontrolled recurring write from CI.
 
 ## Migration and rollback requirements
-Implementation requires an additive Prisma/PostgreSQL migration.
+Implementation requires additive Prisma/PostgreSQL migration.
 
 Migration rules:
+- keep mirrored `pancakeRetailPrice` / `pancakeRetailPriceAfterDiscount` field types unchanged unless separately approved; this feature validates them at resolver boundary rather than destructively changing mirror storage;
 - do not remove `pancakeRetailPriceAfterDiscount` in this feature;
 - promotion campaign/target persistence is additive;
-- new order promotion-audit fields are nullable for existing historical rows except where a new-row invariant can be safely enforced;
-- existing `unitPriceVnd`/order history must remain valid;
-- migration/deploy must support rolling application code back without requiring an emergency destructive down-migration.
+- new order promotion-audit fields are nullable for existing historical rows except where a new-row invariant can safely be enforced;
+- existing `unitPriceVnd`/order history remains valid;
+- migration/deploy supports rolling application code back without emergency destructive down-migration.
 
 Operational rollback plan:
-1. stop new promotion activation / disable active campaigns through admin or an equivalent safe operational control;
+1. stop new promotion activation / disable active campaigns through admin or equivalent safe operational control;
 2. stop new promotion-priced final submissions before rolling application code back;
-3. DRAFT checkout attempts carrying promotion prices may be rejected/superseded and re-quoted under rolled-back behavior; they must never be submitted at a price the rolled-back code cannot validate;
-4. confirmed/terminal order pricing and promotion-audit data are never rewritten or down-migrated;
-5. leave additive tables/nullable columns in place until a separately reviewed cleanup migration, if ever needed.
+3. DRAFT checkout attempts carrying promotion prices may be rejected/superseded and re-quoted under rolled-back behavior; never submit a price rolled-back code cannot validate;
+4. confirmed/terminal order pricing and promotion-audit data are never rewritten/down-migrated;
+5. leave additive tables/nullable columns until separately reviewed cleanup migration, if ever needed.
 
 ## Boundaries
 Always:
-- Treat Pancake catalog price as base-price input and website campaign state as the only promotion authority.
-- Compute prices centrally on the server.
+- Treat `pancakeRetailPrice` as base-price input and website campaign state as only website promotion authority.
+- Compute authoritative prices centrally on server.
 - Revalidate overlap and price validity on every enabled campaign mutation.
-- Reprice at checkout submission using latest trusted base facts.
+- Reprice checkout submission using latest trusted base facts.
 - Preserve immutable final order pricing/audit facts.
-- Keep admin mutations authenticated/authorized, bounded, and concurrency-safe.
-- Fail closed on runtime promotion conflicts rather than stack or guess priority.
+- Keep admin mutations authenticated/authorized, bounded, concurrency-safe.
+- Fail closed on runtime promotion conflicts rather than stack/guess priority.
+- Apply runtime pricing invalidation at affected-variant granularity, including variants covered by `PRODUCT` targets.
 
 Ask first:
 - New third-party dependencies.
@@ -507,13 +587,16 @@ Ask first:
 - Any change to current Pancake one-shot/idempotency safety policy.
 - Any promotion stacking/coupon interaction beyond this spec.
 - Any requirement to silently choose a winner when overlapping campaigns are discovered at runtime.
+- Any proposal to make Pancake `pancakeRetailPriceAfterDiscount` website pricing authority again.
 
 Never:
 - Trust browser-provided final prices.
 - Use `pancakeRetailPriceAfterDiscount` as website promotion authority.
 - Apply two active promotions to one variant.
-- Silently apply an invalid fixed price.
+- Silently apply invalid percentage/fixed price.
 - Submit stale checkout pricing after `PRICE_CHANGED`.
+- Recompute promoted order totals from raw Pancake base retail during final submission.
+- Build Pancake request line price from raw live retail instead of final order snapshot.
 - Blindly retry ambiguous Pancake order creation.
 - Rewrite finalized historical order price/audit data.
 - Refactor unrelated commerce/admin code solely to implement this feature.
@@ -532,22 +615,23 @@ Never:
 
 ## Success criteria
 1. `/admin/promotions` is admin-protected and supports create/edit/enable/disable/copy according to lifecycle rules.
-2. Campaigns can target multiple products/variants with one shared rule; Product targets dynamically include later synced/restored variants.
+2. Campaigns target multiple products/variants with one shared rule; Product targets dynamically include later synced/restored variants.
 3. Draft may save invalid configuration without storefront effect; enabling/re-enabling/Scheduled edits are atomically validated.
-4. Disabled-before-Active campaigns may be edited/re-enabled; Disabled-after-Active and Ended campaigns are terminal and rerun only via Copy → Draft.
-5. No two enabled campaign intervals can safely apply to the same variant; concurrent publish is race-safe and runtime catalog-created conflicts fail closed with no promotion on the conflicted variant.
-6. Website effective pricing uses usable latest trusted Pancake base price + website campaign state; `pancakeRetailPriceAfterDiscount` mismatch no longer blocks pricing by itself.
-7. Percentage and fixed-price calculations are integer-VND, centralized, deterministic, and validated; `%` recalculates on new base price and fixed price remains configured while valid.
-8. Runtime-invalid targets stop receiving promotion safely, surface admin health warnings, and recover automatically when valid again during the same campaign interval.
-9. Storefront cards/PDP/cart/checkout/structured data/analytics share the same pricing contract; mixed variant promotions render deterministically without misleading minimum-price wording.
-10. `/flash-sale` contains only products with a valid active Flash Sale variant and displays active flash-sale price/badge/countdown correctly.
-11. Checkout detects stale pricing from promotion/base-price changes, returns `PRICE_CHANGED` with refreshed totals, performs no Pancake create-order on that stale attempt, and requires explicit reconfirmation while remaining compatible with `OrderMirror(DRAFT)` architecture.
-12. Finalized order lines preserve immutable base price, customer price, line total, campaign identity/name/kind/type/value snapshots.
-13. Pancake order mapping sends immutable final customer unit price; fresh external price facts cannot silently bypass the central `PRICE_CHANGED` contract.
-14. Controlled semantic evidence confirms Pancake accepts/preserves a discounted `variation_info.retail_price` override before production readiness is declared.
-15. Admin/authz/security, database concurrency, bounded data access, observability, rollback, domain/integration tests, browser/Axe coverage, migrations, lint, typecheck, build, release checks, and repository CI gates pass before implementation merge.
+4. Lifecycle terminality does not depend on request traffic: zero-traffic active windows still produce correct Active-history/Ended semantics; Disabled-before-Active remains re-enableable while Disabled-after-Active/Ended are terminal.
+5. No two enabled campaign intervals safely apply to same variant; concurrent publish is race-safe and runtime catalog-created conflicts fail closed with no promotion on conflicted variant.
+6. Website effective pricing uses usable latest trusted `pancakeRetailPrice` + website campaign state; `pancakeRetailPriceAfterDiscount` mismatch no longer blocks pricing and may intentionally be lower than website price without becoming authority.
+7. Authoritative website base/effective money is positive safe-integer VND; rollout includes audit of mirrored values incompatible with that rule while mirror columns themselves remain external `Float?` facts.
+8. Percentage and fixed-price calculations are integer-VND, centralized, deterministic, validated, and use the same affected-variant runtime invalidation/recovery semantics, including partial invalidity inside `PRODUCT` targets.
+9. Storefront cards/PDP/cart/checkout/structured data/analytics share same semantic pricing authority; any SQL projection is parity-tested and mixed variant promotions render deterministically without misleading minimum-price wording.
+10. `/flash-sale` contains only products with valid active Flash Sale variant and displays active flash-sale price/badge/countdown correctly.
+11. Storefront promotion presentation meets explicit boundary-aware or ≤60s freshness contract, while transactional price is always freshly server-authoritative.
+12. Checkout detects stale pricing from promotion/base-price changes, returns `PRICE_CHANGED` with refreshed totals, performs no Pancake create-order on stale attempt, and requires explicit reconfirmation while remaining compatible with `OrderMirror(DRAFT)` architecture.
+13. Finalized order lines preserve immutable base price, customer price, line total, campaign identity/name/kind/type/value snapshots.
+14. Pancake submission closes all three raw-live-price assumptions: effective quote comparison, effective/final total validation, and request mapping from immutable final `unitPriceVnd`.
+15. Controlled semantic evidence confirms Pancake accepts/preserves discounted `variation_info.retail_price` override before production readiness is declared.
+16. Admin/authz/security, database concurrency, bounded data access, observability, rollback, domain/integration tests, browser/Axe coverage, migrations, lint, typecheck, build, release checks, and repository CI gates pass before implementation merge.
 
 ## Implementation / PR sizing guidance
 This spec is one product contract, but implementation may be split into dependency-safe PRs when that improves reviewability. Follow ADR 0005: file count is not the gate; atomicity, subsystem ownership, risk, effective changed lines, verification, and rollback/revert clarity are.
 
-Do not split directly affected tests away from the behavior they prove merely to reduce file count. Do not combine unrelated refactors with promotion implementation.
+Do not split directly affected tests away from behavior they prove merely to reduce file count. Do not combine unrelated refactors with promotion implementation.
