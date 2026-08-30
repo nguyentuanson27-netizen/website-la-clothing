@@ -33,7 +33,7 @@ The implementation sequence is designed to fail fast on identity, configuration,
 5. **Analytics page-view authority:** application-owned canonical `page_view` events are the preferred authority for initial load and App Router navigation. GA4 automatic initial/history page views must be disabled where required so one navigation produces one GA4 page view.
 6. **dataLayer discipline:** every ecommerce event clears the prior ecommerce object immediately before pushing the next event; never replace `window.dataLayer` after GTM initialization.
 7. **Tracking modes:** one deployment-aware resolver owns `disabled | preview | live`. `live` is limited to the approved production origin/configuration. `preview` is explicit and may load Tag Assistant/GTM only with production destinations blocked or replaced by isolated test destinations.
-8. **Consent:** the application owns a vendor-neutral consent policy; the Google adapter establishes the current production default before Google measurement tags. No visible consent UI is added in this scope.
+8. **Consent:** the application owns a vendor-neutral consent policy. The initial Google default must be established before measurement tags. During `/build`, re-verify whether the final GTM implementation uses a consent-mode template/Tag Manager Consent APIs or the documented page-level pre-GTM default pattern; do not use unreviewed Custom HTML consent code.
 9. **Google Ads:** Purchase is the only required primary Ads conversion in this phase; `transaction_id = publicCode`. The final Google-tag/GTM setup must provide conversion-linking functionality. Enhanced Conversions remain out of scope.
 10. **TikTok:** Pixel runs through GTM. Purchase/CompletePayment receives `event_id = publicCode` now so repeated browser copies and a later Events API copy can deduplicate on the same identity.
 11. **Merchant delivery:** use a public GET-only Next.js Route Handler returning a supported product-data file. Initial delivery remains Scheduled Fetch, not Merchant API realtime sync.
@@ -150,11 +150,11 @@ If any slice exceeds reviewable scope because directly affected tests are large,
 
 ## Task T3: Mount GTM, establish Google consent defaults, and own GA4 page views
 
-**Description:** Mount one GTM web container from the root layout using the reviewed tracking mode. Push the vendor-neutral environment/consent initialization before measurement tags, and add one App Router page-view tracker for the canonical application event.
+**Description:** Mount one GTM web container from the root layout using the reviewed tracking mode. Establish the approved default consent state before Google measurement can fire, and add one App Router page-view tracker for the canonical application event.
 
 **Acceptance criteria:**
 - [ ] GTM is absent in disabled mode; preview/live loading follows T2 and never creates a second Meta Pixel.
-- [ ] Google consent defaults are established before Google measurement events under the reviewed GTM consent mechanism.
+- [ ] Google consent defaults are established before Google measurement events using the current officially supported GTM/page-level pattern selected during `/build`; no Custom HTML consent implementation is introduced.
 - [ ] Application emits exactly one canonical `page_view` per initial page and client navigation; GTM/GA4 configuration explicitly disables overlapping automatic/history page views.
 
 **Verification:**
@@ -166,7 +166,7 @@ If any slice exceeds reviewable scope because directly affected tests are large,
 **Files likely touched:**
 - `src/components/analytics/google-tag-manager.tsx`
 - `src/components/analytics/commerce-route-tracker.tsx`
-- `src/analytics/google-consent-adapter.ts`
+- consent/tracking-policy helper chosen after current-doc verification
 - `src/app/layout.tsx`
 - focused integration tests
 
@@ -360,7 +360,7 @@ Do not build/activate the feed until the candidate ID/MPN audit is green for emi
 **Description:** Map canonical public product/projection facts into vendor-neutral Merchant offers, separating structural eligibility from availability. Keep mapping pure and independently testable from HTTP/XML delivery.
 
 **Acceptance criteria:**
-- [ ] Each emitted offer has stable ID/grouping, LA Clothing brand, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size, and the approved O2/O3 apparel values.
+- [ ] Each emitted offer has stable ID/grouping, LA Clothing brand, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size, current `variant_option` representation where applicable, and the approved O2/O3 apparel values.
 - [ ] Structurally valid zero-stock offers remain with `out_of_stock`; malformed/unresolved/ambiguous records are excluded with one bounded diagnostic reason.
 - [ ] Description priority never exposes draft editorial content; unsafe/unusable source text is normalized by a reviewed contract or excluded.
 
@@ -407,7 +407,7 @@ Do not build/activate the feed until the candidate ID/MPN audit is green for emi
 
 **Acceptance criteria:**
 - [ ] Merchant can fetch the production route; data source language/currency/country, shipping/returns, and schedule are documented and correct.
-- [ ] Initial schedule uses the highest practical regular frequency supported by the account (default file fetch is currently 24h); schedule timing is coordinated with catalog updates where practical.
+- [ ] Initial schedule uses the highest practical regular frequency supported by the account (Google's current file-link setup defaults to a 24-hour fetch, but the schedule is adjustable); schedule timing is coordinated with catalog updates where practical.
 - [ ] Price/availability/condition Automations are reviewed explicitly and remain off while the aggregate PDP JSON-LD cannot identify exact submitted variants; diagnostics are clean enough for controlled activation.
 
 **Verification:**
@@ -466,7 +466,7 @@ Re-check current official documentation at implementation time for:
 - GA4 ecommerce/page-view parameters;
 - Google Ads Purchase/conversion-linking setup;
 - TikTok GTM template, event names/parameters, and dedup requirements;
-- Merchant product-data attributes, current apparel requirements, ID limits, Scheduled Fetch, Automations, and crawler/landing-page rules.
+- Merchant product-data attributes, current apparel/`variant_option` requirements, ID limits, Scheduled Fetch, Automations, and crawler/landing-page rules.
 
 Version-sensitive tag behavior must not be implemented from memory.
 
