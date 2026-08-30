@@ -249,7 +249,7 @@ If a newer base price or newly covered variant makes the configured discount inv
 - unrelated targets in the same campaign continue when healthy;
 - admin sees the affected product/variant and typed reason.
 
-This rule intentionally preserves the approved target-level fallback behavior after runtime catalog drift. A product-level fixed-price campaign still configures one shared fixed price, but it may be **partially applied** after drift: every valid covered variant receives that same fixed price, while invalid covered variants fall back to base price.
+This affected-variant runtime fallback is an explicit product decision that **supersedes the earlier draft wholesale-invalid PRODUCT behavior**. The distinction is deliberate: at publish/activation time a PRODUCT-level `FIXED_PRICE` still validates every current covered variant and activation is blocked if any current variant violates `0 < fixed < base`; only **after successful activation**, if later Pancake drift or a newly synced/restored covered variant makes one variant invalid, that variant falls back to usable base price while valid sibling variants keep the same configured fixed price and the target becomes `PARTIALLY_INVALID`.
 
 For percentage campaigns, the same variant-level fallback applies when rounding yields no real discount (`effectivePriceVnd >= basePriceVnd`) or another percentage invariant fails for only some covered variants.
 
