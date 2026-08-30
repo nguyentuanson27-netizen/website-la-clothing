@@ -220,10 +220,12 @@ Before T4, review T1–T3 for CSP least privilege, no Meta duplication, no custo
 **Dependencies:** T3, T4.
 
 **Files likely touched:**
-- storefront list/card tracking boundary
+- current `/shop` listing/card component(s) that render the canonical product link and item facts
 - `src/components/commerce/product-purchase-panel.tsx`
-- small analytics event component/helper
-- focused integration/browser tests
+- small analytics event component/helper under `src/components/analytics/`
+- focused integration/browser tests for listing/PDP events
+
+Exact listing-component paths are resolved from then-current `main` immediately before PR-B implementation; no unrelated card refactor is authorized.
 
 **Estimated scope:** Medium.
 
