@@ -4,7 +4,7 @@ Status: **PLANNING ONLY — implementation has not started.**
 
 Source of truth: `docs/specs/promotions-flash-sale-v1.md`.
 
-Planning review base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 merged. Before every implementation slice, refresh against then-current `main` and re-read directly affected ownership because GTM/TikTok/SEO work may land in parallel.
+Planning review base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 merged. This branch has been refreshed to include that merge commit. Before every implementation slice, refresh against then-current `main` and re-read directly affected ownership because GTM/TikTok/SEO work may land in parallel.
 
 Review order: correctness → security → architecture → simplicity → performance.
 
