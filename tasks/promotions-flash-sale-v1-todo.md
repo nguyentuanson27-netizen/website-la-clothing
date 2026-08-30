@@ -110,8 +110,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN = 2000` current unique affected variants for activation/re-enable/Scheduled edit
 - [ ] Oversized syntactic input rejected before persistence even for Draft
 - [ ] Draft save may otherwise remain business-invalid/non-effective
-- [ ] Expansion probe uses at most 2001 current variants and rejects before huge lock acquisition
-- [ ] Expansion >2000 returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED`
+- [ ] Existing campaign row is locked first; owning product rows are locked in deterministic order before the bounded 2001-variant expansion probe
+- [ ] Expansion >2000 returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set
 - [ ] Name boundary tests 120/121
 - [ ] Target-count boundary tests 200/201
 - [ ] Identifier boundary tests 128/129
@@ -129,9 +129,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] PRODUCT↔VARIANT overlap
 - [ ] VARIANT↔VARIANT overlap
 - [ ] `[start,end)` exact boundary handoff allowed
-- [ ] Existing campaign row locked first for mutation
-- [ ] Owning products locked in deterministic ID order
-- [ ] Required variants locked in deterministic ID order
+- [ ] Required variants locked in deterministic ID order after bounded expansion passes
 - [ ] Same-campaign concurrent edit cannot lost-update
 - [ ] Concurrent conflicting publish: at most one commits
 - [ ] Failed mutation leaves previous enabled definition unchanged
