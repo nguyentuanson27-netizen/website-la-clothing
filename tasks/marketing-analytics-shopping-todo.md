@@ -111,7 +111,7 @@ Source spec: `docs/specs/marketing-analytics-shopping.md`
 
 ### M5 Merchant Center setup
 - [ ] Verify/claim website and configure product data source, O2 market, shipping/returns, Google Ads linkage.
-- [ ] Scheduled Fetch points to production HTTPS route; use highest practical account-supported regular cadence and coordinate with catalog updates.
+- [ ] Scheduled Fetch points to production HTTPS route; use the highest practical account-supported regular cadence (current URL/file setup defaults to 24-hour fetch but is adjustable) and coordinate with catalog updates.
 - [ ] Review Automations explicitly; keep price/availability/condition updates off while exact variant structured data is not proven.
 
 ### V1 Definition of Done / launch gate
