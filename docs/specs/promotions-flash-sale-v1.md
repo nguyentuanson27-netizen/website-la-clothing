@@ -114,13 +114,13 @@ Copy-name algorithm:
 1. normalize/trim the source name;
 2. reserve `COPY_NAME_SUFFIX.length` code units inside the 120-code-unit limit;
 3. truncate the source prefix to the remaining code-unit budget **without splitting a UTF-16 surrogate pair**;
-4. `trimEnd()` the retained prefix if truncation leaves trailing whitespace;
-5. append `COPY_NAME_SUFFIX`;
+4. if avoiding a surrogate split shortens the retained prefix by one code unit, that unused code unit is allowed; do not backfill it with part of another code point;
+5. append `COPY_NAME_SUFFIX` exactly; do **not** `trimEnd()` after the length budget is computed, because the suffix begins with a deliberate leading space and trimming/re-expanding would make the boundary algorithm ambiguous;
 6. assert final name is non-empty and `<= 120` code units.
 
 Repeated Copy applies the same algorithm to the immediate source name. It may therefore produce repeated visible copy suffixes when they fit; it must never fail solely because a valid source name was already 119/120 code units.
 
-Required tests include source names at 119 and 120 code units, a surrogate-pair boundary, and Copy-of-Copy.
+Required tests include source names at 119 and 120 code units, a surrogate-pair boundary, trailing-space normalization before budgeting, and Copy-of-Copy.
 
 ## Scheduling and time
 Admin displays/accepts time in `Asia/Ho_Chi_Minh`; database stores UTC instants.
@@ -506,7 +506,7 @@ Must cover at least:
 - lifecycle zero-traffic terminality;
 - disabled-before/after Active behavior;
 - Copy from every state, including >2000 source expansion;
-- Copy name 119/120, surrogate boundary, repeated Copy;
+- Copy name 119/120, surrogate boundary, trailing-space normalization, repeated Copy;
 - disable succeeds when Active PRODUCT grows from <=2000 to >2000;
 - Draft invalid save vs enabled hard gate;
 - overlap and concurrent publish;
