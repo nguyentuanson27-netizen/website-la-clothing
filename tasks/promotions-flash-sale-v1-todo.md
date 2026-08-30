@@ -96,7 +96,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Runtime recovery automatic
 - [ ] Draft expansion health probes at most `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1`
 - [ ] Draft expansion >2000 reports typed `TARGET_EXPANSION_LIMIT_EXCEEDED` health without loading all variants
-- [ ] Post-activation dynamic expansion >2000 is not itself a pricing invalidation
+- [ ] Post-activation dynamic expansion >2000 is an operational/bounded-query condition only, not a terminal lifecycle or pricing invalidation by itself
 - [ ] Bounded query-count test
 - [ ] Lifecycle regression: Draft → enable → disable-before-Active → re-enable clears stale disabled timestamp
 - [ ] Lifecycle regression: disable-after-Active remains terminal
