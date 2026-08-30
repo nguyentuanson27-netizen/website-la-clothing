@@ -69,7 +69,10 @@ function isPixelLibraryLoaded(): boolean {
  *     here, in order, until there is. `next/script` loads the snippet `afterInteractive`, so a
  *     page-level event fired from a mount effect regularly lands in this window.
  *   - A caller that records an event as sent must not do so while it sits in a queue an ad blocker
- *     will discard. Those acknowledgements wait for the library itself.
+ *     will discard. Those acknowledgements wait for the library itself, and they wait on its
+ *     `load` event rather than a clock: a library that arrives late still sends the event, so
+ *     abandoning its acknowledgement on a timer would leave a sale reported but never recorded,
+ *     and every later visit would report it again.
  */
 type PendingCall = {
   eventName: string;
@@ -80,20 +83,18 @@ type PendingCall = {
 
 const POLL_INTERVAL_MS = 250;
 /**
- * How long an acknowledgement waits for the library before it is abandoned.
- *
- * This is not an expiry on the event: that already sits in the pixel's own queue and goes out
- * whenever the library arrives. Abandoning an acknowledgement only means the caller does not record
- * the event as sent, so a later visit reports it again — Meta collapses the pair by event id. The
- * alternative, a blocked pixel leaving a timer running for the life of every page, is worse.
+ * Bounds only the wait for `fbq` to be defined, which the snippet does synchronously as soon as it
+ * runs. Reaching this means the snippet never executed at all; the calls stay queued and the next
+ * `trackFacebookPixelEvent` re-checks, so stopping the timer costs nothing.
  */
-const ACKNOWLEDGEMENT_WAIT_MS = 15_000;
+const FBQ_APPEARANCE_WAIT_MS = 30_000;
 
 /** Calls made before `fbq` existed at all, oldest first. */
 let callsAwaitingFbq: PendingCall[] = [];
 /** Acknowledgements for calls already handed over, waiting on the library to actually load. */
-let acknowledgementsAwaitingLibrary: Array<{ acknowledge: () => void; expiresAtMs: number }> = [];
+let acknowledgementsAwaitingLibrary: Array<() => void> = [];
 let poll: ReturnType<typeof setInterval> | null = null;
+let watchingLibraryScript = false;
 
 function stopPolling(): void {
   if (poll !== null) {
@@ -102,35 +103,61 @@ function stopPolling(): void {
   }
 }
 
+function flushAcknowledgements(): void {
+  if (acknowledgementsAwaitingLibrary.length === 0) return;
+  const acknowledgements = acknowledgementsAwaitingLibrary;
+  acknowledgementsAwaitingLibrary = [];
+  for (const acknowledge of acknowledgements) acknowledge();
+}
+
+function flushCallsAwaitingFbq(fbq: Fbq): void {
+  if (callsAwaitingFbq.length === 0) return;
+  const queued = callsAwaitingFbq;
+  callsAwaitingFbq = [];
+  for (const call of queued) {
+    handToPixel(fbq, call.eventName, call.parameters, call.eventId, call.onAccepted);
+  }
+}
+
+/**
+ * Waits on the pixel script itself rather than on a clock.
+ *
+ * The snippet inserts the `fbevents.js` tag synchronously, so it is already in the document by the
+ * time anything has been handed to the stub. `load` means the library ran and drained the queue;
+ * `error` means it never will, and the acknowledgements are dropped so nothing is recorded as sent.
+ * Either way this costs one listener rather than a running timer.
+ */
+function watchLibraryScript(): void {
+  if (watchingLibraryScript) return;
+  const script = document.querySelector<HTMLScriptElement>(
+    'script[src*="connect.facebook.net"]',
+  );
+  if (script === null) return;
+
+  watchingLibraryScript = true;
+  script.addEventListener("load", () => flushAcknowledgements(), { once: true });
+  script.addEventListener(
+    "error",
+    () => {
+      // Blocked or unreachable. Recording these as sent would suppress the retry that a later
+      // visit would otherwise make.
+      acknowledgementsAwaitingLibrary = [];
+    },
+    { once: true },
+  );
+}
+
 function startPolling(): void {
   if (poll !== null) return;
+  const stopWaitingAtMs = Date.now() + FBQ_APPEARANCE_WAIT_MS;
   poll = setInterval(() => {
     const fbq = readFbq();
-    if (fbq !== null && callsAwaitingFbq.length > 0) {
-      const queued = callsAwaitingFbq;
-      callsAwaitingFbq = [];
-      for (const call of queued) {
-        handToPixel(fbq, call.eventName, call.parameters, call.eventId, call.onAccepted);
-      }
-    }
-
-    if (acknowledgementsAwaitingLibrary.length > 0) {
-      if (isPixelLibraryLoaded()) {
-        const acknowledgements = acknowledgementsAwaitingLibrary;
-        acknowledgementsAwaitingLibrary = [];
-        for (const { acknowledge } of acknowledgements) acknowledge();
-      } else {
-        // Blocked or never loading. Give up on the acknowledgements rather than poll forever.
-        const now = Date.now();
-        acknowledgementsAwaitingLibrary = acknowledgementsAwaitingLibrary.filter(
-          (pending) => pending.expiresAtMs > now,
-        );
-      }
-    }
-
-    if (callsAwaitingFbq.length === 0 && acknowledgementsAwaitingLibrary.length === 0) {
+    if (fbq !== null) {
+      flushCallsAwaitingFbq(fbq);
       stopPolling();
+      return;
     }
+    if (Date.now() >= stopWaitingAtMs) stopPolling();
   }, POLL_INTERVAL_MS);
 }
 
@@ -160,11 +187,10 @@ function handToPixel(
     return;
   }
   // Handed to the stub's queue. Acknowledge only once the library exists to drain it.
-  acknowledgementsAwaitingLibrary.push({
-    acknowledge: onAccepted,
-    expiresAtMs: Date.now() + ACKNOWLEDGEMENT_WAIT_MS,
-  });
-  startPolling();
+  acknowledgementsAwaitingLibrary.push(onAccepted);
+  watchLibraryScript();
+  // The script can finish between the check above and the listener being attached.
+  if (isPixelLibraryLoaded()) flushAcknowledgements();
 }
 
 /**
@@ -194,5 +220,7 @@ export function trackFacebookPixelEvent(
     startPolling();
     return;
   }
+  // Anything still queued from before the snippet ran goes first, so order is preserved.
+  flushCallsAwaitingFbq(fbq);
   handToPixel(fbq, eventName, parameters, eventId, onAccepted);
 }

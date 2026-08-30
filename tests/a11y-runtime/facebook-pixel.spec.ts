@@ -407,6 +407,39 @@ test("events raised before the pixel library arrives are kept and flushed in ord
   expect(tracked.indexOf("PageView")).toBeLessThan(tracked.indexOf("Purchase"));
 });
 
+test("a library that arrives long after the event still records the sale as reported", async ({
+  page,
+}) => {
+  // Past any timeout the client might be tempted to put on acknowledgement. The event goes out
+  // when the library finally runs, so recording it has to survive that wait too — otherwise the
+  // once-per-browser guard is defeated and every later visit reports the same sale again.
+  await installPixelStub(page, 18_000);
+  await page.goto(`${BASE_URL}/checkout/success?order=${orderCode}`, {
+    waitUntil: "domcontentloaded",
+  });
+
+  const purchase = await waitForEvent(page, "Purchase", 40_000);
+  expect(purchase[3]).toEqual({ eventID: orderCode });
+
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() =>
+          Object.keys(window.localStorage).filter((key) =>
+            key.startsWith("la:fb-pixel-reported:"),
+          ),
+        ),
+      { timeout: 15_000 },
+    )
+    .toEqual([`la:fb-pixel-reported:${orderCode}`]);
+
+  // And with it recorded, reopening the page reports nothing.
+  await page.reload({ waitUntil: "networkidle" });
+  await waitForEvent(page, "PageView");
+  await delay(1_000);
+  expect(trackedEventNames(await readCalls(page))).not.toContain("Purchase");
+});
+
 test("a blocked pixel records nothing as sent, so the sale can still be reported later", async ({
   page,
 }) => {
