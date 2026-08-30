@@ -487,7 +487,7 @@ Required controls:
 - Effective/final price is always server-computed.
 - Checkout client may submit expected quote/version for stale detection, never authoritative final price.
 - Overlap enforcement is server-side and concurrency-safe.
-- Admin PRODUCT expansion validation is capped before large lock acquisition, while runtime dynamic coverage remains bounded per query.
+- Admin PRODUCT expansion validation is capped before large variant-lock acquisition, while runtime dynamic coverage remains bounded per query.
 - Pancake payload is a strict server-owned allowlist built from immutable order snapshot plus freshly validated required external identity/stock facts.
 - Do not log secrets, Pancake credentials, or unnecessary customer PII.
 
@@ -511,7 +511,7 @@ Required properties:
 - admin campaign list/search returns at most `50` campaigns per request and target search at most `50` candidates per request;
 - target/campaign lookup has indexes appropriate for campaign identity, target identity, enabled/lifecycle filtering, and time-window access;
 - product-target expansion does not create unbounded serial query chatter or unbounded admin lock sets;
-- activation/re-enable/Scheduled-edit expansion detection uses a bounded `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1` read and rejects above the cap before attempting a huge lock set;
+- activation/re-enable/Scheduled-edit expansion detection uses a bounded `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1` read after deterministic owning-product locking and rejects above the cap before attempting a huge variant lock set;
 - runtime PRODUCT coverage may grow beyond the admin expansion cap after activation but storefront/admin-health access remains bounded/paginated;
 - query-wide storefront transition discovery uses bounded aggregate queries, not application-side loading of every potentially affected row;
 - admin target selection/search is bounded rather than loading an unbounded catalog into browser.
