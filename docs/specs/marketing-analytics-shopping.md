@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: Proposed — self-reviewed twice; ready for human review before `/plan`
+Status: Proposed — self-reviewed twice; implementation plan added; ready for human review before `/build`
 
 ## 1. Objective
 
@@ -915,7 +915,7 @@ pnpm build
 pnpm release:check
 ```
 
-Focused tests run during TDD; relevant full checks run before implementation is considered complete. This docs-only spec PR does not itself claim those runtime gates have been executed.
+Focused tests run during TDD; relevant full checks run before implementation is considered complete. This docs-only spec/plan PR does not itself claim those runtime gates have been executed.
 
 ## 12. Observability & Performance
 
@@ -995,38 +995,45 @@ Focused tests run during TDD; relevant full checks run before implementation is 
 
 ## 15. Required `/plan` Discoveries
 
-Before implementation choices are locked, `/plan` must resolve from repository evidence plus current official docs:
+The implementation plan is now recorded in `tasks/marketing-analytics-shopping-plan.md` with its checklist in `tasks/marketing-analytics-shopping-todo.md`. It resolves the technical direction while retaining explicit owner/account gates for decisions the codebase cannot safely infer.
 
-1. **Merchant offer identity:** durable standalone ID and context-aware composite ID/group semantics.
-2. **Purchase identity reconstruction:** prove the chosen Merchant item ID is derivable from `OrderLineSnapshot` if post-purchase product matching is required; otherwise surface an approved data-model decision.
-3. **Composite deep linking:** smallest stable URL contract selecting the exact parent/composite option.
-4. **SKU/MPN audit:** presence, uniqueness, stability and collision behavior.
-5. **Merchant description:** approved source/normalization fallback without leaking draft editorial content.
-6. **Merchant freshness:** Scheduled Fetch cadence based on mirror/price/stock volatility.
-7. **Merchant Automations + structured data:** decide exact price/availability/condition automation settings and whether variant-aware structured-data changes are required.
-8. **Google Ads value:** merchandise-only vs `OrderMirror.totalVnd`; explicit measurement-policy choice before activation.
-9. **Google Ads linker:** exact Google tag/Conversion Linker setup providing conversion-linking functionality.
-10. **GA4 page-view authority:** manual canonical app page views vs Google/GTM automatic/history authority; exactly one.
-11. **Conditional funnel milestones:** whether current checkout has a real `add_shipping_info` milestone; do not invent one if absent.
-12. **TikTok mapping:** current official event names/value/content-ID requirements; Purchase `event_id` remains `publicCode`.
-13. **Tracking modes:** exact deployment-aware `disabled | preview | live` mechanism and isolated test destinations.
-14. **GTM ownership/versioning:** container/workspace naming, test/publish workflow, reviewed export/config record, and noscript choice.
-15. **CSP origins:** exact current Google/TikTok requirements plus observed runtime requests; no convenience `unsafe-eval`.
-16. **Merchant target market:** intended country/language and current apparel-required/recommended attributes.
-17. **Merchant account prerequisites:** website verification, shipping/returns, diagnostics, Google Ads linkage.
-18. **Crawler compatibility:** verify Merchant-required page/image fetch works while `SEARCH_INDEXING_ENABLED=false` and ADR 0004 remain intact.
+Resolved planning direction includes:
 
-These discoveries may reveal a narrow owner decision, but they are not permission to invent new commerce rules.
+1. **Merchant item identity candidate:** `pancakeVariationId`, with fail-closed real-catalog format/durability audit before activation.
+2. **Purchase identity reconstruction:** use the same variation identity already preserved in `OrderLineSnapshot`; do not require mutable SKU/slug to report a confirmed Purchase.
+3. **Composite context:** only exactly-one approved public projection context is auto-eligible; ambiguous contexts remain excluded rather than forcing a schema change.
+4. **Composite/variant deep linking:** planned `/shop/<slug>?variant=<pancakeVariationId>` contract with authorization against the live public projection.
+5. **SKU/MPN audit:** read-only audit before feed activation; missing/duplicate/ambiguous values fail closed.
+6. **Merchant description:** published editorial copy first; any source-description fallback must be reviewed/normalized and never expose draft editorial content.
+7. **Merchant freshness:** Scheduled Fetch with account-supported cadence coordinated to catalog updates; realtime Merchant API remains out of scope.
+8. **Merchant Automations:** initially off for price/availability/condition until exact variant structured data is proven compatible.
+9. **Google Ads linker:** final Google tag/GTM configuration must provide verified conversion-linking functionality.
+10. **GA4 page-view authority:** application-owned manual page views; disable overlapping initial/history automatic collection.
+11. **Conditional funnel milestones:** no synthetic `add_shipping_info`/`add_payment_info` under the current one-page COD flow.
+12. **TikTok mapping:** official GTM template/custom-event mapping; Purchase `event_id = publicCode`.
+13. **Tracking modes:** centralized `disabled | preview | live` deployment-aware policy.
+14. **GTM ownership/versioning:** reviewed, diffable config/export record; no unreviewed production Custom HTML/JS.
+15. **CSP:** retain fail-closed build/runtime alignment and verify exact current Google/TikTok origins during `/build`.
+16. **Merchant target attributes:** explicit owner gate for initial market plus truthfulness of apparel-wide gender/age-group/condition constants; current Google requirements are rechecked during `/build`.
+17. **Merchant account prerequisites:** website verification/claim, shipping/returns, diagnostics, data source, and Ads linkage before activation.
+18. **Crawler compatibility:** Merchant page/image fetch must work without changing ADR 0004 search-indexing policy.
+
+Remaining owner/account gates before affected production activation:
+
+1. Google Ads Purchase conversion value: merchandise-only vs `OrderMirror.totalVnd`.
+2. Merchant initial target country/language/currency; plan proposes Vietnam / Vietnamese / VND pending confirmation.
+3. Whether all emitted products truthfully share `gender=male`, `age_group=adult`, `condition=new`; otherwise product-owned fields require a plan revision.
+4. Actual GTM/GA4/Ads/TikTok account identifiers and external-console configuration.
 
 ## 16. Authoritative Source Constraints Checked
 
-Version-sensitive implementation details must be rechecked during `/plan`/`/build`. Current source categories include:
+Version-sensitive implementation details must be rechecked during `/build`. Current source categories include:
 
 - GTM `dataLayer` and GA4 ecommerce examples, including clearing the previous ecommerce object before a new ecommerce event;
 - GA4 SPA/page-view guidance, including disabling automatic/history page views when manual page views are used;
-- Google Consent Mode current consent types/order;
+- Google Consent Mode current consent types/order and GTM/page-level supported patterns;
 - Google Ads GTM conversion setup, transaction/order IDs and conversion-linking requirements;
-- Merchant product data specification, variant grouping, Scheduled Fetch, identifiers, landing-page requirements, structured data and automatic updates/Automations;
+- Merchant product data specification, variant grouping/`variant_option`, Scheduled Fetch, identifiers, landing-page requirements, structured data and automatic updates/Automations;
 - TikTok GTM event guidance and event deduplication, including Pixel-to-Pixel and Pixel-to-Events-API `event_id` behavior.
 
 Do not implement version-sensitive tag/platform behavior from memory when current official documentation is available.
@@ -1035,7 +1042,7 @@ Do not implement version-sensitive tag/platform behavior from memory when curren
 
 This work is not complete merely because GTM loads or Merchant accepts a feed.
 
-Before `/ship`, both this spec and the repository-wide Definition of Done must pass, including:
+Before `/ship`, both this spec/plan and the repository-wide Definition of Done must pass, including:
 
 - behavior tests for new logic;
 - relevant full tests/typecheck/lint/build gates;
@@ -1049,10 +1056,11 @@ Before `/ship`, both this spec and the repository-wide Definition of Done must p
 
 ## 18. Open Questions / Owner Decisions
 
-No architecture blocker remains for `/plan`, but the following must be explicitly resolved before production activation:
+No architecture blocker remains for `/build` after human plan approval. The remaining external/product decisions are deliberately activation-gated rather than guessed:
 
 1. Google Ads Purchase conversion value: merchandise-only value or `OrderMirror.totalVnd`.
-2. Merchant target country/language if it differs from the storefront's current Vietnam/VND operating context.
-3. Any schema/snapshot change required by the final composite Merchant identity strategy, if existing immutable order facts cannot reconstruct the approved item ID.
+2. Merchant initial country/language/currency; proposed baseline Vietnam / Vietnamese / VND.
+3. Confirm catalog-wide apparel facts `male` / `adult` / `new`, or revise the plan to add per-product ownership.
+4. Supply/review the real GTM, GA4, Google Ads, and TikTok account identifiers/configuration before publishing live tags.
 
-All other items under **Required `/plan` Discoveries** are technical discoveries to answer from current repository behavior and current vendor documentation.
+Any schema/snapshot change discovered later remains a separate owner approval; the baseline plan is intentionally no-migration.
