@@ -25,7 +25,7 @@ Source spec: `docs/specs/marketing-analytics-shopping.md`
 
 ### T3 GTM + consent + page-view boot
 - [ ] Mount one GTM container behind the tracking-mode gate without touching direct Meta.
-- [ ] Establish current Google consent defaults before measurement tags.
+- [ ] Establish current Google consent defaults before measurement tags using the implementation pattern re-verified against current GTM consent guidance.
 - [ ] Add application-owned initial/App Router `page_view` and disable overlapping GA4 automatic/history behavior in GTM/property config.
 
 ### Checkpoint A
@@ -93,7 +93,7 @@ Source spec: `docs/specs/marketing-analytics-shopping.md`
 ## PR-E — Merchant feed
 
 ### M3 Merchant mapper/diagnostics
-- [ ] Map stable ID/group, LA Clothing brand, audited MPN, approved apparel values, color/size, price, availability, trusted image, description, and exact link.
+- [ ] Map stable ID/group, LA Clothing brand, audited MPN, approved apparel values, color/size, current `variant_option` representation where applicable, price, availability, trusted image, description, and exact link.
 - [ ] Keep structurally valid zero-stock offers as `out_of_stock`.
 - [ ] Exclude unresolved/unsafe/ambiguous records with bounded diagnostic reasons; never infer GTIN.
 
