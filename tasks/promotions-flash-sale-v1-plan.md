@@ -77,13 +77,22 @@ Plan lock:
 - before G1 starts, re-read then-current `main` and identify the actual analytics event ownership after any GTM/TikTok changes; do **not** assume today's Meta-specific files remain the final owner;
 - promotion code exposes/consumes one authoritative customer-price quote; tracking integrations consume it and must not reimplement promotion pricing.
 
+### Review follow-up — SQL parity, shared membership projection, lifecycle mechanics
+
+A later implementation-plan review surfaced three additional technical gaps. They are now locked as follows:
+
+- SQL percentage arithmetic must never round directly on mirrored `double precision`. After the base passes the positive safe-integer VND boundary, cast that integer-like base to PostgreSQL `numeric` **before** multiplication/division and round there, conceptually `ROUND((base::numeric * (100 - pct)) / 100)`, so tie behavior matches the TypeScript `Math.round` contract for positive VND values.
+- SQL↔TS parity fixtures must contain exact-half cases with fixed expected results, not only ordinary/time-boundary cases: `base=150,pct=1 → 149`, `base=350,pct=1 → 347`, `base=110,pct=5 → 105`.
+- One sanctioned bounded storefront SQL projection may serve both `/shop` effective-price filter/sort and `/flash-sale` active-valid membership before pagination. Do not introduce a second Flash Sale-specific promotion predicate.
+- When a never-Active Disabled campaign is re-enabled, the same transaction writes the new `enabledAt`, sets `publishState=ENABLED`, and clears `disabledAt=null`. A campaign whose prior enabled interval contained any Active time is terminal and cannot take this path.
+
 ### Previously locked clarifications retained
 
 #### S1 — Storefront discovery uses effective price
 
 Current `/shop` has `minPriceVnd`, `maxPriceVnd`, `price-asc`, and `price-desc` before pagination. Filter/sort must use current authoritative effective price for the same eligible candidate-variant set that card presentation uses.
 
-Because filtering/sorting happens before pagination, the plan explicitly allows one sanctioned SQL pricing projection with mandatory parity tests against the TypeScript pricing authority.
+Because filtering/sorting happens before pagination, the plan explicitly allows one sanctioned SQL pricing projection with mandatory parity tests against the TypeScript pricing authority. That same projection is also sanctioned for bounded `/flash-sale` membership before pagination.
 
 #### S2 — Composite pricing follows the real variant owner
 
@@ -185,6 +194,8 @@ Derived status:
 
 A fully expired interval cannot be newly enabled. A Disabled campaign is re-enableable only when it never had a non-empty active interval. This must remain correct with zero traffic and after restart.
 
+For the approved v1 mutable timestamp model, re-enabling a never-Active Disabled campaign is atomic: write a fresh `enabledAt`, set `publishState=ENABLED`, and clear `disabledAt=null` in the same transaction. A campaign whose previous enabled interval contained any Active time is terminal and cannot be re-enabled, so its terminal history is not erased by this rule.
+
 ### C. Central TypeScript pricing authority
 
 Create one pure pricing resolver with explicit `now`:
@@ -229,7 +240,8 @@ For existing campaign publish/re-enable/Scheduled edit/disable/copy-source reads
 5. lock required VariantMirror rows in deterministic ID order;
 6. re-read campaign lifecycle, target ownership, base prices, and overlapping enabled campaigns while locks are held;
 7. validate lifecycle, activation gate, target shape, price validity, schedule, and overlap;
-8. atomically commit or write nothing.
+8. for a legal never-Active re-enable, atomically write new `enabledAt`, clear `disabledAt`, and set `publishState=ENABLED`;
+9. atomically commit or write nothing.
 
 Two concurrent edits to the same campaign must not silently overwrite one another. Two concurrent overlapping campaigns must not both become effective. Disjoint variants of the same product may serialize for simplicity but can both succeed when semantically valid.
 
@@ -254,23 +266,30 @@ Scheduled/Active campaigns that already exist during an emergency rollback are n
 
 The gate is a rollout control, not campaign status and not client-visible authority.
 
-### G. Sanctioned SQL projection for discovery
+### G. Sanctioned SQL storefront projection for discovery and Flash Sale membership
 
-`storefront-catalog.ts` may replace/extend the current price CTE to compute **current effective price before pagination**.
+One shared storefront SQL projection may replace/extend the current price CTE to compute **current effective price and active-valid promotion membership before pagination** where bounded query semantics require it.
+
+Sanctioned consumers:
+- `/shop` count/filter/sort and ordered IDs that depend on effective price;
+- `/flash-sale` active-valid Flash Sale product/variant membership before page slicing.
 
 Requirements:
 - receives explicit `requestNow` as a bound parameter;
 - does not independently use database wall clock for campaign eligibility;
-- uses same usable-base predicate as TS;
+- uses the same usable-base predicate as TS;
+- treats the mirrored `Float?` base only as external input: once it has been validated as positive safe-integer VND, percentage arithmetic must cast that integer-like base to PostgreSQL `numeric` **before** multiplication/division and round there, conceptually `ROUND((base::numeric * (100 - pct)) / 100)`; do not call `ROUND()` on a `double precision` percentage expression;
 - matches direct variant and owning-product campaign targets;
 - applies `[start,end)` semantics;
 - matches percentage/fixed rounding/validity;
-- counts multiple applicable candidates and fails closed to base;
-- drives `minPrice`, `maxPrice`, `price-asc`, `price-desc`;
+- counts multiple applicable candidates and fails closed to base/no website promotion;
+- drives `/shop` `minPrice`, `maxPrice`, `price-asc`, `price-desc`;
+- drives `/flash-sale` membership using the same active-valid campaign projection rather than a separate Flash Sale-specific predicate;
 - preserves color/size/availability candidate semantics;
-- parity tests compare SQL and TS over boundary/invalid/conflict cases.
+- parity tests compare SQL and TS over no-promo, percentage, fixed, invalid, conflict, and time-boundary cases;
+- parity tests **must** include exact-half rounding fixtures with fixed expected results: `150 @ 1% → 149`, `350 @ 1% → 347`, `110 @ 5% → 105`.
 
-The SQL projection is a performance projection, not a second pricing authority.
+The SQL projection is a performance projection, not a second pricing authority. There is one sanctioned projection contract; do not fork separate promotion formulas for `/shop` and `/flash-sale`.
 
 ### H. Request clock and boundary refresh
 
@@ -319,12 +338,12 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 ## P0 — Planning closeout
 
-**Description:** Merge reviewed spec + plan only and record the five resolved self-review findings.
+**Description:** Merge reviewed spec + plan only and record the resolved self-review/review findings.
 
 **Acceptance criteria:**
 - [ ] PR #151 remains docs/tasks only;
 - [ ] approved spec remains product source of truth;
-- [ ] R1–R5 and S1–S2 are reflected in plan + todo;
+- [ ] R1–R5, review follow-up locks, and S1–S2 are reflected in plan + todo;
 - [ ] human approves PR #151;
 - [ ] no unresolved Critical/Required review findings;
 - [ ] exact head/CI state recorded before merge.
@@ -376,6 +395,8 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] deterministic Draft/Scheduled/Active/Ended/Disabled derivation;
 - [ ] zero-traffic terminality;
 - [ ] Disabled-before-Active vs Disabled-after-Active;
+- [ ] legal re-enable of never-Active Disabled campaign rewrites `enabledAt` and clears `disabledAt=null` atomically;
+- [ ] campaign with any prior non-empty Active interval cannot take re-enable path;
 - [ ] Copy → new Draft;
 - [ ] dynamic PRODUCT coverage;
 - [ ] batch direct-VARIANT + owning-PRODUCT candidate lookup;
@@ -383,7 +404,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] runtime conflict/recovery without arbitrary winner;
 - [ ] bounded query count.
 
-**Verification:** DB lifecycle/coverage/query-count tests.
+**Verification:** DB lifecycle/coverage/query-count tests, including Draft → enable → disable-before-Active → re-enable and terminal disable-after-Active cases.
 
 ---
 
@@ -400,12 +421,13 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] Scheduled edits are atomically revalidated;
 - [ ] Active material pricing/target/time edits rejected;
 - [ ] terminal lifecycle enforced;
+- [ ] legal re-enable atomically clears stale `disabledAt` while writing new enabled state;
 - [ ] campaign row lock prevents same-campaign lost updates;
 - [ ] deterministic campaign → product → variant lock order;
 - [ ] PRODUCT↔PRODUCT, PRODUCT↔VARIANT, VARIANT↔VARIANT overlap race-safe;
 - [ ] failed mutation leaves previous effective definition unchanged.
 
-**Verification:** first discriminating RED concurrency tests; same-campaign concurrent edit; cross-campaign conflicting publish; exact A.end == B.start; forged/stale IDs; gate-on/gate-off behavior.
+**Verification:** first discriminating RED concurrency tests; same-campaign concurrent edit; cross-campaign conflicting publish; exact A.end == B.start; forged/stale IDs; gate-on/gate-off behavior; re-enable timestamp-state regression.
 
 ---
 
@@ -457,7 +479,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 ---
 
-## P7a — Cards + effective-price discovery SQL
+## P7a — Cards + shared effective-price storefront SQL
 
 **Suggested PR:** `promo-D2-discovery`.
 
@@ -466,11 +488,14 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] discovery min/max and price sort use effective price;
 - [ ] one `requestNow` drives count, ID order, hydration, card quote, and transition facts;
 - [ ] SQL receives bound `requestNow`, not independent DB clock;
+- [ ] validated integer-like base is cast to PostgreSQL `numeric` before percentage multiplication/division; no `ROUND(double precision ...)` promotion formula;
 - [ ] color/size/availability constrain same candidate set;
 - [ ] SQL↔TS parity covers no-promo/%/fixed/invalid/conflict/time edges;
+- [ ] SQL↔TS exact-half parity is mandatory: `150 @ 1% → 149`, `350 @ 1% → 347`, `110 @ 5% → 105`;
+- [ ] projection contract is reusable by P7b `/flash-sale` membership rather than forked;
 - [ ] pagination/count remain bounded and stable.
 
-**Verification:** DB parity tests; boundary-time test where campaign transition sits between multiple query calls but one request clock preserves internal consistency; query-count check.
+**Verification:** DB parity tests including exact-half fixtures; boundary-time test where campaign transition sits between multiple query calls but one request clock preserves internal consistency; query-count check.
 
 ---
 
@@ -480,6 +505,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 **Acceptance criteria:**
 - [ ] bounded/paginated `/flash-sale` active valid Flash Sale membership;
+- [ ] membership uses the same sanctioned SQL active-valid pricing/membership projection from P7a before pagination, not a second Flash Sale-specific promotion predicate;
 - [ ] representative only among active Flash Sale variants;
 - [ ] one server `requestNow` per render;
 - [ ] earliest relevant `nextTransitionAt` returned;
@@ -487,7 +513,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] no persistent promotion cache introduced;
 - [ ] countdown cannot authorize transaction price.
 
-**Verification:** browser scheduled→active and active→ended; no >60s stale display path; active route membership regression.
+**Verification:** DB membership parity against central resolver plus browser scheduled→active and active→ended; no >60s stale display path; active route membership regression; bounded query-count check.
 
 ---
 
@@ -495,7 +521,8 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 - [ ] PDP/card/discovery agree for same variant/requestNow;
 - [ ] composite ownership green;
-- [ ] SQL↔TS parity green;
+- [ ] SQL↔TS parity green, including exact-half rounding fixtures;
+- [ ] `/shop` and `/flash-sale` use one sanctioned SQL promotion projection contract;
 - [ ] boundary refresh green;
 - [ ] no N+1;
 - [ ] 0 Critical / 0 Required review findings.
