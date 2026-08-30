@@ -106,11 +106,14 @@ Planning base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 mer
 - [ ] Copy does not expand PRODUCT coverage
 - [ ] Source dynamic expansion >2000 still Copy succeeds
 - [ ] Copy does not inherit lifecycle/order/history/source identity
-- [ ] `buildPromotionCopyName` reserves exact suffix inside 120 code units
+- [ ] `buildPromotionCopyName` trims/normalizes source before budgeting
+- [ ] Exact suffix is reserved inside 120-code-unit budget
 - [ ] Truncation does not split UTF-16 surrogate pair
-- [ ] Retained prefix `trimEnd()` before suffix
+- [ ] Avoiding surrogate split may leave one code unit unused; do not backfill partial code point
+- [ ] No second `trimEnd()` after budgeting; append exact suffix
 - [ ] Name 119 code units Copy succeeds <=120
 - [ ] Name 120 code units Copy succeeds <=120
+- [ ] Trailing-space normalization test before budget
 - [ ] Surrogate-boundary Copy test
 - [ ] Copy-of-Copy deterministic test
 
