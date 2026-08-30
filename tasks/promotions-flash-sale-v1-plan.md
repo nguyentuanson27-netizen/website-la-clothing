@@ -12,7 +12,7 @@ This plan follows the project lifecycle and `planning-and-task-breakdown` contra
 
 Review order: correctness → security → architecture → simplicity → performance.
 
-Latest verdict before this revision: **0 Critical, 5 Required planning findings**. All five are resolved below without changing the approved product contract.
+Latest independent review `5061370559` found **0 Critical / 3 Required** on head `8585038d`. All three are resolved below as normative plan locks: exact percentage arithmetic across the full safe-integer domain, query-wide/resume-safe storefront freshness, and explicit finite admin/input bounds.
 
 ### R1 — Buyer-visible quote must be compared before initial DRAFT creation
 
@@ -61,7 +61,7 @@ No third-party feature-flag dependency is introduced for v1.
 
 Plan lock:
 - capture one `requestNow` at the storefront request boundary;
-- pass that exact instant to discovery count, ordered-ID query, effective-price SQL projection, hydrated quote projection, representative card selection, and `nextTransitionAt` calculation;
+- pass that exact instant to discovery count, ordered-ID query, effective-price SQL projection, hydrated quote projection, representative card selection, and route transition calculation;
 - SQL must not independently call `CURRENT_TIMESTAMP`/`now()` for campaign eligibility when a server-supplied `requestNow` is available;
 - PDP and `/flash-sale` likewise resolve one request clock snapshot per server render;
 - transaction flows may obtain a newer explicit `now` when they intentionally revalidate.
@@ -79,12 +79,60 @@ Plan lock:
 
 ### Review follow-up — SQL parity, shared membership projection, lifecycle mechanics
 
-A later implementation-plan review surfaced three additional technical gaps. They are now locked as follows:
+A prior implementation-plan review surfaced additional technical gaps. They remain locked as follows:
 
-- SQL percentage arithmetic must never round directly on mirrored `double precision`. After the base passes the positive safe-integer VND boundary, cast that integer-like base to PostgreSQL `numeric` **before** multiplication/division and round there, conceptually `ROUND((base::numeric * (100 - pct)) / 100)`, so tie behavior matches the TypeScript `Math.round` contract for positive VND values.
-- SQL↔TS parity fixtures must contain exact-half cases with fixed expected results, not only ordinary/time-boundary cases: `base=150,pct=1 → 149`, `base=350,pct=1 → 347`, `base=110,pct=5 → 105`.
-- One sanctioned bounded storefront SQL projection may serve both `/shop` effective-price filter/sort and `/flash-sale` active-valid membership before pagination. Do not introduce a second Flash Sale-specific promotion predicate.
+- SQL percentage arithmetic must never round directly on mirrored `double precision`. After the base passes the positive safe-integer VND boundary, cast that integer-like base to PostgreSQL `numeric` **before** multiplication/division and round there, conceptually `ROUND((base::numeric * (100 - pct)) / 100)`.
+- SQL↔TS parity fixtures must contain exact-half cases with fixed expected results: `base=150,pct=1 → 149`, `base=350,pct=1 → 347`, `base=110,pct=5 → 105`.
+- One sanctioned bounded storefront SQL projection serves both `/shop` effective-price filter/sort and `/flash-sale` active-valid membership before pagination. Do not introduce a second Flash Sale-specific promotion predicate.
 - When a never-Active Disabled campaign is re-enabled, the same transaction writes the new `enabledAt`, sets `publishState=ENABLED`, and clears `disabledAt=null`. A campaign whose prior enabled interval contained any Active time is terminal and cannot take this path.
+
+### Review `5061370559` — three Required locks
+
+#### R6 — Percentage calculation is exact integer arithmetic, not floating `Math.round`
+
+The accepted base domain is the full positive `Number.isSafeInteger` range. A literal JavaScript `Math.round(base * multiplier / 100)` can lose one VND near the upper safe-integer boundary before rounding. Therefore the TypeScript resolver's normative percentage path is:
+
+```ts
+const numerator = BigInt(basePriceVnd) * BigInt(100 - discountPercent);
+const effectiveBigInt = (numerator + 50n) / 100n;
+const effectivePriceVnd = Number(effectiveBigInt);
+```
+
+The conversion back to `number` occurs only after safe-integer validation. The SQL projection implements the same exact rational value with `numeric` before multiplication/division. Mandatory domain + SQL↔TS parity includes:
+- `150 @ 1% → 149`;
+- `350 @ 1% → 347`;
+- `110 @ 5% → 105`;
+- `9007199254740989 @ 1% → 8917127262193579`.
+
+`Math.round(...)` is not the reference implementation across the accepted domain.
+
+#### R7 — Storefront freshness is query-wide and uses server-derived relative delay
+
+`nextTransitionAt` derived only from hydrated page rows is insufficient because a transition on an off-page product can change `/shop` filter/sort/page membership, and `/flash-sale` may be empty immediately before its first Scheduled sale starts.
+
+Plan lock:
+- `/shop` computes a query-wide earliest future relevant transition over the full pre-pagination candidate universe for that request, including off-page products/variants whose campaign boundary can change effective-price membership/order;
+- `/flash-sale` includes upcoming enabled Flash Sale boundaries even when active membership is currently empty;
+- transition discovery is an aggregate/bounded database operation, not application-side all-row loading;
+- server computes `refreshAfterMs` from `requestNow` and the query-wide transition, capped at `60_000`; if no future transition is known, use `60_000` as fallback;
+- client schedules from the relative `refreshAfterMs`, never from `Date.now()` against an absolute server timestamp;
+- on `visibilitychange` to visible and `pageshow`, if the server-provided delay elapsed while suspended, immediately call `router.refresh()`;
+- each refresh receives a new server-computed delay.
+
+Mandatory browser/runtime cases: off-page campaign enters the current sorted/filter page, empty Flash Sale becomes populated at first sale start, browser wall-clock skew, and tab/page resume after a boundary.
+
+#### R8 — Explicit finite bounds are named and testable
+
+Use these v1 constants as server-side contract:
+- `MAX_CAMPAIGN_NAME_LENGTH = 120` trimmed JavaScript string code units;
+- `MAX_TARGETS_PER_CAMPAIGN = 200` normalized explicit targets;
+- `MAX_PROMOTION_IDENTIFIER_LENGTH = 128` browser-supplied identifier code units before lookup;
+- `MAX_ADMIN_PROMOTION_PAGE_SIZE = 50`;
+- `ADMIN_TARGET_SEARCH_LIMIT = 50`;
+- public `/shop` and `/flash-sale` page size reuse existing storefront max `48`;
+- `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN = 2000` unique current variants for activation/re-enable/Scheduled-edit validation.
+
+Oversized syntactic input is rejected even for Draft. Draft PRODUCT expansion may be detected with a bounded `2001` read and shown as health invalid; publish/re-enable/Scheduled edit fails typed `TARGET_EXPANSION_LIMIT_EXCEEDED`. The expansion cap protects admin transaction/lock work only: post-activation dynamic PRODUCT coverage may grow beyond 2000 without becoming invalid solely because of this cap; runtime reads/health stay bounded and paginated. Every limit gets `max`/`max+1` tests.
 
 ### Previously locked clarifications retained
 
@@ -213,7 +261,8 @@ type EffectivePriceQuote = {
 
 Rules:
 - external Float base must cross the website boundary as positive safe-integer VND;
-- percentage integer `1..99`, integer-safe nearest-VND rounding;
+- percentage integer `1..99` uses the exact BigInt rational algorithm in R6; no floating multiplication/division is normative;
+- after conversion from BigInt, effective price must still be a positive safe integer and strictly below base;
 - FIXED_PRICE is final price with `0 < fixed < base`;
 - invalid promotion falls back only the affected variant when base is usable;
 - >1 applicable campaign candidate means conflict → no website promotion;
@@ -226,26 +275,27 @@ Batch by requested real variant IDs. For each variant resolve:
 - direct VARIANT targets;
 - PRODUCT targets for the variant's real owning product;
 - enabled campaign facts relevant at explicit `now`;
-- nearest future transition required for refresh.
+- nearest future per-variant transition required for PDP/card facts.
 
-Return candidate facts; central resolver decides valid/invalid/conflict. Never pick an arbitrary first campaign.
+Return candidate facts; central resolver decides valid/invalid/conflict. Never pick an arbitrary first campaign. Route-wide transition discovery for paginated storefront membership is owned by the sanctioned SQL projection/refresh design, not by only the hydrated variant batch.
 
 ### E. Concurrency-safe admin mutation
 
 For existing campaign publish/re-enable/Scheduled edit/disable/copy-source reads:
-1. parse/canonicalize input before opening the transaction where possible;
+1. parse/canonicalize and enforce explicit input bounds before opening the transaction where possible;
 2. lock the campaign row first (`FOR UPDATE`) when mutating an existing campaign;
 3. resolve involved owning product IDs;
-4. lock ProductMirror rows in deterministic ID order;
-5. lock required VariantMirror rows in deterministic ID order;
-6. re-read campaign lifecycle, target ownership, base prices, and overlapping enabled campaigns while locks are held;
-7. validate lifecycle, activation gate, target shape, price validity, schedule, and overlap;
-8. for a legal never-Active re-enable, atomically write new `enabledAt`, clear `disabledAt`, and set `publishState=ENABLED`;
-9. atomically commit or write nothing.
+4. perform a bounded affected-variant expansion probe capped at `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1`; fail typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set when over limit;
+5. lock ProductMirror rows in deterministic ID order;
+6. lock required VariantMirror rows in deterministic ID order when current expansion is within the cap;
+7. re-read campaign lifecycle, target ownership, base prices, and overlapping enabled campaigns while locks are held;
+8. validate lifecycle, activation gate, target shape, price validity, schedule, overlap, and bounds;
+9. for a legal never-Active re-enable, atomically write new `enabledAt`, clear `disabledAt`, and set `publishState=ENABLED`;
+10. atomically commit or write nothing.
 
 Two concurrent edits to the same campaign must not silently overwrite one another. Two concurrent overlapping campaigns must not both become effective. Disjoint variants of the same product may serialize for simplicity but can both succeed when semantically valid.
 
-Catalog sync is not required to take these admin locks. Runtime catalog-created invalidity/conflict fails closed through the resolver.
+Catalog sync is not required to take these admin locks. Runtime catalog-created invalidity/conflict fails closed through the resolver. Post-activation expansion beyond 2000 does not itself invalidate an Active campaign; runtime access stays bounded rather than taking one giant lock set.
 
 ### F. Server-only activation gate
 
@@ -272,22 +322,26 @@ One shared storefront SQL projection may replace/extend the current price CTE to
 
 Sanctioned consumers:
 - `/shop` count/filter/sort and ordered IDs that depend on effective price;
-- `/flash-sale` active-valid Flash Sale product/variant membership before page slicing.
+- `/flash-sale` active-valid Flash Sale product/variant membership before page slicing;
+- route-wide aggregate discovery of the earliest future relevant campaign transition for `/shop` and `/flash-sale`.
 
 Requirements:
 - receives explicit `requestNow` as a bound parameter;
 - does not independently use database wall clock for campaign eligibility;
 - uses the same usable-base predicate as TS;
-- treats the mirrored `Float?` base only as external input: once it has been validated as positive safe-integer VND, percentage arithmetic must cast that integer-like base to PostgreSQL `numeric` **before** multiplication/division and round there, conceptually `ROUND((base::numeric * (100 - pct)) / 100)`; do not call `ROUND()` on a `double precision` percentage expression;
+- treats the mirrored `Float?` base only as external input: once validated as positive safe-integer VND, percentage arithmetic casts that integer-like base to PostgreSQL `numeric` **before** multiplication/division and produces the same exact rational rounding as R6; do not call `ROUND()` on a `double precision` percentage expression;
 - matches direct variant and owning-product campaign targets;
 - applies `[start,end)` semantics;
-- matches percentage/fixed rounding/validity;
+- matches percentage/fixed validity;
 - counts multiple applicable candidates and fails closed to base/no website promotion;
 - drives `/shop` `minPrice`, `maxPrice`, `price-asc`, `price-desc`;
 - drives `/flash-sale` membership using the same active-valid campaign projection rather than a separate Flash Sale-specific predicate;
 - preserves color/size/availability candidate semantics;
+- transition aggregate considers pre-pagination relevant candidates, not only returned IDs/currently active members;
+- `/flash-sale` transition aggregate includes upcoming enabled Flash Sale campaigns when current membership is empty;
 - parity tests compare SQL and TS over no-promo, percentage, fixed, invalid, conflict, and time-boundary cases;
-- parity tests **must** include exact-half rounding fixtures with fixed expected results: `150 @ 1% → 149`, `350 @ 1% → 347`, `110 @ 5% → 105`.
+- parity tests include exact-half fixtures `150 @ 1% → 149`, `350 @ 1% → 347`, `110 @ 5% → 105`;
+- parity tests include upper-safe-integer fixture `9007199254740989 @ 1% → 8917127262193579`.
 
 The SQL projection is a performance projection, not a second pricing authority. There is one sanctioned projection contract; do not fork separate promotion formulas for `/shop` and `/flash-sale`.
 
@@ -296,9 +350,17 @@ The SQL projection is a performance projection, not a second pricing authority. 
 At each storefront server render:
 - capture one `requestNow`;
 - use it across all queries/projections for that render;
-- compute `nextTransitionAt` from the same campaign facts.
+- for paginated `/shop` and `/flash-sale`, compute `queryWideNextTransitionAt` over the full relevant pre-pagination candidate universe, not only hydrated rows/current active membership;
+- compute `refreshAfterMs` server-side as `min(max(queryWideNextTransitionAt - requestNow, 0), 60_000)` when a future transition exists, otherwise `60_000`;
+- PDP may derive its transition from current product/selected-variant facts because route membership is not paginated, but still receives a server-computed relative delay capped at 60 seconds.
 
-Current `/shop` and PDP use `connection()`, so keep dynamic request rendering. For an already-open page, a small Client Component receives only server-computed `nextTransitionAt` and calls App Router `router.refresh()` at the boundary.
+Current `/shop` and PDP use `connection()`, so keep dynamic request rendering. For an already-open page, a small Client Component receives server-computed **relative** `refreshAfterMs` and calls App Router `router.refresh()` when the delay expires. It must not schedule by comparing an absolute server timestamp to browser `Date.now()`.
+
+Resume behavior:
+- track elapsed time with a monotonic client source such as `performance.now()`;
+- if the page becomes hidden/suspended and later fires `visibilitychange` to visible or `pageshow`, immediately refresh when the server-provided delay has elapsed;
+- after refresh, replace the prior delay with the new Server Component payload;
+- this yields a visible-page maximum promotional staleness of 60 seconds even when no future transition is currently known, and avoids browser wall-clock skew as a correctness input.
 
 Verified against current Next.js App Router docs on 2026-08-30:
 - `connection()` defers rendering until an incoming request;
@@ -343,7 +405,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 **Acceptance criteria:**
 - [ ] PR #151 remains docs/tasks only;
 - [ ] approved spec remains product source of truth;
-- [ ] R1–R5, review follow-up locks, and S1–S2 are reflected in plan + todo;
+- [ ] R1–R8 and S1–S2 are reflected in plan + todo;
 - [ ] human approves PR #151;
 - [ ] no unresolved Critical/Required review findings;
 - [ ] exact head/CI state recorded before merge.
@@ -378,12 +440,15 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 **Acceptance criteria:**
 - [ ] pure resolver with explicit `now`;
 - [ ] positive safe-integer base boundary;
-- [ ] percentage/fixed rules and rounding;
+- [ ] percentage `1..99` uses exact BigInt rational arithmetic `(BigInt(base) * BigInt(100-pct) + 50n) / 100n`;
+- [ ] result is safe-converted to `number` only after boundary validation;
+- [ ] no floating `Math.round(base * multiplier / 100)` path is normative;
+- [ ] FIXED_PRICE validity unchanged;
 - [ ] invalid variant fallback and conflict fail-closed;
-- [ ] promotion snapshot metadata + `nextTransitionAt`;
+- [ ] promotion snapshot metadata + per-quote `nextTransitionAt`;
 - [ ] read-only mirrored-price audit reports null/zero/negative/non-integer/unsafe categories.
 
-**Verification:** domain table tests including `base=50, 1%`; fixed-price drift/recovery; multiple-candidate conflict; malformed external price facts.
+**Verification:** domain table includes `base=50,1%`, exact-half fixtures, and `9007199254740989 @ 1% → 8917127262193579`; fixed-price drift/recovery; multiple-candidate conflict; malformed external price facts.
 
 ---
 
@@ -402,9 +467,10 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] batch direct-VARIANT + owning-PRODUCT candidate lookup;
 - [ ] affected-variant PARTIALLY_INVALID health;
 - [ ] runtime conflict/recovery without arbitrary winner;
-- [ ] bounded query count.
+- [ ] bounded query count;
+- [ ] Draft expansion health detects `>2000` via bounded probe without loading all variants.
 
-**Verification:** DB lifecycle/coverage/query-count tests, including Draft → enable → disable-before-Active → re-enable and terminal disable-after-Active cases.
+**Verification:** DB lifecycle/coverage/query-count tests, including Draft → enable → disable-before-Active → re-enable and terminal disable-after-Active cases; expansion health at 2000/2001.
 
 ---
 
@@ -414,8 +480,13 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 **Acceptance criteria:**
 - [ ] require existing ADMIN authorization;
-- [ ] bound all names/IDs/arrays/enums/money/timestamps;
-- [ ] Draft may save invalid/non-effective configuration;
+- [ ] enforce `MAX_CAMPAIGN_NAME_LENGTH=120` after trim;
+- [ ] enforce `MAX_TARGETS_PER_CAMPAIGN=200` normalized explicit targets;
+- [ ] enforce `MAX_PROMOTION_IDENTIFIER_LENGTH=128` on browser-supplied IDs before lookup;
+- [ ] enforce `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN=2000` on publish/re-enable/Scheduled-edit validation;
+- [ ] reject oversized syntactic input before persistence even for Draft;
+- [ ] Draft may otherwise save business-invalid/non-effective configuration;
+- [ ] expansion over cap returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set;
 - [ ] publish/re-enable fails `ACTIVATION_DISABLED` while server gate is off;
 - [ ] when gate is on, full current-target activation validation applies;
 - [ ] Scheduled edits are atomically revalidated;
@@ -425,9 +496,10 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] campaign row lock prevents same-campaign lost updates;
 - [ ] deterministic campaign → product → variant lock order;
 - [ ] PRODUCT↔PRODUCT, PRODUCT↔VARIANT, VARIANT↔VARIANT overlap race-safe;
-- [ ] failed mutation leaves previous effective definition unchanged.
+- [ ] failed mutation leaves previous effective definition unchanged;
+- [ ] post-activation runtime expansion above 2000 does not invalidate campaign solely due the transaction cap.
 
-**Verification:** first discriminating RED concurrency tests; same-campaign concurrent edit; cross-campaign conflicting publish; exact A.end == B.start; forged/stale IDs; gate-on/gate-off behavior; re-enable timestamp-state regression.
+**Verification:** first discriminating RED concurrency tests; same-campaign concurrent edit; cross-campaign conflicting publish; exact A.end == B.start; forged/stale/129-char IDs; name 120/121; targets 200/201; expansion 2000/2001; gate-on/gate-off behavior; re-enable timestamp-state regression.
 
 ---
 
@@ -437,6 +509,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] migration clean;
 - [ ] concurrency tests stable under repeated runs;
 - [ ] activation disabled by default in production-like fixture;
+- [ ] explicit bounds max/max+1 tests green;
 - [ ] no framework dependency inside pricing domain;
 - [ ] no N+1;
 - [ ] 0 Critical / 0 Required review findings.
@@ -449,15 +522,16 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 **Acceptance criteria:**
 - [ ] `/admin/promotions` protected;
+- [ ] campaign list/search is paginated and returns at most `MAX_ADMIN_PROMOTION_PAGE_SIZE=50` per request;
+- [ ] PRODUCT/VARIANT target search returns at most `ADMIN_TARGET_SEARCH_LIMIT=50` candidates per request;
 - [ ] list status/health/targets/time/discount;
-- [ ] bounded PRODUCT/VARIANT search/selection;
 - [ ] create/edit/publish/re-enable/disable/copy actions according to lifecycle;
 - [ ] while activation gate is off, Publish/Re-enable shows explicit disabled-readiness feedback instead of pretending success;
-- [ ] target-specific typed errors;
+- [ ] target-specific typed errors including expansion limit;
 - [ ] product admin shows current/upcoming campaign summary + link only;
 - [ ] server actions delegate to domain; no pricing arithmetic in React.
 
-**Verification:** server-action mapping tests; Playwright keyboard/Axe/mobile; forged non-admin mutation rejected.
+**Verification:** server-action mapping tests; list/search max/max+1/pagination tests; Playwright keyboard/Axe/mobile; forged non-admin mutation rejected.
 
 ---
 
@@ -473,9 +547,10 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] no-promo selection returns base/no sale UI;
 - [ ] composite component uses its real variant + owning product;
 - [ ] parent PRODUCT campaign does not bleed onto child-owned component;
-- [ ] no per-option promotion DB query.
+- [ ] no per-option promotion DB query;
+- [ ] PDP boundary refresher uses server-derived relative delay capped at 60s and resume guard.
 
-**Verification:** domain/projection tests plus composite ownership regression.
+**Verification:** domain/projection tests plus composite ownership regression; PDP start/end + clock-skew/resume refresh smoke.
 
 ---
 
@@ -489,13 +564,17 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] one `requestNow` drives count, ID order, hydration, card quote, and transition facts;
 - [ ] SQL receives bound `requestNow`, not independent DB clock;
 - [ ] validated integer-like base is cast to PostgreSQL `numeric` before percentage multiplication/division; no `ROUND(double precision ...)` promotion formula;
+- [ ] SQL produces exact rational parity with the BigInt TypeScript algorithm across full accepted safe-integer domain;
 - [ ] color/size/availability constrain same candidate set;
 - [ ] SQL↔TS parity covers no-promo/%/fixed/invalid/conflict/time edges;
 - [ ] SQL↔TS exact-half parity is mandatory: `150 @ 1% → 149`, `350 @ 1% → 347`, `110 @ 5% → 105`;
+- [ ] SQL↔TS upper-safe parity is mandatory: `9007199254740989 @ 1% → 8917127262193579`;
 - [ ] projection contract is reusable by P7b `/flash-sale` membership rather than forked;
+- [ ] query-wide earliest future transition can be aggregated from the full pre-pagination route candidate universe;
+- [ ] public page size remains bounded by existing storefront maximum `48`;
 - [ ] pagination/count remain bounded and stable.
 
-**Verification:** DB parity tests including exact-half fixtures; boundary-time test where campaign transition sits between multiple query calls but one request clock preserves internal consistency; query-count check.
+**Verification:** DB parity tests including exact-half + upper-safe fixture; boundary-time test where campaign transition sits between multiple query calls but one request clock preserves internal consistency; off-page transition aggregate fixture; page-size 48/max+1 rejection or normalization according to existing parser; query-count check.
 
 ---
 
@@ -504,16 +583,26 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 **Suggested PR:** `promo-D3-flash-refresh`.
 
 **Acceptance criteria:**
-- [ ] bounded/paginated `/flash-sale` active valid Flash Sale membership;
+- [ ] bounded/paginated `/flash-sale` active valid Flash Sale membership using max page size 48;
 - [ ] membership uses the same sanctioned SQL active-valid pricing/membership projection from P7a before pagination, not a second Flash Sale-specific promotion predicate;
 - [ ] representative only among active Flash Sale variants;
 - [ ] one server `requestNow` per render;
-- [ ] earliest relevant `nextTransitionAt` returned;
-- [ ] client boundary refresher uses server timestamp and `router.refresh()`;
+- [ ] `/shop` uses query-wide earliest relevant future transition across pre-pagination candidates, including off-page campaigns capable of changing current filter/sort/page membership;
+- [ ] `/flash-sale` transition aggregate includes upcoming enabled Flash Sale even when current membership is empty;
+- [ ] server sends relative `refreshAfterMs`, capped at `60_000`, with 60s fallback when no future transition is known;
+- [ ] client does not use browser `Date.now()` to derive schedule from an absolute server timestamp;
+- [ ] client uses monotonic elapsed-time tracking and immediate `router.refresh()` on `visibilitychange`/`pageshow` when delay elapsed while suspended;
 - [ ] no persistent promotion cache introduced;
 - [ ] countdown cannot authorize transaction price.
 
-**Verification:** DB membership parity against central resolver plus browser scheduled→active and active→ended; no >60s stale display path; active route membership regression; bounded query-count check.
+**Verification:** DB membership/transition parity against central resolver plus browser:
+- scheduled→active and active→ended;
+- off-page promotion start changes current `/shop` sorted/filter page;
+- empty `/flash-sale` → first Scheduled Flash Sale starts;
+- browser `Date.now()` skew does not postpone refresh;
+- hidden/background page resumes after boundary and refreshes immediately;
+- visible page has no >60s stale display path;
+- bounded query-count check.
 
 ---
 
@@ -521,9 +610,10 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 
 - [ ] PDP/card/discovery agree for same variant/requestNow;
 - [ ] composite ownership green;
-- [ ] SQL↔TS parity green, including exact-half rounding fixtures;
+- [ ] SQL↔TS parity green, including exact-half and upper-safe-integer fixtures;
 - [ ] `/shop` and `/flash-sale` use one sanctioned SQL promotion projection contract;
-- [ ] boundary refresh green;
+- [ ] query-wide/off-page/empty-state boundary refresh green;
+- [ ] clock-skew/resume guard green;
 - [ ] no N+1;
 - [ ] 0 Critical / 0 Required review findings.
 
@@ -641,7 +731,8 @@ If acceptance cannot be proven, activation gate remains off.
 **Acceptance criteria:**
 - [ ] admin/storefront/checkout mobile, keyboard, Axe paths cover new behavior;
 - [ ] buyer-visible Stage 1 and Stage 2 price-change flows have browser proof;
-- [ ] flash-sale boundary refresh has browser proof;
+- [ ] storefront freshness browser proof includes off-page `/shop` membership/order transition, empty Flash Sale activation, browser clock skew, and hidden-tab/pageshow resume after boundary;
+- [ ] visible promotion display staleness never exceeds 60 seconds under the approved refresher contract;
 - [ ] final review order correctness → security → architecture → simplicity → performance;
 - [ ] 0 Critical / 0 Required before launch.
 
