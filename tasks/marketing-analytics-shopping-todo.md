@@ -4,6 +4,8 @@ Status: **PROPOSED — do not start `/build` until human approval of `tasks/mark
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
+Planning note: PR #153 intentionally keeps `/spec` + `/plan` together at the owner's request and remains docs-only. Production implementation is split into PR-A through PR-F below; do not add runtime implementation to this planning PR merely because the docs are co-located.
+
 ## Owner/account gates
 
 - [ ] **O1 Google Ads value:** approve merchandise-only vs `OrderMirror.totalVnd` before the Ads Purchase tag is published.
