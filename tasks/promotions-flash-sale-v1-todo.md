@@ -6,7 +6,7 @@ Source of truth:
 - `docs/specs/promotions-flash-sale-v1.md`
 - `tasks/promotions-flash-sale-v1-plan.md`
 
-Planning base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 merge. Refresh from latest reviewed `main` before every implementation slice.
+Planning base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 merge. This branch has been refreshed to include that merge. Refresh from latest reviewed `main` before every implementation slice.
 
 ## Planning/review gate
 - [x] Pricing ownership/product contract consolidated
@@ -29,6 +29,7 @@ Planning base: `main@8eb4925de729827292c3d5a344ddfe78d4a5f96d` after PR #152 mer
 - [x] PR #152 W3 Pancake catalog evidence dependency absorbed
 - [x] PR #152 W4 structured-data fail-closed/no-AggregateOffer constraint absorbed
 - [x] PR #152 W15 SEO test-coverage inventory requirement absorbed
+- [x] Branch refreshed with merged PR #152 / current planning base
 - [ ] Fresh review on latest head: 0 Critical / 0 Required
 - [ ] Exact-head CI green
 - [ ] Human approves PR #151
