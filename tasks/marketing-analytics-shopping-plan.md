@@ -4,497 +4,386 @@ Status: **PROPOSED — planning artifact only; human approval required before `/
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
-This plan intentionally uses a named task file instead of replacing the repository's existing generic `tasks/plan.md`. The repository already keeps named workstream plans, and this keeps the marketing work reviewable and reversible.
+PR #153 intentionally keeps `/spec` + `/plan` together as a docs-only review unit. This plan is the implementation-level narrowing of the spec: where the spec allows more than one safe implementation, the decisions below are normative for v1. Runtime code must land in focused implementation PRs, not in this planning PR.
 
-This `/spec` + `/plan` review unit is intentionally kept in PR #153 at the owner's explicit request even though the combined docs diff is large. No runtime code is included here. ADR 0005's reviewability concern is addressed by splitting implementation into six focused PRs below; production code must not accumulate on this planning branch merely because the planning documents are co-located.
+## 1. Goal
 
-## 1. Planning goal
+Implement GA4 + Google Ads + TikTok Pixel through GTM, preserve the existing direct Meta Pixel + CAPI integration, and expose an automated Google Merchant product-data source without moving commerce truth into vendor tooling or weakening current CSP/search-exposure behavior.
 
-Implement the approved marketing-measurement and Google Shopping foundation without moving commerce truth into GTM, without changing existing Meta Pixel/CAPI semantics, and without weakening the current storefront/CSP/search-exposure boundaries.
+Core invariants:
 
-The implementation sequence is designed to fail fast on identity, configuration, and Merchant-data risks before account activation.
+- business/order/cart state owns commerce truth;
+- GTM is routing/mapping only;
+- Purchase exists only for `OrderMirror.state === CONFIRMED`;
+- `publicCode` is the shared Purchase transaction/event identity;
+- only approved production configuration may send live vendor traffic;
+- preview/test traffic must be mechanically isolated from production destinations;
+- tracking failure must never break shopping/checkout;
+- no customer PII enters the generic commerce `dataLayer`;
+- Merchant output is fail-closed when identity, price, landing context, serialization, or resource limits are unsafe.
 
-## 2. Repository facts that shape the plan
+## 2. Repository facts that shape implementation
 
-- `next.config.mjs` currently builds a fail-closed CSP from build-time Meta configuration. Google/TikTok tracking must follow the same build/runtime-alignment principle rather than opening third-party origins from an untrusted request host.
-- `src/app/layout.tsx` already owns the direct Meta Pixel mount point and is the natural app-level location for GTM bootstrapping.
-- PDP `AddToCart` is already emitted to Meta only after `addStorefrontItemToBag()` succeeds. The Google/TikTok contract should reuse that success boundary rather than track the button click.
-- `/checkout` renders only after server-authoritative cart, price, stock, and shipping facts resolve. That page is the current authoritative `begin_checkout` truth point.
-- `/checkout/success` checks `OrderMirror.state === CONFIRMED` before rendering Meta Purchase. The new canonical Purchase event should reuse that database truth.
-- `OrderLineSnapshot` already stores `pancakeVariationId`, quantity, unit price, product name, color, and size, but not SKU, product slug, Merchant ID, or composite projection context.
-- `VariantMirror.pancakeVariationId` is database-unique. `VariantMirror.sku` is nullable and indexed but not unique.
-- Current storefront projections expose local variant IDs but not enough stable external identity for every component projection; composite `kindKey` values such as `component-1` are presentation/order-derived and must not become external Merchant identifiers.
-- Current product JSON-LD has at most one aggregate PDP `Offer`; it is not variant-level Merchant authority.
+- `next.config.mjs` builds a fail-closed CSP from build-time tracking configuration; Google/TikTok must preserve build/runtime alignment.
+- `src/app/layout.tsx` owns the direct Meta mount point and is the app-level GTM bootstrap boundary.
+- PDP Meta `AddToCart` already fires only after `addStorefrontItemToBag()` succeeds; canonical AddToCart must reuse that success boundary.
+- `/checkout` renders only when current cart, price, stock, and shipping facts resolve, so it is the current `begin_checkout` truth point.
+- `/checkout/success` checks `OrderMirror.state === CONFIRMED` before browser Purchase.
+- `OrderLineSnapshot` stores `pancakeVariationId`, product name, color, size, quantity, and immutable prices, but not SKU/slug/Merchant/composite context.
+- `VariantMirror.pancakeVariationId` is DB-unique; SKU is nullable and not DB-unique.
+- mirror sync upserts variants by `pancakeVariationId` and products by `pancakeProductId`, which proves current repository identity semantics but not upstream lifetime durability by itself.
+- cart mutations serialize on the cart row, but the current update/remove results do not return old/removed quantity from inside that lock.
+- composite storefront projection can sell a component variation through a different public parent PDP; presentation keys such as `component-1` are not stable external IDs.
+- current PDP JSON-LD is aggregate, not exact variant authority.
 
-## 3. Planning decisions locked before implementation
+## 3. Locked v1 decisions
 
-1. **Canonical external item candidate:** use `pancakeVariationId` as the first-choice `item_id` / Merchant `id` because it is unique and is already preserved in immutable Purchase snapshots. Before activation, audit every emitted value against Google's current Merchant ID format/length requirements. A failing audit blocks activation rather than silently changing live identity.
-2. **Merchant family candidate:** for standalone products, prefer the stable Pancake product identity as `item_group_id` after the same durability/length audit. Do not use mutable slug, color/size text, array position, or composite `kindKey` as a group ID.
-3. **Composite ambiguity rule:** one Pancake variation may be emitted only when it maps to exactly one approved public landing context. Zero/multiple contexts produce an explicit diagnostic and no Merchant offer. No schema change is added merely to force an ambiguous context into the feed.
-4. **Variant deep link:** the planned smallest public contract is `/shop/<slug>?variant=<pancakeVariationId>`. The PDP may preselect only when that variation is a valid option in the current public projection. Forged/stale query values must not expose hidden or inactive variants.
-5. **Analytics page-view authority:** application-owned canonical `page_view` events are the preferred authority for initial load and App Router navigation. GA4 automatic initial/history page views must be disabled where required so one navigation produces one GA4 page view.
-6. **dataLayer discipline:** every ecommerce event clears the prior ecommerce object immediately before pushing the next event; never replace `window.dataLayer` after GTM initialization.
-7. **Tracking modes:** one deployment-aware resolver owns `disabled | preview | live`. `live` is limited to the approved production origin/configuration. `preview` is explicit and may load Tag Assistant/GTM only with production destinations blocked or replaced by isolated test destinations.
-8. **Consent:** the application owns a vendor-neutral consent policy. The initial Google default must be established before measurement tags. During `/build`, re-verify whether the final GTM implementation uses a consent-mode template/Tag Manager Consent APIs or the documented page-level pre-GTM default pattern; do not use unreviewed Custom HTML consent code.
-9. **Google Ads:** Purchase is the only required primary Ads conversion in this phase; `transaction_id = publicCode`. The final Google-tag/GTM setup must provide conversion-linking functionality. Enhanced Conversions remain out of scope.
-10. **TikTok:** Pixel runs through GTM. Purchase/CompletePayment receives `event_id = publicCode` now so repeated browser copies and a later Events API copy can deduplicate on the same identity.
-11. **Merchant delivery:** use a public GET-only Next.js Route Handler returning a supported product-data file. Initial delivery remains Scheduled Fetch, not Merchant API realtime sync.
-12. **Merchant Automations:** start with price/availability/condition automatic updates **disabled** until exact variant landing-page structured data is proven compatible. Current aggregate PDP Offer markup is not sufficient evidence for variant-specific corrections.
-13. **No baseline schema migration:** the initial plan deliberately uses identities reconstructible from current mirrors and `OrderLineSnapshot`. A schema change requires a separate owner decision only if a later approved composite identity cannot be represented safely.
-14. **Existing Meta remains direct:** no Meta tag in GTM, no change to Meta `content_ids`, Purchase value, CAPI request matching, or current browser/server dedup logic.
+### 3.1 Canonical commerce identity
 
-## 4. Owner/account gates that implementation must not guess
+- Browser/GA4/TikTok canonical `item_id` candidate: `pancakeVariationId`.
+- Purchase `transaction_id` / `event_id`: `OrderMirror.publicCode`.
+- Internal `VariantMirror.id` remains the mutation/authorization identity and is not exposed as the preferred external catalog identity.
+- SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted items.
+- Pancake barcode is never assumed to be GTIN.
 
-These gates do not block pure code foundations, but the affected vendor tag/feed cannot be activated until they are resolved:
+### 3.2 Merchant scope — standalone only in v1
 
-- **O1 — Google Ads Purchase value:** choose merchandise-only or `OrderMirror.totalVnd`. Proposed operational default: total order value if Ads bidding should optimize against actual order value; GA4 remains merchandise value with shipping separate either way.
-- **O2 — Merchant market:** proposed initial target is Vietnam / Vietnamese / VND because the storefront is Vietnamese and prices are VND. Confirm before data-source activation.
-- **O3 — Apparel constants:** current schema has no per-product gender/age-group/condition fields. Current Merchant guidance requires `gender` and `age_group` for free listings across Apparel & Accessories, while color/size and variant grouping must describe the actual variants. Before activation, confirm whether every emitted LA Clothing item can truthfully use catalog-wide `gender=male`, `age_group=adult`, and `condition=new`. If not, the plan must be revised to add product-owned attributes rather than invent values.
-- **O4 — Vendor console identifiers:** reviewed GTM container ID, GA4 measurement ID, Google Ads conversion ID/label, and TikTok Pixel ID must be supplied through their proper configuration owners. They are identifiers, not server secrets, but still require correct environment/account ownership.
+Merchant v1 **does not emit composite projections**.
+
+Reason: a component variation sold through a parent composite PDP does not yet have a proven durable Merchant family identity, and a composite set/component relationship is not automatically the same thing as a normal color/size variant family. Google requires `item_group_id` to group actual variants of the same product and recommends keeping it stable. Until a separate design proves a durable composite public-context family contract, composite offers fail closed with `COMPOSITE_DEFERRED`.
+
+For standalone products only:
+
+- `id` candidate = `pancakeVariationId` after durability/format audit;
+- `item_group_id` candidate = `pancakeProductId` when the standalone product has variants and after durability/format audit;
+- each submitted variation gets a distinct deep link `/shop/<slug>?variant=<pancakeVariationId>`;
+- the deep link preselects only a valid current public standalone option;
+- organic-search canonical remains the base PDP contract; the variant query must not silently create an independent organic canonical/indexing policy.
+
+Composite Merchant support becomes a separate later design/plan, not an implicit extension of M3.
+
+### 3.3 External-ID durability gate
+
+DB uniqueness/current upsert semantics are insufficient evidence for a live Merchant identity. Before Merchant activation M1 must collect at least one durability proof for both `pancakeVariationId` and `pancakeProductId`:
+
+1. provider/API contract evidence that the IDs are stable for the lifetime of the same upstream product/variation; **or**
+2. controlled repeated full-catalog resync evidence showing the same upstream objects retain the same IDs, combined with repository tests proving mirror rows are reconciled by those IDs; **or**
+3. equivalent historical evidence approved in review.
+
+If durability cannot be established, Merchant activation is blocked; implementation must not silently fall back to slug, color/size text, array position, or local cuid.
+
+### 3.4 Tracking mode and GTM preview isolation
+
+One application resolver owns `disabled | preview | live`, but **`preview` is fail-closed until container-side isolation is reviewable and present**.
+
+Normative mechanism:
+
+1. before the GTM bootstrap, the app publishes an immutable bootstrap fact such as `la_tracking_mode` into the existing `dataLayer`;
+2. every GA4, Google Ads and TikTok tag that targets a production property/account must require `la_tracking_mode === "live"` in its firing conditions;
+3. preview/test-only tags may target isolated test/debug destinations, but never production destinations;
+4. a checked-in GTM export/config record is statically reviewed to prove the live guard is attached to every production destination tag;
+5. application `preview` mode must resolve to no-GTM/disabled until that reviewed isolation artifact exists; enabling preview and the corresponding container mapping happens together in PR-C, not earlier in PR-A;
+6. Tag Assistant remains runtime verification, not the isolation mechanism itself.
+
+This closes the gap where GTM Preview otherwise behaves like the current container draft is deployed and could fire production tags.
+
+### 3.5 Consent
+
+The application owns a vendor-neutral consent state. Current production policy is tracking granted immediately and visible consent UI remains deferred, but the implementation must establish Google consent defaults before measurement and keep the policy replaceable later without changing the commerce event contract.
+
+### 3.6 GA4 / Ads / TikTok
+
+- Exactly one GA4 page-view authority: application-owned canonical `page_view`; overlapping automatic/history page view must be disabled in GTM/property setup.
+- Before each ecommerce event, clear/reset the prior ecommerce object so stale keys cannot bleed into the next event.
+- Google Ads: Purchase is the only required primary conversion in v1; `transaction_id = publicCode`; conversion-linking functionality is required; Enhanced Conversions are out of scope.
+- TikTok Pixel runs through GTM; Purchase/CompletePayment uses `event_id = publicCode` now so repeated browser events and later Events API events can share identity.
+- Existing Meta browser/CAPI semantics are preserved and no Meta tag is added to GTM.
+
+### 3.7 Merchant public-route resource envelope
+
+Use bounded on-request generation for v1 rather than introducing a new background/precompute subsystem.
+
+Initial hard limits:
+
+- `MAX_MERCHANT_OFFERS = 5_000` emitted offers;
+- `MAX_MERCHANT_FEED_BYTES = 16 * 1024 * 1024` bytes for the complete serialized response;
+- `MAX_MERCHANT_DB_ROUND_TRIPS = 8` database round trips for one feed generation;
+- no per-record/N+1 query path is allowed.
+
+Overflow behavior is fail-closed:
+
+- check the catalog/offer envelope before returning a successful body;
+- if offer count, response bytes, or planned query/work budget exceeds the limit, return a non-success response (target `503 Service Unavailable`) and a bounded non-sensitive diagnostic/telemetry signal;
+- never silently truncate the feed and never return a partial `200` data source;
+- tests cover `limit`, `limit + 1`, byte overflow, deterministic complete output, and query-budget regression.
+
+These application limits are intentionally much tighter than any vendor file-size ceiling; they are a local security/reliability envelope and can be raised only with measured evidence and review.
+
+## 4. Owner/account gates
+
+These do not block pure foundations but block the affected live destination:
+
+- **O1 — Google Ads Purchase value:** choose merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish. GA4 remains merchandise value with shipping separate.
+- **O2 — Merchant market:** proposed initial market Vietnam / Vietnamese / VND; confirm before Merchant activation.
+- **O3 — Apparel facts:** confirm whether every emitted standalone item can truthfully use catalog-wide `gender=male`, `age_group=adult`, `condition=new`; otherwise add product-owned facts before activation.
+- **O4 — Vendor configuration:** provide/review GTM container, GA4 Measurement ID, Google Ads conversion ID/label, and TikTok Pixel ID through their proper account owners.
 
 ## 5. Dependency graph
 
 ```text
-O1/O2/O3/O4 owner gates ────────────────┐
-                                        │
-T1 Canonical analytics contract         │
-  ↓                                     │
-T2 Tracking mode + CSP/config           │
-  ↓                                     │
-T3 GTM/consent/page-view boot           │
-  ↓                                     │
-T4 Canonical projected item facts       │
-  ├───────────────┐                     │
-  ↓               ↓                     │
-T5 PDP/list       T6 cart/checkout      │
-  └───────┬───────┘                     │
-          ↓                             │
-T7 confirmed Purchase                   │
-          ↓                             │
-T8 GTM destination mapping  ◀───────────┘
+T1 canonical events
+ ↓
+T2 tracking config/CSP
+ ↓
+T3 GTM bootstrap + consent + page_view (preview still fail-closed)
+ ↓
+T4 stable projected item facts
+ ├─────────────┐
+ ↓             ↓
+T5 list/PDP    T6 atomic cart deltas + checkout
+ └──────┬──────┘
+        ↓
+T7 confirmed Purchase
+        ↓
+T8 GTM destination mapping + live guards + enable preview
 
-T4 ─→ M1 Merchant identity/audit
-          ↓
-        M2 variant deep-link
-          ↓
-        M3 feed mapper/diagnostics
-          ↓
-        M4 serializer + public route
-          ↓
-        M5 Merchant account activation
+T4 → M1 Merchant identity/durability audit
+       ↓
+     M2 standalone variant deep link + canonical/query contract
+       ↓
+     M3 standalone Merchant mapper
+       ↓
+     M4 bounded serializer/public route
+       ↓
+     M5 Merchant activation
 
-T8 + M5 ─→ V1 final verification / rollback gate
+T8 + M5 → V1 final verification / rollback gate
 ```
 
-Tracking and Merchant implementation may proceed in parallel after T4 where their source contracts no longer overlap, but external activation waits for the corresponding owner/account gates.
+## 6. Implementation slices
 
-## 6. Planned implementation PR slices
+ADR 0005 governs reviewability; file count is only a signal.
 
-ADR 0005 governs reviewability; file count is not a hard gate. Prefer each implementation PR to remain one coherent concern and roughly ≤500 effective changed lines where practical.
-
-- **PR-A — tracking foundation:** T1–T3.
+- **PR-A — tracking foundation:** T1–T3. Preview capability stays disabled until PR-C proves container isolation.
 - **PR-B — commerce browser events:** T4–T6.
-- **PR-C — confirmed Purchase + GTM mapping:** T7–T8.
-- **PR-D — Merchant identity + deep link:** M1–M2.
+- **PR-C — confirmed Purchase + GTM mapping:** T7–T8, including static live-guard audit and preview enablement.
+- **PR-D — Merchant identity + standalone deep link:** M1–M2.
 - **PR-E — Merchant feed:** M3–M4.
-- **PR-F — activation/verification record:** M5 + V1; primarily operational/docs evidence unless a verified launch fix is required.
+- **PR-F — Merchant activation + final convergence:** M5 + V1; primarily operational/verification records unless a verified launch defect requires code.
 
-If any slice exceeds reviewable scope because directly affected tests are large, keep source with its verification but split independent concerns before implementation.
-
----
-
-## Task T1: Add the canonical commerce-event contract and dataLayer publisher
-
-**Description:** Define pure typed item/purchase/event facts and one browser publisher. The publisher owns ecommerce reset semantics and remains a no-op when browser tracking infrastructure is unavailable.
-
-**Acceptance criteria:**
-- [ ] Canonical events and item/purchase payloads contain commerce facts only and exclude customer PII.
-- [ ] Every ecommerce push clears prior ecommerce state before the new event; sequential events cannot inherit stale `items`, `value`, `shipping`, or transaction fields.
-- [ ] Publisher never overwrites `window.dataLayer` after initialization and tracking failure cannot interrupt commerce UI.
-
-**Verification:**
-- [ ] Focused domain tests prove deterministic mapping and A→B event isolation.
-- [ ] Tests prove malformed money/quantity or unavailable browser state fails closed for tracking rather than throwing into commerce.
-
-**Dependencies:** None.
-
-**Files likely touched:**
-- `src/analytics/commerce-events.ts`
-- `src/analytics/data-layer.ts`
-- `tests/domain/commerce-events.test.ts`
-- `tests/domain/data-layer.test.ts`
-
-**Estimated scope:** Medium.
-
-## Task T2: Add centralized tracking modes and build-time CSP/config validation
-
-**Description:** Extend the current build-time Meta/CSP pattern with one validated tracking-mode/container configuration. Third-party Google/TikTok origins open only for reviewed modes that need them.
-
-**Acceptance criteria:**
-- [ ] One resolver represents `disabled | preview | live`; `live` cannot be enabled from request Host/query data.
-- [ ] Build/runtime GTM configuration is frozen consistently so rendered tags cannot be blocked by a mismatched baked CSP.
-- [ ] Missing/malformed config fails closed; no wildcard CSP source and no new production `unsafe-eval` is introduced.
-
-**Verification:**
-- [ ] Focused config tests cover invalid mode/container IDs and disabled/live/preview behavior.
-- [ ] `next.config.mjs` assertions prove expected CSP origin deltas and Meta allowances remain unchanged.
-
-**Dependencies:** T1.
-
-**Files likely touched:**
-- `src/analytics/tracking-environment.ts`
-- `next.config.mjs`
-- `.env.example`
-- `deploy/vps/env.example`
-- focused integration/config test
-
-**Estimated scope:** Medium.
-
-## Task T3: Mount GTM, establish Google consent defaults, and own GA4 page views
-
-**Description:** Mount one GTM web container from the root layout using the reviewed tracking mode. Establish the approved default consent state before Google measurement can fire, and add one App Router page-view tracker for the canonical application event.
-
-**Acceptance criteria:**
-- [ ] GTM is absent in disabled mode; preview/live loading follows T2 and never creates a second Meta Pixel.
-- [ ] Google consent defaults are established before Google measurement events using the current officially supported GTM/page-level pattern selected during `/build`; no Custom HTML consent implementation is introduced.
-- [ ] Application emits exactly one canonical `page_view` per initial page and client navigation; GTM/GA4 configuration explicitly disables overlapping automatic/history page views.
-
-**Verification:**
-- [ ] Component/integration tests prove loader gating and first/navigation event behavior.
-- [ ] Runtime verification later uses Tag Assistant + GA4 DebugView/test destination to prove one page view per navigation and no production contamination in preview mode.
-
-**Dependencies:** T2.
-
-**Files likely touched:**
-- `src/components/analytics/google-tag-manager.tsx`
-- `src/components/analytics/commerce-route-tracker.tsx`
-- consent/tracking-policy helper chosen after current-doc verification
-- `src/app/layout.tsx`
-- focused integration tests
-
-**Estimated scope:** Medium.
-
-### Checkpoint A — tracking foundation
-
-Before T4, review T1–T3 for CSP least privilege, no Meta duplication, no customer PII, and deterministic preview/live isolation. Run the focused tests plus `pnpm typecheck` and `pnpm lint` for the implementation PR.
+Do not split directly affected tests away from their behavior merely to hit a line target; do split independent subsystems when review/revert boundaries are cleaner.
 
 ---
 
-## Task T4: Expose stable projected commerce item facts
+## T1 — Canonical commerce-event contract and dataLayer publisher
 
-**Description:** Extend storefront projection/item facts with the stable external identifiers analytics and Merchant need, while keeping local variant IDs for internal mutation authorization.
+**Build:** typed vendor-neutral item/event/Purchase facts plus one browser publisher.
 
-**Acceptance criteria:**
-- [ ] Public projected option facts can carry `pancakeVariationId` and optional audited SKU without replacing internal `VariantMirror.id` authorization.
-- [ ] Standalone and composite component queries populate the same canonical external identity; presentation-only `kindKey` is never treated as stable external identity.
-- [ ] Existing price/stock/ambiguity rules and direct-child privacy remain unchanged.
+**Acceptance:**
+- no customer PII in generic ecommerce events;
+- reset ecommerce state immediately before every ecommerce push;
+- publisher never replaces `window.dataLayer` after GTM init;
+- malformed/unavailable tracking fails closed without throwing into commerce.
 
-**Verification:**
-- [ ] Domain/database projection tests cover standalone and composite identity propagation.
-- [ ] Existing composite/cart/checkout regressions remain green.
+**Verification:** RED/GREEN deterministic mapping, sequential A→B event isolation, malformed values, browser unavailable/ad-blocked path.
 
-**Dependencies:** T1.
+## T2 — Tracking configuration and CSP
 
-**Files likely touched:**
-- `src/commerce/storefront-product.ts`
-- `src/commerce/storefront-catalog.ts`
-- `src/commerce/storefront-product-detail.ts`
-- `src/commerce/storefront-projection.ts`
-- focused projection tests
+**Build:** validated deployment-owned `disabled | preview | live` resolver; build/runtime GTM config alignment; minimum required CSP origins only.
 
-**Estimated scope:** Medium.
+**Acceptance:**
+- `live` cannot come from Host/query/client input;
+- invalid/missing config fails closed;
+- no wildcard CSP source and no new production `unsafe-eval`;
+- `preview` cannot become operational merely from an application env value; it remains disabled until T8's reviewed GTM isolation artifact is present.
 
-## Task T5: Emit catalog/PDP/select/AddToCart events from authoritative UI states
+**Verification:** config/CSP tests for disabled/live/preview-before-isolation and malformed IDs.
 
-**Description:** Map `view_item_list`, `select_item`, `view_item`, and `add_to_cart` from canonical server/projected facts. Reuse the existing PDP server-success boundary for AddToCart.
+## T3 — GTM bootstrap, consent default, and page-view authority
 
-**Acceptance criteria:**
-- [ ] List/PDP events use the items actually rendered, not DOM scraping or duplicated pricing rules.
-- [ ] AddToCart fires only after the existing server action succeeds and uses the accepted projected variation identity/price/quantity.
-- [ ] Meta ViewContent/AddToCart behavior remains observably unchanged and independent of dataLayer failure.
+**Build:** root-level GTM/dataLayer bootstrap and App Router route tracker; preserve direct Meta mount.
 
-**Verification:**
-- [ ] Focused component/integration tests prove success vs failed mutation event behavior.
-- [ ] Runtime browser check later confirms event ordering and no duplicate Meta tag/event path.
+**Acceptance:**
+- `la_tracking_mode` is pushed before GTM bootstrap;
+- GTM absent in disabled mode;
+- before T8, preview resolves to no-GTM/disabled;
+- Google consent default is established before measurement according to current official guidance;
+- exactly one canonical initial/navigation `page_view` is emitted.
 
-**Dependencies:** T3, T4.
+**Verification:** source/component tests prove ordering, mode gating, one page-view event and no Meta duplication. Checkpoint A includes a static assertion that preview cannot load before the reviewed isolation contract exists.
 
-**Files likely touched:**
-- current `/shop` listing/card component(s) that render the canonical product link and item facts
-- `src/components/commerce/product-purchase-panel.tsx`
-- small analytics event component/helper under `src/components/analytics/`
-- focused integration/browser tests for listing/PDP events
+### Checkpoint A
 
-Exact listing-component paths are resolved from then-current `main` immediately before PR-B implementation; no unrelated card refactor is authorized.
-
-**Estimated scope:** Medium.
-
-## Task T6: Emit ViewCart, quantity-delta Remove/Add, and BeginCheckout from server-authoritative state
-
-**Description:** Add cart/checkout measurement without trusting stale DOM values. Quantity changes report only the accepted delta after a successful server mutation; full remove reports the accepted removed quantity. Valid checkout state emits `begin_checkout`. Do not synthesize shipping/payment milestones.
-
-**Acceptance criteria:**
-- [ ] Successful quantity increase emits `add_to_cart` for the accepted delta; decrease/remove emits `remove_from_cart`; failed mutations emit neither.
-- [ ] Cart/checkout event payloads are built from canonical line/totals facts and contain no customer name/phone/address.
-- [ ] `begin_checkout` exists only for the resolved checkout state; `add_shipping_info` and `add_payment_info` remain absent until a distinct accepted application milestone exists.
-
-**Verification:**
-- [ ] Focused public-action/component tests cover increase/decrease/remove/failure and cart totals.
-- [ ] Existing checkout/cart tests stay green.
-
-**Dependencies:** T4, T5.
-
-**Files likely touched:**
-- `src/commerce/storefront-cart-public-actions.ts`
-- `src/commerce/storefront-cart-actions.ts`
-- `src/components/commerce/cart-line-controls.tsx`
-- cart/checkout page event boundary
-- focused integration tests
-
-**Estimated scope:** Medium.
-
-### Checkpoint B — pre-purchase ecommerce
-
-Review event values/IDs against current storefront truth, then run focused domain/integration tests plus `pnpm test`, `pnpm typecheck`, and `pnpm lint` for the converged tracking branches.
+Focused tests + `pnpm typecheck` + `pnpm lint`; security review for CSP, PII, Meta duplication and preview fail-closed behavior.
 
 ---
 
-## Task T7: Add canonical confirmed-Purchase snapshot and browser event
+## T4 — Stable projected analytics item facts
 
-**Description:** Build a vendor-neutral Purchase snapshot from immutable order facts, then publish the canonical browser Purchase on the existing confirmed-success boundary. Meta keeps using its existing adapter.
+**Build:** propagate `pancakeVariationId` and optional SKU through standalone/composite storefront projection facts while retaining local variant ID for server authorization.
 
-**Acceptance criteria:**
-- [ ] Purchase is impossible unless `OrderMirror.state === CONFIRMED`; `transactionId` and `eventId` are `publicCode`.
-- [ ] Item quantity/name/price/variation identity comes from `OrderLineSnapshot`; missing mutable SKU/slug enrichment cannot corrupt immutable Purchase facts.
-- [ ] Revisit/refresh keeps the same ID, and vendor delivery failure cannot change checkout success behavior.
+**Acceptance:** presentation `kindKey` never becomes external identity; price/stock/ambiguity/privacy behavior unchanged.
 
-**Verification:**
-- [ ] Domain/database tests cover every non-confirmed state, catalog deletion/enrichment loss, money bounds, and repeat identity.
-- [ ] Existing Meta Purchase snapshot/CAPI/browser dedup tests stay green.
+**Verification:** standalone + composite projection tests and existing cart/checkout/composite regressions.
 
-**Dependencies:** T1, T4.
+## T5 — List/PDP/select/AddToCart events
 
-**Files likely touched:**
-- `src/commerce/commerce-purchase-snapshot.ts`
-- `src/app/checkout/success/page.tsx`
-- small canonical event component/helper
-- `tests/database/commerce-purchase-snapshot.test.ts`
-- focused integration test
+**Build:** `view_item_list`, `select_item`, `view_item`, `add_to_cart` from rendered/canonical facts.
 
-**Estimated scope:** Medium.
+**Acceptance:** no DOM scraping; AddToCart only after existing successful server action; current Meta ViewContent/AddToCart remains independent.
 
-## Task T8: Version and verify the GTM destination mapping
+**Verification:** success/failure component/integration tests and runtime event ordering later.
 
-**Description:** Create the reviewed GTM configuration record that maps canonical custom events to GA4, Google Ads, and TikTok. GTM remains a mapping/routing layer, not a business-rules engine.
+## T6 — Atomic cart delta events and BeginCheckout
 
-**Acceptance criteria:**
-- [ ] GA4 maps canonical ecommerce fields and has automatic/history page views disabled under the application-owned page-view strategy.
-- [ ] Google Ads Purchase uses `publicCode` transaction ID, approved O1 value, and verified Google-tag/conversion-linking functionality; no Enhanced Conversions/user-provided data.
-- [ ] TikTok uses the official template/custom-event triggers and sends `event_id=publicCode` for Purchase/CompletePayment; production tags require live mode.
+**Build:** extend the cart mutation transaction so analytics receives the committed quantity transition rather than inferring it from stale UI state.
 
-**Verification:**
-- [ ] Checked-in GTM export/config record is diff-reviewable and contains no secrets or unreviewed Custom HTML/Custom JavaScript.
-- [ ] Tag Assistant/GA4 DebugView/Ads diagnostics/TikTok diagnostics are required before publish; preview must prove no production destination traffic.
+Required mutation result facts captured **inside the existing cart lock/transaction**:
 
-**Dependencies:** T3, T5, T6, T7, O1, O4.
+- update success returns `previousQuantity` and committed `quantity`;
+- remove success returns `removedQuantity` and distinguishes already-missing line from a real removal;
+- public action returns only the bounded facts needed for event construction;
+- browser calculates add/remove delta only from these server-returned committed facts.
 
-**Files likely touched:**
-- `docs/integrations/marketing-measurement-gtm.md`
-- reviewed GTM export/config artifact if export format is practical
-- focused source assertions if needed
+**Acceptance:**
+- quantity increase → `add_to_cart` with `quantity - previousQuantity`;
+- quantity decrease → `remove_from_cart` with `previousQuantity - quantity`;
+- same quantity → zero delta, no add/remove event;
+- full successful remove → `remove_from_cart` with `removedQuantity`;
+- failed/already-removed/raced mutation → no fabricated event;
+- cart/checkout payloads contain no customer name/phone/address;
+- valid checkout emits `begin_checkout`; `add_shipping_info` / `add_payment_info` remain absent until a real distinct accepted milestone exists.
 
-**Estimated scope:** Small/Medium source-control work plus external-console verification.
+**Verification:** RED/GREEN tests for two concurrent absolute updates, concurrent remove/already-removed, same quantity, failed mutation, and existing cart behavior. The test must prove the old/removed quantity is read under the same serialized transaction, not by a client/pre-read.
+
+### Checkpoint B
+
+Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; review IDs/value/quantity against storefront truth.
 
 ---
 
-## Task M1: Add a read-only Merchant identity/attribute audit
+## T7 — Canonical confirmed Purchase
 
-**Description:** Fail fast against real mirrored catalog data before feed activation. Audit candidate item/group IDs, SKU-as-MPN, required apparel attributes, public projection context count, price/media/content coverage, and current target-market assumptions.
+**Build:** vendor-neutral Purchase snapshot from immutable order facts; browser event on the existing confirmed-success boundary.
 
-**Acceptance criteria:**
-- [ ] Audit proves every emitted candidate `pancakeVariationId` and group candidate meets current Merchant identity limits and SKU/MPN is present/unambiguous/stable enough for LA manufacturer identity.
-- [ ] Each variation is classified as zero, one, or multiple public projection contexts; only exactly-one contexts can proceed automatically.
-- [ ] Audit reports the impact of O2/O3 apparel/market choices and excludes unsafe descriptions/media/price without leaking PII.
+**Acceptance:** only `CONFIRMED`; `transactionId/eventId = publicCode`; item quantities/prices/variation IDs from `OrderLineSnapshot`; mutable catalog enrichment optional and non-authoritative; repeat visit keeps same identity; tracking failures do not alter checkout success.
 
-**Verification:**
-- [ ] Unit/integration tests cover duplicates, overlong IDs, missing SKU, ambiguous composite contexts, out-of-stock, `PRICE_UNRESOLVED`, and malformed external text.
-- [ ] A dedicated read-only command can be run against an authorized catalog and prints aggregate diagnostics only.
+**Verification:** non-confirmed states, catalog deletion/enrichment loss, money bounds, repeat identity; existing Meta browser+CAPI tests stay green.
 
-**Dependencies:** T4, O2, O3 for activation conclusions; code can be built with gates unresolved.
+## T8 — GTM destination mapping, production live guards, and preview enablement
 
-**Files likely touched:**
-- `src/integrations/merchant/catalog-audit.ts`
-- `scripts/merchant-catalog-audit.ts`
-- `package.json`
-- `tests/integrations/merchant-catalog-audit.test.ts`
+**Build:** version/review GTM config for GA4, Google Ads and TikTok.
 
-**Estimated scope:** Medium.
+**Acceptance:**
+- every production GA4/Ads/TikTok destination tag has the explicit `la_tracking_mode == live` firing condition/blocker;
+- checked-in export/config can be statically audited for missing production live guards;
+- preview/test tags use isolated debug/test destinations only;
+- only after that static gate exists may app `preview` mode load the container;
+- GA4 auto/history page views are disabled under app-owned page-view strategy;
+- Ads Purchase uses `publicCode`, O1 value and conversion linking; no Enhanced Conversions;
+- TikTok Purchase/CompletePayment uses `event_id=publicCode`.
 
-## Task M2: Add exact variant deep-link selection
-
-**Description:** Support the approved public `?variant=<pancakeVariationId>` landing contract so Merchant can point to the exact standalone/public projection option without trusting color/size labels.
-
-**Acceptance criteria:**
-- [ ] A valid current projected variation preselects the exact option/context and visible price/color/size/image remain consistent with feed facts.
-- [ ] Unknown, stale, inactive, private-child, or forged variation values cannot expose or select an unauthorized option.
-- [ ] Existing slug lifecycle, noindex/canonical policy, and ordinary PDP navigation remain unchanged.
-
-**Verification:**
-- [ ] Domain/integration tests cover standalone, composite-valid, stale/forged, and ambiguous-context cases.
-- [ ] Browser regression verifies direct Merchant-style URL and no new organic-indexing exposure.
-
-**Dependencies:** T4, M1.
-
-**Files likely touched:**
-- `src/app/shop/[slug]/page.tsx` or current PDP route owner
-- `src/commerce/storefront-product-detail.ts` / focused selection helper
-- `src/components/commerce/product-purchase-panel.tsx`
-- focused domain/browser tests
-
-**Estimated scope:** Medium.
-
-### Checkpoint C — Merchant identity and landing truth
-
-Do not build/activate the feed until the candidate ID/MPN audit is green for emitted records and representative deep links prove exact public option matching. Composite records that remain semantically or contextually ambiguous stay excluded rather than delaying standalone launch.
+**Verification:** static config assertion plus Tag Assistant/GA4 DebugView/test destination/Ads/TikTok diagnostics. Explicitly prove preview emits zero traffic to production destinations.
 
 ---
 
-## Task M3: Build the Merchant offer mapper and diagnostics
+## M1 — Read-only Merchant identity, durability and catalog audit
 
-**Description:** Map canonical public product/projection facts into vendor-neutral Merchant offers, separating structural eligibility from availability. Keep mapping pure and independently testable from HTTP/XML delivery.
+**Build:** a bounded audit command over current mirrored catalog.
 
-**Acceptance criteria:**
-- [ ] Each emitted offer has stable ID/grouping, LA Clothing brand, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size, current `variant_option` representation where applicable, and the approved O2/O3 apparel values.
-- [ ] Structurally valid zero-stock offers remain with `out_of_stock`; malformed/unresolved/ambiguous records are excluded with one bounded diagnostic reason.
-- [ ] Description priority never exposes draft editorial content; unsafe/unusable source text is normalized by a reviewed contract or excluded.
+**Acceptance:**
+- validate ID length/format for `pancakeVariationId` and standalone `pancakeProductId` group candidate;
+- prove the external-ID durability gate in §3.3 before activation;
+- audit SKU-as-MPN presence/uniqueness/stability;
+- classify projection mode; all composite projections report `COMPOSITE_DEFERRED` for v1;
+- audit price/media/content/apparel facts without PII.
 
-**Verification:**
-- [ ] Pure mapping tests cover standalone variants, allowed composite contexts, out-of-stock, missing content, invalid SKU, and price/media mismatches.
-- [ ] Feed candidate counts reconcile with M1 audit categories.
+**Verification:** missing/duplicate/overlong IDs, missing SKU, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, plus authorized real-catalog audit evidence.
 
-**Dependencies:** M1, M2, O2, O3.
+## M2 — Standalone variant deep link and search contract
 
-**Files likely touched:**
-- `src/integrations/merchant/product-data.ts`
-- `src/integrations/merchant/catalog-repository.ts`
-- `tests/integrations/merchant-product-data.test.ts`
-- focused database test
+**Build:** `/shop/<slug>?variant=<pancakeVariationId>` only for a valid current **standalone** projected variation.
 
-**Estimated scope:** Medium.
+**Acceptance:** exact option preselection and matching price/color/size/image; forged/stale/inactive/private/composite query cannot expose an unauthorized option; base PDP canonical/search exposure behavior remains authoritative; variant query does not independently enable indexing.
 
-## Task M4: Serialize and expose the bounded public Merchant data source
+**Verification:** standalone valid/stale/forged/composite-rejected tests plus representative browser regression and SEO canonical/query regression informed by the merged SEO/GEO audit.
 
-**Description:** Add a standards-aware serializer and GET-only Next.js Route Handler. The route returns current feed data without arbitrary query-driven fetch behavior and without exposing diagnostic internals/secrets.
+### Checkpoint C
 
-**Acceptance criteria:**
-- [ ] Supported Merchant file output is deterministic, parseable, correctly escaped, length-bounded, and uses an appropriate XML/text content type; no external text is manually interpolated without the serializer contract.
-- [ ] Endpoint is public GET-only, bounded to the configured shop/catalog, cannot become SSRF/arbitrary query execution, and contains no credentials.
-- [ ] Route reads current canonical catalog data; stable input gives stable IDs/output ordering, while price/stock changes appear on the next fetch.
-
-**Verification:**
-- [ ] Generated output is parsed again in tests and covers XML-reserved chars, Unicode, illegal controls, malformed URLs, and oversized fields.
-- [ ] Real Next runtime smoke fetches the route and validates status/content type/body; standard `pnpm build` remains green.
-
-**Dependencies:** M3.
-
-**Files likely touched:**
-- `src/integrations/merchant/feed-serializer.ts`
-- `src/app/feeds/google-merchant/route.ts`
-- serializer/route integration tests
-- lockfile/package manifest only if a reviewed serializer dependency is added
-
-**Estimated scope:** Medium.
-
-## Task M5: Configure Merchant Center Scheduled Fetch and safe initial Automations policy
-
-**Description:** Activate the data source only after feed/runtime checks. Use the production HTTPS route, target market O2, shipping/returns, and Google Ads linkage. Keep unsafe automatic variant correction disabled until exact structured data is proven.
-
-**Acceptance criteria:**
-- [ ] Merchant can fetch the production route; data source language/currency/country, shipping/returns, and schedule are documented and correct.
-- [ ] Initial schedule uses the highest practical regular frequency supported by the account (Google's current file-link setup defaults to a 24-hour fetch, but the schedule is adjustable); schedule timing is coordinated with catalog updates where practical.
-- [ ] Price/availability/condition Automations are reviewed explicitly and remain off while the aggregate PDP JSON-LD cannot identify exact submitted variants; diagnostics are clean enough for controlled activation.
-
-**Verification:**
-- [ ] Merchant Latest update/Diagnostics evidence is recorded for representative in-stock, out-of-stock, and variant records.
-- [ ] Submitted landing pages/images are fetchable by Google while `SEARCH_INDEXING_ENABLED=false` remains unchanged.
-
-**Dependencies:** M4, O2, O3.
-
-**Files likely touched:**
-- `docs/integrations/google-merchant-launch.md`
-- optionally a verification record under `docs/verification/`
-
-**Estimated scope:** Small source-control work plus external-console verification.
+Do not build/activate Merchant feed until ID/MPN/durability audit is green for emitted standalone records. Composite inventory remains intentionally absent from Merchant v1.
 
 ---
 
-## Task V1: Final convergence, security review, and rollback gate
+## M3 — Standalone Merchant mapper and diagnostics
 
-**Description:** Run the project-wide quality gate only after tracking and Merchant slices converge. No production activation counts as complete until source, browser/vendor diagnostics, and rollback controls all agree.
+**Build:** pure mapper from canonical standalone product/variation facts.
 
-**Acceptance criteria:**
-- [ ] Existing Meta, checkout, catalog/composite, CSP, and search-exposure behavior remains compatible; no customer PII/secrets enter generic dataLayer/feed output.
-- [ ] Browser/vendor diagnostics prove exactly-once page views/Purchase identities, preview isolation, Ads linker behavior, TikTok event IDs, and failure-safe commerce.
-- [ ] Merchant feed/landing/diagnostics are consistent, and both GTM delivery and Merchant data source have documented disable/rollback procedures.
+**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size, current required variant fields such as `variant_option` where applicable, and approved O2/O3 values; structurally valid zero-stock offer remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with one bounded reason.
 
-**Verification:**
-- [ ] Run and record the relevant repository gates on the exact implementation head: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:db`, `pnpm build`, `pnpm release:check`.
-- [ ] Run applicable browser/runtime suites and manually inspect Tag Assistant/GA4/Ads/TikTok + Merchant diagnostics on authorized test/production environments.
-- [ ] Final code review prioritizes correctness → security → architecture → simplicity → performance and checks the repository Definition of Done.
+**Verification:** mapping tests for normal variant, out-of-stock, missing content, invalid SKU, price/media mismatch, and composite exclusion; counts reconcile with M1.
 
-**Dependencies:** T8, M5.
+## M4 — Bounded serializer and public Merchant route
 
-**Files likely touched:**
-- verification/launch documentation only unless a verified defect is found
+**Build:** standards-aware serializer plus GET-only `/feeds/google-merchant` Route Handler.
 
-**Estimated scope:** Small source change, broad verification.
+**Acceptance:**
+- enforce `MAX_MERCHANT_OFFERS=5_000` before successful output;
+- enforce `MAX_MERCHANT_FEED_BYTES=16 MiB` on the complete serialized body;
+- repository/feed generation performs at most `MAX_MERCHANT_DB_ROUND_TRIPS=8` and no N+1 path;
+- deterministic complete output, correct content type, safe escaping/Unicode/control-char handling;
+- no arbitrary query-driven shop/URL fetching, no credentials/diagnostic internals in body;
+- any envelope overflow returns non-success (`503` target) and never partial/truncated `200`.
 
-## 7. TDD sequence
+**Verification:** parse generated output back in tests; exactly limit vs limit+1; byte limit vs overflow; malformed URLs/text; deterministic order; query-count/work-budget assertion; Next runtime smoke of status/content type/complete body.
 
-For each behavior-changing implementation task:
+---
 
-1. Add the smallest discriminating test that fails for the missing behavior.
-2. Implement only enough production code to make it pass.
-3. Run the focused suite.
-4. Refactor only inside the task scope.
-5. At each checkpoint, run broader relevant suites before moving on.
+## M5 — Merchant Center Scheduled Fetch activation
 
-Do not label existing already-green repository behavior as a new RED test.
+**Build/ops:** verify/claim site, configure data source, O2 market, shipping/returns and Ads linkage; point Scheduled Fetch to production HTTPS feed.
 
-## 8. Source-driven checks required during `/build`
+**Acceptance:** choose highest practical regular schedule supported by the account; review Merchant Automations explicitly and keep price/availability/condition automatic updates off until exact variant structured data is proven; Google can fetch landing pages/images while `SEARCH_INDEXING_ENABLED=false` remains unchanged.
 
-Re-check current official documentation at implementation time for:
+**Verification:** Merchant Latest update/Diagnostics evidence for representative in-stock/out-of-stock/variant records; crawler/landing checks; no composite offers expected in v1.
 
-- Next.js 16 Route Handler and script/CSP behavior;
-- GTM container/consent APIs and required origins;
-- GA4 ecommerce/page-view parameters;
-- Google Ads Purchase/conversion-linking setup;
-- TikTok GTM template, event names/parameters, and dedup requirements;
-- Merchant product-data attributes, current apparel/`variant_option` requirements, ID limits, Scheduled Fetch, Automations, and crawler/landing-page rules.
+---
 
-Version-sensitive tag behavior must not be implemented from memory.
+## V1 — Final convergence, review and rollback gate
 
-## 9. Explicitly not doing
+**Verification on exact implementation head:**
 
-- No Meta-to-GTM migration.
-- No replacement of Meta CAPI.
-- No TikTok Events API in this phase.
-- No Google Enhanced Conversions or hashed customer PII.
-- No Merchant API realtime sync.
-- No automatic schema migration merely for tracking.
-- No search-indexing enablement or permanent-domain decision.
-- No unrelated SEO/catalog/admin refactor.
-- No GTM business logic inferred from CSS selectors/button text/DOM prices.
-- No synthetic `add_shipping_info`/`add_payment_info` event before the application has a real accepted milestone.
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm test:db`
+- `pnpm build`
+- `pnpm release:check`
+- applicable browser/runtime suites
+- Tag Assistant + GA4 + Ads + TikTok diagnostics
+- Merchant fetch/diagnostics/crawler checks
+
+Final review order: correctness → security → architecture → simplicity → performance. Re-check Definition of Done, rollback for GTM delivery and Merchant data source, PII/secret boundaries, and `SEARCH_INDEXING_ENABLED=false` unless separately approved.
+
+## 7. TDD rule
+
+For every behavior change: add the smallest discriminating RED test, implement the minimum GREEN behavior, run the focused suite, then refactor only within scope. Existing already-green behavior is baseline evidence, not a fake new RED.
+
+## 8. Source-driven checks during `/build`
+
+Re-check current official docs for Next.js 16 script/Route Handler/CSP behavior; GTM Preview/consent APIs; GA4 ecommerce/page-view semantics; Google Ads conversion/linker behavior; TikTok GTM/dedup; and Merchant identity/variant/landing/data-source requirements. Version-sensitive APIs must not be implemented from memory.
+
+## 9. Explicitly deferred
+
+- Meta migration into GTM.
+- Meta CAPI replacement/value/content-ID redesign.
+- TikTok Events API.
+- Google Enhanced Conversions / hashed customer PII.
+- Merchant API realtime sync.
+- Composite Merchant offers/item-group design.
+- Visible consent UI/default-denied policy.
+- Search-indexing/permanent-domain change.
+- Unrelated SEO/catalog/admin refactor.
 
 ## 10. Human approval gate
 
-Before `/build`, the reviewer should approve:
-
-- this task/dependency split;
-- the identity strategy (`pancakeVariationId` candidate + fail-closed audit);
-- owner gates O1–O4 or the fact that affected activation will remain blocked until supplied;
-- initial Merchant Automations-off policy;
-- implementation PR slicing under ADR 0005.
-
-Approval of this plan authorizes implementation tasks only; it is not approval to publish GTM tags, activate ad conversions, enable Merchant listings, change consent defaults, or alter search indexing without the stated activation gates.
+Before `/build`, reviewer approves this task split, the `pancakeVariationId`/standalone group durability gate, composite Merchant deferral, preview live-guard mechanism, Merchant resource envelope, owner gates O1–O4 or their continued activation block, and PR slicing. Approval authorizes implementation work only; it is not approval to publish GTM tags, enable Merchant listings/campaigns, change consent defaults, or enable search indexing.
