@@ -95,6 +95,7 @@ let callsAwaitingFbq: PendingCall[] = [];
 let acknowledgementsAwaitingLibrary: Array<() => void> = [];
 let poll: ReturnType<typeof setInterval> | null = null;
 let watchingLibraryScript = false;
+let libraryScriptUnavailable = false;
 
 function stopPolling(): void {
   if (poll !== null) {
@@ -110,6 +111,12 @@ function flushAcknowledgements(): void {
   for (const acknowledge of acknowledgements) acknowledge();
 }
 
+function abandonAcknowledgements(): void {
+  acknowledgementsAwaitingLibrary = [];
+  watchingLibraryScript = false;
+  libraryScriptUnavailable = true;
+}
+
 function flushCallsAwaitingFbq(fbq: Fbq): void {
   if (callsAwaitingFbq.length === 0) return;
   const queued = callsAwaitingFbq;
@@ -123,25 +130,37 @@ function flushCallsAwaitingFbq(fbq: Fbq): void {
  * Waits on the pixel script itself rather than on a clock.
  *
  * The snippet inserts the `fbevents.js` tag synchronously, so it is already in the document by the
- * time anything has been handed to the stub. `load` means the library ran and drained the queue;
- * `error` means it never will, and the acknowledgements are dropped so nothing is recorded as sent.
- * Either way this costs one listener rather than a running timer.
+ * time anything has been handed to the stub. A `load` event only means the resource finished; it is
+ * accepted only if the library also installed `fbq.callMethod`, which is the signal that can drain
+ * the stub queue. `error`, or a loaded no-op script, leaves the event unacknowledged so a later
+ * visit can retry instead of suppressing a sale that Meta never received.
  */
 function watchLibraryScript(): void {
-  if (watchingLibraryScript) return;
+  if (watchingLibraryScript || libraryScriptUnavailable) return;
   const script = document.querySelector<HTMLScriptElement>(
     'script[src*="connect.facebook.net"]',
   );
   if (script === null) return;
 
   watchingLibraryScript = true;
-  script.addEventListener("load", () => flushAcknowledgements(), { once: true });
+  script.addEventListener(
+    "load",
+    () => {
+      watchingLibraryScript = false;
+      if (isPixelLibraryLoaded()) {
+        flushAcknowledgements();
+        return;
+      }
+      abandonAcknowledgements();
+    },
+    { once: true },
+  );
   script.addEventListener(
     "error",
     () => {
       // Blocked or unreachable. Recording these as sent would suppress the retry that a later
       // visit would otherwise make.
-      acknowledgementsAwaitingLibrary = [];
+      abandonAcknowledgements();
     },
     { once: true },
   );
@@ -186,6 +205,10 @@ function handToPixel(
     onAccepted();
     return;
   }
+  // A prior load/error proved this script cannot drain the stub queue. Keep the event eligible for
+  // a later visit rather than retaining another callback that can never be acknowledged.
+  if (libraryScriptUnavailable) return;
+
   // Handed to the stub's queue. Acknowledge only once the library exists to drain it.
   acknowledgementsAwaitingLibrary.push(onAccepted);
   watchLibraryScript();
