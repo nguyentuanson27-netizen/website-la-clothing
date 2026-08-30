@@ -6,6 +6,8 @@ Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
 This plan intentionally uses a named task file instead of replacing the repository's existing generic `tasks/plan.md`. The repository already keeps named workstream plans, and this keeps the marketing work reviewable and reversible.
 
+This `/spec` + `/plan` review unit is intentionally kept in PR #153 at the owner's explicit request even though the combined docs diff is large. No runtime code is included here. ADR 0005's reviewability concern is addressed by splitting implementation into six focused PRs below; production code must not accumulate on this planning branch merely because the planning documents are co-located.
+
 ## 1. Planning goal
 
 Implement the approved marketing-measurement and Google Shopping foundation without moving commerce truth into GTM, without changing existing Meta Pixel/CAPI semantics, and without weakening the current storefront/CSP/search-exposure boundaries.
