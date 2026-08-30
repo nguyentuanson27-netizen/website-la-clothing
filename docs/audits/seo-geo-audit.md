@@ -11,9 +11,10 @@ ngày 2026-08-30. Tài liệu này là **audit + planning input**, không phải
 
 ## Kết luận
 
-Nền tảng kỹ thuật SEO của repo tốt: indexation fail-closed, canonical lấy từ origin tin cậy,
-301 cho slug lịch sử, policy phân trang chống duplicate, sitemap lọc URL không hợp lệ và nhiều
-contract SEO đã có test. Điểm yếu lớn nhất trước khi mở index không nằm ở một "GEO hack", mà ở
+Nền tảng kỹ thuật SEO của repo tốt: cấu hình indexation fail-closed khi thiếu/invalid flag,
+canonical lấy từ origin tin cậy, 301 cho slug lịch sử, policy phân trang chống duplicate, sitemap
+lọc URL không hợp lệ và nhiều contract SEO đã có test. Tuy nhiên temporary production domain hiện
+chỉ được giữ noindex bằng policy/ADR, chưa có hard block tương ứng trong code. Điểm yếu lớn nhất trước khi mở index không nằm ở một "GEO hack", mà ở
 ba lớp cơ bản:
 
 1. **Correctness thương mại:** sale price hiện bị coi là unresolved; variant URL/deep-link contract
@@ -58,16 +59,20 @@ precision. Các trạng thái dưới đây có nghĩa:
 
 1. **Module SEO thuần.** Tám file `src/seo/` chủ yếu nhận `origin` + `indexingEnabled`, không đọc
    `process.env` rải rác hay phụ thuộc request tùy ý, nên test được ở tầng domain.
-2. **Cổng index fail-closed.** `SEARCH_INDEXING_ENABLED` bắt buộc tường minh `"true"`/`"false"`;
-   `release:check` chặn deploy khi thiếu; staging/localhost vẫn bị block cứng.
+2. **Parsing indexation fail-closed và có blocked-host enforcement một phần.**
+   `SEARCH_INDEXING_ENABLED` bắt buộc tường minh `"true"`/`"false"`; `release:check` chặn deploy
+   khi thiếu/invalid và staging/localhost bị block cứng. Temporary production host
+   `la.lanadesign.vn` **chưa** nằm trong `BLOCKED_INDEXING_HOSTS`, nên policy ADR 0004 chưa được
+   enforce bằng cùng lớp code này.
 3. **Canonical origin do máy chủ sở hữu.** `APP_DOMAIN` là nguồn chuẩn; không lấy canonical từ
    `Host` header do client kiểm soát.
 4. **Vòng đời URL sản phẩm có contract.** `src/proxy.ts` + `ProductSlugHistory` hỗ trợ current
    slug / historical redirect / not-found rõ ràng.
 5. **Chính sách phân trang chống duplicate.** Chỉ `?page=N` hợp lệ trên `/shop` và
    `/collections/<slug>` được index/self-canonical; biến thể query khác fail-closed.
-6. **Sitemap lọc dữ liệu.** Loại product inactive/không present/sai shop, collection draft và slug
-   lịch sử; có trần URL trước khi vượt giới hạn file sitemap.
+6. **Sitemap lọc dữ liệu đầu vào.** Loại product inactive/không present/sai shop, collection draft
+   và slug lịch sử. Repo cũng có ngưỡng URL tường minh, nhưng vượt ngưỡng hiện là hard failure
+   (`RangeError`), không phải graceful safeguard; xem W21.
 7. **Structured data fail-closed.** `buildOffer` không phát offer khi giá/trạng thái variant không
    đáng tin; `serializeJsonLd` escape `<`.
 8. **Nền tảng performance hợp lý.** `next/image`, `remotePatterns` hẹp, `sizes`, preload ảnh hero
@@ -80,19 +85,27 @@ precision. Các trạng thái dưới đây có nghĩa:
 
 ### Gate — không phải defect
 
-- **G1 — Indexing đang tắt trên temporary production domain.** ADR 0004 yêu cầu
-  `SEARCH_INDEXING_ENABLED=false` trên `la.lanadesign.vn` để tránh index/canonical confusion trước
-  khi có domain thương hiệu vĩnh viễn. Đây là trạng thái đúng hiện tại. `/plan` phải giữ gate này:
-  mọi công việc SEO có thể chuẩn bị trước, nhưng **không bật index** nếu chưa có domain vĩnh viễn +
-  explicit human approval.
+- **G1 — Temporary production domain có policy gate nhưng thiếu enforcement gate.** ADR 0004 yêu
+  cầu `SEARCH_INDEXING_ENABLED=false` trên `la.lanadesign.vn` để tránh index/canonical confusion
+  trước khi có domain thương hiệu vĩnh viễn. Đây là **policy đúng hiện tại**, nhưng source code chưa
+  hard-block host này: `BLOCKED_INDEXING_HOSTS` chỉ bảo vệ staging/local, nên một cấu hình
+  `SEARCH_INDEXING_ENABLED=true` trên `la.lanadesign.vn` có thể vượt `release:check`. `/plan` phải
+  tách hai việc: (a) giữ policy noindex + human approval gate; (b) bổ sung enforcement để temporary
+  production host không thể bật index do config sai. Không coi gate là hoàn tất cho tới khi policy
+  và enforcement nhất quán.
 
 ### Required — nên hoàn tất trước index launch
 
-- **W2 — Slug/path kỹ thuật nằm trong metadata PDP.** `src/seo/product-metadata.ts` nối slug vào
-  title và nối `/shop/<slug>` vào description. Nội dung này làm SERP copy kém tự nhiên và tạo
-  boilerplate không cần thiết. Bỏ slug/path khỏi copy hiển thị; ưu tiên title/description mô tả
-  sản phẩm bằng dữ liệu người mua hiểu được. Nếu cần phát hiện duplicate metadata, làm warning ở
-  editorial/admin trước; **không mặc định thêm hard publish blocker chỉ để đạt uniqueness**.
+- **W2 — Slug/path kỹ thuật nằm trong metadata PDP, nhưng đang giữ một uniqueness contract.**
+  `src/seo/product-metadata.ts` nối slug vào title và nối `/shop/<slug>` vào description. Copy này
+  kém tự nhiên cho SERP, nhưng P13 đang dùng canonical slug như discriminator để bảo đảm metadata
+  khác nhau giữa products khi `seoTitle`/`seoDescription` không unique ở DB. Vì vậy **không được gỡ
+  slug/path trước khi có cơ chế thay thế bảo toàn uniqueness contract**. `/plan` phải chọn và chứng
+  minh một contract collision-safe (ví dụ validation chỉ block khi thực sự collision, hoặc một
+  human-readable discriminator được chứng minh đủ để phân biệt collision group); màu/collection
+  tự thân không được coi là unique nếu chưa có bằng chứng. Regression hiện có trong
+  `tests/domain/product-metadata.test.ts` phải được cập nhật để tiếp tục chứng minh uniqueness sau
+  khi thay contract.
 
 - **W3 — Sale price bị biến thành `PRICE_UNRESOLVED`.** `resolveStorefrontPrice` trả `null` khi
   `retailPrice !== retailPriceAfterDiscount`, khiến variant không purchasable, card có thể hiện
@@ -118,13 +131,13 @@ precision. Các trạng thái dưới đây có nghĩa:
   **variant identity → variant URL/deep-link + preselection → query/canonical policy →
   `ProductGroup`/variant `Offer` markup → HTTP/Rich Results verification**.
 
-- **W15 — Một số HTTP smoke SEO chưa chạy trong CI.** Các script
+- **W15 — Cả năm HTTP smoke SEO này hiện không có CI/npm gate.** Các script
   `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,
   `product-metadata-http-smoke.ts`, `oai-robots-http-smoke.ts`,
-  `product-slug-http-smoke.ts` tồn tại nhưng không phải toàn bộ đều được gọi bởi workflow hiện tại
-  và không có một script npm chuẩn để chạy nhóm contract này. Các regression về indexation,
-  metadata, robots và structured data có thể lọt qua CI. Nên gom thành command rõ ràng và nối vào
-  workflow SEO runtime hiện có.
+  `product-slug-http-smoke.ts` đều tồn tại, nhưng **không script nào trong nhóm này** được workflow
+  hiện tại hoặc npm script gọi. Vì vậy năm contract về search exposure, structured data, PDP
+  metadata, OAI robots và product slug có thể regress mà CI không chặn. P2 phải tạo một command
+  chuẩn cho nhóm này và nối toàn bộ vào workflow runtime SEO.
 
 - **W13A — Evergreen content thiếu owner-approved source facts/policies.** Site chưa có các page
   chuẩn về About, Returns, Shipping/Payment, Size Guide, Contact; nhưng `buildPublicBrandFacts`
@@ -168,8 +181,13 @@ precision. Các trạng thái dưới đây có nghĩa:
   được owner phê duyệt, triển khai page từ nguồn đó và ưu tiên nội dung hữu ích/nguyên bản; không
   tạo page chỉ để nhắm "GEO keywords".
 
-- **W14 — Không có branded `not-found.tsx`.** 404 mặc định thiếu điều hướng theo brand/storefront.
-  Đây chủ yếu là UX/crawl recovery hygiene, không phải direct ranking feature.
+- **W14 — Crawl-recovery 404 hiện có hai đường và branded `not-found.tsx` một mình không đủ.**
+  App chưa có branded `not-found.tsx`, nhưng quan trọng hơn, unknown product slug bị
+  `src/proxy.ts` trả trực tiếp `404 text/plain` trước khi Next routing có cơ hội render not-found UI.
+  Vì vậy `/plan` phải xử lý cả hai: branded 404 cho route-level not-found **và** unknown product-slug
+  path phải trả một HTML 404 có navigation/recovery phù hợp, đồng thời giữ nguyên contract current
+  slug / historical 301 / unknown 404. Không prescribe cách chuyển ownership giữa proxy và Next
+  trước khi review regression của slug lifecycle.
 
 ### Low / operational / optional
 
@@ -204,10 +222,23 @@ precision. Các trạng thái dưới đây có nghĩa:
   Search không dùng `llms.txt` như tín hiệu đặc biệt. Chỉ thêm `llms.txt` nếu xác định consumer cụ
   thể ngoài Google có giá trị đủ lớn để đáng duy trì. Không đưa vào critical path.
 
-- **W21 — Sitemap hiện là một file.** Sitemap index chỉ cần khi URL volume thực sự tiến gần giới
-  hạn hoặc có lý do vận hành rõ ràng. Image sitemap cũng là enhancement, không phải prerequisite
-  nếu product images đã crawlable từ pages. Giữ scope theo dữ liệu thực tế thay vì build trước cho
-  scale giả định.
+- **W21 — Sitemap có hard size cliff, chưa có scale-out path.** Repo hiện dùng một sitemap và
+  `search-sitemap-repository` ném `RangeError` khi dynamic URL count vượt ngưỡng 49.996;
+  `src/app/sitemap.ts` không có graceful fallback, nên endpoint có thể thành HTTP 500 thay vì phát
+  sitemap partial/index. Với quy mô hiện tại đây chưa phải launch blocker, nhưng `/plan` phải ghi
+  rõ trigger/owner trước khi tiến gần ngưỡng và khi đó triển khai sitemap index/phân mảnh thay vì
+  để hard failure xảy ra. Image sitemap vẫn là enhancement riêng nếu product images đã crawlable.
+
+## Lịch sử ID finding
+
+Để giữ traceability với bản audit trước, ID không được renumber liên tục. Các khoảng trống là chủ
+đích, không phải finding bị rơi:
+
+- **W1 → G1:** trạng thái noindex trên temporary production domain được tách thành policy gate +
+  enforcement gap thay vì coi là SEO defect thông thường.
+- **W7:** `SearchAction` bị loại khỏi roadmap vì sitelinks search box đã retired.
+- **W11:** claim cũ gom `/search` và `/new-arrivals` thành "stub rỗng" bị loại; hai route được xử lý
+  riêng trong section `/search` và `/new-arrivals` bên dưới.
 
 ## Finding đã loại khỏi roadmap
 
@@ -243,21 +274,26 @@ Không nên gộp hai route này thành "stub rỗng":
 `/plan` nên dùng thứ tự ưu tiên dưới đây thay vì triển khai từng W-number theo danh sách tuyến tính.
 Mỗi task/PR vẫn phải tuân ADR 0005: một concern reviewable, có acceptance criteria và verification.
 
-### P0 — Giữ index gate
+### P0 — Giữ policy gate và đóng enforcement gap
 
 - Giữ `SEARCH_INDEXING_ENABLED=false` trên `la.lanadesign.vn`.
-- Xác định domain vĩnh viễn + owner approval là dependency bên ngoài trước index launch.
+- Thêm hard-block/enforcement tương đương cho temporary production host để `release:check` không thể
+  pass khi host này bị cấu hình `SEARCH_INDEXING_ENABLED=true`.
+- Xác định domain vĩnh viễn + owner approval là dependency bên ngoài trước index launch; migration
+  khỏi temporary-host block phải là thay đổi tường minh/reviewable khi domain vĩnh viễn sẵn sàng.
 - Không thay đổi canonical/indexing policy chỉ để test SEO traffic trên temporary domain.
 
 ### P1 — Correctness thương mại, metadata và variant addressability
 
-1. W2: bỏ slug/path kỹ thuật khỏi PDP metadata + regression tests.
-2. W3: audit dữ liệu Pancake và định nghĩa sale-price contract trước khi sửa resolver.
-3. W4a: xác minh identifier nào có thể làm stable variant identity; không suy GTIN từ barcode name.
-4. W4b: thiết kế distinct variant URL/deep-link + server/client preselection cho kind/color/size.
-5. W4c: định nghĩa query/index/canonical contract: variant URLs preselect được nhưng single-page
+1. W2a: xác định cơ chế uniqueness thay thế và test collision cases trước khi bỏ slug/path.
+2. W2b: chỉ khi W2a chứng minh contract mới collision-safe mới bỏ slug/path khỏi PDP metadata và
+   cập nhật regression tests.
+3. W3: audit dữ liệu Pancake và định nghĩa sale-price contract trước khi sửa resolver.
+4. W4a: xác minh identifier nào có thể làm stable variant identity; không suy GTIN từ barcode name.
+5. W4b: thiết kế distinct variant URL/deep-link + server/client preselection cho kind/color/size.
+6. W4c: định nghĩa query/index/canonical contract: variant URLs preselect được nhưng single-page
    product group dùng canonical base PDP.
-6. W4d: chỉ sau W4a–W4c mới thiết kế `ProductGroup`/`Product` + variant `Offer` JSON-LD.
+7. W4d: chỉ sau W4a–W4c mới thiết kế `ProductGroup`/`Product` + variant `Offer` JSON-LD.
 
 **Gate:** URL variant phải mở trực tiếp đúng lựa chọn và phản ánh đúng image/price/availability/
 purchasability trước khi structured data dùng URL đó. Không phát price/identifier/schema mà source
@@ -265,50 +301,53 @@ semantics chưa được chứng minh.
 
 ### P2 — Regression safety trước index
 
-7. W15: tạo một command SEO HTTP smoke chuẩn và gọi nó trong CI.
-8. Verify noindex/indexable states, base/variant canonical behavior, redirect, metadata, robots và
+8. W15: tạo một command SEO HTTP smoke chuẩn bao trùm đủ cả năm script và gọi nó trong CI.
+9. Verify noindex/indexable states, base/variant canonical behavior, redirect, metadata, robots và
    structured data qua Next server thật.
 
 ### P3 — Search/social fundamentals
 
-9. W8: root OG/Twitter fallback.
-10. W10: self-canonical cho static indexable pages khi indexing enabled.
-11. W9: chỉ thêm sitemap `lastModified` sau khi có timestamp phản ánh significant public change.
-12. W14: branded 404 + đường quay lại shop/search.
+10. W8: root OG/Twitter fallback.
+11. W10: self-canonical cho static indexable pages khi indexing enabled.
+12. W9: chỉ thêm sitemap `lastModified` sau khi có timestamp phản ánh significant public change.
+13. W14a: branded route-level 404 + đường quay lại shop/search.
+14. W14b: sửa unknown product-slug path để trả HTML 404 recovery thay vì proxy `text/plain`, nhưng
+    giữ nguyên current slug / historical 301 / unknown 404 contract.
 
 ### P4 — Commerce discovery trên PDP
 
-13. W5: bổ sung verified identifiers + variant attributes + shipping/return semantics.
-14. W6: enrich Organization từ first-party facts đã xác minh.
-15. Chuẩn bị/kiểm tra Google Merchant Center feed + PDP structured-data consistency; feed và schema
+15. W5: bổ sung verified identifiers + variant attributes + shipping/return semantics.
+16. W6: enrich Organization từ first-party facts đã xác minh.
+17. Chuẩn bị/kiểm tra Google Merchant Center feed + PDP structured-data consistency; feed và schema
     phải cùng mô tả một catalog/price/availability contract.
-16. W12 không nằm trong P4 mặc định; chỉ promote từ optional khi có market/consumer requirement.
+18. W12 không nằm trong P4 mặc định; chỉ promote từ optional khi có market/consumer requirement.
 
 ### P5 — First-party content với human content gate
 
-17. W13A: lập inventory những fact/policy cần cho About, Returns, Shipping/Payment, Size Guide,
+19. W13A: lập inventory những fact/policy cần cho About, Returns, Shipping/Payment, Size Guide,
     Contact và đánh dấu phần đã có source vs phần chưa có.
-18. Human owner phê duyệt factual content/policy còn thiếu trước khi coding agent tạo public page.
-19. W13: build evergreen pages từ approved facts; reuse một nguồn fact/contract chuẩn thay vì copy
+20. Human owner phê duyệt factual content/policy còn thiếu trước khi coding agent tạo public page.
+21. W13: build evergreen pages từ approved facts; reuse một nguồn fact/contract chuẩn thay vì copy
     nội dung giữa footer, pages và schema.
-20. Thêm internal links theo user journey và crawlability; không tạo thin pages hàng loạt cho GEO.
+22. Thêm internal links theo user journey và crawlability; không tạo thin pages hàng loạt cho GEO.
 
 **Gate:** nếu return/contact/size policy chưa được owner cung cấp hoặc phê duyệt thì planner phải
 đánh dấu blocked; không tự suy diễn business policy từ code, UI copy hay naming convention.
 
 ### P6 — Operational readiness
 
-21. W16/W17: admin readiness, preview/counter/warnings/health filters.
-22. W18: Search Console + Bing Webmaster + Merchant Center verification trên permanent domain.
-23. W19: owner-approved crawler governance matrix.
-24. W21 chỉ triển khai khi URL/image scale hoặc operational evidence thực sự yêu cầu.
-25. W12 chỉ triển khai nếu target market/consumer evidence mới chứng minh listing markup có giá trị.
+23. W16/W17: admin readiness, preview/counter/warnings/health filters.
+24. W18: Search Console + Bing Webmaster + Merchant Center verification trên permanent domain.
+25. W19: owner-approved crawler governance matrix.
+26. W21: theo dõi catalog URL volume và đặt trigger trước ngưỡng hard failure; triển khai sitemap
+    index/phân mảnh khi evidence cho thấy sắp chạm ngưỡng, không đợi endpoint bắt đầu 500.
+27. W12 chỉ triển khai nếu target market/consumer evidence mới chứng minh listing markup có giá trị.
 
 ### P7 — Performance verification
 
-26. Đo performance runtime trên representative pages (`/`, `/shop`, collection, PDP) ở mobile và
+28. Đo performance runtime trên representative pages (`/`, `/shop`, collection, PDP) ở mobile và
     desktop; ghi baseline LCP/CLS/INP/lab diagnostics theo tooling được chọn.
-27. Chỉ tạo blocking budget khi đã có baseline + threshold hợp lý; không biến score đọc từ source
+29. Chỉ tạo blocking budget khi đã có baseline + threshold hợp lý; không biến score đọc từ source
     thành CWV evidence.
 
 ## Definition of Done cho roadmap sau `/plan`
