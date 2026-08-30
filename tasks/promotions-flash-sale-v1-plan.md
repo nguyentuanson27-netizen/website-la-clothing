@@ -64,16 +64,16 @@ function buildPromotionCopyName(sourceName: string): string
 ```
 
 Rules:
-- normalize/trim source;
+- normalize/trim source before budgeting;
 - reserve suffix length inside `MAX_CAMPAIGN_NAME_LENGTH=120`;
 - truncate retained prefix to remaining UTF-16 code-unit budget without splitting a surrogate pair;
-- trim trailing whitespace from retained prefix;
-- append exact suffix;
+- if avoiding a surrogate split leaves one code unit unused, keep it unused rather than backfilling part of another code point;
+- append the exact suffix; do not apply a second `trimEnd()` after budgeting;
 - final result must be non-empty and <=120 code units.
 
 Repeated Copy applies the same algorithm to immediate source. It may produce repeated suffixes when they fit; it never fails solely because source name is 119/120 code units.
 
-Tests: 119, 120, surrogate-pair boundary, Copy-of-Copy.
+Tests: 119, 120, trailing-space normalization, surrogate-pair boundary, Copy-of-Copy.
 
 ### R11 — `/flash-sale` reuses both storefront page and offset bounds
 Existing repository evidence on current `main`:
@@ -333,7 +333,7 @@ Acceptance:
 - Draft health bounded expansion probe;
 - bounded query count.
 
-Verification includes 119/120 name, surrogate boundary, Copy-of-Copy, >2000 source Copy.
+Verification includes 119/120 name, trailing-space normalization, surrogate boundary, Copy-of-Copy, >2000 source Copy.
 
 ## P4 — concurrency-safe admin domain + activation gate
 Suggested PR: `promo-B2-admin-domain`.
