@@ -8,7 +8,7 @@ Source spec: `docs/specs/marketing-analytics-shopping.md`
 
 - [ ] **O1 Google Ads value:** approve merchandise-only vs `OrderMirror.totalVnd` before the Ads Purchase tag is published.
 - [ ] **O2 Merchant market:** approve initial country/language/currency; proposed baseline is Vietnam / Vietnamese / VND.
-- [ ] **O3 Apparel facts:** confirm whether all emitted inventory can truthfully use catalog-wide `gender=male`, `age_group=adult`, `condition=new`; otherwise revise plan for product-owned attributes before Merchant activation.
+- [ ] **O3 Apparel facts:** current Merchant guidance requires `gender` and `age_group` for free listings across Apparel & Accessories. Confirm whether all emitted inventory can truthfully use catalog-wide `gender=male`, `age_group=adult`, `condition=new`; otherwise revise plan for product-owned attributes before Merchant activation.
 - [ ] **O4 Vendor IDs:** provide/review GTM container, GA4 measurement, Google Ads conversion ID/label, and TikTok Pixel ID in their proper account/configuration owners.
 
 ## PR-A — tracking foundation
