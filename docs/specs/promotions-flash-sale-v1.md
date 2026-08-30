@@ -31,6 +31,23 @@ Target semantics:
 - A campaign must not target product A and separately target a variant already covered by product A in the same campaign.
 - All targets in one campaign share the same discount type/value/time configuration. Different discount amounts require separate campaigns.
 
+### Explicit v1 input and transaction bounds
+These are server-authoritative v1 limits, not UI hints:
+- `MAX_CAMPAIGN_NAME_LENGTH = 120` JavaScript string code units after trimming; empty names are invalid.
+- `MAX_TARGETS_PER_CAMPAIGN = 200` normalized explicit target rows after duplicate normalization/rejection.
+- `MAX_PROMOTION_IDENTIFIER_LENGTH = 128` JavaScript string code units for browser-supplied campaign/product/variant identifiers before lookup.
+- `MAX_ADMIN_PROMOTION_PAGE_SIZE = 50` campaigns returned by one admin list/search request.
+- `ADMIN_TARGET_SEARCH_LIMIT = 50` product/variant target candidates returned by one admin search request.
+- Public `/shop` and `/flash-sale` page size must reuse the existing storefront maximum of `48`; this feature does not introduce an unbounded listing path.
+- `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN = 2000` unique currently affected variants that an admin activation/re-enable/Scheduled-edit validation transaction may expand and validate.
+
+Bounds semantics:
+- syntactically oversized input such as a name/ID/explicit target array above its cap is rejected before persistence, including for Draft; Draft permissiveness applies to business invalidity, not abusive/unbounded payloads;
+- Draft health may inspect PRODUCT expansion with a bounded `limit + 1` style query and report `TARGET_EXPANSION_LIMIT_EXCEEDED` without materializing all covered variants;
+- publish/re-enable/Scheduled edit must fail atomically with typed `TARGET_EXPANSION_LIMIT_EXCEEDED` when current unique affected-variant expansion exceeds `2000`; perform the bounded expansion check before acquiring/holding a huge variant lock set;
+- the `2000` cap protects admin validation/locking work and is **not** a semantic runtime cap on an already-Active PRODUCT target. If catalog sync later grows dynamic coverage beyond `2000`, valid variants remain governed by the normal runtime pricing/conflict rules; runtime storefront reads and health inspection must remain bounded/paginated rather than attempting one all-variant transaction;
+- all named limits require `max` and `max + 1` server-side tests.
+
 Persistence must be website-owned and use integer money for website-owned VND values. Conceptually:
 - percentage value: integer;
 - fixed sale price: `BigInt`/integer VND, never `Float`;
@@ -179,8 +196,24 @@ Do not independently reimplement pricing formulas in UI, cart, checkout, SEO, an
 ### Percentage
 - Integer percentage only.
 - Allowed range: `1..99`.
-- Compute integer VND using integer-safe arithmetic equivalent to `Math.round(baseVnd * (100 - percent) / 100)`.
+- Percentage pricing is defined by **exact positive-integer rational arithmetic**, not by JavaScript floating-point evaluation of the formula. For usable integer `baseVnd` and integer `percent`, compute:
+
+```ts
+const numerator = BigInt(baseVnd) * BigInt(100 - percent);
+const effectiveBigInt = (numerator + 50n) / 100n; // nearest VND; exact .5 rounds upward
+const effectivePriceVnd = Number(effectiveBigInt);
+```
+
+- The conversion back to `number` is permitted only after verifying the result remains a positive safe integer. Because `percent` is `1..99` and usable base is a positive safe integer, a valid discounted result is below the safe-integer base, but implementation must still assert the boundary rather than rely on implicit coercion.
+- `Math.round(baseVnd * (100 - percent) / 100)` may be used as an explanatory shorthand for ordinary-sized VND values, but it is **not** the normative implementation/reference across the full accepted `Number.isSafeInteger` domain.
+- SQL or any sanctioned projection must implement the same exact rational result; PostgreSQL `numeric` arithmetic is required before percentage multiplication/division.
 - Result must satisfy `0 < effectivePriceVnd < basePriceVnd`.
+
+Required parity examples include ordinary exact-half cases and an upper-safe-integer case:
+- `150 @ 1% → 149`;
+- `350 @ 1% → 347`;
+- `110 @ 5% → 105`;
+- `9007199254740989 @ 1% → 8917127262193579`.
 
 Example: base changes from `500000` to `600000` while a `20%` campaign remains active → new effective price is `480000`.
 
@@ -207,11 +240,12 @@ Enable/publish a Draft or re-enable a never-Active Disabled campaign:
 - reject invalid percentage/fixed-price values;
 - reject invalid time configuration;
 - reject any enabled/published overlap;
+- reject current target expansion above `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN` with typed `TARGET_EXPANSION_LIMIT_EXCEEDED`;
 - operation is atomic: no partially enabled campaign.
 
 Scheduled save:
 - rerun the same validation because Scheduled is already enabled;
-- reject the edit atomically if the resulting campaign would be invalid or overlapping.
+- reject the edit atomically if the resulting campaign would be invalid, overlapping, or exceed the admin expansion cap.
 
 Active runtime degradation caused **after** successful activation is handled by runtime rules below; it does not retroactively make original activation invalid.
 
@@ -257,6 +291,8 @@ If an invalid variant later becomes valid again while the campaign remains insid
 
 If base price itself becomes unusable, the affected variant becomes `BASE_PRICE_UNAVAILABLE` and is not purchasable. This is distinct from a usable base price that merely invalidates a promotion.
 
+If post-activation catalog growth makes a PRODUCT campaign cover more than `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN`, that fact alone does not invalidate otherwise valid active pricing. The cap limits admin validation/locking transactions; runtime resolution remains dynamic and bounded per storefront/admin-health query.
+
 ### Runtime overlap discovered from catalog mutation
 A new/restored/re-associated variant can expose a conflict that did not exist when campaigns were originally published.
 
@@ -280,11 +316,11 @@ Required capabilities:
 - choose one or more product/variant targets;
 - clearly show Draft / Scheduled / Active / Ended / Disabled;
 - show whether an Active/Scheduled campaign is healthy, partially invalid, or conflicted;
-- show target-specific validation errors for overlap, unusable base price, invalid fixed price, invalid percentage, and invalid scheduling.
+- show target-specific validation errors for overlap, unusable base price, invalid fixed price, invalid percentage, invalid scheduling, and expansion-limit rejection.
 
 Product admin pages do not become the primary editor. They show current/upcoming related campaigns and link to the relevant campaign in `/admin/promotions`.
 
-All admin mutations reuse the existing authenticated/authorized admin boundary and validate browser input server-side.
+All admin mutations reuse the existing authenticated/authorized admin boundary and validate browser input server-side. Campaign list/search and target search are paginated/bounded by the named v1 limits above.
 
 ## Storefront UX
 Regular promotion:
@@ -326,11 +362,24 @@ Transactional correctness is strict:
 - add-to-cart/cart reconstruction/checkout must re-resolve server-authoritative price and campaign state;
 - a stale cached storefront page must never authorize a stale transaction price.
 
-Storefront presentation must also have a testable freshness contract. Implementation must use either:
-- campaign-boundary-aware invalidation/revalidation at relevant `startsAt`/`endsAt`; **or**
-- bounded time-based revalidation with maximum promotional display staleness of **60 seconds**.
+Storefront presentation has a maximum promotional display staleness of **60 seconds while the page is visible**. The implementation may refresh earlier at a known boundary, but it must never rely solely on transition facts from the currently hydrated page slice.
 
-Whichever strategy `/plan` chooses must have runtime/browser coverage around start/end boundaries. A briefly stale cached badge/price may be tolerated only within that declared display bound; transaction price remains server-authoritative with no such grace period.
+For `/shop` and `/flash-sale`:
+- the server must compute the **query-wide earliest relevant future campaign transition** before pagination, using the full route candidate universe relevant to that request rather than only currently hydrated/on-page rows or currently active members;
+- `/shop` transition discovery must account for an off-page product/variant whose campaign start/end can change effective-price filtering/sorting and therefore current page membership/order;
+- `/flash-sale` transition discovery must include upcoming enabled Flash Sale campaigns even when current active membership is empty, so an empty page can refresh when the first sale begins;
+- transition discovery itself must be aggregate/bounded (for example an indexed `MIN` over eligible transition facts), not an unbounded application-side materialization.
+
+The server derives a relative refresh delay from authoritative server time:
+- `refreshAfterMs = min(max(nextTransitionAt - requestNow, 0), 60_000)` when a future transition exists;
+- `refreshAfterMs = 60_000` when no relevant future transition is currently known;
+- the Client Component schedules from `refreshAfterMs`, not by subtracting an absolute timestamp from `Date.now()`, so browser wall-clock skew cannot postpone refresh;
+- after each `router.refresh()`, the new Server Component payload supplies a new delay;
+- on `visibilitychange` back to visible and on `pageshow`, if the server-provided delay elapsed while the page was hidden/suspended, trigger an immediate `router.refresh()` rather than waiting for a throttled timer.
+
+PDP may use the selected/current product's relevant transition facts because pagination membership is not involved, but it still uses server-derived relative delay with the same `<=60s` visible-page fallback and resume guard.
+
+Whichever concrete implementation realizes this contract must have runtime/browser coverage around start/end boundaries, off-page membership changes, empty Flash Sale activation, browser clock skew, and background-tab/page-resume behavior. A briefly stale badge/price may be tolerated only within the declared display bound; transaction price remains server-authoritative with no such grace period.
 
 ## Cart, checkout, and final order pricing
 The cart does not lock promotional price. Cart and checkout display current server-resolved effective price.
@@ -433,11 +482,12 @@ Trust boundaries:
 
 Required controls:
 - Promotion writes require existing admin authentication **and authorization**.
-- Validate campaign name/type/value, timestamps, lifecycle transition, target IDs, and target array size server-side with explicit finite bounds.
+- Validate campaign name/type/value, timestamps, lifecycle transition, target IDs, and target array size server-side against the explicit named v1 bounds above; do not let UI pagination be the only bound.
 - Product/variant IDs supplied by browser must resolve to expected website mirror records; never trust browser-supplied price/catalog facts.
 - Effective/final price is always server-computed.
 - Checkout client may submit expected quote/version for stale detection, never authoritative final price.
 - Overlap enforcement is server-side and concurrency-safe.
+- Admin PRODUCT expansion validation is capped before large lock acquisition, while runtime dynamic coverage remains bounded per query.
 - Pancake payload is a strict server-owned allowlist built from immutable order snapshot plus freshly validated required external identity/stock facts.
 - Do not log secrets, Pancake credentials, or unnecessary customer PII.
 
@@ -445,6 +495,8 @@ Abuse cases that tests/review must address:
 - non-admin attempts promotion mutations;
 - forged target IDs/discount values/timestamps;
 - oversized target arrays or campaign names;
+- explicit-bound `max` and `max + 1` cases;
+- target expansion at `2000` and `2001` current affected variants;
 - concurrent publishes racing into overlap;
 - stale checkout attempting old sale price;
 - manipulated browser price/discount metadata;
@@ -455,9 +507,13 @@ Promotion resolution must not add one database query per product card or per var
 
 Required properties:
 - storefront/listing promotion lookup is bounded and batch-oriented;
-- `/flash-sale` query is bounded/paginated consistent with existing listing patterns;
+- `/shop` and `/flash-sale` reuse the existing storefront max page size of `48` and remain paginated;
+- admin campaign list/search returns at most `50` campaigns per request and target search at most `50` candidates per request;
 - target/campaign lookup has indexes appropriate for campaign identity, target identity, enabled/lifecycle filtering, and time-window access;
-- product-target expansion does not create unbounded serial query chatter;
+- product-target expansion does not create unbounded serial query chatter or unbounded admin lock sets;
+- activation/re-enable/Scheduled-edit expansion detection uses a bounded `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1` read and rejects above the cap before attempting a huge lock set;
+- runtime PRODUCT coverage may grow beyond the admin expansion cap after activation but storefront/admin-health access remains bounded/paginated;
+- query-wide storefront transition discovery uses bounded aggregate queries, not application-side loading of every potentially affected row;
 - admin target selection/search is bounded rather than loading an unbounded catalog into browser.
 
 If a SQL price/promotion projection is introduced to satisfy bounded listing access, it is a sanctioned projection of central pricing semantics and must have parity tests; it is not a second authority.
@@ -493,6 +549,8 @@ New behavior must have tests that would fail without implementation.
 
 Required domain/database/integration coverage:
 - percentage integer/range/rounding edges, including result that rounds to base/zero;
+- exact integer percentage arithmetic across the full accepted safe-integer domain, including `9007199254740989 @ 1% → 8917127262193579` in the TypeScript resolver;
+- SQL↔TS percentage parity includes the same upper-safe-integer fixture as well as exact-half fixtures;
 - percentage runtime invalidation/recovery for one variant inside a product target while sibling variants remain promoted;
 - fixed-price validity at variant and product scope;
 - fixed-price runtime invalidation/recovery for one variant inside a product target while sibling variants remain promoted;
@@ -503,7 +561,8 @@ Required domain/database/integration coverage:
 - active/scheduled/ended/disabled interval boundaries using `[start,end)`;
 - zero-traffic scheduled window still becomes terminal `Ended` when appropriate;
 - Disabled-before-Active remains editable/re-enableable; Disabled-after-Active is terminal;
-- Draft can save invalid configuration but cannot affect storefront; activation blocked until valid;
+- Draft can save business-invalid configuration but oversized syntactic input remains rejected;
+- every named finite bound has `max` and `max + 1` coverage, including explicit targets and affected-variant expansion;
 - invalid Scheduled edit rejected atomically without corrupting prior enabled definition;
 - null regular-promotion boundaries;
 - overlap product↔variant and concurrent publish attempts;
@@ -513,7 +572,11 @@ Required domain/database/integration coverage:
 - representative card pricing/ties/mixed Promotion + Flash Sale variants;
 - unpromoted cheaper variant does not cause misleading product-wide `Từ` sale wording;
 - `/flash-sale` active-only membership;
-- cache/start/end boundary behavior satisfies chosen boundary-aware or ≤60s display freshness strategy;
+- route-wide transition aggregate sees an off-page campaign that changes `/shop` effective-price order/filter membership;
+- empty `/flash-sale` before the first Scheduled sale refreshes when that sale starts;
+- boundary refresher is unaffected by browser `Date.now()` skew because it consumes server-derived relative delay;
+- background-tab/page resume triggers immediate revalidation when the server-provided refresh delay elapsed while suspended;
+- visible storefront promotion presentation never remains stale for more than 60 seconds under the chosen refresher;
 - cart repricing;
 - stale checkout returns `PRICE_CHANGED`, refreshed totals, does not enter `POS_SUBMITTING`, and performs no Pancake write;
 - stale DRAFT/REJECTED attempt can be superseded by buyer-confirmed refreshed quote without infinite loop;
@@ -572,8 +635,9 @@ Operational rollback plan:
 ## Boundaries
 Always:
 - Treat `pancakeRetailPrice` as base-price input and website campaign state as only website promotion authority.
-- Compute authoritative prices centrally on server.
+- Compute authoritative prices centrally on server using exact integer percentage arithmetic.
 - Revalidate overlap and price validity on every enabled campaign mutation.
+- Enforce named server-side finite bounds before persistence/large admin locking.
 - Reprice checkout submission using latest trusted base facts.
 - Preserve immutable final order pricing/audit facts.
 - Keep admin mutations authenticated/authorized, bounded, concurrency-safe.
@@ -591,6 +655,7 @@ Ask first:
 
 Never:
 - Trust browser-provided final prices.
+- Use JavaScript floating-point multiplication/division as the normative percentage-money calculation across the full accepted safe-integer domain.
 - Use `pancakeRetailPriceAfterDiscount` as website promotion authority.
 - Apply two active promotions to one variant.
 - Silently apply invalid percentage/fixed price.
@@ -616,20 +681,20 @@ Never:
 ## Success criteria
 1. `/admin/promotions` is admin-protected and supports create/edit/enable/disable/copy according to lifecycle rules.
 2. Campaigns target multiple products/variants with one shared rule; Product targets dynamically include later synced/restored variants.
-3. Draft may save invalid configuration without storefront effect; enabling/re-enabling/Scheduled edits are atomically validated.
+3. Draft may save business-invalid configuration without storefront effect; syntactically oversized/unbounded input is rejected; enabling/re-enabling/Scheduled edits are atomically validated within named finite transaction bounds.
 4. Lifecycle terminality does not depend on request traffic: zero-traffic active windows still produce correct Active-history/Ended semantics; Disabled-before-Active remains re-enableable while Disabled-after-Active/Ended are terminal.
 5. No two enabled campaign intervals safely apply to same variant; concurrent publish is race-safe and runtime catalog-created conflicts fail closed with no promotion on conflicted variant.
 6. Website effective pricing uses usable latest trusted `pancakeRetailPrice` + website campaign state; `pancakeRetailPriceAfterDiscount` mismatch no longer blocks pricing and may intentionally be lower than website price without becoming authority.
 7. Authoritative website base/effective money is positive safe-integer VND; rollout includes audit of mirrored values incompatible with that rule while mirror columns themselves remain external `Float?` facts.
-8. Percentage and fixed-price calculations are integer-VND, centralized, deterministic, validated, and use the same affected-variant runtime invalidation/recovery semantics, including partial invalidity inside `PRODUCT` targets.
+8. Percentage pricing uses exact integer/rational arithmetic across the full accepted safe-integer domain; SQL and TS agree on ordinary, exact-half, and upper-safe-integer fixtures. Fixed-price pricing is integer-VND and both discount types use the same affected-variant runtime invalidation/recovery semantics.
 9. Storefront cards/PDP/cart/checkout/structured data/analytics share same semantic pricing authority; any SQL projection is parity-tested and mixed variant promotions render deterministically without misleading minimum-price wording.
 10. `/flash-sale` contains only products with valid active Flash Sale variant and displays active flash-sale price/badge/countdown correctly.
-11. Storefront promotion presentation meets explicit boundary-aware or ≤60s freshness contract, while transactional price is always freshly server-authoritative.
+11. Storefront promotion presentation uses query-wide transition awareness plus server-derived relative refresh with a visible-page maximum staleness of 60 seconds, including off-page membership changes, empty Flash Sale activation, clock skew, and resume handling; transactional price is always freshly server-authoritative.
 12. Checkout detects stale pricing from promotion/base-price changes, returns `PRICE_CHANGED` with refreshed totals, performs no Pancake create-order on stale attempt, and requires explicit reconfirmation while remaining compatible with `OrderMirror(DRAFT)` architecture.
 13. Finalized order lines preserve immutable base price, customer price, line total, campaign identity/name/kind/type/value snapshots.
 14. Pancake submission closes all three raw-live-price assumptions: effective quote comparison, effective/final total validation, and request mapping from immutable final `unitPriceVnd`.
 15. Controlled semantic evidence confirms Pancake accepts/preserves discounted `variation_info.retail_price` override before production readiness is declared.
-16. Admin/authz/security, database concurrency, bounded data access, observability, rollback, domain/integration tests, browser/Axe coverage, migrations, lint, typecheck, build, release checks, and repository CI gates pass before implementation merge.
+16. Admin/authz/security, explicit finite bounds, database concurrency, bounded data access, observability, rollback, domain/integration tests, browser/Axe coverage, migrations, lint, typecheck, build, release checks, and repository CI gates pass before implementation merge.
 
 ## Implementation / PR sizing guidance
 This spec is one product contract, but implementation may be split into dependency-safe PRs when that improves reviewability. Follow ADR 0005: file count is not the gate; atomicity, subsystem ownership, risk, effective changed lines, verification, and rollback/revert clarity are.
