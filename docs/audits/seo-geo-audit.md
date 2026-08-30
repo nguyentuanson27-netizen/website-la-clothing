@@ -16,28 +16,39 @@ Nền tảng kỹ thuật SEO của repo tốt: indexation fail-closed, canonica
 contract SEO đã có test. Điểm yếu lớn nhất trước khi mở index không nằm ở một "GEO hack", mà ở
 ba lớp cơ bản:
 
-1. **Correctness thương mại:** sale price hiện bị coi là unresolved và structured data chưa mô hình
-   đúng product variants có giá khác nhau.
+1. **Correctness thương mại:** sale price hiện bị coi là unresolved; variant URL/deep-link contract
+   chưa tồn tại; structured data chưa mô hình đúng product variants có giá khác nhau.
 2. **Search presentation + regression safety:** metadata PDP còn nhét slug/path kỹ thuật và một số
    HTTP smoke SEO chưa nằm trong CI.
 3. **First-party content + commerce discovery:** thiếu các trang evergreen có thẩm quyền về brand,
-   đổi trả, vận chuyển, size và liên hệ; structured data thương mại còn mỏng.
+   đổi trả, vận chuyển, size và liên hệ; nhưng các policy/fact đó cũng chưa có đủ source-of-truth
+   để coding agent được phép tự tạo nội dung.
 
 `SEARCH_INDEXING_ENABLED=false` trên domain tạm là **release gate có chủ đích theo ADR 0004, không
 phải bug cần "fix"**. Không bật index cho `la.lanadesign.vn`; chỉ mở index sau khi domain vĩnh viễn
 được xác nhận và có phê duyệt human riêng.
 
+### Assessment rubric
+
+Không dùng điểm số 1–10 vì audit hiện không có rubric định lượng đủ chặt; số điểm dễ tạo false
+precision. Các trạng thái dưới đây có nghĩa:
+
+- **Strong** — contract chính đã có, code/test evidence rõ, chỉ còn enhancement hoặc runtime proof.
+- **Partial** — có nền tảng nhưng còn gap đáng kể trước khi coi là production-ready cho search.
+- **Gap** — thiếu capability/content/verification quan trọng.
+- **Unverified** — source code có tín hiệu tốt nhưng chưa có runtime/field evidence phù hợp.
+
 | Hạng mục | Đánh giá |
 | --- | --- |
-| Kiến trúc & mã nguồn SEO | 9/10 |
-| Kiểm soát index & crawl (thiết kế) | 9/10 |
-| Performance implementation readiness | 8/10 |
-| Core Web Vitals thực tế | **UNVERIFIED** |
-| Kiểm thử & CI | 7/10 |
-| Structured data | 6/10 |
-| Metadata trang | 5/10 |
-| Công cụ vận hành cho biên tập | 5/10 |
-| First-party content / GEO foundation | 4/10 |
+| Kiến trúc & mã nguồn SEO | **Strong** |
+| Kiểm soát index & crawl (thiết kế) | **Strong** |
+| Performance implementation readiness | **Strong** |
+| Core Web Vitals thực tế | **Unverified** |
+| Kiểm thử & CI | **Partial** |
+| Structured data | **Partial** |
+| Metadata trang | **Partial** |
+| Công cụ vận hành cho biên tập | **Partial** |
+| First-party content / GEO foundation | **Gap** |
 
 > `next/image`, `sizes`, preload ảnh LCP và không dùng webfont là tín hiệu implementation tốt,
 > nhưng không đủ để chấm Core Web Vitals. CWV chỉ được coi là verified khi có measurement runtime
@@ -89,11 +100,23 @@ phải bug cần "fix"**. Không bật index cho `la.lanadesign.vn`; chỉ mở 
   `pnpm pancake:catalog:audit` trên dữ liệu thật và xác nhận contract Pancake; chỉ sau đó mới quyết
   định khi nào `retailPriceAfterDiscount < retailPrice` là sale price hợp lệ.
 
-- **W4 — Structured data chưa mô hình product variants có giá khác nhau.** `buildOffer` hiện yêu
-  cầu mọi variant cùng một giá và bỏ `offers` nếu giá khác nhau. **Không dùng `AggregateOffer` để
-  gộp một tập product variants.** Google Search hiện hướng dẫn dùng `ProductGroup` để nhóm variants
-  (`variesBy`, `hasVariant`, `productGroupID`) và mỗi `Product` variant có `Offer` tương ứng. Đây là
-  thay đổi contract structured data, cần test bằng Rich Results-compatible JSON-LD và dữ liệu thật.
+- **W4 — Variant discoverability contract chưa đủ để triển khai `ProductGroup`.** `buildOffer`
+  hiện yêu cầu mọi variant cùng một giá và bỏ `offers` nếu giá khác nhau. **Không dùng
+  `AggregateOffer` để gộp một tập product variants.** Google Search hướng dẫn dùng `ProductGroup`
+  (`variesBy`, `hasVariant`, `productGroupID`) và mỗi variant `Product` có `Offer` riêng. Tuy nhiên,
+  repo hiện chỉ có PDP `/shop/[slug]`; lựa chọn kind/color/size nằm trong React local state, nên
+  chưa có URL có thể mở trực tiếp một variant cụ thể.
+
+  Với single-page variant model, Google yêu cầu:
+
+  - mỗi variant có unique ID đáng tin (`sku`/GTIN hoặc identifier tương đương đã xác minh);
+  - mỗi variant có **distinct URL** có thể preselect trực tiếp variant đó;
+  - khi mở URL variant, UI phải phản ánh đúng image/price/availability và cho phép mua đúng variant;
+  - toàn bộ variants của một `ProductGroup` single-page vẫn dùng **một canonical base PDP URL**.
+
+  Vì vậy `/plan` không được nhảy thẳng sang JSON-LD. Dependency đúng là:
+  **variant identity → variant URL/deep-link + preselection → query/canonical policy →
+  `ProductGroup`/variant `Offer` markup → HTTP/Rich Results verification**.
 
 - **W15 — Một số HTTP smoke SEO chưa chạy trong CI.** Các script
   `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,
@@ -102,6 +125,13 @@ phải bug cần "fix"**. Không bật index cho `la.lanadesign.vn`; chỉ mở 
   và không có một script npm chuẩn để chạy nhóm contract này. Các regression về indexation,
   metadata, robots và structured data có thể lọt qua CI. Nên gom thành command rõ ràng và nối vào
   workflow SEO runtime hiện có.
+
+- **W13A — Evergreen content thiếu owner-approved source facts/policies.** Site chưa có các page
+  chuẩn về About, Returns, Shipping/Payment, Size Guide, Contact; nhưng `buildPublicBrandFacts`
+  hiện mới có brand summary, COD, account-less checkout, shipping promotion, order tracking và
+  server verification. Nó **không** cung cấp return policy, contact/address facts hay một site-wide
+  size policy đầy đủ. Coding agent không được tự bịa các business facts này. Trước page build phải
+  có human-approved factual source/content contract cho từng nhóm policy cần public.
 
 ### Medium — leverage cao sau correctness
 
@@ -131,21 +161,25 @@ phải bug cần "fix"**. Không bật index cho `la.lanadesign.vn`; chỉ mở 
   hygiene tốt để làm, nhưng không phải lỗi nghiêm trọng tương đương duplicate pagination. Ưu tiên
   sau W2/W3/W15 và giữ canonical từ trusted origin.
 
-- **W12 — Listing pages chưa có structured data ở mức collection/item list.** `/shop` chưa phát
-  `ItemList`/`CollectionPage`. Chỉ triển khai nếu markup phản ánh đúng visible products và URL
-  canonical; không để structured data trở thành bản catalog khác với UI.
-
 - **W13 — Thiếu authoritative evergreen first-party content.** Site đã có homepage editorial,
   lookbook, collection copy và brand facts, vì vậy câu "không có content cho AI trích dẫn" là quá
   tuyệt đối. Gap thực sự là thiếu các trang nguồn chuẩn có thể link/crawl cho: giới thiệu thương
-  hiệu, đổi trả, vận chuyển/thanh toán, hướng dẫn size và liên hệ. Đây là nền cho SEO, AI Search,
-  trust và customer support cùng lúc. Ưu tiên nội dung hữu ích/nguyên bản; không tạo page chỉ để
-  nhắm "GEO keywords".
+  hiệu, đổi trả, vận chuyển/thanh toán, hướng dẫn size và liên hệ. Sau khi W13A có source facts
+  được owner phê duyệt, triển khai page từ nguồn đó và ưu tiên nội dung hữu ích/nguyên bản; không
+  tạo page chỉ để nhắm "GEO keywords".
 
 - **W14 — Không có branded `not-found.tsx`.** 404 mặc định thiếu điều hướng theo brand/storefront.
   Đây chủ yếu là UX/crawl recovery hygiene, không phải direct ranking feature.
 
 ### Low / operational / optional
+
+- **W12 — Listing `ItemList`/`CollectionPage` không nằm trên critical path.** `/shop` chưa phát
+  listing structured data, nhưng Google Merchant Listing khuyến nghị tập trung `Product` markup ở
+  single-product/variant pages thay vì category/listing pages. Google có beta carousel dùng
+  `ItemList` + `Product` trên summary pages, nhưng feature hiện chỉ khả dụng ở EEA, Turkey và South
+  Africa; không có target-market requirement nào trong audit chứng minh giá trị trực tiếp cho
+  storefront Việt Nam. Chỉ đưa W12 vào `/plan` nếu có consumer/market requirement cụ thể hoặc
+  search evidence mới; nếu làm thì markup phải khớp visible catalog và canonical URLs.
 
 - **W16 — Admin SEO thiếu guidance.** Có thể thêm character counter, duplicate warning và SERP
   preview. Ngưỡng khoảng `60/155` chỉ nên là **soft editorial guidance**, không phải hard SEO
@@ -186,9 +220,12 @@ Các mục dưới đây **không được đưa vào `/plan` như SEO work** tr
    documentation feature này trong 2026. FAQ nội dung thật vẫn có thể hữu ích cho người dùng, nhưng
    không tạo JSON-LD FAQ chỉ vì SEO.
 3. **`AggregateOffer` để đại diện product variants.** Google nói rõ không dùng `AggregateOffer`
-   cho một tập variants; dùng `ProductGroup`/`Product` + variant `Offer`.
+   cho một tập variants; dùng `ProductGroup`/`Product` + variant `Offer` sau khi variant URL/identity
+   contract đã đủ điều kiện.
 4. **Hard title/description limit 60/155.** Chỉ là UI guidance, không phải correctness contract.
 5. **`llms.txt` như launch blocker hoặc Google GEO tactic.** Không có căn cứ từ Google Search.
+6. **Listing `ItemList` như mặc định cho storefront Việt Nam.** Không đưa vào critical path khi
+   chưa có target-market/consumer requirement; beta carousel hiện không phải feature toàn cầu.
 
 ## `/search` và `/new-arrivals`
 
@@ -212,53 +249,66 @@ Mỗi task/PR vẫn phải tuân ADR 0005: một concern reviewable, có accepta
 - Xác định domain vĩnh viễn + owner approval là dependency bên ngoài trước index launch.
 - Không thay đổi canonical/indexing policy chỉ để test SEO traffic trên temporary domain.
 
-### P1 — Correctness thương mại và metadata
+### P1 — Correctness thương mại, metadata và variant addressability
 
 1. W2: bỏ slug/path kỹ thuật khỏi PDP metadata + regression tests.
 2. W3: audit dữ liệu Pancake và định nghĩa sale-price contract trước khi sửa resolver.
-3. W4: thiết kế variant structured-data contract theo `ProductGroup`/`Product` + `Offer`.
+3. W4a: xác minh identifier nào có thể làm stable variant identity; không suy GTIN từ barcode name.
+4. W4b: thiết kế distinct variant URL/deep-link + server/client preselection cho kind/color/size.
+5. W4c: định nghĩa query/index/canonical contract: variant URLs preselect được nhưng single-page
+   product group dùng canonical base PDP.
+6. W4d: chỉ sau W4a–W4c mới thiết kế `ProductGroup`/`Product` + variant `Offer` JSON-LD.
 
-**Gate:** không phát price/identifier/schema mà source semantics chưa được chứng minh.
+**Gate:** URL variant phải mở trực tiếp đúng lựa chọn và phản ánh đúng image/price/availability/
+purchasability trước khi structured data dùng URL đó. Không phát price/identifier/schema mà source
+semantics chưa được chứng minh.
 
 ### P2 — Regression safety trước index
 
-4. W15: tạo một command SEO HTTP smoke chuẩn và gọi nó trong CI.
-5. Verify noindex/indexable states, canonical, redirect, metadata, robots và structured data qua
-   Next server thật.
+7. W15: tạo một command SEO HTTP smoke chuẩn và gọi nó trong CI.
+8. Verify noindex/indexable states, base/variant canonical behavior, redirect, metadata, robots và
+   structured data qua Next server thật.
 
 ### P3 — Search/social fundamentals
 
-6. W8: root OG/Twitter fallback.
-7. W10: self-canonical cho static indexable pages khi indexing enabled.
-8. W9: chỉ thêm sitemap `lastModified` sau khi có timestamp phản ánh significant public change.
-9. W14: branded 404 + đường quay lại shop/search.
+9. W8: root OG/Twitter fallback.
+10. W10: self-canonical cho static indexable pages khi indexing enabled.
+11. W9: chỉ thêm sitemap `lastModified` sau khi có timestamp phản ánh significant public change.
+12. W14: branded 404 + đường quay lại shop/search.
 
-### P4 — Commerce discovery
+### P4 — Commerce discovery trên PDP
 
-10. W5: bổ sung verified identifiers + variant attributes + shipping/return semantics.
-11. W6: enrich Organization từ first-party facts đã xác minh.
-12. W12: listing structured data nếu có contract rõ và tests đảm bảo khớp visible catalog.
-13. Chuẩn bị/kiểm tra Google Merchant Center feed + structured data consistency; feed và schema phải
-    cùng mô tả một catalog/price/availability contract.
+13. W5: bổ sung verified identifiers + variant attributes + shipping/return semantics.
+14. W6: enrich Organization từ first-party facts đã xác minh.
+15. Chuẩn bị/kiểm tra Google Merchant Center feed + PDP structured-data consistency; feed và schema
+    phải cùng mô tả một catalog/price/availability contract.
+16. W12 không nằm trong P4 mặc định; chỉ promote từ optional khi có market/consumer requirement.
 
-### P5 — First-party content
+### P5 — First-party content với human content gate
 
-14. W13: xây các page evergreen tối thiểu: About, Returns, Shipping/Payment, Size Guide, Contact.
-15. Reuse một nguồn fact/contract chuẩn thay vì copy nội dung giữa footer, pages và schema.
-16. Thêm internal links theo user journey và crawlability; không tạo thin pages hàng loạt cho GEO.
+17. W13A: lập inventory những fact/policy cần cho About, Returns, Shipping/Payment, Size Guide,
+    Contact và đánh dấu phần đã có source vs phần chưa có.
+18. Human owner phê duyệt factual content/policy còn thiếu trước khi coding agent tạo public page.
+19. W13: build evergreen pages từ approved facts; reuse một nguồn fact/contract chuẩn thay vì copy
+    nội dung giữa footer, pages và schema.
+20. Thêm internal links theo user journey và crawlability; không tạo thin pages hàng loạt cho GEO.
+
+**Gate:** nếu return/contact/size policy chưa được owner cung cấp hoặc phê duyệt thì planner phải
+đánh dấu blocked; không tự suy diễn business policy từ code, UI copy hay naming convention.
 
 ### P6 — Operational readiness
 
-17. W16/W17: admin readiness, preview/counter/warnings/health filters.
-18. W18: Search Console + Bing Webmaster + Merchant Center verification trên permanent domain.
-19. W19: owner-approved crawler governance matrix.
-20. W21 chỉ triển khai khi URL/image scale hoặc operational evidence thực sự yêu cầu.
+21. W16/W17: admin readiness, preview/counter/warnings/health filters.
+22. W18: Search Console + Bing Webmaster + Merchant Center verification trên permanent domain.
+23. W19: owner-approved crawler governance matrix.
+24. W21 chỉ triển khai khi URL/image scale hoặc operational evidence thực sự yêu cầu.
+25. W12 chỉ triển khai nếu target market/consumer evidence mới chứng minh listing markup có giá trị.
 
 ### P7 — Performance verification
 
-21. Đo performance runtime trên representative pages (`/`, `/shop`, collection, PDP) ở mobile và
+26. Đo performance runtime trên representative pages (`/`, `/shop`, collection, PDP) ở mobile và
     desktop; ghi baseline LCP/CLS/INP/lab diagnostics theo tooling được chọn.
-22. Chỉ tạo blocking budget khi đã có baseline + threshold hợp lý; không biến score đọc từ source
+27. Chỉ tạo blocking budget khi đã có baseline + threshold hợp lý; không biến score đọc từ source
     thành CWV evidence.
 
 ## Definition of Done cho roadmap sau `/plan`
@@ -268,7 +318,9 @@ Một implementation phase chỉ được coi hoàn tất khi ngoài acceptance 
 - focused tests cho behavior mới và regression tests cho bug/contract thay đổi;
 - relevant full suite + typecheck/lint/build xanh;
 - HTTP/runtime verification cho metadata/indexing/structured-data paths;
+- variant deep-link URL mở trực tiếp đúng variant trước khi URL đó xuất hiện trong Product markup;
 - structured data được validate với contract Google hiện hành và khớp visible page data;
+- business policy/content public có owner-approved source, không phải agent-authored assumption;
 - không mở index trên temporary domain;
 - không phát identifier/price/lastmod không đáng tin;
 - docs/runbook phản ánh current truth;
@@ -276,8 +328,15 @@ Một implementation phase chỉ được coi hoàn tất khi ngoài acceptance 
 
 ## Nguồn chính thức đã dùng để hiệu chỉnh audit
 
-- Google — Product variants (`ProductGroup`, `Product`):
+- Google — Product variants (`ProductGroup`, `Product`), distinct variant URLs + single-page
+  canonical requirement:
   https://developers.google.com/search/docs/appearance/structured-data/product-variants
+- Google — Merchant listing: ưu tiên Product markup ở single-product/variant pages thay vì category
+  pages:
+  https://developers.google.com/search/docs/appearance/structured-data/merchant-listing
+- Google — Structured data carousels beta: `ItemList` + `Product`, hiện giới hạn EEA/Turkey/South
+  Africa:
+  https://developers.google.com/search/docs/appearance/structured-data/carousels-beta
 - Google — Product snippet / `AggregateOffer` (không dùng cho tập product variants):
   https://developers.google.com/search/docs/appearance/structured-data/product-snippet
 - Google — Sitelinks search box retired từ 2024-11-21:
@@ -303,11 +362,11 @@ source/tests tương ứng. Ballpark hiện tại:
 
 | Workstream | Ballpark PR | Rủi ro chính |
 | --- | ---: | --- |
-| P1 correctness | 3–5 | Sale-price contract + variant structured data |
+| P1 correctness + variant addressability | 4–7 | Sale-price contract + deep-link/canonical + ProductGroup |
 | P2 regression safety | 1–2 | CI runtime duration / deterministic fixtures |
 | P3 search fundamentals | 2–4 | Accurate `lastModified` semantics |
-| P4 commerce discovery | 3–5 | Identifier trust + schema/feed consistency |
-| P5 first-party content | 3–5 | Nội dung/approval, không phải kỹ thuật |
+| P4 commerce discovery | 2–4 | Identifier trust + schema/feed consistency |
+| P5 first-party content | 3–5 | Human policy/content approval trước implementation |
 | P6 operations | 2–4 | External verification + crawler policy decision |
 | P7 performance verification | 1–2 | Representative baseline và stable measurement |
 
