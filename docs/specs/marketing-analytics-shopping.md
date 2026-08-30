@@ -1,27 +1,39 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: Draft for human review
+Status: Proposed — ready for human review
 
-## Objective
+## 1. Objective
 
-Implement a production-only marketing measurement and catalog export architecture for LA Clothing that supports Google Analytics 4 (GA4), Google Ads, Google Tag Manager (GTM), TikTok Pixel, the existing Meta Pixel + Conversions API integration, and an automated Google Merchant Center feed.
+Build a production-only marketing measurement and catalog-export foundation for LA Clothing covering:
 
-The implementation must preserve the storefront as the source of truth for commerce behavior. Tracking systems may consume canonical commerce events, but must never infer core business outcomes such as a successful purchase from DOM clicks or page structure.
+- Google Tag Manager (GTM);
+- Google Analytics 4 (GA4);
+- Google Ads conversion tracking;
+- TikTok Pixel through GTM;
+- the existing direct Meta Pixel + Meta Conversions API integration;
+- an automated Google Merchant Center product feed for Google Shopping.
 
-### Target outcomes
+The storefront and order system remain the source of truth. Tracking vendors may consume canonical commerce facts, but GTM/pixels must never infer core business outcomes such as a successful purchase from DOM text, CSS selectors, or a button click.
 
-1. GA4, Google Ads, and TikTok Pixel are deployed through GTM.
-2. Existing Meta Pixel + Meta Conversions API remain direct integrations and are not migrated into GTM in this scope.
-3. All marketing destinations consume the same canonical commerce event contract and stable product/order identifiers.
-4. A consent-capable policy layer exists from day one, but no consent UI is shown initially; production tracking is allowed immediately under the current product-owner policy.
-5. Only production sends real analytics/advertising traffic.
-6. Google Merchant Center receives an automatically generated scheduled-fetch feed from LA Clothing catalog data.
-7. Each sellable variant is a separate Merchant Center item, grouped by its parent product.
-8. Purchase conversion is emitted only for a real `OrderMirror.state === CONFIRMED` order.
+### Confirmed product decisions
 
-## Current Repository Context
+1. GA4 + Google Ads + TikTok Pixel run through GTM.
+2. Meta Pixel + Meta CAPI stay direct; no Meta-to-GTM migration in this scope.
+3. TikTok Events API is a later phase, not part of this implementation.
+4. One canonical commerce-event layer supplies the facts used by new destinations.
+5. `purchase` exists only for `OrderMirror.state === CONFIRMED`.
+6. `OrderMirror.publicCode` is the canonical purchase transaction/event ID.
+7. Only the real production deployment sends real vendor traffic.
+8. A central consent/tracking-policy abstraction is built now, but no consent UI is displayed initially; current launch policy allows tracking immediately in production.
+9. Google Merchant Center uses a public feed URL + Scheduled Fetch.
+10. Each sellable variant is a separate Merchant item; variants of the same parent share an `item_group_id`.
+11. `brand = LA Clothing`; current SKU is the manufacturer part number (`mpn`).
+12. Pancake-generated barcode is not assumed to be GTIN. `gtin` is omitted unless a valid assigned GTIN exists.
+13. An otherwise eligible out-of-stock variant stays in the feed with `availability = out_of_stock`.
 
-### Stack
+## 2. Current Repository Context
+
+### Tech stack
 
 - Next.js 16.2.11
 - React 19.2.0
@@ -30,88 +42,90 @@ The implementation must preserve the storefront as the source of truth for comme
 - PostgreSQL
 - pnpm 11.4.0
 
-### Existing analytics/integration behavior
+### Existing Meta behavior — compatibility constraint
 
-The repository already has a direct Meta implementation with:
+The repository already implements Meta directly with:
 
-- browser Facebook/Meta Pixel;
-- App Router page-view handling;
-- failure-safe browser event dispatch;
+- browser Meta/Facebook Pixel;
+- App Router PageView handling;
+- browser event delivery that fails safely;
 - server-side Meta Conversions API;
-- browser/server deduplication via order/event ID;
-- one-time browser Purchase reporting for confirmed orders.
+- browser/server Purchase deduplication using the order code as event ID;
+- one-time browser Purchase behavior;
+- Purchase only for confirmed orders.
 
-This behavior is a compatibility constraint. The new work must not replace or duplicate it.
+Current Meta Purchase value uses `OrderMirror.totalVnd`. Current Meta product `content_ids` are based on product slug where available, with a fallback to Pancake variation ID. This implementation is intentionally preserved in this scope unless an explicit later migration is approved.
 
 ### Existing catalog/order data
 
-Relevant canonical fields already exist in the mirror database:
+The mirror already provides the core facts needed by this feature:
 
-- `ProductMirror`: parent product identity, slug, name, image, presence/active state;
-- `ProductContent`: publish state and editorial/SEO content;
-- `VariantMirror`: Pancake variation ID, SKU, barcode, color, size, price, active/present flags, hidden/locked source flags;
-- `WarehouseStock`: variant-level inventory;
-- `OrderMirror`: public order code, order state, merchandise/shipping/total values;
-- `OrderLineSnapshot`: immutable purchased variant snapshot.
+- `ProductMirror`: parent identity, Pancake product ID, slug, name, primary image, active/present state;
+- `ProductContent`: publish status and editorial/SEO content;
+- `VariantMirror`: Pancake variation ID, SKU, Pancake barcode, color, size, price fields, active/present state, hidden/locked source flags;
+- `WarehouseStock`: variant-level stock;
+- `OrderMirror`: `publicCode`, lifecycle state, merchandise subtotal, shipping fee, total;
+- `OrderLineSnapshot`: immutable purchased line facts.
 
-## Architecture
+## 3. Target Architecture
 
-### Browser/server measurement topology
+### Browser/server measurement
 
 ```text
-LA Clothing commerce/business events
-                |
-                +----> Existing Meta Pixel (direct browser integration)
-                |
-                +----> Existing Meta CAPI (direct server integration)
-                |
-                +----> Canonical dataLayer event
-                           |
-                           v
-                          GTM
-                    +------+------+------+
-                    |      |      |      |
-                   GA4  Google  TikTok  future
-                        Ads     Pixel   browser tags
+LA Clothing business/commerce facts
+               |
+               +----> Existing Meta Pixel (direct browser)
+               |
+               +----> Existing Meta CAPI (direct server)
+               |
+               +----> Canonical dataLayer events
+                          |
+                          v
+                         GTM
+                  +-------+--------+---------+
+                  |       |        |         |
+                 GA4   Google   TikTok    future
+                       Ads      Pixel     browser tags
 
 Future phase only:
-Server-side confirmed events ---> TikTok Events API
+confirmed server events -----------------> TikTok Events API
 ```
 
-### Google Shopping topology
+### Google Shopping
 
 ```text
 Pancake source
-    |
-    v
-LA Clothing mirror database
-    |
-    v
-Google Merchant feed endpoint
-    |
-    v
+     |
+     v
+LA Clothing mirror DB
+     |
+     v
+public Merchant product-feed URL
+     |
+     v
 Merchant Center Scheduled Fetch
-    |
-    v
-Google Shopping / Shopping Ads
+     |
+     v
+Free listings / Shopping Ads
 ```
 
-GTM is not used to generate or manage the Merchant Center catalog feed.
+GTM does not own or generate the Merchant catalog.
 
-## Canonical Commerce Event Contract
+## 4. Canonical Commerce Contract
 
-### Design rules
+### Principles
 
 - Business code owns event truth.
-- GTM is a routing/mapping layer, not a business-rules engine.
-- Do not infer ecommerce events by reading button text, CSS classes, DOM structure, or generic click triggers.
-- Tracking failures must be no-ops from the shopper's perspective.
-- No analytics/pixel exception may interrupt navigation, cart, checkout, order placement, or success rendering.
-- Product and transaction identifiers must remain stable across destinations.
+- `dataLayer` carries structured facts from application code to GTM.
+- GTM maps canonical events to vendor-specific tags/events.
+- GTM must not reimplement LA Clothing pricing, stock, order state, or catalog eligibility rules.
+- Tracking failure must be a no-op for the shopper journey.
+- No vendor exception may interrupt navigation, cart, checkout, order placement, or success rendering.
+- Money/product values come from typed commerce/order data, never parsed DOM text.
 
-### Required baseline events
+### Baseline browser events
 
-The canonical browser contract must support at least:
+The contract must support at least:
 
 - `page_view`
 - `view_item_list`
@@ -124,141 +138,159 @@ The canonical browser contract must support at least:
 - `add_shipping_info`
 - `purchase`
 
-`add_payment_info` is optional until the checkout actually has a meaningful payment-selection step. Do not emit fake funnel events merely to match a vendor schema.
+`add_payment_info` is not required until checkout has a real payment-selection interaction worth measuring. Do not emit synthetic funnel events only to fill a vendor schema.
 
-### Canonical item shape
+### Canonical item facts
 
-Each commerce item should expose the smallest stable vendor-neutral payload needed by downstream destinations, conceptually:
+Conceptually:
 
 ```ts
 type CommerceItem = {
-  itemId: string;
+  variantExternalId: string;
   sku: string;
   productId: string;
+  productSlug: string;
   itemName: string;
-  priceVnd: number;
+  unitPriceVnd: number;
   quantity: number;
   color?: string;
   size?: string;
 };
 ```
 
-Requirements:
+The contract deliberately carries enough identity to support different destination requirements without forcing every destination to use the same identifier when an existing compatibility contract says otherwise.
 
-- `itemId` must map to the same sellable variant identifier used for Merchant Center and ad-platform content matching wherever practical.
-- `sku` is the current LA Clothing SKU and is also the Merchant Center `mpn`.
-- currency is `VND`.
-- money values must come from canonical commerce/order data, never DOM text.
+Rules:
 
-### Purchase contract
+- `sku` is the current LA Clothing SKU and Merchant Center `mpn`.
+- New Merchant/GA4/Ads/TikTok product matching should use the same stable sellable-variant ID wherever supported.
+- Existing Meta `content_ids` remain compatible with the current Meta catalog/dynamic-ad strategy in this phase; do not silently switch them to the new Merchant variant ID.
 
-A `purchase` event is valid only when:
+### Purchase truth
+
+A Purchase is valid only when:
 
 ```text
 OrderMirror.state === CONFIRMED
 ```
 
-The canonical purchase payload must use:
+Never emit `purchase` for:
 
-- `transaction_id` = `OrderMirror.publicCode`;
-- canonical cross-channel event/deduplication ID = `OrderMirror.publicCode` for this initial contract;
-- `value` = confirmed order total according to the selected analytics convention below;
-- `currency` = `VND`;
-- `items` = `OrderLineSnapshot` data, not current mutable catalog values.
+- `DRAFT`
+- `VALIDATING`
+- `POS_SUBMITTING`
+- `REJECTED`
+- `SYNC_UNKNOWN`
 
-The implementation must not emit Purchase for `DRAFT`, `VALIDATING`, `POS_SUBMITTING`, `REJECTED`, or `SYNC_UNKNOWN`.
+Canonical purchase facts must include at least:
 
-### Purchase value convention
-
-Use one convention consistently across GA4, Google Ads, TikTok, and Meta unless a vendor explicitly requires otherwise. The implementation plan must verify whether current Meta uses merchandise subtotal or final total and reconcile that with the desired cross-channel definition before code changes.
-
-Default target for the new canonical contract: `OrderMirror.totalVnd`, including shipping, because it represents the confirmed order total. If current Meta semantics differ, the plan must surface the discrepancy rather than silently changing Meta reporting.
-
-## Destination Mapping
-
-### Google Tag Manager
-
-Production loads one GTM web container configured by environment.
-
-The application emits structured `dataLayer` events. GTM maps them to destination-specific tags.
-
-GTM must not contain hidden copies of LA Clothing pricing, stock, order-state, or product eligibility rules.
-
-### GA4
-
-GA4 must receive GA4-recommended ecommerce events mapped from the canonical contract, preserving:
-
-- transaction ID;
-- item ID;
-- item name;
-- price;
-- quantity;
-- currency;
-- value;
-- variant metadata where useful.
-
-App Router client navigation must produce correct page measurement without duplicate full-load/client-navigation PageView events.
-
-### Google Ads
-
-Google Ads conversion measurement must use the confirmed Purchase event and stable transaction ID to reduce duplicate conversions.
-
-The plan must define which Google Ads conversion action(s) are in scope. At minimum, Purchase is required.
-
-Remarketing/product matching, if enabled, must use the same stable variant identifiers as the Merchant Center feed wherever supported.
-
-### TikTok Pixel
-
-TikTok Pixel is deployed through GTM in this phase.
-
-Map canonical events to TikTok equivalents without changing the canonical event names in application code.
-
-At minimum support:
-
-- product view;
-- add to cart;
-- checkout initiation;
-- purchase/complete payment.
-
-TikTok Pixel failures/ad blockers must not affect storefront behavior.
-
-### TikTok Events API
-
-Out of scope for implementation in this phase, but the contract must remain compatible with adding it later.
-
-Future server-side TikTok events must use the same canonical event/order ID as their browser twin where TikTok deduplication requires it.
-
-### Meta Pixel + Conversions API
-
-Keep the existing direct architecture.
+```ts
+type CommercePurchase = {
+  transactionId: string;       // OrderMirror.publicCode
+  eventId: string;             // same publicCode for this initial contract
+  currency: "VND";
+  merchandiseValueVnd: number; // immutable sum / OrderMirror merchandise subtotal
+  shippingVnd: number;
+  totalVnd: number;
+  items: CommerceItem[];        // built from OrderLineSnapshot facts
+};
+```
 
 Requirements:
 
-- Do not deploy a second Meta Pixel through GTM.
-- Preserve existing Meta CAPI behavior.
-- Preserve browser/server Purchase deduplication.
-- Preserve one-time Purchase behavior.
-- The canonical contract may be introduced underneath/alongside Meta only if behavior remains equivalent and regression tests prove it.
+- `transactionId = OrderMirror.publicCode`.
+- Canonical purchase `eventId = OrderMirror.publicCode` for browser/server deduplication where the destination supports it.
+- Purchased product quantities/prices come from `OrderLineSnapshot`, not current mutable catalog records.
 
-## Consent/Tracking Policy Layer
+### Destination-specific value semantics
 
-### Current launch policy
+The canonical layer exposes business facts; vendor adapters map them according to each vendor's documented semantics. Do **not** force one ambiguous `value` field onto every platform.
 
-Initial production policy:
+- **GA4:** `purchase.value` must be the sum of item `price × quantity`; shipping is supplied separately as `shipping`. Therefore shipping is not added into GA4 `value`.
+- **Meta:** preserve the current implementation in this scope, where Purchase value is `OrderMirror.totalVnd`, unless a later explicitly reviewed change is approved.
+- **Google Ads:** Purchase conversion value is a business/advertising KPI decision. `/plan` must select and document whether Ads receives total order value or merchandise-only value; the transaction ID remains `publicCode` either way.
+- **TikTok:** `/plan` must verify the current official TikTok event/value contract and map from the same canonical purchase facts.
+
+Any intentional cross-platform reporting difference must be documented; no silent arithmetic differences are allowed.
+
+## 5. Destination Requirements
+
+### Google Tag Manager
+
+- Production loads one GTM web container when production tracking is enabled and the container ID is valid.
+- Application code pushes deterministic custom/ecommerce events to `window.dataLayer`.
+- GTM custom-event triggers consume those events.
+- GTM contains routing/mapping only, not hidden commerce policy.
+- A GTM workspace/container export or equivalent configuration documentation must be reviewable so production tag logic is not an undocumented second codebase.
+
+### GA4
+
+GA4 receives the recommended ecommerce events mapped from the canonical contract, including as applicable:
+
+- `transaction_id`
+- `currency`
+- `value`
+- `shipping`
+- `items[]`
+- item ID/name/price/quantity
+- useful variant metadata such as color/size
+
+App Router navigation must be handled without duplicate PageViews caused by both initial-load and client-navigation logic firing for the same navigation.
+
+### Google Ads
+
+- At minimum, track the confirmed Purchase conversion.
+- Purchase uses `OrderMirror.publicCode` as unique transaction ID to reduce duplicate conversions on refresh/revisit.
+- Conversion ID/label belong in GTM configuration unless application code truly needs them.
+- Product/remarketing identifiers should align with the stable Merchant variant ID where the Google Ads setup supports product matching.
+- Secondary conversion actions are out of scope unless explicitly added during `/plan`.
+
+### TikTok Pixel
+
+- TikTok Pixel is configured through GTM in this phase.
+- Map canonical application events to current TikTok event names in GTM; do not rename application events to vendor-specific names.
+- At minimum map product view, AddToCart, checkout initiation, and Purchase/CompletePayment.
+- Follow current official TikTok GTM setup/event-tag guidance during implementation; do not invent an unsupported integration pattern from memory.
+- Pixel/ad-blocker/network failure must not affect storefront behavior.
+
+### TikTok Events API — future compatibility only
+
+Not implemented now.
+
+The contract must allow a later server copy of the same conversion to use the same `event_id` as its Pixel twin. TikTok currently requires matching `event_id` for deduplication when Pixel and Events API send duplicate copies of the same event.
+
+### Meta Pixel + Meta CAPI
+
+Keep the current direct architecture.
+
+Required:
+
+- no second Meta Pixel inside GTM;
+- preserve current CAPI behavior;
+- preserve browser/server Purchase deduplication;
+- preserve one-time browser Purchase behavior;
+- preserve current Meta product ID semantics unless separately migrated;
+- if a shared commerce helper is introduced under Meta, regression tests must prove equivalent behavior before replacing existing logic.
+
+## 6. Consent / Tracking Policy Layer
+
+### Current product-owner policy
+
+Initial production behavior is intentionally:
 
 ```text
-consent UI: hidden
-analytics tracking: granted by default
-advertising tracking: granted by default
+visible consent UI       = OFF
+analytics tracking       = granted by default
+advertising tracking     = granted by default
 ```
 
-Therefore production GA4, Google Ads, TikTok Pixel, and the existing Meta tracking may run immediately when configured.
+Therefore configured production tracking may run immediately when a shopper enters the site.
 
-### Architectural requirement
+This is a product policy choice, not a hard-coded architectural limitation and not a claim about legal compliance in every market.
 
-The application must still expose a small central consent/tracking-policy abstraction so later enabling consent UI does not require rewriting the event architecture.
+### Future-ready architecture
 
-Conceptually:
+Create one small central policy abstraction, conceptually:
 
 ```ts
 type TrackingConsent = {
@@ -267,145 +299,159 @@ type TrackingConsent = {
 };
 ```
 
-Do not scatter hard-coded `always true` tracking decisions across individual components.
+Rules:
 
-The GTM/Google setup should be compatible with Google Consent Mode so a later policy change can switch default state and update consent without replacing the commerce event contract.
+- Do not scatter `always track = true` decisions through components.
+- Google/GTM setup must be compatible with later Google Consent Mode default/update behavior.
+- Later enabling a banner must require changing policy/UI wiring, not rewriting the commerce event contract.
+- Commerce/order functionality remains independent of tracking consent.
 
-### Future consent UI
+### Visible consent UI
 
-Out of scope for visible launch UI.
+Out of scope now.
 
-The architecture should allow a later banner/settings UI to change the central policy to, for example:
+Future UI may expose:
 
-- Essential: always available;
-- Analytics: user-controlled;
-- Advertising: user-controlled.
+- Essential: always on;
+- Analytics: user controlled;
+- Advertising: user controlled.
 
-## Environment & Configuration
+Changing the current default tracking policy or displaying consent UI requires explicit approval.
+
+## 7. Environment & Configuration
 
 ### Production-only real tracking
 
-Only the production deployment may send real data to production GA4, Google Ads, TikTok, Meta, or Merchant Center integrations.
+Real vendor traffic is allowed only from the real production storefront.
 
-Local, preview, test, and staging environments must not contaminate production analytics/advertising data.
+Local, CI, test, preview, and staging environments must not pollute production GA4/Ads/TikTok/Meta data.
 
-Allowed non-production behavior:
+Non-production may:
 
-- tracking disabled entirely; or
-- debug/test-only `dataLayer` inspection; or
-- explicit vendor test/debug destinations that cannot pollute production reporting.
+- disable third-party tracking completely;
+- push to a debug/local `dataLayer` without sending vendor requests;
+- use explicit vendor test/debug destinations that cannot contaminate production reports.
 
-### Environment variables
+`NODE_ENV === "production"` alone is not a sufficient definition of the real storefront, because production builds can be run outside the live production deployment. `/plan` must identify the repository's deployment convention and choose an explicit production gate, such as approved tracking configuration plus the expected production `APP_DOMAIN`/deployment environment.
 
-Exact names may follow repository conventions, but the spec expects equivalents of:
+### Application configuration ownership
+
+If GA4, Google Ads, and TikTok are configured entirely inside GTM, the application should not duplicate those vendor IDs.
+
+Expected application-side configuration is conceptually limited to:
 
 ```text
 NEXT_PUBLIC_GOOGLE_TAG_MANAGER_ID=
-NEXT_PUBLIC_GOOGLE_ANALYTICS_ID=
-GOOGLE_ADS_CONVERSION_ID=
-GOOGLE_ADS_PURCHASE_LABEL=
-TIKTOK_PIXEL_ID=
 MARKETING_TRACKING_ENABLED=
 ```
 
-Important design constraint: if GA4/Ads/TikTok are fully configured in GTM, vendor IDs that only GTM needs should preferably live in GTM rather than being duplicated in application env. The implementation plan must minimize duplicate configuration sources.
+Exact names must follow repository conventions. Because CSP may be built from tracking configuration, `/plan` must decide which settings are build-time versus runtime and make that explicit.
 
-Existing Meta env remains unchanged unless compatibility work requires a clearly documented adjustment.
+GA4 measurement IDs, Google Ads conversion IDs/labels, and TikTok Pixel IDs should live in GTM when only GTM consumes them.
 
-No API secret or access token may be exposed through `NEXT_PUBLIC_*` variables.
+Existing Meta configuration remains as-is unless compatibility work requires an explicitly reviewed adjustment.
 
-## Content Security Policy
+No API secret/access token may be exposed through a `NEXT_PUBLIC_*` variable or browser `dataLayer`.
 
-The repository currently keeps Meta origins closed unless Meta is configured. The new implementation must preserve a fail-closed CSP philosophy.
+## 8. Content Security Policy
 
-Production CSP must allow only the minimum origins required by the selected GTM/Google/TikTok implementation.
+Preserve the repository's fail-closed CSP philosophy.
 
 Requirements:
 
+- allow only origins actually required by the final GTM/Google/TikTok implementation;
 - no broad `*` script/connect/image allowances;
-- no weakening CSP globally merely to make tags work;
-- tracking disabled/unconfigured should not unnecessarily open third-party origins;
-- CSP changes must be reviewed against actual browser requests from GTM Preview/vendor diagnostics.
+- do not globally weaken CSP just to make tags work;
+- disabled/unconfigured tracking should not unnecessarily open vendor origins;
+- derive the final origin list from current official documentation plus observed GTM Preview/browser network traffic;
+- verify production browser console/network behavior after CSP changes.
 
-## Google Merchant Center Feed
+## 9. Google Merchant Center Feed
 
-### Delivery method
+### Delivery
 
-Initial integration uses:
+Initial delivery method:
 
 ```text
-Public HTTPS feed URL
-    +
+public HTTPS product-data URL
+        +
 Merchant Center Scheduled Fetch
 ```
 
-No Merchant API realtime integration in this phase.
+No Merchant API realtime sync in this phase.
 
-### Feed format
+The URL must point directly to a supported product data source rather than an HTML page and must be fetchable by Google without a secret embedded in the URL.
 
-Use a Google-supported primary product data format that is straightforward to generate and validate from Next.js. XML/RSS is preferred unless implementation evidence shows another supported format fits the repository better.
+### Format
 
-The endpoint must be deterministic, cache-aware where appropriate, and safe for Google fetchers without authentication secrets in the URL.
+Use a currently supported Merchant Center file format that is simple to generate and validate from Next.js. XML/RSS is preferred unless `/plan` finds a stronger repository-specific reason to use another supported file format.
+
+The output must be deterministic and safe to regenerate repeatedly.
 
 ### Variant model
 
-Each eligible `VariantMirror` is one Merchant Center item.
+Each eligible `VariantMirror` is one Merchant item.
 
-Variants under the same `ProductMirror` share one stable `item_group_id`.
-
-Example:
+All variants of the same `ProductMirror` share one stable `item_group_id`.
 
 ```text
-Parent ProductMirror: Oxford Shirt
-
-variant S -> Merchant item A --+
-variant M -> Merchant item B ---+--> same item_group_id
-variant L -> Merchant item C --+
+Oxford Shirt parent
+  |- white / S -> unique Merchant item ID --+
+  |- white / M -> unique Merchant item ID --+--> same item_group_id
+  `- white / L -> unique Merchant item ID --+
 ```
+
+Do not submit the parent as a separate purchasable Merchant item merely to represent the group.
 
 ### Merchant identifiers
 
-For each variant:
+For every variant:
 
-- `id`: stable variant identifier; prefer a value that will not change if merchandising copy changes;
+- `id`: stable unique variant identifier;
+- `item_group_id`: stable parent-group identifier;
 - `brand`: `LA Clothing`;
 - `mpn`: current SKU;
-- `gtin`: omit unless the value is a valid real GTIN under Google's requirements;
-- Pancake-generated internal barcode must not automatically be submitted as `gtin`.
+- `gtin`: omitted unless the variant has a real valid assigned GTIN;
+- Pancake auto-generated/internal barcode is not automatically treated as GTIN.
 
-The implementation plan must choose the exact feed `id`. Preferred candidates, in order:
+Because LA Clothing is the manufacturer/brand, using the current SKU as MPN is an explicit product decision. Google permits a manufacturer/sole seller without GTIN to supply its brand and a unique MPN of its choosing.
 
-1. stable `pancakeVariationId` if guaranteed durable across the catalog lifecycle;
-2. stable SKU if LA Clothing guarantees SKU immutability;
-3. local immutable `VariantMirror.id` only if externally stable URLs/tracking do not need the same value.
+### Exact Merchant item ID — plan-time discovery
 
-Do not choose without verifying current catalog lifecycle semantics.
+`/plan` must verify catalog lifecycle semantics before choosing the external item ID. Candidate order:
 
-### Required variant attributes
+1. `pancakeVariationId` if it is durable across variant lifecycle/resync;
+2. SKU if LA Clothing guarantees SKU immutability;
+3. local immutable `VariantMirror.id` only if external product matching/deep-link needs do not require another identifier.
 
-Where applicable and available:
+Do not change Merchant `id` casually after launch because it is an external stable identity.
 
-- title;
-- description;
-- link;
-- image link;
-- availability;
-- price;
-- brand;
-- mpn;
-- item group ID;
-- color;
-- size;
-- condition = new;
-- additional apparel attributes required by the target market/category if Google requires them.
+### Required product attributes
 
-### Feed eligibility
+Emit all current required attributes for the target market/category and any available high-value attributes, including as applicable:
 
-A variant may be emitted only if its storefront product is legitimately publishable/sellable.
+- `id`
+- `title`
+- `description`
+- `link`
+- `image_link`
+- `availability`
+- `price`
+- `condition = new`
+- `brand = LA Clothing`
+- `mpn = SKU`
+- `item_group_id`
+- `color`
+- `size`
+- any currently required apparel attributes for the target country, such as gender/age-group/size-system where applicable.
 
-Baseline rule:
+Because Merchant requirements evolve, `/plan` must verify the exact target-country apparel requirements against current official Merchant Center documentation.
 
-Product requirements:
+### Feed eligibility — confirmed rule
+
+A variant may be emitted only when its parent/product is valid for the public storefront.
+
+Product baseline:
 
 ```text
 ProductMirror.isPresent === true
@@ -413,121 +459,157 @@ ProductMirror.isActive === true
 ProductContent.status === PUBLISHED
 ```
 
-Variant requirements:
+Variant baseline:
 
 ```text
 VariantMirror.isPresent === true
 VariantMirror.isActive === true
-not excluded by storefront hidden/locked policy
+not excluded by canonical storefront hidden/locked policy
 SKU exists
 valid sell price exists
-valid product landing URL exists
-valid image exists
+valid production landing URL exists
+valid trusted product image exists
 ```
 
-The implementation must reuse the storefront's canonical visibility/sellability policy when one exists instead of duplicating a subtly different Merchant-only rule.
+The Merchant feed must reuse the storefront's canonical visibility/sellability helpers when they exist. Do not create a subtly different Merchant-only interpretation of active, hidden, locked, stock, or sale price.
 
 ### Availability
 
-Out-of-stock variants remain in the feed with the same stable item ID.
+An otherwise eligible variant remains in the feed when temporarily out of stock.
 
 ```text
-available stock > 0 -> in_stock
-available stock <= 0 -> out_of_stock
+sellable stock > 0  -> in_stock
+sellable stock <= 0 -> out_of_stock
 ```
 
-Do not remove an otherwise valid variant merely because inventory temporarily reaches zero.
-
-The exact stock aggregation rule across `WarehouseStock` must match the storefront's sellable-stock rule.
+The exact stock aggregation across `WarehouseStock` must match the storefront's canonical sellable-stock rule.
 
 ### Price
 
-Feed price must match the actual variant landing page price.
+Merchant price must match the actual landing-page sell price for that exact variant.
 
-If `pancakeRetailPriceAfterDiscount` is the active sell price according to storefront logic, Merchant output must reflect the same pricing semantics. Do not create an independent price-selection algorithm for Google Shopping.
+If storefront logic prefers `pancakeRetailPriceAfterDiscount`, Merchant must reuse that same pricing policy. Do not implement independent feed pricing rules.
 
-### Landing URLs
+### Variant landing page
 
-Variant feed links must resolve to a valid public production PDP.
+Each Merchant variant URL must land on a page where the submitted variant can be identified/selected and where displayed price, availability, color, size, and image match the submitted data.
 
-For products with multiple variants, the URL should identify/select the intended variant when the storefront supports stable variant deep-linking. If the current PDP cannot represent a specific variant in its URL, the `/plan` phase must decide whether a query parameter/fragment/state contract is necessary to satisfy Merchant variant landing-page consistency.
+Google's current variant guidance recommends distinct variant URLs using a path or query parameter. If the existing PDP cannot deep-link to a variant, `/plan` must define the smallest compatible URL/selection contract before Merchant launch.
 
 ### Images
 
-Use real trusted product media only. Do not emit placeholders or inaccessible source images.
+- only real trusted product media;
+- no placeholders;
+- URL fetchable by Google;
+- variant-specific image when variant-specific imagery exists;
+- feed image and landing-page presentation must not materially contradict the submitted variant.
 
-The selected image must correspond to the variant when variant-specific imagery exists.
+### Merchant account/setup outside source code
 
-## Security & Privacy Boundaries
+The implementation/launch plan must also cover the external Merchant Center setup needed to make the feed useful, including as applicable:
+
+- production website verification/claiming;
+- product data source + Scheduled Fetch schedule;
+- target country/language;
+- shipping/return settings required by Merchant Center;
+- diagnostics review;
+- linkage to the intended Google Ads account for Shopping campaigns.
+
+Account IDs/settings that are owned by Merchant Center or GTM should not be duplicated into source code without a technical reason.
+
+## 10. Security & Privacy Boundaries
 
 ### Always
 
-- Treat GTM/vendor/browser responses as external/untrusted integration data.
-- Keep API secrets server-only.
-- Validate env/config IDs before rendering third-party tags.
-- Tracking failures are isolated from commerce behavior.
-- Preserve CSP least privilege.
-- Preserve order/variant identifiers without leaking unnecessary PII.
-- Avoid sending name, phone, address, email, or other customer PII in generic browser ecommerce payloads.
-- Document external data destinations and later consent-policy changes.
+- treat vendor/GTM/browser output as untrusted integration data;
+- validate tracking configuration before rendering third-party tags;
+- keep API credentials server-only;
+- keep generic browser ecommerce payloads free of customer name, phone, address, email, auth tokens, and session identifiers;
+- isolate tracking failures from commerce behavior;
+- preserve least-privilege CSP;
+- document new external data destinations and later consent-policy changes;
+- keep non-production traffic away from production analytics/ad accounts.
 
 ### Ask first
 
-- Adding server-side TikTok Events API credentials/PII matching;
-- changing Meta CAPI data fields;
-- migrating Meta Pixel into GTM;
-- enabling visible consent UI or changing default consent policy;
-- enabling Enhanced Conversions or any hashed customer-data transmission;
-- adding new advertising vendors;
-- changing database schema solely for analytics;
-- adopting Merchant API realtime sync.
+- TikTok Events API credentials/server-side matching;
+- changes to Meta CAPI payload/user-data fields;
+- migration of Meta Pixel into GTM;
+- visible consent banner or default consent-policy change;
+- Google Enhanced Conversions or any hashed customer-data transmission;
+- new advertising vendors;
+- database-schema changes solely for analytics;
+- Merchant API realtime sync;
+- changing existing Meta content-ID or Purchase-value semantics.
 
 ### Never
 
-- Commit real GTM/vendor secrets/tokens.
-- Put server API access tokens in client bundles.
-- Emit Purchase from a click-only trigger.
-- Deploy a second Meta Pixel while the direct Pixel is enabled.
-- Treat a Pancake internal barcode as GTIN without validation.
-- Let local/staging contaminate production analytics.
-- Put customer PII into `dataLayer` unless separately specified, reviewed, and justified.
-- Disable failing tests or weaken CSP broadly to make tracking pass.
+- commit real access tokens/secrets;
+- expose server API tokens to browser code;
+- emit Purchase from a click-only trigger;
+- run a GTM Meta Pixel while the existing direct Pixel remains enabled;
+- invent/guess a GTIN from Pancake's internal barcode;
+- put customer PII into generic `dataLayer` ecommerce events;
+- let staging/local pollute production reports;
+- weaken CSP broadly or remove failing tests merely to make tracking work.
 
-## Project Structure (Intended)
+## 11. Intended Project Structure
 
-Exact file names may adapt to existing patterns during `/plan`, but expected ownership is:
+Exact paths may adapt to existing patterns during `/plan`; intended ownership is:
 
 ```text
 src/
   analytics/
     commerce-events.*
-    tracking-consent.*
     data-layer.*
-    environment.*
+    tracking-policy.*
+    tracking-environment.*
   components/
     analytics/
       google-tag-manager.*
       ...existing Meta components...
   integrations/
-    meta/                 # existing
-    google/               # config/mapping if needed outside GTM
-    tiktok/               # browser mapping only if application-side helpers are needed
+    meta/                  # existing direct integration
+    google/                # only app-side helpers if genuinely needed
+    tiktok/                # only app-side helpers if genuinely needed
   commerce/
-    ...canonical product/order adapters...
+    ...canonical adapters / existing sellability & pricing helpers...
   app/
     feeds/
-      google-merchant.*   # route or equivalent supported Next.js route
+      ...Merchant feed route in a valid Next.js route shape...
 
 tests/
   domain/
   integrations/
 ```
 
-Prefer one canonical commerce-event builder/mapping layer over vendor-specific data construction scattered across pages/components.
+Prefer one canonical commerce-event/fact builder over vendor payload construction scattered across pages/components.
 
-## Commands
+## 12. Code Style
 
-Repository commands already defined in `package.json`:
+Follow existing TypeScript/Next.js conventions. Prefer explicit typed contracts and small pure mapping functions.
+
+Illustrative style:
+
+```ts
+export type PurchaseFacts = Readonly<{
+  transactionId: string;
+  merchandiseValueVnd: number;
+  shippingVnd: number;
+  totalVnd: number;
+  items: readonly CommerceItem[];
+}>;
+
+export function buildPurchaseFacts(order: ConfirmedOrderSnapshot): PurchaseFacts {
+  // Pure mapping from already-validated business state; no vendor calls here.
+}
+```
+
+Vendor dispatch belongs outside the business-fact builder.
+
+## 13. Repository Commands
+
+Use the repository's checked-in commands:
 
 ```bash
 pnpm dev
@@ -540,163 +622,193 @@ pnpm test:db
 pnpm release:check
 ```
 
-During implementation, use focused tests first and run the full relevant suite before completion.
+Implementation uses focused tests during the TDD loop and full relevant checks before completion.
 
-## Testing Strategy
+## 14. Testing Strategy
 
 ### Unit/domain tests
 
-Must prove:
+Must prove at minimum:
 
-- canonical event payload construction;
-- item ID/SKU/value/currency mapping;
-- Purchase rejects all non-`CONFIRMED` order states;
+- canonical event/item mapping;
+- Purchase cannot be built/emitted from non-`CONFIRMED` state;
 - Purchase uses `publicCode` transaction/event ID;
-- confirmed Purchase uses immutable order-line snapshots;
-- consent policy default is configurable centrally;
-- tracking disabled/non-production becomes a no-op;
-- Merchant feed eligibility rules;
-- out-of-stock item stays in feed with `out_of_stock`;
-- invalid/missing required merchant fields exclude or fail safely according to the selected feed policy;
-- no Pancake barcode is emitted as GTIN without explicit valid-GTIN handling.
+- purchased item facts come from immutable order-line snapshots;
+- GA4 value excludes shipping and `shipping` is mapped separately;
+- existing Meta Purchase semantics remain unchanged unless explicitly approved;
+- production gate is centralized and non-production is a no-op for real vendors;
+- tracking policy is centralized and can later switch to denied/user-controlled state;
+- Merchant eligibility rules;
+- out-of-stock item remains in feed as `out_of_stock`;
+- SKU maps to MPN;
+- internal Pancake barcode is not emitted as GTIN by default;
+- feed IDs/group IDs are deterministic.
 
 ### Integration tests
 
-Must prove:
+Must prove at minimum:
 
-- GTM component renders only when production tracking is configured;
-- `dataLayer` events have deterministic vendor-neutral schemas;
+- GTM component/snippet renders only when the live-production tracking gate and valid config allow it;
+- deterministic `dataLayer` event schema;
 - no duplicate Meta Pixel is introduced;
-- success page emits canonical Purchase only for confirmed orders;
-- Merchant feed endpoint returns valid supported feed output;
-- feed IDs/group IDs stay stable for identical catalog input;
-- feed price/availability match canonical storefront policy.
+- confirmed success flow creates the canonical Purchase while invalid/unconfirmed success URL does not;
+- Merchant route returns a currently supported parseable product-data format;
+- feed price/availability reuse storefront policy;
+- unpublished/inactive/non-sellable variants are absent;
+- stable identical catalog input yields stable IDs/group IDs.
 
 ### Browser/runtime verification
 
-Required before release when browser tools are available:
+Required before production activation when browser tools are available:
 
-- GTM Preview/Tag Assistant validates expected tags;
+- GTM Preview / Tag Assistant shows the expected custom events and tags;
 - GA4 DebugView receives expected ecommerce events;
-- Google Ads diagnostics receive Purchase with transaction ID;
-- TikTok Pixel Helper/Events Manager sees expected browser events;
-- Meta Pixel/CAPI existing dedup remains healthy;
-- one real/test confirmed order yields one conversion per intended destination, not duplicates;
-- client-side navigation does not duplicate PageView;
-- ad blocker/script failure does not break commerce UI;
-- browser network/CSP console shows no unintended blocked requests after final CSP configuration.
+- Google Ads test Purchase includes the unique transaction ID;
+- TikTok Pixel diagnostics/Events Manager receives intended browser events;
+- existing Meta Pixel + CAPI browser/server dedup remains healthy;
+- one confirmed test order does not produce duplicate Purchase conversions;
+- App Router navigation does not duplicate PageView;
+- ad blocker/vendor failure does not break commerce UI;
+- browser console/network verifies the final CSP rather than relying on guessed origin lists.
 
 ### Merchant verification
 
 Before launch:
 
-- Merchant Center successfully fetches the scheduled URL;
-- feed parses with zero structural errors;
-- sample parent with multiple variants groups correctly;
-- sample out-of-stock variant remains present and out of stock;
-- landing-page price/availability match feed;
-- product diagnostics show no invalid GTIN caused by Pancake barcode;
-- images are fetchable by Google;
-- no unpublished/hidden/locked product leaks into the feed.
+- Merchant Center can fetch the production URL on schedule;
+- product file parses without structural errors;
+- sample parent variants group correctly;
+- variant landing URLs select/represent the submitted variant;
+- out-of-stock sample remains present as `out_of_stock`;
+- price/availability match storefront;
+- no false GTIN generated from Pancake barcode;
+- images are fetchable;
+- hidden/unpublished/non-sellable records do not leak into feed;
+- Merchant diagnostics are reviewed before enabling Shopping campaigns.
 
-## Observability
+## 15. Observability
 
-Tracking itself must be diagnosable without logging customer PII.
+Tracking must be diagnosable without logging customer PII.
 
 At minimum:
 
-- non-production debug mode can inspect canonical event names/payload shape without sending real vendor traffic;
-- Merchant feed generation exposes safe structured error evidence in server logs for malformed catalog records;
-- no secrets, phone numbers, addresses, emails, or auth/session tokens in analytics debug logs;
-- feed failures should be observable through existing deployment/error monitoring where available.
+- non-production can inspect canonical event names/shapes without sending real vendor traffic;
+- Merchant generation logs safe structured evidence for malformed/excluded records where useful;
+- do not log names, phones, addresses, emails, auth headers, tokens, or whole customer payloads;
+- feed-generation/runtime failures flow through existing deployment/error monitoring where available.
 
-Do not introduce high-cardinality production metrics solely for individual event/product IDs unless the project already has an appropriate telemetry system.
+Avoid introducing high-cardinality metrics for per-user/per-order IDs unless the project already has an appropriate telemetry system.
 
-## Success Criteria
+## 16. Success Criteria
 
 ### Architecture
 
-- [ ] One canonical commerce event contract is the source for new tracking destinations.
-- [ ] GA4, Google Ads, TikTok Pixel are routed through GTM.
-- [ ] Existing Meta Pixel + CAPI remain direct and do not double-fire through GTM.
-- [ ] TikTok Events API is not implemented yet, but the contract can support later browser/server deduplication.
+- [ ] One canonical commerce fact/event layer supplies new tracking destinations.
+- [ ] GA4 + Google Ads + TikTok Pixel are routed through GTM.
+- [ ] Existing direct Meta Pixel + CAPI remain direct and are not duplicated in GTM.
+- [ ] TikTok Events API is not implemented, but future browser/server dedup is supported by the event-ID contract.
 
 ### Correctness
 
 - [ ] `purchase` is impossible unless `OrderMirror.state === CONFIRMED`.
-- [ ] `transaction_id`/canonical purchase event ID is `OrderMirror.publicCode`.
-- [ ] product IDs/SKUs/prices/quantities come from canonical commerce data, not DOM parsing.
-- [ ] one confirmed order produces at most one intended browser Purchase per destination per transaction under normal operation.
+- [ ] Purchase transaction/event ID is `OrderMirror.publicCode`.
+- [ ] Product IDs/SKUs/prices/quantities come from canonical application data, not DOM parsing.
+- [ ] GA4 Purchase value/shipping semantics match current GA4 documentation.
+- [ ] Existing Meta Purchase/content-ID behavior remains compatible.
+- [ ] A confirmed order is not double-counted through refresh/revisit under normal supported behavior.
 
-### Environment & consent readiness
+### Production/consent readiness
 
-- [ ] only production can send to real production tracking destinations.
-- [ ] consent/tracking policy is centralized.
-- [ ] initial policy is tracking granted with consent UI hidden.
-- [ ] enabling future consent UI does not require replacing the commerce event contract.
+- [ ] only the real production storefront sends real production tracking traffic;
+- [ ] central tracking/consent policy exists;
+- [ ] initial policy allows immediate production tracking while UI is hidden;
+- [ ] later consent UI/default-denied behavior can be enabled without replacing the commerce event contract.
 
 ### Google Shopping
 
-- [ ] Merchant Center uses Scheduled Fetch from a production HTTPS feed URL.
-- [ ] each eligible variant is a separate Merchant item.
-- [ ] parent variants share `item_group_id`.
+- [ ] Merchant Center uses Scheduled Fetch from a production HTTPS product-data URL.
+- [ ] each eligible variant is one Merchant item.
+- [ ] sibling variants share one stable `item_group_id`.
 - [ ] `brand = LA Clothing`.
-- [ ] current SKU is sent as `mpn`.
-- [ ] Pancake barcode is not automatically sent as `gtin`.
-- [ ] out-of-stock variants remain in feed with `out_of_stock`.
+- [ ] current SKU is `mpn`.
+- [ ] Pancake barcode is not automatically submitted as `gtin`.
+- [ ] out-of-stock eligible variants remain present as `out_of_stock`.
 - [ ] unpublished/inactive/hidden/locked/non-sellable records do not appear.
-- [ ] feed price/availability match the storefront.
+- [ ] feed price/availability and variant presentation match the storefront.
 
 ### Quality/security
 
-- [ ] no real secrets committed.
-- [ ] no production PII added to generic `dataLayer` ecommerce events.
-- [ ] CSP remains least-privilege and verified against real tag traffic.
-- [ ] analytics failures never break shopper flows.
-- [ ] lint/typecheck/tests/build pass using repository commands.
-- [ ] browser diagnostics and Merchant Center diagnostics are checked before release.
+- [ ] no real secrets committed or exposed to browser code;
+- [ ] generic browser ecommerce payloads contain no customer PII;
+- [ ] CSP remains least-privilege and is verified against real runtime traffic;
+- [ ] tracking failure cannot break shopper flows;
+- [ ] relevant lint/typecheck/tests/build gates pass;
+- [ ] browser diagnostics and Merchant diagnostics are checked before production activation;
+- [ ] rollback/disable path exists for GTM/tracking/feed rollout.
 
-## Out of Scope
+## 17. Out of Scope
 
-- Migrating existing Meta browser Pixel into GTM.
-- Replacing Meta CAPI.
-- TikTok Events API implementation.
-- Merchant API realtime product sync.
-- Visible consent/cookie banner.
-- User-facing consent settings page.
-- Enhanced Conversions/customer-match style hashed PII transmission.
-- New database schema unless `/plan` proves existing fields cannot satisfy a required contract.
-- Unrelated SEO/catalog/UI refactors.
+- migrating existing Meta browser Pixel into GTM;
+- replacing Meta CAPI;
+- changing current Meta content-ID strategy;
+- changing current Meta Purchase value semantics;
+- TikTok Events API implementation;
+- Merchant API realtime sync;
+- visible consent/cookie banner;
+- user-facing consent settings page;
+- Enhanced Conversions / hashed customer PII transmission;
+- database schema changes unless `/plan` proves existing fields cannot satisfy a required contract;
+- unrelated SEO/catalog/UI refactors.
 
-## Risks & Required Plan-Time Decisions
+## 18. Required `/plan` Discoveries
 
-The `/plan` phase must explicitly resolve these before implementation:
+Before implementation, `/plan` must resolve from repository evidence + current official docs:
 
-1. **Stable Merchant/tracking variant ID**: verify whether `pancakeVariationId` or SKU is the durable external ID and choose one canonical `item_id`.
-2. **Purchase value semantics**: verify existing Meta Purchase value (subtotal vs total including shipping) and decide whether cross-platform reporting should match it or intentionally differ with documentation.
-3. **Storefront sellability helper**: find/reuse the canonical product/variant visibility, stock, and price rules rather than duplicating them in feed code.
-4. **Variant landing deep link**: confirm whether PDP URLs can resolve/select the Merchant variant deterministically.
-5. **GTM config ownership**: minimize duplicate GA4/Ads/TikTok identifiers between source env and GTM workspace.
-6. **CSP origin list**: derive from actual GTM/GA4/Ads/TikTok runtime requests and official docs; do not guess a broad allowlist.
-7. **Google Ads conversion actions**: Purchase is mandatory; any secondary conversions require explicit product-owner scope.
+1. **Stable external variant ID:** verify durability of `pancakeVariationId` vs SKU and choose Merchant/new-tracking `item_id`.
+2. **Google Ads conversion value:** explicitly choose total order value vs merchandise-only value for Ads; do not inherit GA4 semantics by accident.
+3. **TikTok value/event mapping:** verify current official TikTok event parameter requirements.
+4. **Canonical storefront policy:** locate/reuse existing visibility, hidden/locked, stock aggregation, sale-price, and trusted-image helpers.
+5. **Variant deep link:** verify whether PDP URL can select a variant; add the smallest stable query/path contract if needed.
+6. **Live-production gate:** determine the deployment-safe condition beyond `NODE_ENV` that prevents local/staging contamination.
+7. **GTM ownership:** define container/workspace naming, production vs test workflow, and how GTM configuration is reviewed/exported/versioned.
+8. **CSP origins:** derive exact allowlist from current official docs and observed GTM/GA4/Ads/TikTok requests.
+9. **Target Merchant market:** verify current apparel-required attributes for the intended target country/language.
+10. **Merchant account prerequisites:** website verification, shipping/returns, diagnostics and Google Ads linking.
 
-## Definition of Done Gate
+These are technical discoveries, not unresolved product requirements.
 
-This feature is not complete merely because scripts appear on the page or Merchant Center accepts a file.
+## 19. Authoritative Source Constraints Checked
 
-Before `/ship`, the implementation must satisfy both this spec's acceptance criteria and the project Definition of Done, including:
+The spec was checked against current official guidance at drafting time, including:
 
-- behavioral tests for new logic;
-- full relevant test/build/lint/type checks;
+- Google Tag Manager `dataLayer`: https://developers.google.com/tag-platform/tag-manager/datalayer
+- GA4 ecommerce Purchase: https://developers.google.com/analytics/devguides/collection/ga4/ecommerce
+- Google Ads transaction IDs: https://support.google.com/google-ads/answer/6386790
+- Merchant variant `item_group_id`: https://support.google.com/merchants/answer/6324507
+- Merchant Scheduled Fetch: https://support.google.com/merchants/answer/14991445
+- Merchant GTIN / brand / MPN: https://support.google.com/merchants/answer/6324461 and https://support.google.com/merchants/answer/160161
+- TikTok GTM event tags: https://ads.tiktok.com/resources/help/article/how-to-create-tiktok-event-tags-with-google-tag-manager
+- TikTok browser/server event deduplication: https://ads.tiktok.com/resources/help/article/event-deduplication
+
+Version-sensitive details must be rechecked during `/plan`/`/build`; these links are evidence for the present spec, not permission to freeze vendor behavior forever.
+
+## 20. Definition of Done Gate
+
+This work is not complete merely because GTM loads or Merchant Center accepts a file.
+
+Before `/ship`, both this spec and the repository-wide Definition of Done must pass, including:
+
+- behavior tests for new logic;
+- relevant full test/type/lint/build checks;
 - runtime browser verification;
-- integration compatibility with existing Meta behavior;
-- security review for third-party scripts/config/secrets;
-- observability/diagnostics appropriate to feed and tracking failures;
-- rollback path for tag/config rollout;
+- compatibility verification for existing Meta behavior;
+- security review for third-party scripts/configuration/secrets;
+- diagnostics/observability for tracking/feed failures;
+- a production disable/rollback path;
 - human review before production activation.
 
-## Open Questions
+## 21. Open Questions
 
-No product-requirement blocker remains for planning.
+No product-requirement blocker remains for `/plan`.
 
-The seven plan-time technical decisions above are implementation discoveries, not product ambiguity, and should be resolved from repository evidence + current official vendor documentation during `/plan`.
+The items in **Required `/plan` Discoveries** must be answered from codebase evidence and current vendor documentation before implementation choices are locked.
