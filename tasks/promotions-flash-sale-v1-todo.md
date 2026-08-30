@@ -32,8 +32,12 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [x] Share one sanctioned SQL pricing/membership projection across `/shop` and `/flash-sale`
 - [x] Lock legal never-Active re-enable to atomically clear `disabledAt`
 - [x] Confirm fixed-price PRODUCT affected-variant runtime fallback supersedes earlier wholesale-invalid draft
+- [x] Review `5061370559`: replace floating `Math.round` reference with exact BigInt percentage arithmetic
+- [x] Review `5061370559`: add upper-safe-integer TS + SQL parity fixture
+- [x] Review `5061370559`: make boundary refresh query-wide with server-derived relative delay and resume guard
+- [x] Review `5061370559`: define named finite input/admin/expansion bounds with max/max+1 tests
 - [ ] Human approves revised PR #151 spec + plan
-- [ ] Confirm no unresolved Critical/Required review threads
+- [ ] Confirm no unresolved Critical/Required review findings on latest head
 
 ## P1 — Persistence + migration
 
@@ -55,14 +59,20 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Pure resolver with explicit `now`
 - [ ] Base price positive safe-integer VND at website authority boundary
 - [ ] Percentage integer `1..99`
-- [ ] Integer-safe nearest-VND rounding
+- [ ] Percentage uses exact BigInt rational formula `(BigInt(base) * BigInt(100-pct) + 50n) / 100n`
+- [ ] Convert BigInt result to `number` only after safe-integer validation
+- [ ] No floating `Math.round(base * multiplier / 100)` path is normative
+- [ ] Exact-half domain fixture: `base=150,pct=1 → 149`
+- [ ] Exact-half domain fixture: `base=350,pct=1 → 347`
+- [ ] Exact-half domain fixture: `base=110,pct=5 → 105`
+- [ ] Upper-safe domain fixture: `base=9007199254740989,pct=1 → 8917127262193579`
 - [ ] FIXED_PRICE means final customer price
 - [ ] Fixed rule `0 < fixed < base`
 - [ ] Invalid promo falls back only affected variant
 - [ ] Multiple active candidates fail closed to no promotion
 - [ ] Base unavailable is distinct from promotion invalid
 - [ ] Quote contains promotion audit metadata
-- [ ] Quote contains `nextTransitionAt`
+- [ ] Quote contains per-variant `nextTransitionAt`
 - [ ] Read-only mirrored-price readiness audit
 - [ ] Domain edge tests
 
@@ -84,6 +94,9 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] PARTIALLY_INVALID at affected-variant granularity
 - [ ] Runtime conflict returns no promotion
 - [ ] Runtime recovery automatic
+- [ ] Draft expansion health probes at most `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1`
+- [ ] Draft expansion >2000 reports typed `TARGET_EXPANSION_LIMIT_EXCEEDED` health without loading all variants
+- [ ] Post-activation dynamic expansion >2000 is not itself a pricing invalidation
 - [ ] Bounded query-count test
 - [ ] Lifecycle regression: Draft → enable → disable-before-Active → re-enable clears stale disabled timestamp
 - [ ] Lifecycle regression: disable-after-Active remains terminal
@@ -91,8 +104,18 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 ## P4 — Concurrency-safe admin domain + activation gate
 
 - [ ] Existing ADMIN authorization required
-- [ ] Bound name/ID/array/enum/money/time input
-- [ ] Draft save may remain invalid/non-effective
+- [ ] `MAX_CAMPAIGN_NAME_LENGTH = 120` after trim
+- [ ] `MAX_TARGETS_PER_CAMPAIGN = 200` normalized explicit targets
+- [ ] `MAX_PROMOTION_IDENTIFIER_LENGTH = 128` browser-supplied ID code units before lookup
+- [ ] `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN = 2000` current unique affected variants for activation/re-enable/Scheduled edit
+- [ ] Oversized syntactic input rejected before persistence even for Draft
+- [ ] Draft save may otherwise remain business-invalid/non-effective
+- [ ] Expansion probe uses at most 2001 current variants and rejects before huge lock acquisition
+- [ ] Expansion >2000 returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED`
+- [ ] Name boundary tests 120/121
+- [ ] Target-count boundary tests 200/201
+- [ ] Identifier boundary tests 128/129
+- [ ] Expansion boundary tests 2000/2001
 - [ ] Server activation gate defaults disabled in production-like config
 - [ ] Publish/re-enable returns typed `ACTIVATION_DISABLED` while gate off
 - [ ] Gate-off still allows Draft create/edit/read/copy-health
@@ -120,6 +143,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Migration clean on test DB
 - [ ] Concurrency tests stable across repeated runs
 - [ ] Activation disabled by default in production-like fixture
+- [ ] All named bounds max/max+1 tests green
 - [ ] No framework/UI dependency in pricing resolver
 - [ ] No N+1 in campaign lookup
 - [ ] 0 Critical
@@ -128,6 +152,11 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 ## P5 — Admin promotions UX
 
 - [ ] `/admin/promotions` protected
+- [ ] `MAX_ADMIN_PROMOTION_PAGE_SIZE = 50`
+- [ ] `ADMIN_TARGET_SEARCH_LIMIT = 50`
+- [ ] Campaign list/search paginated; never returns >50 per request
+- [ ] Product/variant target search paginated/bounded; never returns >50 per request
+- [ ] List/search 50/51 boundary behavior tested
 - [ ] List name/kind/discount/time/targets/status/health
 - [ ] Create Draft
 - [ ] Edit lifecycle-allowed campaign
@@ -137,7 +166,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Disable/end-early action
 - [ ] Copy → Draft
 - [ ] Terminal campaign read-only except Copy
-- [ ] Target-specific typed validation messages
+- [ ] Target-specific typed validation messages including expansion limit
 - [ ] Product admin shows current/upcoming campaign + link only
 - [ ] No pricing logic in React/server action layer
 - [ ] Admin keyboard/Axe/mobile/overflow proof
@@ -156,6 +185,8 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Composite PRODUCT scope uses real owning product
 - [ ] Parent PRODUCT campaign does not bleed onto child-owned component
 - [ ] No per-option DB query
+- [ ] PDP boundary refresh consumes server-derived relative delay capped at 60s
+- [ ] PDP resume guard refreshes when delay elapsed while hidden
 - [ ] Existing composite availability/mapping regressions green
 
 ## P7a — Cards + shared effective-price storefront SQL
@@ -171,6 +202,7 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] SQL does not independently use DB clock for campaign eligibility
 - [ ] Validated integer-like base is cast to PostgreSQL `numeric` before percentage multiplication/division
 - [ ] No promotion percentage formula calls `ROUND()` on a `double precision` expression
+- [ ] SQL result matches exact BigInt rational TypeScript contract
 - [ ] Price min/max use current effective price
 - [ ] `price-asc` / `price-desc` use current effective price
 - [ ] Color/size/availability constrain same candidate set
@@ -179,38 +211,55 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Exact-half parity fixture: `base=150,pct=1 → 149`
 - [ ] Exact-half parity fixture: `base=350,pct=1 → 347`
 - [ ] Exact-half parity fixture: `base=110,pct=5 → 105`
+- [ ] Upper-safe parity fixture: `base=9007199254740989,pct=1 → 8917127262193579`
 - [ ] Projection contract is reused by P7b `/flash-sale` membership rather than forked
+- [ ] Query-wide transition aggregate operates on full pre-pagination relevant candidate universe
+- [ ] Off-page campaign transition fixture is visible to aggregate
+- [ ] Public `/shop` page size remains bounded by existing max 48
 - [ ] Boundary test proves multi-query request stays internally consistent across transition
 - [ ] Pagination/count bounded/stable
 
 ## P7b — `/flash-sale` + boundary freshness
 
 - [ ] Add `/flash-sale`
-- [ ] Paginate/bound query
+- [ ] Paginate/bound query with max page size 48
 - [ ] Active valid Flash Sale variants only
 - [ ] Membership before pagination uses same sanctioned P7a SQL pricing/membership projection
 - [ ] No second Flash Sale-specific promotion eligibility formula/predicate
 - [ ] Exclude regular-only/Scheduled/Ended/Disabled/invalid/conflicted
 - [ ] One server `requestNow` per route render
 - [ ] Representative uses Flash Sale variants only
-- [ ] Project earliest relevant `nextTransitionAt`
-- [ ] Add client promotion-boundary refresher
-- [ ] Refresher schedules from server timestamp only
-- [ ] `router.refresh()` at start/end boundary
+- [ ] `/shop` computes query-wide earliest future transition including off-page candidates that can change page membership/order
+- [ ] `/flash-sale` transition aggregate includes upcoming Scheduled/Enabled sale even when current membership is empty
+- [ ] Transition aggregate is bounded/index-friendly; no all-row application materialization
+- [ ] Server emits relative `refreshAfterMs`
+- [ ] `refreshAfterMs <= 60_000`
+- [ ] No-known-transition fallback is `60_000`
+- [ ] Client never derives scheduling from browser `Date.now()` against absolute server timestamp
+- [ ] Client tracks elapsed delay with monotonic clock
+- [ ] `visibilitychange` to visible refreshes immediately if delay elapsed while hidden
+- [ ] `pageshow` refreshes immediately if delay elapsed while suspended
+- [ ] `router.refresh()` obtains a new server-derived delay
 - [ ] No persistent promotion price cache
-- [ ] DB membership parity against central resolver
+- [ ] DB membership/transition parity against central resolver
 - [ ] Bounded query-count proof
 - [ ] Browser scheduled→active proof
 - [ ] Browser active→ended proof
+- [ ] Browser off-page promotion enters current sorted/filter `/shop` page
+- [ ] Browser empty `/flash-sale` → first sale starts
+- [ ] Browser clock-skew fixture proves `Date.now()` offset cannot postpone refresh
+- [ ] Browser hidden-tab/pageshow resume-after-boundary proof
+- [ ] Visible-page promotional display staleness never exceeds 60s
 - [ ] Countdown never authorizes transaction price
 
 ## Checkpoint B — Storefront
 
 - [ ] PDP/card/discovery agree for same variant/requestNow
 - [ ] Composite ownership regression green
-- [ ] SQL↔TS parity green, including exact-half fixtures
+- [ ] SQL↔TS parity green, including exact-half + upper-safe fixtures
 - [ ] `/shop` and `/flash-sale` use one sanctioned SQL promotion projection contract
-- [ ] Flash Sale boundary tests green
+- [ ] Query-wide/off-page/empty-state Flash Sale boundary tests green
+- [ ] Clock-skew/resume freshness tests green
 - [ ] No N+1
 - [ ] 0 Critical
 - [ ] 0 Required
@@ -321,6 +370,11 @@ PR #151 remains docs/planning only. Production implementation starts from then-c
 - [ ] Browser proof for P9a rendered-quote price change
 - [ ] Browser proof for P9b fresh-Pancake/DRAFT price change where testable with controlled fixture
 - [ ] Browser proof for scheduled→active / active→ended refresh
+- [ ] Browser proof for off-page `/shop` transition changing current page membership/order
+- [ ] Browser proof for empty Flash Sale → first sale start
+- [ ] Browser proof for wall-clock skew immunity
+- [ ] Browser proof for hidden-tab/pageshow resume after elapsed boundary
+- [ ] Visible promotional display staleness ≤60s
 
 ### Full repository verification
 
