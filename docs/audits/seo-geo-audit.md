@@ -19,8 +19,8 @@ ba lớp cơ bản:
 
 1. **Correctness thương mại:** sale price hiện bị coi là unresolved; variant URL/deep-link contract
    chưa tồn tại; structured data chưa mô hình đúng product variants có giá khác nhau.
-2. **Search presentation + regression safety:** metadata PDP còn nhét slug/path kỹ thuật và một số
-   HTTP smoke SEO chưa nằm trong CI.
+2. **Search presentation + regression safety:** metadata PDP còn nhét slug/path kỹ thuật; năm
+   dedicated SEO HTTP smoke chưa được wire trực tiếp, dù CI đã có overlapping domain/runtime coverage.
 3. **First-party content + commerce discovery:** thiếu các trang evergreen có thẩm quyền về brand,
    đổi trả, vận chuyển, size và liên hệ; nhưng các policy/fact đó cũng chưa có đủ source-of-truth
    để coding agent được phép tự tạo nội dung.
@@ -131,13 +131,18 @@ precision. Các trạng thái dưới đây có nghĩa:
   **variant identity → variant URL/deep-link + preselection → query/canonical policy →
   `ProductGroup`/variant `Offer` markup → HTTP/Rich Results verification**.
 
-- **W15 — Cả năm HTTP smoke SEO này hiện không có CI/npm gate.** Các script
-  `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,
-  `product-metadata-http-smoke.ts`, `oai-robots-http-smoke.ts`,
-  `product-slug-http-smoke.ts` đều tồn tại, nhưng **không script nào trong nhóm này** được workflow
-  hiện tại hoặc npm script gọi. Vì vậy năm contract về search exposure, structured data, PDP
-  metadata, OAI robots và product slug có thể regress mà CI không chặn. P2 phải tạo một command
-  chuẩn cho nhóm này và nối toàn bộ vào workflow runtime SEO.
+- **W15 — 0/5 dedicated SEO HTTP smoke được wire trực tiếp, nhưng các contract không hoàn toàn
+  ungated.** Các script `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,
+  `product-metadata-http-smoke.ts`, `oai-robots-http-smoke.ts`, `product-slug-http-smoke.ts` đều
+  tồn tại, nhưng **không script nào trong nhóm này** được workflow hiện tại hoặc npm script gọi
+  trực tiếp. Tuy nhiên CI đã có overlapping coverage: `pnpm test` chạy domain/integration regressions
+  cho search exposure, metadata, structured data, robots và slug; P18 production-runtime còn kiểm
+  tra noindex, canonical absence khi indexing disabled, parent Product/Offer JSON-LD, `OAI-SearchBot`
+  trong `robots.txt` và sitemap rỗng ở trạng thái noindex. Vì vậy gap thực sự là **chưa có mapping
+  tường minh giữa signal riêng của năm dedicated smoke và coverage hiện có**, không phải cả năm
+  contract đều không được CI bảo vệ. P2 phải inventory từng smoke, xác định case HTTP/runtime nào
+  còn chưa được gate, rồi wire các case còn gap; chỉ gom thành một SEO runtime command chuẩn nếu
+  việc đó giảm duplication và làm ownership/verification rõ hơn.
 
 - **W13A — Evergreen content thiếu owner-approved source facts/policies.** Site chưa có các page
   chuẩn về About, Returns, Shipping/Payment, Size Guide, Contact; nhưng `buildPublicBrandFacts`
@@ -301,9 +306,11 @@ semantics chưa được chứng minh.
 
 ### P2 — Regression safety trước index
 
-8. W15: tạo một command SEO HTTP smoke chuẩn bao trùm đủ cả năm script và gọi nó trong CI.
-9. Verify noindex/indexable states, base/variant canonical behavior, redirect, metadata, robots và
-   structured data qua Next server thật.
+8. W15a: inventory năm dedicated SEO HTTP smoke so với `pnpm test`, P18 production-runtime và
+   các runtime workflow hiện có; ghi rõ signal nào đã overlap và signal HTTP/runtime nào còn thiếu.
+9. W15b: wire các case còn gap vào CI; chỉ tạo một command SEO runtime chung khi nó thực sự gom được
+   signal cần thiết mà không chạy lặp vô ích. Verify noindex/indexable states, base/variant canonical
+   behavior, redirect, metadata, robots và structured data qua Next server thật theo coverage map.
 
 ### P3 — Search/social fundamentals
 
