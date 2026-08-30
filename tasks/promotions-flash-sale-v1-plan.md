@@ -285,8 +285,8 @@ For existing campaign publish/re-enable/Scheduled edit/disable/copy-source reads
 1. parse/canonicalize and enforce explicit input bounds before opening the transaction where possible;
 2. lock the campaign row first (`FOR UPDATE`) when mutating an existing campaign;
 3. resolve involved owning product IDs;
-4. perform a bounded affected-variant expansion probe capped at `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1`; fail typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set when over limit;
-5. lock ProductMirror rows in deterministic ID order;
+4. lock ProductMirror rows in deterministic ID order;
+5. while those product locks are held, probe the current affected-variant expansion with a bounded `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1` read; if over limit, fail typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set;
 6. lock required VariantMirror rows in deterministic ID order when current expansion is within the cap;
 7. re-read campaign lifecycle, target ownership, base prices, and overlapping enabled campaigns while locks are held;
 8. validate lifecycle, activation gate, target shape, price validity, schedule, overlap, and bounds;
@@ -295,7 +295,7 @@ For existing campaign publish/re-enable/Scheduled edit/disable/copy-source reads
 
 Two concurrent edits to the same campaign must not silently overwrite one another. Two concurrent overlapping campaigns must not both become effective. Disjoint variants of the same product may serialize for simplicity but can both succeed when semantically valid.
 
-Catalog sync is not required to take these admin locks. Runtime catalog-created invalidity/conflict fails closed through the resolver. Post-activation expansion beyond 2000 does not itself invalidate an Active campaign; runtime access stays bounded rather than taking one giant lock set.
+Catalog sync is not required to take these admin locks, so a catalog mutation can still race after the transaction's validated snapshot; that is already covered by runtime fail-closed invalidity/conflict semantics. The expansion probe exists to bound this admin transaction's work, not to freeze PRODUCT membership. Post-activation expansion beyond 2000 does not itself invalidate an Active campaign; runtime access stays bounded rather than taking one giant lock set.
 
 ### F. Server-only activation gate
 
@@ -486,7 +486,7 @@ When DRAFT matches current fresh effective quote, final pricing becomes immutabl
 - [ ] enforce `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN=2000` on publish/re-enable/Scheduled-edit validation;
 - [ ] reject oversized syntactic input before persistence even for Draft;
 - [ ] Draft may otherwise save business-invalid/non-effective configuration;
-- [ ] expansion over cap returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED` before acquiring a huge variant lock set;
+- [ ] expansion over cap returns typed `TARGET_EXPANSION_LIMIT_EXCEEDED` after deterministic owning-product locks but before acquiring a huge variant lock set;
 - [ ] publish/re-enable fails `ACTIVATION_DISABLED` while server gate is off;
 - [ ] when gate is on, full current-target activation validation applies;
 - [ ] Scheduled edits are atomically revalidated;
