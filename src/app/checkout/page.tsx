@@ -5,6 +5,7 @@ import { connection } from "next/server";
 
 import { calculateGuestShippingFeeVnd } from "@/commerce/guest-shipping-policy";
 import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
+import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
 import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 
 export const metadata: Metadata = {
@@ -179,6 +180,19 @@ export default async function CheckoutPage() {
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <GuestCheckoutForm />
+        <FacebookPixelEvent
+          name="InitiateCheckout"
+          parameters={{
+            // Every line gets an id, falling back to the variant when a product mirror has since
+            // gone: dropping a line here while `value` and `num_items` still count it would report
+            // an item list that contradicts its own totals.
+            content_ids: lines.map((line) => line.productSlug ?? line.variantId),
+            content_type: "product",
+            currency: "VND",
+            value: totals.totalVnd,
+            num_items: totals.totalQuantity,
+          }}
+        />
 
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           <div className="flex items-baseline justify-between gap-4">

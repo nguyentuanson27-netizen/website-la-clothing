@@ -2,13 +2,19 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { readAuthServerConfig } from "../auth/config.ts";
+import { readStorefrontOrigin } from "./storefront-origin.ts";
 import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
-import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
+import {
+  deriveGuestCheckoutClientKey,
+  readOptionalTrustedClientIp,
+} from "./guest-checkout-client-identity.ts";
 import { submitGuestCheckoutPublicAction } from "./guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
+import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 import { submitGuestCheckoutByCart } from "./guest-checkout-submit-runtime.ts";
 
@@ -39,6 +45,28 @@ async function createGuestCheckoutActionDependencies() {
   };
 }
 
+/**
+ * The browsing context Meta matches a server event against: the buyer's address and user agent,
+ * plus the pixel's own `_fbp` / `_fbc` cookies, which are the strongest signal available for a
+ * guest who never creates an account.
+ */
+async function readMetaRequestContext() {
+  const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
+
+  return {
+    // Only the proxy-owned header the rest of checkout trusts. x-forwarded-for is client-spoofable
+    // and this codebase rejects it as an IP source everywhere else; a wrong address is worse than
+    // none, since it attributes the sale to whoever the buyer claimed to be.
+    clientIpAddress: readOptionalTrustedClientIp(requestHeaders, readAuthServerConfig()),
+    clientUserAgent: requestHeaders.get("user-agent"),
+    fbp: cookieStore.get("_fbp")?.value ?? null,
+    fbc: cookieStore.get("_fbc")?.value ?? null,
+    // The configured canonical origin, not the request's Host header: Host is attacker-controlled
+    // and would otherwise be reported to Meta as where the sale happened.
+    eventSourceUrl: `${readStorefrontOrigin()}/checkout`,
+  };
+}
+
 export async function submitGuestCheckoutAction(
   _previousState: GuestCheckoutSubmitResult | null,
   formData: FormData,
@@ -58,6 +86,17 @@ export async function submitGuestCheckoutAction(
   }
 
   if (result.ok) {
+    // The request context has to be read inside the request, but the reporting itself must not sit
+    // between the buyer and their confirmation page. `after` keeps the work alive past the
+    // response without holding it up, which a bare floating promise would not survive on a
+    // serverless runtime that freezes the invocation the moment it responds.
+    // The order is already placed here. Nothing about reporting it may throw past this point: the
+    // buyer would see a generic failure for a sale that succeeded and would very likely submit it
+    // again. readStorefrontOrigin in particular throws on a misconfigured APP_DOMAIN.
+    const metaContext = await readMetaRequestContext().catch(() => null);
+    if (metaContext !== null) {
+      after(() => reportMetaPurchaseSafely(prisma, result.orderCode, metaContext));
+    }
     redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
   }
   return result;

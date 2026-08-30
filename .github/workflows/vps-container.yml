@@ -113,6 +113,64 @@ jobs:
             la-clothing:vps-ops-ci \
             sh -lc 'pnpm release:check && pnpm prisma:migrate:deploy'
 
+      # The deploy path once shipped the Meta pixel inert because compose.yml passed no build arg,
+      # and nothing caught it: every other check builds with an empty pixel id, so removing that
+      # wiring again would stay green. This builds the way production does — through Compose, with
+      # the id supplied the way .env.production supplies it — and asserts the image actually serves
+      # the pixel under a policy that admits it.
+      - name: Verify the Compose build carries the pixel id into the image
+        shell: bash
+        run: |
+          set -euo pipefail
+          pixel_id=123456789012345
+          sed -i "s/^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=.*/NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${pixel_id}/" \
+            deploy/vps/.env.production
+          grep -q "^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${pixel_id}$" deploy/vps/.env.production
+
+          docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml build app
+
+          docker run -d --name la-clothing-pixel-ci --network host \
+            -e DATABASE_URL \
+            -e BETTER_AUTH_SECRET \
+            -e BETTER_AUTH_IP_HEADER \
+            -e PANCAKE_API_KEY \
+            -e PANCAKE_SHOP_ID \
+            -e SEARCH_INDEXING_ENABLED \
+            -e APP_DOMAIN=127.0.0.1:3000 \
+            -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
+            "la-clothing:${GITHUB_SHA}"
+
+          cleanup() {
+            docker rm -f la-clothing-pixel-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..50}; do
+            if curl --fail --silent --show-error --output /dev/null http://127.0.0.1:3000/shop; then
+              break
+            fi
+            if [[ "${attempt}" == "50" ]]; then
+              docker logs la-clothing-pixel-ci
+              echo "pixel image never became reachable" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          headers="$(curl --fail --silent --show-error --dump-header - --output /dev/null \
+            http://127.0.0.1:3000/shop)"
+          body="$(curl --fail --silent --show-error http://127.0.0.1:3000/shop)"
+
+          # A build arg that never reached the image leaves both of these missing.
+          grep -qi 'content-security-policy:.*https://connect\.facebook\.net' <<<"${headers}"
+          grep -qi 'content-security-policy:.*https://www\.facebook\.com' <<<"${headers}"
+          grep -q 'connect\.facebook\.net' <<<"${body}"
+          grep -q "${pixel_id}" <<<"${body}"
+
+          # Restore the untracked default so the health smoke below builds as production does today.
+          sed -i "s/^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=.*/NEXT_PUBLIC_FACEBOOK_PIXEL_ID=/" \
+            deploy/vps/.env.production
+
       - name: Build production runtime image
         run: docker build --target runner --tag la-clothing:vps-runtime-ci .
 

@@ -78,6 +78,16 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   // the new one landed, and fail `document-title` on a page that does declare one.
   await page.waitForFunction(() => document.title.trim().length > 0);
 
+  // Scan from the top of the page. The masthead is pinned, so it overlays whatever is beneath it,
+  // and axe reports an element it covers as failing contrast against the masthead's own
+  // background. Which element that is depends on the scroll offset the page carries into the scan
+  // — a client-side navigation keeps the previous page's — and on font metrics, which differ per
+  // platform: this scan runs at ~640px with the nearest element clearing the masthead by 39px on
+  // Linux and landing under it on macOS. Normalizing the offset makes the result depend on the
+  // page rather than on either. Nothing is skipped; axe still scans the whole document.
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.waitForFunction(() => window.scrollY === 0);
+
   const overflow = await page.evaluate(() => {
     const scrollWidth = document.documentElement.scrollWidth;
     const innerWidth = window.innerWidth;

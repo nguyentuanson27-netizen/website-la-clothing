@@ -36,7 +36,13 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
   "/shipping-returns",
   "/size-guide",
 ]);
-const LOCKED_IMG_SRC = "img-src 'self' blob: data: https://content.pancake.vn;";
+const LOCKED_IMG_SRC =
+  "img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc};";
+// img-src now interpolates the Meta pixel's beacon origin, so pinning the directive alone would
+// no longer pin the hosts it admits. The expression that supplies that origin is locked too, which
+// keeps the guarantee intact: no image origin reaches the policy without editing a locked constant.
+const LOCKED_FACEBOOK_IMG_SRC =
+  'const facebookImgSrc = hasFacebookPixel ? " https://www.facebook.com" : "";';
 const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
       {
         protocol: "https",
@@ -136,6 +142,10 @@ test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-fo
 
   assert.equal(imgSrc, LOCKED_IMG_SRC);
   assert.equal(remotePatterns, LOCKED_REMOTE_PATTERNS);
+  assert.ok(
+    nextConfig.includes(LOCKED_FACEBOOK_IMG_SRC),
+    "the Meta beacon origin admitted by img-src must stay byte-for-byte as reviewed",
+  );
 });
 
 test("storefront link guard detects a missing internal destination without treating query state as a route", async () => {

@@ -21,6 +21,8 @@ export default defineConfig({
     "collection-landing.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
+    "facebook-pixel.spec.ts",
+    "facebook-pixel-disabled.spec.ts",
     "footer-support.spec.ts",
     "homepage-taxonomy.spec.ts",
     "pdp-language.spec.ts",
