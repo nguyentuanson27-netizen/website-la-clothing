@@ -2,6 +2,8 @@
 
 Status: Proposed — self-reviewed twice; implementation plan added; ready for human review before `/build`
 
+Planning note: PR #153 intentionally keeps this `/spec` and its `/plan` artifacts together at the owner's request. It remains docs-only. Runtime implementation is explicitly split into focused PR-A through PR-F in `tasks/marketing-analytics-shopping-plan.md` and must not be added to this planning review unit.
+
 ## 1. Objective
 
 Build a production marketing-measurement and catalog-export foundation for LA Clothing covering:
