@@ -13,7 +13,7 @@ Build a production-only marketing measurement and catalog-export foundation for 
 - the existing direct Meta Pixel + Meta Conversions API integration;
 - an automated Google Merchant Center product feed for Google Shopping.
 
-The storefront and order system remain the source of truth. Tracking and catalog vendors consume canonical application facts; they must not invent commerce truth from DOM text, generic button clicks, duplicated pricing rules, or raw mirror-table assumptions that conflict with the public storefront projection.
+The storefront and order system remain the source of truth. Tracking and catalog vendors consume canonical application facts; they must not invent commerce truth from DOM text, generic clicks, duplicated pricing rules, or raw mirror-table assumptions that conflict with the public storefront projection.
 
 ### Confirmed product decisions
 
@@ -26,8 +26,8 @@ The storefront and order system remain the source of truth. Tracking and catalog
 7. Only the real production storefront sends real production vendor traffic.
 8. A central consent/tracking-policy abstraction is built now, but no consent UI is displayed initially; current owner policy allows tracking immediately in production.
 9. Merchant Center uses a public HTTPS product-data URL + Scheduled Fetch.
-10. Merchant items represent real public selectable variants/options; composite products must follow the storefront projection rather than blindly grouping raw variants by database ownership.
-11. `brand = LA Clothing`; current SKU is the manufacturer part number (`mpn`).
+10. Merchant offers represent real public storefront option/projection contexts; composite products must not be grouped from raw database ownership alone.
+11. `brand = LA Clothing`; current SKU is intended as manufacturer part number (`mpn`) and must pass a uniqueness/quality audit before feed activation.
 12. Pancake-generated/internal barcode is not assumed to be GTIN; `gtin` is omitted unless a real assigned valid GTIN exists.
 13. An otherwise valid out-of-stock offer remains in the feed with `availability = out_of_stock`.
 
@@ -69,28 +69,57 @@ ProductMirror.isPresent === true
 ProductMirror.isActive === true
 ```
 
-`ProductContent.status === PUBLISHED` is an **editorial-copy publication boundary**, not a product-visibility gate. Draft/reviewed/missing editorial content must not automatically make a storefront-visible product disappear from Merchant merely because the editorial fields are not published.
+`ProductContent.status === PUBLISHED` is an **editorial-copy publication boundary**, not a product-visibility gate. Draft/reviewed/missing editorial content must not automatically make a storefront-visible product disappear from Merchant.
 
-Merchant may still require a usable compliant description. `/plan` must choose a safe existing description source/fallback or deliberately exclude a record with diagnostics; it must not redefine public product visibility to solve a feed-content problem.
+Merchant still needs compliant customer-facing content. `/plan` must choose an approved description source/fallback or deliberately exclude a record with diagnostics; it must not redefine public product visibility to solve a feed-content problem.
 
 ### Current storefront price authority
 
 The current storefront resolves a sell price only when `pancakeRetailPrice` and `pancakeRetailPriceAfterDiscount` are both usable and equal. If they differ, storefront logic returns no resolved price and the option becomes `PRICE_UNRESOLVED`.
 
-Therefore Merchant, analytics item values, and landing-page assertions must reuse the current storefront resolved-price policy rather than independently preferring `pancakeRetailPriceAfterDiscount`.
+Therefore Merchant, live-catalog analytics item values, and landing-page assertions must reuse the current storefront resolved-price policy rather than independently preferring `pancakeRetailPriceAfterDiscount`.
 
 Any future pricing-policy change belongs in canonical commerce code first; vendor mappings follow it afterward.
 
+### Storefront availability versus structural eligibility
+
+The storefront can represent an option that is structurally valid but temporarily unavailable, such as `OUT_OF_STOCK`. Merchant must preserve these offers and report them as `out_of_stock` rather than treating `purchasable=false` as a blanket exclusion rule.
+
+Feed eligibility therefore distinguishes:
+
+- **structural/catalog eligibility**: the public option exists, has stable identity, valid price/content/media/URL, and is not malformed; from
+- **current availability**: stock may make the otherwise valid offer `in_stock` or `out_of_stock`.
+
+A `PRICE_UNRESOLVED`, forged, unreachable, or otherwise structurally invalid option is not equivalent to a merely out-of-stock option.
+
 ### Composite product projection
 
-The storefront supports both standalone and composite product projections. A component variant owned by another `ProductMirror` may legitimately be selectable and purchasable from a parent composite PDP.
+The storefront supports standalone and composite projections. A component variant owned by another `ProductMirror` may legitimately be shown and purchased through a parent composite PDP.
 
 Consequences:
 
-- raw `VariantMirror.productId` is not sufficient to determine Merchant grouping/landing context for every sellable option;
-- candidate Merchant offers must be derived from the public storefront projection/selectable options;
-- a component variant must never be advertised under a URL/grouping that contradicts the page where the shopper can actually select and buy it;
-- `/plan` must define stable identifiers and deep-link semantics for composite projection options before composite offers are activated.
+- raw `VariantMirror.productId` is not sufficient to determine Merchant grouping/landing context for every public option;
+- candidate Merchant offers must be derived from public storefront projection/options, including structurally valid out-of-stock options;
+- a component variant must never be advertised under a URL/grouping that contradicts the page where the shopper actually sees it;
+- `/plan` must define stable identifiers and deep-link semantics for composite options before composite offers are activated.
+
+### Purchase snapshot boundary
+
+`OrderLineSnapshot` currently preserves purchased `variantId`, `pancakeVariationId`, product name, color, size, quantity, unit price and line total. It does **not** snapshot SKU, product slug, Merchant item ID, or composite projection context.
+
+Therefore:
+
+- immutable Purchase price/quantity/name/variation facts come from the order-line snapshot;
+- Purchase tracking must not require a field that cannot be reconstructed reliably after catalog mutation/deletion;
+- optional current-catalog enrichment may never override immutable snapshot price/quantity facts and must fail safely if the current mirror is absent;
+- if Merchant item identity requires composite context that is not reconstructible from the order snapshot, `/plan` must choose a context-independent identity strategy or surface the need for an explicitly approved snapshot/schema change;
+- do not claim durable Purchase-to-Merchant item matching until this reconstruction invariant is proven.
+
+### SKU / MPN boundary
+
+`VariantMirror.sku` is nullable and indexed but not database-unique. The product decision is to use the current SKU as MPN, but feed activation must first prove the chosen SKU values are present, stable enough for the intended lifecycle, and unique wherever the manufacturer-part identity requires uniqueness.
+
+Missing/duplicate/invalid SKU must produce an explicit diagnostic and must not silently create ambiguous MPN identity.
 
 ### Media trust boundary
 
@@ -98,11 +127,11 @@ Product media is already validated through the storefront trusted-media contract
 
 ### Existing CSP and deployment behavior
 
-The repository currently builds a fail-closed CSP from configured tracking state and keeps third-party origins closed when the corresponding integration is absent. Build-time and runtime tracking configuration must remain aligned so a runtime tag is not rendered behind a baked CSP that blocks it.
+The repository builds a fail-closed CSP from configured tracking state and keeps third-party origins closed when the corresponding integration is absent. Build-time and runtime tracking configuration must remain aligned so a runtime tag is not rendered behind a baked CSP that blocks it.
 
 ### Existing search-exposure policy
 
-ADR 0004 currently approves `la.lanadesign.vn` as the temporary production origin but requires:
+ADR 0004 approves `la.lanadesign.vn` as the temporary production origin but requires:
 
 ```text
 SEARCH_INDEXING_ENABLED=false
@@ -110,7 +139,7 @@ SEARCH_INDEXING_ENABLED=false
 
 until a permanent domain and separate human indexing approval exist.
 
-Google Shopping work must **not** turn on organic search indexing, public canonicals, or sitemap exposure as a side effect. Merchant launch only requires that the submitted landing pages and images are fetchable by Google's relevant crawlers under the existing approved crawl boundary. Any change to `SEARCH_INDEXING_ENABLED` remains a separate explicit human decision.
+Google Shopping work must **not** turn on organic search indexing, public canonicals, or sitemap exposure as a side effect. Merchant launch requires submitted pages/images to be fetchable by Google's relevant crawlers under the approved crawl boundary. Any change to `SEARCH_INDEXING_ENABLED` remains a separate explicit human decision.
 
 ## 3. Target Architecture
 
@@ -184,16 +213,16 @@ The browser contract must support at least:
 
 `add_payment_info` is optional until checkout has a real payment-selection interaction. Do not emit fake funnel stages only to fill a vendor schema.
 
-### Item facts
+### Live-catalog item facts
 
-Conceptually:
+Conceptually, pre-purchase events may expose:
 
 ```ts
 type CommerceItem = {
   variantExternalId: string;
-  sku: string;
-  productId: string;
-  productSlug: string;
+  sku?: string;
+  productId?: string;
+  productSlug?: string;
   itemName: string;
   unitPriceVnd: number;
   quantity: number;
@@ -205,10 +234,30 @@ type CommerceItem = {
 
 Rules:
 
-- `sku` is the current LA Clothing SKU and Merchant `mpn`.
-- New Google/TikTok product matching should use the stable Merchant item identity where the destination supports matching.
-- Composite projection context may be needed so the same underlying component variant is not ambiguously advertised through multiple sellable contexts.
-- Existing Meta content-ID semantics remain unchanged in this phase.
+- use stable external identity available for the actual public option;
+- new Google/TikTok product matching should align with Merchant identity only where that identity is stable and reproducible for the event being sent;
+- composite context may be carried for live browsing/cart events when known;
+- SKU is optional in the canonical item contract because historical Purchase snapshots do not currently guarantee it;
+- existing Meta content-ID semantics remain unchanged.
+
+### Purchase item facts
+
+A Purchase adapter starts from immutable `OrderLineSnapshot` facts, conceptually:
+
+```ts
+type PurchaseItemFacts = {
+  pancakeVariationId: string;
+  itemName: string;
+  unitPriceVnd: number;
+  quantity: number;
+  color?: string;
+  size: string;
+};
+```
+
+Current-catalog enrichment such as SKU, slug, or product metadata is optional and must be explicitly marked as enrichment. Missing enrichment must not invalidate an otherwise reportable confirmed Purchase unless a specific vendor strictly requires it.
+
+If the chosen Merchant item ID cannot be derived from the immutable purchase facts, `/plan` must not promise post-purchase Merchant matching without resolving that data-model gap.
 
 ### Purchase truth
 
@@ -236,16 +285,16 @@ type CommercePurchase = {
   merchandiseValueVnd: number;
   shippingVnd: number;
   totalVnd: number;
-  items: CommerceItem[];        // built from OrderLineSnapshot facts
+  items: PurchaseItemFacts[];
 };
 ```
 
 Requirements:
 
-- `transactionId = OrderMirror.publicCode`.
+- `transactionId = OrderMirror.publicCode`;
 - canonical purchase `eventId = OrderMirror.publicCode` where browser/server deduplication uses it;
-- purchased quantities/prices come from immutable `OrderLineSnapshot`, not current mutable catalog values;
-- invalid/malformed money that cannot be represented safely must fail closed for the vendor event rather than fabricate a value.
+- purchased quantities/prices come from immutable order-line snapshots;
+- invalid/malformed money that cannot be represented safely fails closed for the vendor event rather than fabricating a value.
 
 ### Destination-specific value semantics
 
@@ -253,7 +302,7 @@ The canonical layer exposes business facts; adapters map vendor semantics explic
 
 - **GA4:** `purchase.value` is merchandise item value (`price × quantity` sum); shipping is sent separately as `shipping`.
 - **Meta:** preserve current `OrderMirror.totalVnd` Purchase value in this scope.
-- **Google Ads:** `/plan` must explicitly choose and document merchandise-only versus total-order conversion value; do not inherit GA4 semantics accidentally.
+- **Google Ads:** conversion value remains an explicit owner/plan decision: merchandise-only versus `OrderMirror.totalVnd`. The chosen convention must be documented and tested before activation.
 - **TikTok:** `/plan` must verify the current official event/value contract and map from the same canonical purchase facts.
 
 Intentional cross-platform arithmetic differences must be documented and tested.
@@ -266,8 +315,10 @@ Intentional cross-platform arithmetic differences must be documented and tested.
 - Push deterministic application events into `window.dataLayer`.
 - Use GTM custom-event triggers/native tags or reviewed templates for routing.
 - Do not store pricing, inventory, order-state, product-visibility, or Purchase-truth logic in GTM.
-- Keep a reviewable GTM container/workspace export or equivalent versioned configuration documentation.
+- Keep a reviewable GTM container/workspace export or equivalent versioned configuration record.
+- Treat GTM configuration changes as production changes: no unreviewed Custom HTML/Custom JavaScript tags.
 - Do not add production `unsafe-eval` merely to support GTM Custom JavaScript. Prefer native tags, variables, and reviewed Custom Templates where possible.
+- `/plan` must explicitly decide whether the standard GTM `<noscript>` iframe is included; if it is, CSP `frame-src` requirements must be reviewed rather than accidentally relying on `default-src`.
 
 ### GA4
 
@@ -279,7 +330,7 @@ Map the canonical contract to current GA4-recommended ecommerce events. Preserve
 - `shipping`
 - `items[]`
 - item ID/name/price/quantity
-- useful variant metadata.
+- useful variant metadata when available.
 
 App Router navigation must not double-count page views through overlapping initial-load and client-navigation mechanisms.
 
@@ -288,7 +339,7 @@ App Router navigation must not double-count page views through overlapping initi
 - Confirmed Purchase is the minimum conversion action in scope.
 - Use `OrderMirror.publicCode` as the unique transaction ID.
 - Conversion ID/label should live in GTM when only GTM consumes them.
-- Product/remarketing identifiers should align with Merchant item identity where supported.
+- Product/remarketing identifiers should align with Merchant item identity only when that identity is reproducible from the event context.
 - Secondary conversion actions require explicit `/plan` inclusion.
 
 ### TikTok Pixel
@@ -348,7 +399,7 @@ Do not scatter `always true` tracking checks through components.
 The Google adapter must explicitly map the domain policy to Google's current consent types, including:
 
 ```text
-analytics -> analytics_storage
+analytics   -> analytics_storage
 advertising -> ad_storage
 advertising -> ad_user_data
 advertising -> ad_personalization
@@ -366,13 +417,13 @@ Requirements:
 
 ### Real-production gate
 
-`NODE_ENV === "production"` is insufficient by itself. `/plan` must identify the deployment convention and define one centralized live-storefront gate using reviewed configuration such as the expected `APP_DOMAIN`/deployment environment plus tracking enablement.
+`NODE_ENV === "production"` is insufficient by itself. `/plan` must define one centralized live-storefront gate using reviewed deployment configuration. The current temporary production origin is `la.lanadesign.vn`; future permanent-domain cutover must update this policy deliberately.
 
 Local, CI, test, preview, and staging must not send to production analytics/ad destinations.
 
 ### Configuration ownership
 
-If GA4, Google Ads, and TikTok are configured entirely in GTM, the application should conceptually need only the GTM container setting plus a centralized enablement gate. Exact env names must follow repository conventions.
+If GA4, Google Ads, and TikTok are configured entirely in GTM, application configuration should conceptually need only the GTM container setting plus a centralized enablement gate. Exact env names must follow repository conventions.
 
 GA4 measurement IDs, Ads IDs/labels, and TikTok Pixel IDs should remain inside GTM when no application code consumes them.
 
@@ -387,7 +438,8 @@ Preserve the current fail-closed approach:
 - build-time CSP and runtime rendered tag configuration must agree;
 - use current official origin requirements plus actual Tag Assistant/browser network evidence;
 - do not add `unsafe-eval` merely for convenience;
-- prefer nonce-compatible/native/template approaches where practical without broadening scope into a wholesale CSP refactor;
+- prefer nonce-compatible/native/template approaches where practical without turning this feature into an unrelated CSP rewrite;
+- review `frame-src` if a GTM noscript iframe is included;
 - verify final browser console/network behavior before activation.
 
 ## 8. Google Merchant Center Feed
@@ -406,24 +458,25 @@ No Merchant API realtime sync in this phase.
 
 Use a currently supported Merchant product-data format. XML/RSS 2.0 is preferred unless `/plan` finds a stronger repository-specific reason for another supported format.
 
-The endpoint must be deterministic, bounded, cache-aware where appropriate, and fetchable without a secret embedded in the URL.
+The endpoint must be deterministic, bounded, cache-aware where appropriate, GET-only for this public data source, and fetchable without a secret embedded in the URL. User-supplied query parameters must not be able to turn the route into an arbitrary URL fetcher or unbounded catalog query.
 
-### Source of truth: public storefront offer, not raw mirror ownership
+### Source of truth: public storefront option/projection, not raw mirror ownership
 
-Merchant candidates are derived from the same public storefront product detail/projection facts used to decide what a shopper can select and buy.
+Merchant candidates are derived from the public storefront product detail/projection facts.
 
-For **standalone** products, an eligible selectable storefront variant normally maps to one Merchant item.
+For **standalone** products, a structurally eligible storefront variant option normally maps to one Merchant offer whether currently in stock or temporarily out of stock.
 
-For **composite** products, a raw component `VariantMirror` may be exposed through a parent PDP projection. `/plan` must therefore define:
+For **composite** products, a raw component `VariantMirror` may be exposed through a parent PDP projection. `/plan` must define:
 
 - which projection options become Merchant offers;
-- whether a component can appear in more than one public projection context;
-- the stable Merchant `id` for each sellable context;
+- whether one component can appear in more than one public projection context;
+- the stable Merchant `id` for each activated context;
 - the stable `item_group_id` representing the public variant family;
 - a landing URL that preselects/identifies the exact submitted option;
-- how title/image/color/size/price are represented so the landing page matches the feed.
+- how title/image/color/size/price are represented so the landing page matches the feed;
+- whether the chosen offer identity remains reconstructible for post-purchase tracking from existing snapshots.
 
-Composite Merchant offers must remain disabled until this mapping is deterministic and testable. Do not blindly use `VariantMirror.productId` as Merchant grouping authority.
+Composite Merchant offers remain disabled until this mapping is deterministic and testable. Do not blindly use `VariantMirror.productId` as Merchant grouping authority.
 
 ### Merchant identifiers
 
@@ -432,22 +485,33 @@ For every emitted offer:
 - `id`: stable external offer/item identifier;
 - `item_group_id`: stable public variant-family identifier where variants are grouped;
 - `brand`: `LA Clothing`;
-- `mpn`: current SKU;
+- `mpn`: current audited SKU;
 - `gtin`: omit unless a real valid assigned GTIN exists.
 
-Pancake internal/auto-generated barcode must not be promoted to GTIN without validation and explicit evidence that it is an assigned GTIN.
+Pancake internal/auto-generated barcode must not be promoted to GTIN without evidence that it is an assigned GTIN.
 
 For standalone variants, `/plan` should verify durability of candidate IDs in this order:
 
 1. `pancakeVariationId` if durable across lifecycle/resync;
-2. SKU if SKU immutability is guaranteed;
-3. local immutable variant ID only if it is appropriate as an external identity.
+2. SKU if SKU immutability and uniqueness are proven;
+3. local immutable variant ID only if appropriate as an external identity.
 
 Composite contexts may require a stable context-aware ID rather than one raw variant ID. Once Merchant IDs are live, changing them casually is prohibited.
 
-### Eligibility
+### MPN validation
 
-A product may participate only if it is reachable through canonical public storefront behavior. Current baseline product visibility is:
+Before activation, audit SKU values used as MPN for:
+
+- non-empty/valid representation;
+- uniqueness appropriate to LA Clothing manufacturer-part identity;
+- stability across expected Pancake sync/lifecycle behavior;
+- collision behavior across standalone and composite contexts.
+
+A missing/duplicate/ambiguous SKU must be excluded with diagnostics until resolved; do not submit misleading MPN data.
+
+### Structural eligibility
+
+A product may participate only if reachable through canonical public storefront behavior. Current baseline product visibility is:
 
 ```text
 ProductMirror.isPresent === true
@@ -456,39 +520,41 @@ ProductMirror.isActive === true
 
 `ProductContent.status === PUBLISHED` is **not** an additional visibility condition.
 
-A candidate option/offer must also have, through canonical storefront/projection policy:
+A candidate offer must also have, through canonical storefront/projection policy:
 
 - a real present/active underlying variant;
-- deterministic non-ambiguous selectable variant mapping;
-- valid SKU for MPN;
+- deterministic non-forged public option mapping;
+- an audited valid SKU for MPN;
 - a resolved storefront price;
 - a valid production landing URL;
 - trusted product media;
-- a usable Merchant description source;
+- a usable approved Merchant description;
 - the current required target-market attributes.
 
-`pancakeIsHidden` and `pancakeIsLocked` exist in the mirror but must not become Merchant-only exclusion rules unless the canonical storefront policy actually uses them or `/plan` explicitly establishes a new shared policy. The feed must not silently invent a second visibility model.
-
-### Price
-
-Merchant `price` must equal the value displayed/used by the storefront for the exact submitted selectable option.
-
-Current rule:
-
-- use the canonical `resolveStorefrontPrice`/projection price;
-- if retail and after-discount prices differ under current storefront logic, the option is `PRICE_UNRESOLVED` and cannot be advertised as a normal purchasable offer;
-- do not independently choose `pancakeRetailPriceAfterDiscount` in the feed.
+`pancakeIsHidden` and `pancakeIsLocked` exist in the mirror but must not become Merchant-only exclusion rules unless the canonical storefront policy actually uses them or `/plan` establishes a new shared policy. The feed must not silently invent a second visibility model.
 
 ### Availability
 
-Otherwise eligible offers remain in the feed when stock reaches zero:
+Availability is evaluated **after** structural eligibility. An otherwise valid offer remains in the feed when stock reaches zero:
 
 ```text
 canonical sellable stock > 0  -> in_stock
 canonical sellable stock <= 0 -> out_of_stock
 ```
 
-Stock aggregation must reuse the same storefront rule. Availability must describe the exact landing-page option/context.
+Do not exclude an offer solely because current storefront `purchasable` state is false due to `OUT_OF_STOCK`.
+
+Stock aggregation must reuse the storefront rule and describe the exact submitted option/context.
+
+### Price
+
+Merchant `price` must equal the value displayed/used by storefront for the exact submitted option.
+
+Current rule:
+
+- use canonical `resolveStorefrontPrice`/projection price;
+- if retail and after-discount prices differ under current storefront logic, the option is `PRICE_UNRESOLVED` and is structurally ineligible for Merchant;
+- do not independently choose `pancakeRetailPriceAfterDiscount` in the feed.
 
 ### Landing URLs
 
@@ -514,9 +580,9 @@ Reuse the storefront trusted-media resolver/contract:
 
 ### Description/content
 
-Merchant requires a real product description even when storefront editorial content is not published. `/plan` must define the approved source priority using fields already owned by the repository, for example published editorial copy and/or a reviewed source-description fallback.
+Merchant requires a real description even when storefront editorial content is not published. `/plan` must define the approved source priority from repository-owned fields, for example published editorial copy and/or a reviewed/normalized source-description fallback.
 
-Do not expose draft editorial content merely to satisfy Merchant. If no compliant safe description exists, omit the offer and surface a diagnostic rather than publishing unapproved copy.
+Do not expose draft editorial content merely to satisfy Merchant. Do not blindly pass through source HTML/promotional markup; normalize to the allowed Merchant text contract. If no compliant safe description exists, omit the offer and surface a diagnostic.
 
 ### XML / structured-feed serialization boundary
 
@@ -525,14 +591,14 @@ Pancake names, source descriptions, editorial text, color, size, SKU, and URLs a
 Requirements:
 
 - escape XML-reserved characters correctly;
-- reject/normalize illegal XML control characters and malformed Unicode according to the chosen serializer contract;
+- reject/normalize illegal control characters and malformed Unicode according to the chosen serializer contract;
 - validate required URLs/IDs/price/currency before serialization;
 - omit unsupported empty fields rather than writing structurally invalid elements;
-- bound input lengths/counts where untrusted upstream data can otherwise inflate feed generation;
-- tests must include `<`, `>`, `&`, quotes, Unicode, invalid control characters, and malformed URLs;
-- generated XML must be parsed again in tests with a standards-compliant parser before being considered valid.
+- bound input lengths/counts where upstream data could inflate generation;
+- tests include `<`, `>`, `&`, quotes, Unicode, invalid control characters, malformed URLs, and oversized fields;
+- generated XML is parsed again in tests with the selected standards-aware parser before it is considered valid.
 
-### Crawlability vs organic indexing
+### Crawlability versus organic indexing
 
 Merchant requires submitted pages/images to be fetchable. That does **not** authorize changing ADR 0004.
 
@@ -540,8 +606,8 @@ For the current temporary production domain:
 
 - keep `SEARCH_INDEXING_ENABLED=false`;
 - do not enable public canonical/sitemap exposure as part of this feature;
-- verify that current `robots.txt`/edge behavior still permits the Google crawlers Merchant needs to fetch product pages/images;
-- if Merchant diagnostics show the existing noindex/crawl configuration itself prevents approval, treat that as a surfaced launch blocker requiring a separate explicit owner decision rather than silently weakening SEO policy.
+- verify current `robots.txt`/edge behavior permits the crawlers Merchant needs to fetch submitted pages/images;
+- if Merchant diagnostics show existing noindex/crawl configuration prevents approval, surface a launch blocker requiring a separate owner decision rather than silently weakening SEO policy.
 
 ### Merchant account setup outside source code
 
@@ -563,11 +629,13 @@ Console-owned account IDs/settings should not be duplicated into source code wit
 - treat Pancake/vendor/GTM/browser output as untrusted integration data;
 - validate configuration before rendering third-party tags;
 - keep credentials server-only;
-- keep generic browser ecommerce payloads free of customer name, phone, address, email, auth/session tokens, and other unnecessary PII;
+- keep generic browser ecommerce payloads free of customer name, phone, address, email, auth/session tokens, and unnecessary PII;
 - isolate tracking failures from shopper flows;
 - preserve CSP least privilege;
+- review GTM configuration as executable production configuration;
 - serialize Merchant data safely;
 - reuse trusted media/URL validation;
+- bound public feed work and reject arbitrary external fetch behavior;
 - prevent non-production contamination of production analytics/ad accounts;
 - document destination-specific data sharing.
 
@@ -579,7 +647,7 @@ Console-owned account IDs/settings should not be duplicated into source code wit
 - visible consent UI or default-consent change;
 - Google Enhanced Conversions or any hashed customer-data transmission;
 - new ad vendors;
-- database-schema changes solely for analytics;
+- database/schema changes to preserve analytics/Merchant identity that current snapshots cannot reconstruct;
 - Merchant API realtime sync;
 - changes to Meta content-ID/Purchase-value semantics;
 - changing `SEARCH_INDEXING_ENABLED` or temporary-domain SEO exposure policy.
@@ -594,8 +662,11 @@ Console-owned account IDs/settings should not be duplicated into source code wit
 - put customer PII into generic `dataLayer` ecommerce events;
 - let local/staging pollute production vendor reports;
 - broadly weaken CSP or add `unsafe-eval` merely to make tags work;
+- add unreviewed GTM Custom HTML/Custom JavaScript in production;
 - manually concatenate unescaped XML from external text;
 - invent Merchant visibility/pricing rules that diverge from storefront truth;
+- drop out-of-stock offers by confusing availability with structural eligibility;
+- claim Purchase-to-Merchant item matching if the ID cannot be reconstructed from immutable purchase facts;
 - enable organic indexing as an implicit Merchant prerequisite.
 
 ## 10. Intended Project Structure
@@ -640,18 +711,21 @@ Prove at minimum:
 - deterministic canonical event mapping;
 - Purchase impossible for non-`CONFIRMED` orders;
 - Purchase transaction/event ID uses `publicCode`;
-- purchase item facts use immutable order-line snapshots;
+- Purchase price/quantity/name/variation facts use immutable order-line snapshots;
+- missing mutable catalog enrichment cannot corrupt immutable Purchase facts;
+- any promised Purchase-to-Merchant item ID is reconstructible from snapshot facts;
 - GA4 value excludes shipping and shipping maps separately;
 - existing Meta value/content-ID semantics remain unchanged;
 - centralized production and consent gates;
 - Google consent mapping covers `analytics_storage`, `ad_storage`, `ad_user_data`, and `ad_personalization`;
-- Merchant eligibility follows storefront visibility rather than editorial publication;
+- Merchant visibility follows storefront visibility rather than editorial publication;
+- out-of-stock is availability, not structural exclusion;
 - Merchant price uses canonical resolved storefront price and rejects `PRICE_UNRESOLVED`;
-- out-of-stock offers remain as `out_of_stock`;
-- SKU maps to MPN and internal Pancake barcode does not become GTIN;
+- SKU-to-MPN audit catches missing/duplicate/ambiguous values;
+- internal Pancake barcode does not become GTIN;
 - trusted media contract is reused;
-- feed IDs/group IDs are deterministic for supported standalone/composite cases;
-- XML escaping/invalid-character/malformed-URL cases are safe and parseable.
+- feed IDs/group IDs are deterministic for every activated standalone/composite context;
+- XML escaping/invalid-character/malformed-URL/oversized-input cases are safe and parseable.
 
 ### Integration/database
 
@@ -661,9 +735,11 @@ Prove at minimum:
 - `dataLayer` schema is deterministic;
 - no duplicate Meta Pixel is introduced;
 - confirmed success creates canonical Purchase while unconfirmed/invalid success state does not;
+- current confirmed Purchase still works if current catalog enrichment is unavailable where the vendor does not require it;
 - Merchant route returns a supported parseable format;
 - draft editorial status alone does not hide an otherwise storefront-visible product;
 - hidden/locked source flags do not become accidental Merchant-only policy;
+- out-of-stock valid options stay in feed as `out_of_stock`;
 - standalone price/stock/media match storefront;
 - composite feed contexts match the parent PDP projection and cannot advertise forged/unreachable component variants;
 - stable catalog input produces stable external IDs;
@@ -675,22 +751,24 @@ When browser tools/vendor diagnostics are available:
 
 - GTM Preview/Tag Assistant shows expected events/tags;
 - GA4 DebugView shows expected ecommerce events;
-- Google Ads test Purchase carries unique transaction ID;
+- Google Ads test Purchase carries unique transaction ID and chosen conversion-value convention;
 - TikTok diagnostics show intended Pixel events;
 - current Meta Pixel+CAPI dedup remains healthy;
 - a confirmed test order is not double-counted by refresh/revisit;
 - App Router navigation does not duplicate PageView;
 - vendor/ad-blocker failure does not break commerce UI;
-- CSP allows exactly the required requests and no unnecessary origins;
+- CSP allows exactly required requests and no unnecessary origins;
 - consent defaults are established before Google measurement tags;
+- if GTM noscript is used, it is not silently blocked by CSP;
 - third-party scripts do not materially block core storefront interaction.
 
 ### Merchant before activation
 
 - Scheduled Fetch can fetch the production product-data URL;
 - output parses without structural errors;
+- SKU/MPN audit passes for all emitted offers;
 - sample standalone variants group correctly;
-- sample composite mappings resolve to exact selectable parent-PDP context;
+- sample composite mappings resolve to exact parent-PDP option context;
 - variant URLs preselect/represent submitted options;
 - price/availability/media match storefront;
 - out-of-stock offers remain present;
@@ -702,7 +780,7 @@ When browser tools/vendor diagnostics are available:
 
 ### Repository gates before completion
 
-Use the checked-in commands appropriate to the changed implementation:
+Use the checked-in commands appropriate to the implementation:
 
 ```bash
 pnpm lint
@@ -713,17 +791,18 @@ pnpm build
 pnpm release:check
 ```
 
-Focused tests run during TDD; relevant full checks run before implementation is considered complete. This docs-only spec PR does not itself claim those runtime gates have been executed.
+Focused tests run during TDD; relevant full checks run before implementation is considered complete. This docs-only spec PR does not claim those runtime gates have been executed.
 
 ## 12. Observability & Performance
 
 - Non-production may inspect canonical event shapes without sending real vendor traffic.
 - Merchant generation should expose safe structured diagnostics for excluded/malformed records without customer PII.
+- Diagnostics should distinguish reasons such as `PRICE_UNRESOLVED`, invalid URL/media, missing/duplicate MPN, unresolved composite context, unsafe description, and serialization failure.
 - Do not log tokens, auth headers, customer names/phones/addresses/emails, or whole order payloads.
-- Feed/runtime failures should flow through the project's existing deployment/error monitoring when available.
-- Tracking tags must load asynchronously/non-blockingly according to vendor-supported patterns; shopper-critical actions must not wait on analytics requests.
-- Browser verification should check for obvious regressions in interaction/loading behavior rather than approving unlimited third-party script cost merely because events fire.
-- A production disable/rollback path must exist for GTM/tracking and Merchant feed activation.
+- Feed/runtime failures should flow through existing deployment/error monitoring when available.
+- Tracking tags load asynchronously/non-blockingly according to vendor-supported patterns; shopper-critical actions must not wait on analytics requests.
+- Browser verification checks for obvious interaction/loading regressions rather than approving unlimited third-party script cost merely because events fire.
+- A production disable/rollback path exists for GTM/tracking and Merchant feed activation.
 
 ## 13. Success Criteria
 
@@ -733,32 +812,37 @@ Focused tests run during TDD; relevant full checks run before implementation is 
 - [ ] Existing direct Meta Pixel + CAPI remain direct and non-duplicated.
 - [ ] Purchase is impossible unless the order is `CONFIRMED`.
 - [ ] `publicCode` is the Purchase transaction/event identity.
-- [ ] Product/money facts come from canonical application state, never DOM parsing.
-- [ ] GA4 and Meta retain their explicitly documented value semantics.
+- [ ] Immutable Purchase facts do not depend on mutable SKU/slug/projection data that is absent from snapshots.
+- [ ] Any Purchase-to-Merchant item matching claim is backed by a reconstructible stable ID.
+- [ ] GA4 and Meta retain explicitly documented value semantics.
+- [ ] Google Ads conversion-value convention is explicitly approved/documented before activation.
 - [ ] Only the real production storefront sends production vendor traffic.
 - [ ] Consent policy is centralized and current Google consent fields are mapped explicitly.
 
 ### Merchant
 
 - [ ] Scheduled Fetch uses a production HTTPS product-data URL.
-- [ ] Merchant offers derive from public storefront selectable/projection truth.
+- [ ] Merchant offers derive from public storefront option/projection truth.
 - [ ] ProductContent publication is not incorrectly used as a product-visibility gate.
+- [ ] Out-of-stock is not confused with structural ineligibility.
 - [ ] Composite options are not grouped/linked by raw DB ownership alone.
 - [ ] IDs/group IDs are stable for every activated offer context.
-- [ ] `brand = LA Clothing`, SKU = `mpn`, no inferred GTIN from internal barcode.
+- [ ] SKU-as-MPN passes presence/uniqueness/stability audit.
+- [ ] `brand = LA Clothing`; no inferred GTIN from internal barcode.
 - [ ] Price uses canonical storefront resolved price.
-- [ ] Out-of-stock eligible offers remain `out_of_stock`.
-- [ ] Trusted media and exact variant/projection landing URLs are used.
+- [ ] Trusted media and exact option/projection landing URLs are used.
 - [ ] Feed serialization safely handles hostile/malformed external text.
+- [ ] Public feed work is bounded and cannot become an arbitrary external fetch path.
 - [ ] ADR 0004 search-indexing policy remains unchanged unless separately approved.
 
 ### Quality/security
 
 - [ ] No customer PII in generic browser ecommerce payloads.
 - [ ] No real secrets committed/exposed client-side.
+- [ ] GTM configuration is reviewable and production Custom HTML/JS is controlled.
 - [ ] CSP remains least privilege; no convenience `unsafe-eval` addition.
 - [ ] Vendor failure cannot break commerce flows.
-- [ ] Relevant test/type/lint/build gates pass for the implementation PR(s).
+- [ ] Relevant test/type/lint/build gates pass for implementation PR(s).
 - [ ] Browser and Merchant diagnostics are checked before production activation.
 - [ ] Disable/rollback path is documented.
 - [ ] Human review occurs before production activation.
@@ -772,7 +856,7 @@ Focused tests run during TDD; relevant full checks run before implementation is 
 - Merchant API realtime sync;
 - visible cookie/consent UI;
 - Enhanced Conversions / hashed customer PII;
-- database changes unless `/plan` proves an existing-field limitation;
+- database/schema changes unless `/plan` proves existing snapshots cannot satisfy an approved identity contract and the owner separately approves the change;
 - changing canonical storefront pricing/visibility policy merely for Merchant;
 - enabling search indexing on the temporary production domain;
 - unrelated SEO/catalog/UI refactors.
@@ -781,19 +865,21 @@ Focused tests run during TDD; relevant full checks run before implementation is 
 
 Before implementation choices are locked, `/plan` must resolve from repository evidence plus current official docs:
 
-1. **Merchant offer identity:** durable standalone variant ID and context-aware composite offer ID/group semantics.
-2. **Composite deep linking:** smallest stable URL contract that selects the exact parent/composite projection option.
-3. **Merchant description:** approved source/fallback without leaking draft editorial content.
-4. **Google Ads value:** merchandise-only vs total-order conversion value.
-5. **TikTok mapping:** current official event names/value/content ID requirements.
-6. **Live-production gate:** exact deployment condition beyond `NODE_ENV`.
-7. **GTM ownership/versioning:** container/workspace naming, test/publish workflow, reviewed export/config record.
-8. **CSP origins:** exact current Google/TikTok requirements plus observed runtime requests; no convenience `unsafe-eval`.
-9. **Merchant target market:** current apparel-required/recommended attributes for the intended country/language.
-10. **Merchant account prerequisites:** website verification, shipping/returns, diagnostics, Google Ads linkage.
-11. **Crawler compatibility:** verify Merchant-required page/image fetch works while `SEARCH_INDEXING_ENABLED=false` and ADR 0004 remain intact.
+1. **Merchant offer identity:** durable standalone ID and context-aware composite ID/group semantics.
+2. **Purchase identity reconstruction:** prove the chosen Merchant item ID is derivable from `OrderLineSnapshot` if post-purchase product matching is required; otherwise surface an approved data-model decision.
+3. **Composite deep linking:** smallest stable URL contract selecting the exact parent/composite option.
+4. **SKU/MPN audit:** presence, uniqueness, stability and collision behavior.
+5. **Merchant description:** approved source/normalization fallback without leaking draft editorial content.
+6. **Google Ads value:** merchandise-only vs `OrderMirror.totalVnd`; this is an explicit measurement-policy choice to document before activation.
+7. **TikTok mapping:** current official event names/value/content-ID requirements.
+8. **Live-production gate:** exact deployment condition beyond `NODE_ENV`.
+9. **GTM ownership/versioning:** container/workspace naming, test/publish workflow, reviewed export/config record, and noscript choice.
+10. **CSP origins:** exact current Google/TikTok requirements plus observed runtime requests; no convenience `unsafe-eval`.
+11. **Merchant target market:** intended country/language and current apparel-required/recommended attributes.
+12. **Merchant account prerequisites:** website verification, shipping/returns, diagnostics, Google Ads linkage.
+13. **Crawler compatibility:** verify Merchant-required page/image fetch works while `SEARCH_INDEXING_ENABLED=false` and ADR 0004 remain intact.
 
-These are implementation discoveries, not unresolved scope permission to invent new business rules.
+These discoveries may reveal a narrow owner decision, but they are not permission to invent new commerce rules.
 
 ## 16. Authoritative Source Constraints Checked
 
@@ -825,14 +911,18 @@ Before `/ship`, both this spec and the repository-wide Definition of Done must p
 - relevant full tests/typecheck/lint/build gates;
 - browser/runtime verification;
 - compatibility verification for existing Meta and storefront behavior;
-- security review for scripts/configuration/secrets/feed serialization;
+- security review for scripts/configuration/secrets/feed serialization/public endpoint boundaries;
 - observability for tracking/feed failure;
 - documented production disable/rollback path;
 - Merchant diagnostics;
 - human review before production activation.
 
-## 18. Open Questions
+## 18. Open Questions / Owner Decisions
 
-No product-requirement blocker remains for `/plan`.
+No architecture blocker remains for `/plan`, but the following must be explicitly resolved before production activation:
 
-The items under **Required `/plan` Discoveries** must be answered from current repository behavior and current vendor documentation before implementation is locked.
+1. Google Ads Purchase conversion value: merchandise-only value or `OrderMirror.totalVnd`.
+2. Merchant target country/language if it differs from the storefront's current Vietnam/VND operating context.
+3. Any schema/snapshot change required by the final composite Merchant identity strategy, if existing immutable order facts cannot reconstruct the approved item ID.
+
+All other items under **Required `/plan` Discoveries** are technical discoveries to answer from current repository behavior and current vendor documentation.
