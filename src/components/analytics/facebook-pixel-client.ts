@@ -69,10 +69,9 @@ function isPixelLibraryLoaded(): boolean {
  *     here, in order, until there is. `next/script` loads the snippet `afterInteractive`, so a
  *     page-level event fired from a mount effect regularly lands in this window.
  *   - A caller that records an event as sent must not do so while it sits in a queue an ad blocker
- *     will discard. Those acknowledgements wait for the library itself, and they wait on its
- *     `load` event rather than a clock: a library that arrives late still sends the event, so
- *     abandoning its acknowledgement on a timer would leave a sale reported but never recorded,
- *     and every later visit would report it again.
+ *     will discard. The snippet records the external script's lifecycle on the script element
+ *     itself before inserting it, so an acknowledgement subscriber can observe a terminal state
+ *     even if the browser's one-shot `load`/`error` event happened before the subscriber existed.
  */
 type PendingCall = {
   eventName: string;
@@ -80,6 +79,8 @@ type PendingCall = {
   eventId: string | undefined;
   onAccepted: (() => void) | undefined;
 };
+
+type LibraryScriptStatus = "loading" | "ready" | "unavailable";
 
 const POLL_INTERVAL_MS = 250;
 /**
@@ -110,6 +111,10 @@ function flushAcknowledgements(): void {
   for (const acknowledge of acknowledgements) acknowledge();
 }
 
+function abandonAcknowledgements(): void {
+  acknowledgementsAwaitingLibrary = [];
+}
+
 function flushCallsAwaitingFbq(fbq: Fbq): void {
   if (callsAwaitingFbq.length === 0) return;
   const queued = callsAwaitingFbq;
@@ -119,13 +124,37 @@ function flushCallsAwaitingFbq(fbq: Fbq): void {
   }
 }
 
+function readLibraryScriptStatus(script: HTMLScriptElement): LibraryScriptStatus | null {
+  const status = script.dataset.laMetaPixelStatus;
+  return status === "loading" || status === "ready" || status === "unavailable" ? status : null;
+}
+
 /**
- * Waits on the pixel script itself rather than on a clock.
+ * Resolves an acknowledgement wait from the durable lifecycle state written by the inline snippet.
+ * Returns true once the script reached a terminal state, including an inconsistent `ready` marker
+ * without `fbq.callMethod`, which must fail closed rather than suppressing a future Purchase retry.
+ */
+function settleFromLibraryScript(script: HTMLScriptElement): boolean {
+  const status = readLibraryScriptStatus(script);
+  if (status === "unavailable") {
+    abandonAcknowledgements();
+    return true;
+  }
+  if (status !== "ready") return false;
+
+  if (isPixelLibraryLoaded()) flushAcknowledgements();
+  else abandonAcknowledgements();
+  return true;
+}
+
+/**
+ * Waits on the pixel script without depending on observing a one-shot browser event.
  *
- * The snippet inserts the `fbevents.js` tag synchronously, so it is already in the document by the
- * time anything has been handed to the stub. `load` means the library ran and drained the queue;
- * `error` means it never will, and the acknowledgements are dropped so nothing is recorded as sent.
- * Either way this costs one listener rather than a running timer.
+ * The snippet sets `data-la-meta-pixel-status=loading` before inserting `fbevents.js`, then changes
+ * it to `ready` or `unavailable` from handlers registered before insertion. We read that durable
+ * state before listening and again immediately after listening. The second read closes the race in
+ * which the script finishes between those two operations; a terminal event that already happened
+ * cannot be lost because its state remains on the element.
  */
 function watchLibraryScript(): void {
   if (watchingLibraryScript) return;
@@ -133,18 +162,35 @@ function watchLibraryScript(): void {
     'script[src*="connect.facebook.net"]',
   );
   if (script === null) return;
+  if (settleFromLibraryScript(script)) return;
 
   watchingLibraryScript = true;
-  script.addEventListener("load", () => flushAcknowledgements(), { once: true });
-  script.addEventListener(
-    "error",
-    () => {
-      // Blocked or unreachable. Recording these as sent would suppress the retry that a later
-      // visit would otherwise make.
-      acknowledgementsAwaitingLibrary = [];
-    },
-    { once: true },
-  );
+
+  const cleanup = () => {
+    script.removeEventListener("load", onLoad);
+    script.removeEventListener("error", onError);
+    watchingLibraryScript = false;
+  };
+  const onLoad = () => {
+    cleanup();
+    // The snippet's own onload runs from a handler installed before insertion, so the durable
+    // status should already be terminal here. Keep a fail-closed fallback for malformed markup.
+    if (!settleFromLibraryScript(script)) {
+      if (isPixelLibraryLoaded()) flushAcknowledgements();
+      else abandonAcknowledgements();
+    }
+  };
+  const onError = () => {
+    cleanup();
+    abandonAcknowledgements();
+  };
+
+  script.addEventListener("load", onLoad, { once: true });
+  script.addEventListener("error", onError, { once: true });
+
+  // A terminal event may have happened before these listeners were attached. Its durable status
+  // still remains, so close that race synchronously and remove listeners that would never fire.
+  if (settleFromLibraryScript(script)) cleanup();
 }
 
 function startPolling(): void {
@@ -186,10 +232,12 @@ function handToPixel(
     onAccepted();
     return;
   }
-  // Handed to the stub's queue. Acknowledge only once the library exists to drain it.
+
+  // Handed to the stub's queue. Acknowledge only once the library exists to drain it. A terminal
+  // unavailable state clears this callback immediately instead of waiting for an event already lost.
   acknowledgementsAwaitingLibrary.push(onAccepted);
   watchLibraryScript();
-  // The script can finish between the check above and the listener being attached.
+  // The library can become usable between the checks above and the watcher setup.
   if (isPixelLibraryLoaded()) flushAcknowledgements();
 }
 
