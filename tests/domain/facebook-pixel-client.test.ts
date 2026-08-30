@@ -19,7 +19,7 @@ function replaceGlobal(name: "window" | "document", value: unknown) {
   };
 }
 
-test("a loaded script that never initializes the pixel is not acknowledged as sent", async (t) => {
+test("an already-finished no-op pixel script is treated as unavailable without waiting for a missed load event", async (t) => {
   const previousPixelId = process.env.LA_BUILD_FACEBOOK_PIXEL_ID;
   process.env.LA_BUILD_FACEBOOK_PIXEL_ID = PIXEL_ID;
   t.after(() => {
@@ -27,11 +27,12 @@ test("a loaded script that never initializes the pixel is not acknowledged as se
     else process.env.LA_BUILD_FACEBOOK_PIXEL_ID = previousPixelId;
   });
 
-  let loadListener: EventListener | null = null;
   const fbq = (..._args: unknown[]) => {};
+  let listenerRegistrations = 0;
   const script = {
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-      if (type === "load") loadListener = listener as EventListener;
+    dataset: { laMetaPixelStatus: "unavailable" },
+    addEventListener() {
+      listenerRegistrations += 1;
     },
   };
 
@@ -55,13 +56,9 @@ test("a loaded script that never initializes the pixel is not acknowledged as se
     accepted += 1;
   });
 
-  assert.equal(accepted, 0);
-  assert.notEqual(loadListener, null);
-
-  // A proxy/ad blocker can return HTTP 200 with an empty/no-op body. The script element still
-  // fires `load`, but Meta never installs `fbq.callMethod` and never drains the stub queue.
-  loadListener!({} as Event);
-
+  // The terminal state was recorded before this subscriber existed. Waiting for `load` now would
+  // miss an event that has already happened and retain the acknowledgement callback forever.
+  assert.equal(listenerRegistrations, 0);
   assert.equal(accepted, 0);
   assert.equal(typeof (fbq as { callMethod?: unknown }).callMethod, "undefined");
 });
