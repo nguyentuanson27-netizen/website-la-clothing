@@ -19,7 +19,30 @@ function replaceGlobal(name: "window" | "document", value: unknown) {
   };
 }
 
-test("an already-finished no-op pixel script is treated as unavailable without waiting for a missed load event", async (t) => {
+function fakeScript(status: "loading" | "ready" | "unavailable") {
+  const listeners = new Map<string, EventListener>();
+  let listenerRegistrations = 0;
+  return {
+    script: {
+      dataset: { laMetaPixelStatus: status },
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        listenerRegistrations += 1;
+        listeners.set(type, listener as EventListener);
+      },
+      removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        if (listeners.get(type) === listener) listeners.delete(type);
+      },
+    },
+    listener(type: string) {
+      return listeners.get(type) ?? null;
+    },
+    registrations() {
+      return listenerRegistrations;
+    },
+  };
+}
+
+test("an already-finished no-op pixel script cannot retain or later revive its acknowledgement", async (t) => {
   const previousPixelId = process.env.LA_BUILD_FACEBOOK_PIXEL_ID;
   process.env.LA_BUILD_FACEBOOK_PIXEL_ID = PIXEL_ID;
   t.after(() => {
@@ -28,18 +51,13 @@ test("an already-finished no-op pixel script is treated as unavailable without w
   });
 
   const fbq = (..._args: unknown[]) => {};
-  let listenerRegistrations = 0;
-  const script = {
-    dataset: { laMetaPixelStatus: "unavailable" },
-    addEventListener() {
-      listenerRegistrations += 1;
-    },
-  };
+  const failedScript = fakeScript("unavailable");
+  let currentScript = failedScript.script;
 
   const restoreWindow = replaceGlobal("window", { fbq });
   const restoreDocument = replaceGlobal("document", {
     querySelector() {
-      return script;
+      return currentScript;
     },
   });
   t.after(() => {
@@ -58,7 +76,24 @@ test("an already-finished no-op pixel script is treated as unavailable without w
 
   // The terminal state was recorded before this subscriber existed. Waiting for `load` now would
   // miss an event that has already happened and retain the acknowledgement callback forever.
-  assert.equal(listenerRegistrations, 0);
+  assert.equal(failedScript.registrations(), 0);
   assert.equal(accepted, 0);
   assert.equal(typeof (fbq as { callMethod?: unknown }).callMethod, "undefined");
+
+  // Prove that acknowledgement was discarded rather than merely hidden. A later healthy script
+  // may acknowledge its own event, but must never revive the Purchase callback from the dead script.
+  const recoveryScript = fakeScript("loading");
+  currentScript = recoveryScript.script;
+  trackFacebookPixelEvent("Purchase", { currency: "VND", value: 449_000 }, "ORDER-2", () => {
+    accepted += 1;
+  });
+  assert.equal(recoveryScript.registrations(), 2);
+
+  (fbq as { callMethod?: unknown }).callMethod = fbq;
+  recoveryScript.script.dataset.laMetaPixelStatus = "ready";
+  const load = recoveryScript.listener("load");
+  assert.notEqual(load, null);
+  load!({} as Event);
+
+  assert.equal(accepted, 1);
 });
