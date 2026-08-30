@@ -11,6 +11,10 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  *
  * The snippet's own `fbq('track', 'PageView')` only fires on a full document load. App Router
  * navigations never reload it, so FacebookPixelRouteTracker reports the ones that follow.
+ *
+ * The external script's lifecycle is also persisted on the element itself before insertion. A
+ * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
+ * browser load/error event happened before that effect subscribed.
  */
 export function FacebookPixel() {
   const config = readMetaPixelConfig();
@@ -23,9 +27,11 @@ export function FacebookPixel() {
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
 if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];
-s.parentNode.insertBefore(t,s)}(window,document,'script',
+n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;
+t.dataset.laMetaPixelStatus='loading';
+t.onload=function(){t.dataset.laMetaPixelStatus=typeof f.fbq==='function'&&typeof f.fbq.callMethod==='function'?'ready':'unavailable'};
+t.onerror=function(){t.dataset.laMetaPixelStatus='unavailable'};
+s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', ${JSON.stringify(config.pixelId)});
 fbq('track', 'PageView');`}
