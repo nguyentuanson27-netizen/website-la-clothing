@@ -47,7 +47,7 @@ These gates do not block pure code foundations, but the affected vendor tag/feed
 
 - **O1 — Google Ads Purchase value:** choose merchandise-only or `OrderMirror.totalVnd`. Proposed operational default: total order value if Ads bidding should optimize against actual order value; GA4 remains merchandise value with shipping separate either way.
 - **O2 — Merchant market:** proposed initial target is Vietnam / Vietnamese / VND because the storefront is Vietnamese and prices are VND. Confirm before data-source activation.
-- **O3 — Apparel constants:** current schema has no per-product gender/age-group/condition fields. Before free-listing/Shopping activation, confirm whether every emitted LA Clothing item can truthfully use catalog-wide `gender=male`, `age_group=adult`, and `condition=new`. If not, the plan must be revised to add product-owned attributes rather than invent values.
+- **O3 — Apparel constants:** current schema has no per-product gender/age-group/condition fields. Current Merchant guidance requires `gender` and `age_group` for free listings across Apparel & Accessories, while color/size and variant grouping must describe the actual variants. Before activation, confirm whether every emitted LA Clothing item can truthfully use catalog-wide `gender=male`, `age_group=adult`, and `condition=new`. If not, the plan must be revised to add product-owned attributes rather than invent values.
 - **O4 — Vendor console identifiers:** reviewed GTM container ID, GA4 measurement ID, Google Ads conversion ID/label, and TikTok Pixel ID must be supplied through their proper configuration owners. They are identifiers, not server secrets, but still require correct environment/account ownership.
 
 ## 5. Dependency graph
