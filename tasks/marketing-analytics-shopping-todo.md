@@ -78,21 +78,22 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Initial unselected `view_item` uses product identity.
 - [ ] Equal resolved product price may map as exact price; multi-price range does **not** map minimum as selected exact price; unresolved price omits monetary fields.
 - [ ] Introduce a dedicated PDP atomic add mutation; do not call the cart’s absolute set-quantity path with `quantity=1`.
-- [ ] Under the existing cart lock, absent line → `0→1`; existing quantity `q` → `q→q+1`, subject to current stock/integer bounds. Each successful repeated/concurrent PDP add contributes exactly one committed unit.
+- [ ] Under the existing cart lock, absent line → `0→1`; existing quantity `q` → `q→q+1`, subject to current stock/integer bounds. Each successful repeated/concurrent PDP add against the same live cart identity contributes exactly one committed unit.
 - [ ] Successful PDP add returns `previousQuantity`, committed `quantity`, `addedQuantity=1`, plus bounded canonical item snapshot from the same accepted transaction.
 - [ ] `add_to_cart.quantity = addedQuantity`; a no-op/decrease/failure can never emit PDP `add_to_cart`.
 - [ ] AddToCart event uses server-returned `pancakeVariationId`, `unitPriceVnd`, item name/color/size and accepted delta; never stale `selection.selectedPrice` or rendered cart data.
 - [ ] Direct Meta event name/content IDs/direct-delivery/success boundary remain compatible; any Meta value-source correction has regression coverage.
-- [ ] RED/GREEN tests: absent→1, existing 1→2, existing >1 increments rather than resetting, stock-bound failure, concurrent repeated PDP clicks, stale browser price vs current server snapshot, failed snapshot → no canonical tracking, no duplicate Meta behavior.
+- [ ] RED/GREEN tests: absent→1, existing 1→2, existing >1 increments rather than resetting, stock-bound failure, concurrent repeated PDP clicks against the same live cart identity, stale browser price vs current server snapshot, failed snapshot → no canonical tracking, no duplicate Meta behavior.
 
 ### T6 Atomic cart delta + authoritative mutation snapshot + checkout events
-- [ ] Under existing cart lock, absolute update returns `previousQuantity` + committed `quantity`.
+- [ ] Any `canSetQuantity`/rendered pre-check outside the mutation is advisory only; re-resolve current commerce eligibility and requested-quantity stock sufficiency inside the serialized mutation before accepting an absolute update.
+- [ ] Under existing cart lock, update returns `previousQuantity` + committed `quantity`.
 - [ ] Under the same lock, remove captures `removedQuantity` before destructive delete; already-missing line is not a real removal.
 - [ ] The transaction also captures/resolves bounded non-PII event item facts: `pancakeVariationId`, authoritative `unitPriceVnd`, product/item name, color/size where available, plus optional safe product/projection context.
 - [ ] Increase → delta `add_to_cart`; decrease/remove → delta `remove_from_cart`; zero delta/failure → no event.
 - [ ] Browser builds quantity events only from the returned server snapshot + delta. It never falls back to server-rendered/client-cached name, price, variant ID, or quantity after a mutation.
 - [ ] If safe identity/price snapshot resolution fails, cart mutation result remains commerce truth but tracking emits nothing and must not throw into cart UX.
-- [ ] RED/GREEN concurrency tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog change between render and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
+- [ ] RED/GREEN concurrency tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog/stock change between render/pre-check and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
 - [ ] Emit `view_cart` / `begin_checkout` from canonical resolved state.
 - [ ] Keep `add_shipping_info` / `add_payment_info` absent until a real accepted milestone exists.
 
