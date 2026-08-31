@@ -67,6 +67,7 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
 
 const productSelection = {
   id: true,
+  pancakeProductId: true,
   slug: true,
   name: true,
   primaryImageUrl: true,
@@ -159,7 +160,11 @@ function toStorefrontProduct(
     : [];
 
   return {
+    // Internal identity, used for joins and admin routes. Not vendor-facing.
     id: product.id,
+    // Product-level external identity. One card is one product impression regardless of which
+    // variant a shopper later selects, so this never varies with selection.
+    pancakeProductId: product.pancakeProductId,
     slug: product.slug,
     name: product.name,
     media,

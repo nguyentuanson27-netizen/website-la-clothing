@@ -42,6 +42,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
             componentVariant: {
               select: {
                 id: true,
+                pancakeVariationId: true,
                 color: true,
                 size: true,
                 isPresent: true,
@@ -95,6 +96,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
             id: component.id,
+            pancakeVariationId: component.pancakeVariationId,
             color: component.color,
             size: component.size,
             sellableStock: sumWarehouseStocks(component.warehouseStocks),

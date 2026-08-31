@@ -14,6 +14,7 @@ function variant(
 ): StorefrontVariantFacts {
   return {
     id,
+    pancakeVariationId: `pancake-${id}`,
     color: null,
     size,
     sellableStock: 2,
@@ -34,6 +35,7 @@ test("storefront projection keeps standalone products on the existing size/color
   assert.deepEqual(projection.options, [
     {
       id: "standalone-m",
+      pancakeVariationId: "pancake-standalone-m",
       color: null,
       size: "M",
       price: 590_000,

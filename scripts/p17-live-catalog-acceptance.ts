@@ -160,6 +160,7 @@ async function runP17CatalogAcceptance(): Promise<void> {
             orderBy: { pancakeVariationId: "asc" },
             select: {
               id: true,
+              pancakeVariationId: true,
               color: true,
               size: true,
               pancakeRetailPrice: true,
@@ -175,6 +176,7 @@ async function runP17CatalogAcceptance(): Promise<void> {
                   componentVariant: {
                     select: {
                       id: true,
+                      pancakeVariationId: true,
                       color: true,
                       size: true,
                       isPresent: true,
@@ -221,6 +223,7 @@ async function runP17CatalogAcceptance(): Promise<void> {
     const acceptanceProducts: CatalogAcceptanceProduct[] = products.map((product) => {
       const parentVariants = product.variants.map((variant) => ({
         id: variant.id,
+        pancakeVariationId: variant.pancakeVariationId,
         color: variant.color,
         size: variant.size,
         sellableStock: sumWarehouseStocks(variant.warehouseStocks),
@@ -256,6 +259,7 @@ async function runP17CatalogAcceptance(): Promise<void> {
           if (!group.variants.has(component.id)) {
             group.variants.set(component.id, {
               id: component.id,
+              pancakeVariationId: component.pancakeVariationId,
               color: component.color,
               size: component.size,
               sellableStock: sumWarehouseStocks(component.warehouseStocks),
