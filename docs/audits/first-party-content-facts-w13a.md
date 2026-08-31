@@ -126,6 +126,23 @@ it with verified first-party facts — address, contact point, social profiles. 
 class C/D above, so **U32's Organization enrichment is blocked by the same owner decision as U33**,
 not by anything technical.
 
+## Registered decision gates
+
+These are recorded as **B1–B4** in the "Owner decision gates" register in
+`tasks/growth-commerce-master-todo.md`, each with its owner, what it blocks and where the blocked
+unit must stop:
+
+| Gate | Covers | Blocks |
+|---|---|---|
+| **B1** | Returns policy | U33 Returns page |
+| **B2** | Contact channels | U33 Contact page; U32 `Organization` enrichment only |
+| **B3** | Size chart | U33 Size Guide page |
+| **B4** | Shipping delivery terms | U33 Shipping/Payment page |
+
+Owner in every case: repository owner / brand authority. Until a gate is answered, the blocked unit
+stops and reports; every other unit continues. No page is built from an inferred policy, and no
+missing fact is reconstructed from UI copy, checkout wording or naming conventions.
+
 ## What the owner needs to supply
 
 For each of Returns, Shipping delivery terms, Size Guide and Contact:
