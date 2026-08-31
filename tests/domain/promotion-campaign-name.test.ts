@@ -72,3 +72,31 @@ test("P1 a surrogate pair is never split by normalization", () => {
   assert.equal(result.ok && result.name, NON_BMP.repeat(60));
   assert.equal(result.ok && [...result.name].length, 60, "the pairs stay whole");
 });
+
+test("P1 an accepted name is always storable, so a NUL byte is rejected before persistence", () => {
+  // PostgreSQL `text` cannot hold a NUL. Left unchecked, this reached the driver and failed there
+  // with an empty error message rather than as a typed validation result.
+  assert.deepEqual(normalizePromotionCampaignName("Flash\u0000Sale"), {
+    ok: false,
+    error: "UNSUPPORTED_NAME_CHARACTER",
+  });
+  assert.deepEqual(normalizePromotionCampaignName("\u0000"), {
+    ok: false,
+    error: "UNSUPPORTED_NAME_CHARACTER",
+  });
+});
+
+test("P1 ordinary Vietnamese names and punctuation stay valid", () => {
+  for (const name of [
+    "Flash Sale th\u00e1ng 9",
+    "Khuy\u1ebfn m\u00e3i 20% \u2014 \u00c1o Oxford",
+    "Sale h\u00e8 2026 (\u0111\u1ee3t 2)",
+    "B\u1ea3n sao - Flash Sale",
+  ]) {
+    assert.deepEqual(
+      normalizePromotionCampaignName(name),
+      { ok: true, name },
+      `${name} must stay valid`,
+    );
+  }
+});

@@ -14,7 +14,18 @@ export const MAX_CAMPAIGN_NAME_LENGTH = 120;
 
 export const COPY_NAME_SUFFIX = " - Bản sao";
 
-export type PromotionCampaignNameError = "EMPTY_NAME" | "NAME_TOO_LONG";
+export type PromotionCampaignNameError =
+  | "EMPTY_NAME"
+  | "NAME_TOO_LONG"
+  | "UNSUPPORTED_NAME_CHARACTER";
+
+/**
+ * PostgreSQL `text` cannot hold a NUL byte. Without this check a NUL-bearing name passes validation
+ * and then fails at the driver — in practice with an empty error message, which is the worst
+ * possible outcome for an admin trying to understand why a save failed. If this function returns
+ * `ok`, the value must be storable.
+ */
+const UNSTORABLE_CHARACTER = /\u0000/;
 
 export type PromotionCampaignNameResult =
   | Readonly<{ ok: true; name: string }>
@@ -32,6 +43,9 @@ export function normalizePromotionCampaignName(raw: unknown): PromotionCampaignN
   const name = raw.trim();
   if (name.length === 0) return { ok: false, error: "EMPTY_NAME" };
   if (name.length > MAX_CAMPAIGN_NAME_LENGTH) return { ok: false, error: "NAME_TOO_LONG" };
+  if (UNSTORABLE_CHARACTER.test(name)) {
+    return { ok: false, error: "UNSUPPORTED_NAME_CHARACTER" };
+  }
 
   return { ok: true, name };
 }
