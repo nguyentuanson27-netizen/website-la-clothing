@@ -42,6 +42,7 @@ Core invariants:
 - composite storefront projection can sell a component variation through a different public parent PDP; presentation keys such as `component-1` are not stable external IDs.
 - current PDP JSON-LD is aggregate, not exact variant authority.
 - Next.js Route Handlers are not cached by default. Current repo does not enable Cache Components, so v1 must not assume `use cache` without a separate framework/config decision.
+- current VPS Compose topology declares one `app` service instance behind the proxy path; v1 single-flight requirements are scoped to that reviewed topology. If deployment is changed to multiple application replicas before Merchant activation, V1 must add/prove a shared cross-replica cache/single-flight layer rather than assuming a process-local guard is sufficient.
 
 ## 3. Locked v1 decisions
 
@@ -222,7 +223,8 @@ Initial contract:
 - `MERCHANT_FEED_CACHE_TTL_SECONDS = 300`;
 - one fixed cache key per configured shop + feed schema/version; URL query/header values must not create unbounded cache keys;
 - cache **only a complete successful serialized feed**; never cache partial output as success;
-- collapse concurrent cache misses through a proved single-flight mechanism for the current deployment runtime; if the chosen framework cache cannot prove concurrent-miss collapse, add the smallest local/shared single-flight guard before exposing the route;
+- collapse concurrent cache misses through a proved single-flight mechanism for the current deployment runtime; if the chosen framework cache cannot prove concurrent-miss collapse, add the smallest process-local guard for the current one-app-service topology before exposing the route;
+- if production topology is changed to multiple app replicas, activation is blocked until a shared cross-replica cache/single-flight mechanism is proved;
 - repeated requests inside TTL return cached bytes without repeating DB-heavy generation;
 - no per-record/N+1 query path.
 
@@ -475,7 +477,8 @@ Do not build/activate Merchant feed until ID/MPN/durability audit is green for i
 - serializer counts UTF-8 bytes incrementally and aborts before >16 MiB;
 - complete successful serialized result cached for 300 seconds under a fixed shop/schema key with no request-derived unbounded dimensions;
 - repeated requests inside TTL do not re-run DB-heavy generation;
-- concurrent cold requests are collapsed by a tested single-flight mechanism for the current runtime/cache domain;
+- concurrent cold requests are collapsed by a tested single-flight mechanism for the current one-app-service topology;
+- if deployment changes to multiple app replicas, activation is blocked until a shared cross-replica cache/single-flight layer is proved;
 - failed/overflow generation never replaces a valid complete cache entry with partial output;
 - correct content type and safe escaping/Unicode/control-char handling;
 - route cannot become arbitrary shop/source URL fetch or expensive query API;
@@ -508,6 +511,7 @@ Do not build/activate Merchant feed until ID/MPN/durability audit is green for i
 - applicable browser/runtime suites
 - exact GTM container/version/export record + Tag Assistant + GA4 + Ads + TikTok diagnostics
 - Merchant cache/fetch/diagnostics/crawler checks
+- verify production deployment topology still matches the single-app-service cache/single-flight assumption; if not, require shared cross-replica protection before Merchant activation
 
 Final review order: correctness → security → architecture → simplicity → performance. Re-check Definition of Done, rollback for GTM delivery and Merchant data source, PII/secret boundaries, and `SEARCH_INDEXING_ENABLED=false` unless separately approved.
 
