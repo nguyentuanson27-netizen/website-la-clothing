@@ -34,6 +34,16 @@ enum ProductContentStatus {
   PUBLISHED
 }
 
+enum PromotionCampaignKind {
+  PROMOTION
+  FLASH_SALE
+}
+
+enum PromotionDiscountType {
+  PERCENTAGE
+  FIXED_PRICE
+}
+
 model User {
   id            String        @id
   name          String
@@ -138,6 +148,7 @@ model ProductMirror {
   variants          VariantMirror[]
   content           ProductContent?
   slugHistory       ProductSlugHistory[]
+  promotionTargets  PromotionTarget[]
 
   @@index([pancakeShopId, isPresent])
 }
@@ -180,6 +191,67 @@ model CollectionDefinition {
   updatedAt          DateTime @updatedAt
 }
 
+/// One shared rule across all of a campaign's targets.
+///
+/// Admin-visible status (Draft / Scheduled / Active / Ended / Disabled) is derived, never stored:
+/// `isEnabled`, `enabledAt`, `disabledAt` and the configured window are enough to decide whether an
+/// enabled interval ever overlapped an active one. Persisting a status — or an "ever active" flag
+/// written when a request happens to observe the campaign — would be wrong after a restart or for a
+/// window that opened and closed with zero traffic.
+///
+/// Website-owned money is integer VND: an integer percentage, or a `BigInt` final unit price. The
+/// mirrored Pancake `Float?` columns stay external facts and are not converted here.
+model PromotionCampaign {
+  id              String                @id @default(cuid())
+  kind            PromotionCampaignKind
+  name            String
+  discountType    PromotionDiscountType
+  percentageValue Int?
+  fixedPriceVnd   BigInt?
+  startsAt        DateTime?
+  endsAt          DateTime?
+  isEnabled       Boolean               @default(false)
+  enabledAt       DateTime?
+  disabledAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  targets         PromotionTarget[]
+
+  @@index([isEnabled, startsAt, endsAt])
+}
+
+/// Exactly one of `productId` / `variantId` is populated, enforced by a database check rather than
+/// by the admin UI. A PRODUCT row is a semantic scope over the product's current variants — it is
+/// deliberately not materialized into a frozen variant list, so variants synced or restored later
+/// are covered without a rewrite.
+model PromotionTarget {
+  id         String            @id @default(cuid())
+  campaignId String
+  productId  String?
+  variantId  String?
+  createdAt  DateTime          @default(now())
+  campaign   PromotionCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  product    ProductMirror?    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant    VariantMirror?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, productId])
+  @@unique([campaignId, variantId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+/// One durable, server-owned, monotonic revision of effective promotion pricing.
+///
+/// A single row by construction: bounded cardinality is the point, so a Merchant cache decision can
+/// read the current generation cheaply and a promotion mutation can advance it inside the same
+/// transaction that commits the mutation. Nothing request-controlled reaches it, and it never grows
+/// per campaign or per request.
+model PromotionPricingRevision {
+  id        String   @id @default("current")
+  revision  BigInt   @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 model VariantMirror {
   id                              String                     @id @default(cuid())
   pancakeVariationId              String                     @unique
@@ -205,6 +277,7 @@ model VariantMirror {
   cartItems                       CartItem[]
   compositeComponents             CompositeComponentMirror[] @relation("CompositeParent")
   compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
+  promotionTargets                PromotionTarget[]
 
   @@index([productId])
   @@index([sku])
@@ -303,19 +376,32 @@ model OrderMirror {
   @@index([state, createdAt])
 }
 
+/// The immutable finalized line. Every promotion column is additive and nullable so historical rows
+/// stay valid and an application rollback is not blocked by a column older code never writes.
+///
+/// `unitPriceVnd` remains the final customer price; `baseUnitPriceVnd` records what it would have
+/// been without a promotion. The promotion facts are a snapshot, not a foreign key: finalized order
+/// history must never be rewritten by anything that later happens to a campaign row.
 model OrderLineSnapshot {
-  id                 String      @id @default(cuid())
-  orderId            String
-  variantId          String
-  pancakeVariationId String
-  productName        String
-  color              String?
-  size               String
-  quantity           Int
-  unitPriceVnd       BigInt
-  lineTotalVnd       BigInt
-  createdAt          DateTime    @default(now())
-  order              OrderMirror @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id                       String                 @id @default(cuid())
+  orderId                  String
+  variantId                String
+  pancakeVariationId       String
+  productName              String
+  color                    String?
+  size                     String
+  quantity                 Int
+  unitPriceVnd             BigInt
+  lineTotalVnd             BigInt
+  baseUnitPriceVnd         BigInt?
+  promotionCampaignId      String?
+  promotionName            String?
+  promotionKind            PromotionCampaignKind?
+  promotionDiscountType    PromotionDiscountType?
+  promotionPercentageValue Int?
+  promotionFixedPriceVnd   BigInt?
+  createdAt                DateTime               @default(now())
+  order                    OrderMirror            @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }
