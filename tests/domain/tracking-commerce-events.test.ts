@@ -359,9 +359,9 @@ test("T1 upper-funnel items are validated at the boundary as well", () => {
 test("T1 a published event cannot be widened after it was validated", () => {
   const event = buildPurchaseEvent({
     publicCode: "LA-2026-0001",
-    merchandiseValueVnd: 890_000,
+    merchandiseValueVnd: 1_780_000,
     shippingVnd: 0,
-    totalVnd: 890_000,
+    totalVnd: 1_780_000,
     items: [buildVariantItem(variantItem)],
   });
 
