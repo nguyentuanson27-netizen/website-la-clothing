@@ -8,326 +8,300 @@ Execution plan: `tasks/promotions-flash-sale-v1-plan.md`
 
 Planning base: `main@323c07cf25c834e36e4a43952df3f0ee7321d756` with PR #152 + PR #153 merged.
 
-This checklist is feature-local. PR #153 owns canonical marketing/analytics/Merchant contracts; PR #152 owns SEO/GEO planning input. Promotion implementation consumes those contracts and must not create parallel pricing, identity, cart or deep-link authorities.
+PR #153 owns canonical analytics/Merchant identity/cart contracts; PR #152 owns SEO/GEO planning constraints. Promotion consumes them and must not create parallel price, identity, cart or variant-URL authorities.
 
 ## P0 — planning reconciliation
 - [x] Refresh #151 against `main` containing #152 + #153.
-- [x] Replace “rediscover GTM/TikTok later” with explicit #153 dependencies.
-- [x] Lock product external ID = `pancakeProductId` for unselected upper funnel.
-- [x] Lock selected/committed external variant ID = `pancakeVariationId`.
-- [x] Lock `VariantMirror.id` as internal mutation/auth identity only.
-- [x] Lock Purchase transaction/event ID = `OrderMirror.publicCode`.
-- [x] Lock promotion pricing as a consumer/source for analytics/Merchant/SEO, never duplicated there.
-- [ ] Fresh review on latest head has 0 Critical / 0 Required.
-- [ ] Exact-head CI is green.
-- [ ] Human approves plan before `/build`.
+- [x] Replace deferred GTM/TikTok rediscovery with explicit #153 dependencies.
+- [x] Product upper-funnel ID = `pancakeProductId`.
+- [x] Selected/committed variant ID = `pancakeVariationId`.
+- [x] `VariantMirror.id` remains internal-only.
+- [x] Purchase transaction/event ID = `OrderMirror.publicCode`.
+- [x] Shared cart API and #153 M2 variant URL ownership are explicit.
+- [x] Merchant success cache is promotion-transition-aware when Merchant is enabled.
+- [x] Promotion activation requires convergence only for currently enabled price-bearing consumers; disabled GTM/Merchant may remain fail-closed/off.
+- [ ] Fresh review on latest head: 0 Critical / 0 Required.
+- [ ] Exact-head CI green.
+- [ ] Human plan approval before `/build`.
 
 ## P1 — persistence + additive order audit
-- [ ] Add campaign kind/discount/publish-state/target enums and models.
-- [ ] Enforce target shape: exactly one PRODUCT or VARIANT reference.
-- [ ] Prevent duplicate explicit targets and PRODUCT + own-covered VARIANT duplication.
-- [ ] Store website money as integer/BigInt VND; keep Pancake mirrors `Float?`.
-- [ ] Add immutable order-line fields for base price, final price and nullable promotion snapshot metadata.
-- [ ] Preserve purchased `pancakeVariationId`, name/options/quantity facts required by #153 Purchase.
-- [ ] Keep migration additive and historical rows readable.
-- [ ] Do not add campaign delete.
+- [ ] Add campaign/target persistence with DB/server shape and uniqueness guards.
+- [ ] Website money uses integer/BigInt VND; Pancake mirrors stay `Float?`.
+- [ ] Add base/final/promotion audit fields to `OrderLineSnapshot`.
+- [ ] Preserve purchased `pancakeVariationId`, name/options/quantity facts used by #153 Purchase.
+- [ ] Migration additive; historical rows readable; no campaign delete.
 
 Verification:
-- [ ] RED/GREEN schema/DB tests.
-- [ ] Prisma validate/generate/migration deploy checks.
-- [ ] Historical compatibility test.
-- [ ] Review migration rollback/forward compatibility.
+- [ ] RED/GREEN DB tests.
+- [ ] Prisma validate/generate/migration deploy.
+- [ ] Historical compatibility.
 
-## P2 — central pricing domain + evidence
-- [ ] Implement one pure TypeScript effective-price resolver with explicit `now`.
-- [ ] Enforce positive safe-integer base-price boundary.
+## P2 — central pricing + evidence
+- [ ] Pure explicit-`now` resolver is the only semantic pricing authority.
+- [ ] Positive safe-integer base boundary.
 - [ ] Percentage uses exact BigInt rational arithmetic.
-- [ ] Fixed price is final customer unit price and requires `0 < fixed < base`.
-- [ ] Return base/effective price, discounted flag, promotion snapshot, typed invalid/conflict reason, transition fact.
-- [ ] More than one active candidate => conflict/no promotion; never choose arbitrary winner.
-- [ ] Invalid promotion falls back only affected variant when base remains usable.
-- [ ] Unusable base => `BASE_PRICE_UNAVAILABLE` / non-purchasable.
-- [ ] Add read-only mirrored-money audit for null/zero/negative/non-integer/unsafe values.
-- [ ] Run `pnpm pancake:catalog:audit` in approved real-catalog context before equality-gate removal.
-- [ ] Record sanitized `pancakeRetailPrice` vs `pancakeRetailPriceAfterDiscount` mismatch evidence.
-- [ ] If evidence materially contradicts approved pricing ownership, stop for product review.
+- [ ] Fixed price is final customer unit price and `0 < fixed < base`.
+- [ ] Resolver returns base/effective price, promotion snapshot, discounted flag, typed invalid/conflict reason and transition fact.
+- [ ] >1 applicable campaign => conflict/no promotion; never arbitrary winner.
+- [ ] Affected-variant invalid fallback when base remains usable.
+- [ ] Unusable base => non-purchasable.
+- [ ] Run mirrored-money audit.
+- [ ] Run approved real-catalog `pnpm pancake:catalog:audit` before equality-gate removal.
+- [ ] Record sanitized retail vs after-discount mismatch evidence.
+- [ ] Materially contradictory evidence => stop for product review.
 
-Mandatory domain fixtures:
+Mandatory fixtures:
 - [ ] `150 @ 1% -> 149`.
 - [ ] `350 @ 1% -> 347`.
 - [ ] `110 @ 5% -> 105`.
 - [ ] `9007199254740989 @ 1% -> 8917127262193579`.
-- [ ] low-price no-discount invalidation, e.g. `50 @ 1%`.
-- [ ] fixed-price valid/invalid and fresher-base drift/recovery.
-- [ ] malformed external values and conflict cases.
+- [ ] low-price invalidation such as `50 @ 1%`.
+- [ ] fixed valid/invalid + fresher-base drift/recovery.
+- [ ] malformed external values + conflict.
 
-## P3 — repository + lifecycle + runtime health
-- [ ] Batch lookup direct VARIANT + actual owning PRODUCT campaigns for real variant IDs.
-- [ ] Composite pricing follows selected real component variant and actual owning product, not parent PDP presentation owner.
-- [ ] PRODUCT targets dynamically include new/restored variants; no frozen membership table.
-- [ ] Derive Draft/Scheduled/Active/Ended/Disabled using durable fields + explicit `now`.
-- [ ] Zero-traffic scheduled active window still produces correct terminal history semantics.
-- [ ] Legal never-Active re-enable writes fresh `enabledAt` and clears `disabledAt` atomically.
-- [ ] Prior-Active Disabled and Ended remain terminal except Copy.
-- [ ] Runtime invalidity/conflict is affected-variant fail-closed; healthy siblings continue.
-- [ ] Auto-recover health when variant validity/conflict recovers.
-- [ ] Copy reads campaign + explicit targets only; no PRODUCT expansion.
-- [ ] Copy naming uses exact bounded deterministic suffix algorithm.
+## P3 — repository/lifecycle/runtime health
+- [ ] Batch direct VARIANT + actual owning PRODUCT campaign lookup.
+- [ ] Composite follows real component variant/owner, not presentation parent.
+- [ ] Dynamic PRODUCT coverage; no frozen membership table.
+- [ ] Restart/zero-traffic-safe Draft/Scheduled/Active/Ended/Disabled derivation.
+- [ ] Legal never-Active re-enable writes fresh `enabledAt` + `disabledAt=null` atomically.
+- [ ] Runtime invalid/conflict/recovery per affected variant; healthy siblings continue.
+- [ ] Copy snapshots explicit targets only and never expands PRODUCT coverage.
+- [ ] Deterministic bounded Copy naming.
 
-Regression coverage:
-- [ ] 119/120-code-unit Copy names.
+Regression:
+- [ ] 119/120 code units.
 - [ ] trailing-space normalization.
-- [ ] surrogate-pair boundary.
+- [ ] surrogate boundary.
 - [ ] Copy-of-Copy.
-- [ ] >2000 dynamic PRODUCT expansion source still copies to Draft.
-- [ ] bounded query count / no N+1.
+- [ ] >2000 dynamic expansion source still copies to Draft.
+- [ ] bounded queries/no N+1.
 
 ## P4 — concurrency-safe admin domain + activation gate
-- [ ] Require admin authn/authz for all campaign mutations.
-- [ ] Enforce name/ID/target/page/search bounds server-side.
-- [ ] Coverage-validating path for publish/re-enable/Scheduled material edit:
-  - [ ] lock campaign row when applicable;
-  - [ ] lock owning ProductMirror rows deterministically;
-  - [ ] bounded expansion probe at `MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1`;
-  - [ ] reject >2000 before variant lock set;
-  - [ ] lock needed VariantMirror rows deterministically;
-  - [ ] re-read lifecycle/base/targets/overlap under lock;
-  - [ ] commit atomically or write nothing.
-- [ ] Same-campaign writes cannot lost-update.
-- [ ] PRODUCT↔PRODUCT, PRODUCT↔VARIANT and VARIANT↔VARIANT overlap races fail closed.
-- [ ] Disable/end-early uses campaign-row bounded path only; no expansion gate.
-- [ ] Active PRODUCT 1900 -> sync 2001 -> Disable still succeeds.
-- [ ] Activation gate defaults off; publish/re-enable return typed `ACTIVATION_DISABLED` while off.
-- [ ] Existing active campaigns require explicit Disable for rollback; switching gate off does not pretend they vanished.
-
-Verification:
-- [ ] repeated concurrency/race tests.
-- [ ] 2000 allowed / 2001 rejected for coverage-validating writes.
-- [ ] failed mutation preserves previous definition.
-- [ ] no secrets/PII/external raw payloads logged.
+- [ ] Admin authz + named input bounds.
+- [ ] Coverage-validating write order: campaign lock → owning-product locks → bounded expansion probe → needed variant locks → re-read → atomic commit.
+- [ ] 2000 allowed / 2001 rejected for publish/re-enable/Scheduled material edit.
+- [ ] Same-campaign lost update prevented.
+- [ ] PRODUCT↔PRODUCT / PRODUCT↔VARIANT / VARIANT↔VARIANT overlap race-safe.
+- [ ] Disable uses campaign-row bounded path only.
+- [ ] 1900 variants at activation → later 2001 → Disable still succeeds.
+- [ ] Copy remains non-expanding.
+- [ ] Activation gate defaults off; publish/re-enable => `ACTIVATION_DISABLED` while off.
+- [ ] Failed writes leave previous definition unchanged.
 
 ### Checkpoint A
-- [ ] P1-P4 focused suites green.
-- [ ] migration clean.
-- [ ] activation gate default-off verified.
-- [ ] security review complete.
+- [ ] P1–P4 focused suites green.
+- [ ] Migration clean.
+- [ ] Repeated concurrency tests green.
+- [ ] Security review: authz/bounds/external-data/no PII or secrets in logs.
 - [ ] 0 Critical / 0 Required.
 
 ## P5 — admin UX
-- [ ] Protected `/admin/promotions` route.
-- [ ] Bounded list/search (50).
-- [ ] Create/edit/publish/re-enable/disable/copy per lifecycle.
-- [ ] Typed feedback for invalid config, overlap, expansion cap and activation-disabled state.
-- [ ] Product admin shows related-campaign summary/link only; no duplicate editor.
-- [ ] No pricing/overlap formulas in React.
-- [ ] Keyboard, Axe and mobile checks.
-- [ ] Non-admin rejection tests.
+- [ ] Protected `/admin/promotions`.
+- [ ] List/search bounded 50.
+- [ ] Lifecycle-valid create/edit/publish/re-enable/disable/copy.
+- [ ] Typed invalid/overlap/expansion/activation feedback.
+- [ ] Product admin only shows related-campaign summary/link.
+- [ ] No price/overlap math in React.
+- [ ] Keyboard/Axe/mobile + non-admin rejection.
 
-## #153 shared identity/cart prerequisites
-Before P6/P8 consume shared commerce facts:
-- [ ] #153 T4 or equivalent shared slice propagates `pancakeProductId` for product-level facts.
-- [ ] Concrete option/cart facts propagate real `pancakeVariationId`.
+## #153 T4 identity prerequisite
+- [ ] Product/list/PDP upper-funnel facts propagate `pancakeProductId`.
+- [ ] Concrete options/cart facts propagate real `pancakeVariationId`.
 - [ ] Local variant CUID never becomes vendor item ID.
-- [ ] PDP AddToCart shared API is atomic `+1`, not absolute set-to-1.
-- [ ] Cart update/remove return committed quantity transition + bounded server-authoritative item snapshot.
-- [ ] `view_cart` / `begin_checkout` use complete all-or-nothing canonical cart projection.
-- [ ] Shared snapshot price is sourced from current central promotion resolver when promotion is present.
-- [ ] If #151 reaches this boundary first, implement the shared API once and make #153 consume it; do not create a temporary duplicate path.
 
 ## P6 — PDP/composite promotion projection
-- [ ] Remove retail/after-discount equality gate only after P2 evidence acceptance.
-- [ ] Selected option uses central quote; no client discount formula.
-- [ ] Preserve selected `pancakeVariationId` in storefront facts.
-- [ ] Composite component uses its own real owner for campaign lookup.
-- [ ] Sale UI: struck base + effective price + badge; Flash adds label/countdown.
-- [ ] Countdown is presentation only; server decides eligibility.
-- [ ] No per-option DB query.
-- [ ] Compatible with #153 M2 standalone deep link `/shop/<slug>?variant=<pancakeVariationId>`; no promotion-specific competing variant URL.
+- [ ] Remove equality gate only after P2 evidence acceptance.
+- [ ] Selected option uses central quote and retains `pancakeVariationId`.
+- [ ] Composite campaign ownership follows real component owner.
+- [ ] Sale/Flash UI has no local discount formula.
+- [ ] No per-option N+1.
+- [ ] Compatible with #153 M2 `/shop/<slug>?variant=<pancakeVariationId>`; no competing promotion URL state.
 
 Verification:
-- [ ] standalone and composite real-owner cases.
-- [ ] selected-variant exact price.
-- [ ] invalid/unusable base.
+- [ ] standalone/composite owner tests.
+- [ ] invalid base and selected exact quote.
 - [ ] deep-link compatibility when M2 lands.
 - [ ] browser/a11y PDP checks.
 
-## P7a — cards + `/shop` effective-price discovery
-- [ ] Card representative promoted variant is lowest effective promoted purchasable variant with deterministic tie.
-- [ ] Struck base comes from the same representative variant.
-- [ ] If cheaper unpromoted variant exists, use non-misleading `Sale từ ...` semantics.
-- [ ] `minPrice`, `maxPrice`, `price-asc`, `price-desc` use authoritative effective price before pagination.
-- [ ] One request `requestNow` spans count/order/SQL/hydration/card/transition aggregation.
-- [ ] SQL casts validated base to PostgreSQL `numeric` before percentage arithmetic.
-- [ ] SQL uses same target/time/conflict/invalid semantics as TypeScript.
-- [ ] Product-level analytics identity remains product-level; do not fabricate a selected variation from card representative pricing.
-- [ ] Query-wide transition aggregate includes off-page candidates that can enter current page/filter/sort.
+## P7a — cards + `/shop`
+- [ ] Representative sale variant/wording follows spec.
+- [ ] Filter/min/max/price sort use effective price before pagination.
+- [ ] One `requestNow` spans count/order/SQL/hydration/card/transition aggregation.
+- [ ] SQL casts validated base to `numeric` before percentage arithmetic.
+- [ ] SQL target/time/conflict/invalid semantics match TypeScript.
+- [ ] Product-level analytics remains product-level; representative variant is not fabricated as selected item.
+- [ ] Query-wide transition aggregate includes off-page membership/order changes.
 
 Verification:
-- [ ] SQL↔TS parity including mandatory P2 fixtures.
+- [ ] SQL↔TS parity including P2 fixtures.
 - [ ] filter/sort/pagination.
-- [ ] off-page transition membership change.
-- [ ] current page/offset guards.
+- [ ] off-page transition.
+- [ ] page/offset guards.
 - [ ] no N+1.
 
 ## P7b — `/flash-sale` + freshness
-- [ ] Reuse same sanctioned SQL pricing/membership projection.
-- [ ] Show active-valid Flash Sale variants only.
-- [ ] Page parser max 10,000.
-- [ ] Page size max 48.
-- [ ] Offset max 50,000.
-- [ ] page 1042 @48 => offset 49,968 allowed.
-- [ ] page 1043 @48 => offset 50,016 rejected before expensive query.
-- [ ] Empty Flash route still knows next enabled Flash boundary.
-- [ ] Server emits relative `refreshAfterMs <= 60_000`.
-- [ ] Client does not rely on browser wall-clock subtraction.
-- [ ] `visibilitychange` / `pageshow` resume refresh if deadline elapsed while suspended.
+- [ ] Same sanctioned pricing/membership projection; no duplicate Flash formula.
+- [ ] Active-valid Flash variants only.
+- [ ] page <=10000, size <=48, offset <=50000.
+- [ ] page 1042@48 allowed; 1043@48 rejected before expensive query.
+- [ ] Empty route knows next enabled Flash boundary.
+- [ ] Relative refresh <=60s.
+- [ ] Browser wall clock not authority.
+- [ ] visibility/pageshow resume guard.
 
 Verification:
-- [ ] empty -> first sale starts.
+- [ ] empty→active.
 - [ ] end boundary.
 - [ ] clock skew.
-- [ ] background-tab resume.
-- [ ] pagination/offset/query budget.
+- [ ] background resume.
+- [ ] pagination/query budget.
 
 ### Checkpoint B
-- [ ] PDP/cards/shop/flash share one price authority.
-- [ ] #153 identity contract still passes.
-- [ ] SQL↔TS parity green.
-- [ ] browser freshness/a11y checks pass.
+- [ ] PDP/cards/shop/Flash share one price authority.
+- [ ] #153 identity contract remains green.
+- [ ] SQL parity green.
+- [ ] Browser freshness/a11y green.
 - [ ] 0 Critical / 0 Required.
 
+## Shared #153 T5/T6 cart contract
+- [ ] PDP AddToCart is atomic `+1`, never absolute set-to-1.
+- [ ] Update/remove return committed transition + bounded authoritative item snapshot.
+- [ ] Snapshot includes real `pancakeVariationId` and server-current resolver price.
+- [ ] No stale browser fallback.
+- [ ] `view_cart` / `begin_checkout` are complete all-or-nothing projections.
+- [ ] If #151 reaches this boundary first, implement this API once and make #153 consume it; no duplicate temporary path.
+
 ## P8 — DRAFT quote + promotion audit
-- [ ] Initial DRAFT uses central effective quote, never browser price authority.
-- [ ] DRAFT line keeps `pancakeVariationId`, product/name/options/quantity plus base/final/promotion audit facts.
-- [ ] DRAFT remains mutable/retryable until guarded finalization.
-- [ ] Final pricing/audit becomes immutable once leaving DRAFT for submission.
-- [ ] Production activation remains blocked while P9/P10 are incomplete.
+- [ ] DRAFT stores purchased external variant identity + quantity/name/options + base/final/promotion audit.
+- [ ] Browser price is stale-detection input only.
+- [ ] DRAFT mutable/retryable until guarded finalization.
+- [ ] Final pricing freezes when leaving DRAFT for submission.
 
 Verification:
-- [ ] no promotion / percentage / fixed DRAFT snapshots.
-- [ ] composite component identity.
+- [ ] no promo / % / fixed.
+- [ ] composite external identity.
 - [ ] invalid base.
 - [ ] retryable DRAFT replacement.
 
-## P9a — rendered quote -> DRAFT reconfirmation
-- [ ] Browser returns expected quote only for stale detection.
-- [ ] Server recomputes current quote before accepting submit-capable DRAFT.
-- [ ] Mismatch returns typed `PRICE_CHANGED` + refreshed totals.
-- [ ] No `POS_SUBMITTING` and no Pancake create call on mismatch.
+## P9a — rendered quote -> DRAFT
+- [ ] Server recomputes current quote before submit-capable DRAFT acceptance.
+- [ ] Mismatch => typed `PRICE_CHANGED` + refreshed totals.
+- [ ] No `POS_SUBMITTING`; no Pancake create.
 - [ ] Explicit resubmit required.
+- [ ] Regression: buyer saw 400k, sale ended, first submit shows 500k/zero POS write, second unchanged submit may continue.
 
-Mandatory regression:
-- [ ] customer sees 400k -> sale ends -> first submit returns 500k `PRICE_CHANGED` with zero POS write -> second unchanged submit may proceed.
-
-## P9b — DRAFT -> fresh Pancake reconfirmation
+## P9b — DRAFT -> fresh Pancake
 - [ ] Fetch fresh trusted Pancake catalog facts.
 - [ ] Feed fresh base into central resolver.
-- [ ] Compare DRAFT final quote to fresh effective website quote, not raw live retail.
-- [ ] Mismatch atomically refreshes same DRAFT line/audit/totals and returns `PRICE_CHANGED`.
-- [ ] No Pancake create call on mismatch.
-- [ ] Percentage recalculates; fixed price revalidates.
-- [ ] Repeated drift repeats reconfirmation without stale-loop behavior.
+- [ ] Compare DRAFT quote to fresh effective website quote, never raw retail.
+- [ ] Mismatch atomically refreshes DRAFT line/audit/totals + `PRICE_CHANGED`.
+- [ ] No create-order on mismatch.
+- [ ] Percentage recalculates; fixed revalidates; repeated drift can reconfirm again.
 
 Verification:
-- [ ] fresh base drift % and fixed.
+- [ ] % and fixed fresh-base drift.
 - [ ] promotion start/end during checkout.
 - [ ] invalid/recovery.
-- [ ] no POS call on mismatch.
+- [ ] zero POS write on mismatch.
 
-## P10 — Pancake final-price convergence
-- [ ] Replace raw-live `PRICE_CHANGED` comparison with fresh effective quote.
-- [ ] Recompute merchandise/shipping/total integrity from authoritative effective/final values.
-- [ ] Build outbound request line price from finalized immutable `OrderLineSnapshot.unitPriceVnd`.
-- [ ] Keep fresh stock/identity validation.
-- [ ] Preserve no-blind-retry and `SYNC_UNKNOWN` semantics.
-- [ ] Three separate regressions independently fail if comparison, totals or outbound price reverts to raw `livePrice`.
-- [ ] Controlled authorized Pancake semantic acceptance submits a safe/test line price different from catalog base and verifies acceptance/preservation.
-- [ ] Record sanitized evidence; clean up if safe.
-- [ ] If acceptance cannot be proved, production discounted campaign activation remains blocked.
+## P10 — final Pancake convergence
+- [ ] Fresh effective quote used for price-change comparison.
+- [ ] Authoritative effective/final money used for merchandise/shipping/total integrity.
+- [ ] Outbound `variation_info.retail_price` comes from finalized immutable `OrderLineSnapshot.unitPriceVnd`.
+- [ ] Fresh stock/identity validation retained.
+- [ ] No blind retry; `SYNC_UNKNOWN` retained for ambiguous outcome.
+- [ ] Three independent regressions cover comparison/totals/outbound price reverting to raw `livePrice`.
+- [ ] Controlled authorized Pancake test proves non-base requested line price accepted/preserved.
+- [ ] Sanitized evidence recorded; cleanup if safe.
+- [ ] Failed/unavailable semantic acceptance => discounted production activation stays blocked.
 
-## #153 T7 Purchase convergence
-After P10 finalization contract exists:
-- [ ] Confirmed Purchase consumes immutable final unit prices/quantities/`pancakeVariationId` from order snapshots.
+## #153 T7 Purchase consumer
+- [ ] Only CONFIRMED emits Purchase.
+- [ ] Purchase uses immutable finalized order snapshot price/quantity/`pancakeVariationId`.
 - [ ] `publicCode` remains transaction/event ID.
-- [ ] Promotion metadata may enrich internal audit but tracking does not calculate discount itself.
-- [ ] Repeat success-page visit reuses identity; no duplicate logical transaction identity.
-- [ ] Non-CONFIRMED states emit no Purchase.
+- [ ] Tracking never recalculates promotion.
 
-## G1 — SEO + analytics + Merchant monetary convergence
-Analytics:
-- [ ] `view_item`/cart events use authoritative current effective price when exact price exists.
-- [ ] product-level range does not masquerade as exact selected price.
+## G1 — enabled-consumer convergence
+Analytics/Meta:
+- [ ] Current-state/cart events use authoritative effective price.
+- [ ] Product price range never masquerades as selected exact price.
 - [ ] Purchase uses immutable final snapshot money.
-- [ ] GTM only routes/maps events; no promotion formula in GTM.
-- [ ] Existing direct Meta Pixel+CAPI ownership remains direct; no duplicate Meta GTM tag.
+- [ ] GTM only maps/routes; no promotion formula.
+- [ ] Existing direct Meta remains direct; if it emits monetary value, value source is promotion-aware.
 
 Merchant:
-- [ ] #153 M2 owns standalone variant deep-link contract.
-- [ ] #153 M3 mapper consumes current storefront effective price.
-- [ ] No Merchant-specific promotion math.
-- [ ] Composite Merchant offers remain deferred/fail-closed.
-- [ ] Sale start/end changes feed price according to current storefront authority/cache freshness contract.
+- [ ] #153 M2 owns standalone deep-link contract.
+- [ ] M3 consumes storefront effective price; no Merchant promotion formula.
+- [ ] Composite Merchant remains deferred.
+- [ ] If Merchant success cache is enabled, it must not serve a known stale price across promotion start/end: expiry is `min(300s normal TTL, nearest relevant promotion transition)` or equivalent tested invalidation.
+- [ ] Existing 60s negative failure backoff remains unchanged and isolated from valid success cache.
+- [ ] Tests cover normal price, active sale, sale start and sale end around cache boundary.
 
 SEO/GEO:
-- [ ] Structured Offer uses authoritative effective price only when current variant schema/deep-link contract can represent it truthfully.
-- [ ] Do not introduce `AggregateOffer` for variants.
-- [ ] ProductGroup/per-variant Offer remains behind #152 W4 + #153 M2 prerequisites.
-- [ ] Inventory W15 existing SEO test/CI coverage before adding runtime gates; add only gaps.
-- [ ] Promotion/Tracking/Merchant work does not enable organic indexing.
+- [ ] Structured Offer uses effective price only where #152 W4/#153 M2 can truthfully represent variant.
+- [ ] No `AggregateOffer` shortcut for variants.
+- [ ] Inventory W15 coverage before adding smoke jobs.
+- [ ] Promotion/Tracking/Merchant does not enable organic indexing.
 
-## G2 — observability + readiness + rollback
-- [ ] Bounded/redacted telemetry for activation rejection.
-- [ ] Bounded/redacted telemetry for runtime invalid/recovery and `PARTIALLY_INVALID`.
-- [ ] Conflict telemetry identifies bounded campaign/target IDs without PII.
-- [ ] `PRICE_CHANGED` reason/phase observable.
-- [ ] Pancake semantic acceptance evidence recorded securely.
-- [ ] Activation-gate state/change operationally visible without exposing secrets.
-- [ ] No customer PII, credentials or raw external payloads logged.
-- [ ] Rollback runbook: gate off + campaign Disable; Disable remains bounded even >2000 dynamic variants.
-- [ ] Mirrored-money audit reviewed before rollout.
+Activation rule:
+- [ ] All currently enabled price-bearing consumers converge before promotions are activated.
+- [ ] GTM/Merchant that are mechanically disabled/fail-closed may stay off and do not block promotion activation.
+- [ ] Future GTM/Merchant activation must re-check promotion-aware monetary behavior if promotions are active.
 
-## G3 — final DoD
-- [ ] Focused tests for every changed behavior and regression path.
-- [ ] Relevant existing domain/DB suites green.
+## G2 — observability/readiness/rollback
+- [ ] Bounded/redacted activation rejection telemetry.
+- [ ] Invalid/recovery/PARTIALLY_INVALID telemetry.
+- [ ] Conflict telemetry with bounded identifiers.
+- [ ] `PRICE_CHANGED` phase/reason observable.
+- [ ] Pancake semantic acceptance evidence handled securely.
+- [ ] No PII/secrets/raw external payloads in logs.
+- [ ] Rollback runbook: gate off + explicit Disable; Disable works >2000 variants.
+- [ ] Mirrored-money audit accepted.
+
+## G3 — Definition of Done
+- [ ] Focused new/regression tests.
+- [ ] Relevant DB/domain suites green.
 - [ ] Lint green.
 - [ ] Typecheck green.
 - [ ] Production build green.
-- [ ] Applicable runtime/browser/a11y suites green.
+- [ ] Applicable runtime/browser/a11y green.
 - [ ] No duplicate pricing/business logic.
 - [ ] No unrelated refactor.
-- [ ] No N+1/unbounded query introduced.
-- [ ] Security review complete for admin input/authz/external Pancake facts.
-- [ ] Docs/runbooks match current truth.
-- [ ] #153 identity/cart/Purchase contracts remain green.
-- [ ] #152 indexing policy remains unchanged unless separately approved.
-- [ ] Human final review has 0 Critical / 0 Required.
+- [ ] No N+1/unbounded query.
+- [ ] Security review complete.
+- [ ] Docs/runbooks current.
+- [ ] #153 identity/cart/Purchase regressions remain green.
+- [ ] #152 indexing policy unchanged unless separately approved.
+- [ ] Human final review: 0 Critical / 0 Required.
 
 ## Recommended implementation sequence
-- [ ] PR A1 — P1 persistence.
-- [ ] PR A2 — P2 pricing/evidence.
-- [ ] PR B1 — P3 repository/lifecycle.
-- [ ] PR B2 — P4 concurrency/admin domain.
-- [ ] PR C — P5 admin UX.
-- [ ] Converge #153 T4 shared identity facts.
-- [ ] PR D1 — P6 PDP/composite.
-- [ ] PR D2 — P7a shop/cards.
-- [ ] PR D3 — P7b Flash/freshness.
-- [ ] Converge one shared #153 T5/T6 cart mutation/projection API.
-- [ ] PR E1 — P8 DRAFT quote/audit.
-- [ ] PR E2 — P9a rendered-quote reconfirmation.
-- [ ] PR E3 — P9b fresh-Pancake reconfirmation.
-- [ ] PR F — P10 Pancake final-price convergence.
-- [ ] #153 T7 Purchase on finalized snapshot.
-- [ ] G1 split into focused analytics / Merchant / SEO consumer PRs.
-- [ ] G2 ops/readiness.
-- [ ] G3 final integrated verification.
+- [ ] A1 P1 persistence.
+- [ ] A2 P2 pricing/evidence.
+- [ ] B1 P3 repository/lifecycle.
+- [ ] B2 P4 concurrency/admin domain.
+- [ ] C P5 admin UX.
+- [ ] Converge #153 T4 identity.
+- [ ] D1 P6 PDP/composite.
+- [ ] D2 P7a shop/cards.
+- [ ] D3 P7b Flash/freshness.
+- [ ] Converge shared #153 T5/T6 cart API.
+- [ ] E1 P8 DRAFT.
+- [ ] E2 P9a rendered reconfirmation.
+- [ ] E3 P9b fresh-Pancake reconfirmation.
+- [ ] F P10 final Pancake price.
+- [ ] #153 T7 Purchase consumer.
+- [ ] G1 focused consumer PRs only for consumers intended/enabled at that rollout stage.
+- [ ] G2 readiness.
+- [ ] G3 integrated verification.
 
 ## Separate launch gates
-Promotion activation:
-- [ ] P1-P10 accepted.
-- [ ] mirrored-money + Pancake catalog evidence accepted.
+Promotion:
+- [ ] P1–P10 accepted.
+- [ ] Price/catalog evidence accepted.
 - [ ] Pancake custom-price semantic acceptance succeeds.
-- [ ] G1/G2/G3 accepted.
-- [ ] human explicitly enables promotion activation gate.
+- [ ] All currently enabled price-bearing consumers converged or explicitly disabled/fail-closed.
+- [ ] G2 + G3 accepted.
+- [ ] Human explicitly enables promotion activation gate.
 
-GTM live, Merchant activation and organic indexing remain separately owned launch gates from #153/#152 and are **not** implied by promotion readiness.
+GTM live, Merchant activation and organic indexing remain separate #153/#152 gates and are not implied by promotion readiness.
