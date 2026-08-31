@@ -201,25 +201,101 @@ function isVariantItem(item: CommerceItem): item is VariantItem {
 }
 
 /**
- * Re-validates an item at the event boundary.
+ * Re-validates and reconstructs an item at the event boundary.
  *
  * The builders above cannot be the only gate: the event builders accept a `CommerceItem`, so a
  * caller mapping straight from a repository row — or writing a literal — reaches them without ever
- * passing through `buildVariantItem`. A negative price or a fractional quantity that slips through
- * becomes a negative conversion value at a destination, which is worse than no event at all.
+ * passing through `buildVariantItem`. Reconstruction is intentional: validation followed by
+ * `{ ...item }` would preserve arbitrary checkout/customer fields that were never part of the
+ * reviewed commerce contract.
  */
-function assertCommerceItem(name: CommerceEventName, item: CommerceItem): void {
+function normalizeCommerceItem(name: CommerceEventName, item: CommerceItem): CommerceItem {
   if (typeof item !== "object" || item === null) {
     throw new RangeError(`${name} items must be commerce item objects`);
   }
-  requireIdentity((item as CommerceItem).item_id, `${name} item identity`);
-  requireText((item as CommerceItem).item_name, `${name} item name`);
 
-  const price = (item as VariantItem).price;
-  if (price !== undefined) requireIntegerVnd(price, `${name} item price`);
+  const itemId = requireIdentity((item as CommerceItem).item_id, `${name} item identity`);
+  const itemName = requireText((item as CommerceItem).item_name, `${name} item name`);
 
-  const quantity = (item as VariantItem).quantity;
-  if (quantity !== undefined) requireQuantity(quantity);
+  if (isVariantItem(item)) {
+    const normalized: VariantItem = {
+      item_id: itemId,
+      item_name: itemName,
+      price: requireIntegerVnd(item.price, `${name} item price`),
+      quantity: requireQuantity(item.quantity),
+    };
+
+    if (item.item_group_id !== undefined) {
+      normalized.item_group_id = requireIdentity(item.item_group_id, `${name} product identity`);
+    }
+    if (item.item_variant !== undefined) {
+      normalized.item_variant = requireText(item.item_variant, `${name} item variant`);
+    }
+    if (item.la_projection_context !== undefined) {
+      normalized.la_projection_context = requireIdentity(
+        item.la_projection_context,
+        `${name} projection context`,
+      );
+    }
+
+    return normalized;
+  }
+
+  if (COMMITTED_VARIANT_EVENTS.has(name)) {
+    throw new RangeError(`${name} requires concrete variant identity, not a product impression`);
+  }
+
+  const impression = item as ProductImpressionItem;
+  const normalized: ProductImpressionItem = {
+    item_id: itemId,
+    item_name: itemName,
+  };
+
+  const hasRange = impression.la_minimum_price_vnd !== undefined
+    || impression.la_maximum_price_vnd !== undefined;
+  if (impression.price !== undefined && hasRange) {
+    throw new RangeError(`${name} product item cannot carry both exact price and a price range`);
+  }
+
+  if (impression.price !== undefined) {
+    normalized.price = requireIntegerVnd(impression.price, `${name} item price`);
+  } else if (hasRange) {
+    if (
+      impression.la_minimum_price_vnd === undefined
+      || impression.la_maximum_price_vnd === undefined
+    ) {
+      throw new RangeError(`${name} product price range requires both minimum and maximum`);
+    }
+    const minimum = requireIntegerVnd(
+      impression.la_minimum_price_vnd,
+      `${name} minimum item price`,
+    );
+    const maximum = requireIntegerVnd(
+      impression.la_maximum_price_vnd,
+      `${name} maximum item price`,
+    );
+    if (minimum > maximum) throw new RangeError(`${name} product price range must not be inverted`);
+    if (minimum === maximum) normalized.price = minimum;
+    else {
+      normalized.la_minimum_price_vnd = minimum;
+      normalized.la_maximum_price_vnd = maximum;
+    }
+  }
+
+  if (impression.item_list_id !== undefined) {
+    normalized.item_list_id = requireIdentity(impression.item_list_id, `${name} list identity`);
+  }
+  if (impression.item_list_name !== undefined) {
+    normalized.item_list_name = requireText(impression.item_list_name, `${name} list name`);
+  }
+  if (impression.index !== undefined) {
+    if (!Number.isSafeInteger(impression.index) || impression.index < 0) {
+      throw new RangeError(`${name} list index must be a non-negative safe integer`);
+    }
+    normalized.index = impression.index;
+  }
+
+  return normalized;
 }
 
 function requireItems(name: CommerceEventName, items: readonly CommerceItem[]): readonly CommerceItem[] {
@@ -227,17 +303,11 @@ function requireItems(name: CommerceEventName, items: readonly CommerceItem[]): 
     throw new RangeError(`${name} requires at least one item`);
   }
 
-  for (const item of items) {
-    assertCommerceItem(name, item);
-    if (COMMITTED_VARIANT_EVENTS.has(name) && !isVariantItem(item)) {
-      throw new RangeError(`${name} requires concrete variant identity, not a product impression`);
-    }
-  }
-
-  // Copied and frozen, so neither the caller's later mutation of its own array nor a mutation of the
-  // published event can add a field the validation above never saw. The no-PII property has to hold
-  // at publish time, not only at construction time.
-  return Object.freeze(items.map((item) => Object.freeze({ ...item })));
+  // Reconstruct from the reviewed field set before freezing. This is the actual no-PII boundary:
+  // arbitrary caller properties are discarded rather than copied into the event.
+  return Object.freeze(
+    items.map((item) => Object.freeze(normalizeCommerceItem(name, item))),
+  );
 }
 
 export type CommerceItemsEventInput = Readonly<{
