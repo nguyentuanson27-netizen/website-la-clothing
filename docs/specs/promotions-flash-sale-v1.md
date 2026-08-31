@@ -19,7 +19,7 @@ The feature must not write promotional catalog prices back to Pancake.
 - PR #152 added `docs/audits/seo-geo-audit.md` as a planning input. Its W3/W4 constraints are binding inputs to promotion rollout and SEO convergence where called out below.
 - PR #153 is now a binding planning dependency at shared seams: unselected product analytics identity uses `pancakeProductId`; concrete selected/committed variant identity uses `pancakeVariationId`; Purchase transaction/event identity uses `OrderMirror.publicCode`; cart mutation/event snapshots are server-authoritative; and M2 owns the standalone variant deep-link/preselection/canonical-query contract. Promotion work may adapt current implementation ownership when `main` evolves, but must not silently replace these reviewed contracts.
 - PR #153 Merchant M4 owns the fixed-key complete-success cache/single-flight/60-second negative-backoff envelope. Promotion adds price-transition and mutation invalidation requirements to that same cache domain; it does not create a second Merchant cache or request-controlled cache dimension.
-- Promotion v1 also owns one durable server-side **promotion pricing revision**. Every successful publish/re-enable/Disable/end-early/Scheduled material edit that can change current or future Merchant-visible promotion pricing must advance that revision **inside the same database transaction** as the campaign mutation. A best-effort post-commit callback, `after()`, fire-and-forget task, or external event is not a correctness mechanism for Merchant freshness.
+- Promotion v1 also owns one durable server-side **promotion pricing revision**, stored as a non-negative `BigInt`/equivalent monotonic integer. Every successful publish/re-enable/Disable/end-early/Scheduled material edit that can change current or future Merchant-visible promotion pricing must advance that revision **inside the same database transaction** as the campaign mutation. A best-effort post-commit callback, `after()`, fire-and-forget task, or external event is not a correctness mechanism for Merchant freshness.
 
 ## Campaign model
 A campaign has one shared rule across all targets:
@@ -48,7 +48,7 @@ These are server-authoritative limits, not UI hints:
 - `MAX_PROMOTION_IDENTIFIER_LENGTH = 128` browser-supplied campaign/product/variant identifier code units before lookup.
 - `MAX_ADMIN_PROMOTION_PAGE_SIZE = 50`.
 - `ADMIN_TARGET_SEARCH_LIMIT = 50`.
-- `MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024` ASCII/base64url bytes before verification/decoding.
+- `MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024` ASCII/base64url bytes before verification/decoding. This is sized for the current anonymous-cart cap of 50 distinct items; if that cart bound changes, P9a must re-prove the token envelope before merge rather than silently raising/unbounding it.
 - Public product-list page size reuses existing max `48`.
 - Public page input reuses `STOREFRONT_DISCOVERY_LIMITS.page = 10_000`.
 - Storefront repositories must also preserve the existing `MAX_STOREFRONT_OFFSET = 50_000` guard; page parsing alone is not sufficient.
@@ -76,7 +76,7 @@ Website-owned VND money uses integer storage:
 
 The mirrored Pancake price columns remain external `Float?` facts. This feature does not convert them to `BigInt`; trusted integer-VND validation occurs at the website pricing boundary.
 
-Database/server invariants must enforce target shape, campaign relationships, duplicate prevention, additive order-audit integrity, and one durable bounded promotion-pricing revision rather than relying on UI checks. The revision may use a singleton row/equivalent additive persistence shape, but it must be transactionally advanceable with effective campaign mutations and readable independently by Merchant cache validation.
+Database/server invariants must enforce target shape, campaign relationships, duplicate prevention, additive order-audit integrity, and one durable bounded-cardinality promotion-pricing revision rather than relying on UI checks. The revision may use a singleton row/equivalent additive persistence shape, but it must be transactionally advanceable with effective campaign mutations and readable independently by Merchant cache validation.
 
 No campaign delete action in v1.
 
@@ -374,18 +374,21 @@ Checkout render must create a **server-verifiable rendered-quote proof** for bou
 
 V1 proof is deliberately **stateless**. It uses a standard-library server-only HMAC/MAC over canonical bounded payload bytes; it does not create quote-proof rows, nonce tables, or append-only proof state. The implementation may derive a domain-separated quote-proof key from an existing validated server-only secret or use a dedicated validated server-only secret if current configuration ownership requires it, but the key source is explicit, never client-visible, and no new third-party dependency is needed.
 
+The current anonymous cart UUID lives in an HttpOnly cookie and must remain server-only proof context. The proof may be *bound* to that cart identity by including the server-read cart ID in the MAC input, but the raw cart UUID itself must **not** be serialized into the browser-visible token/payload or any client-readable field.
+
 The proof contract is deliberately separate from pricing authority:
-- canonicalize and bind the proof payload to the current anonymous cart/checkout identity and canonical rendered quote facts (variant IDs, quantities, effective unit prices, merchandise subtotal, shipping, total, and a server issue/version fact);
-- sign/authenticate those canonical bytes with the server-only MAC key; no unsigned hidden field and no server-stored nonce/version record proves what the buyer saw;
+- canonicalize browser-visible proof payload from the canonical rendered quote facts (variant IDs, quantities, effective unit prices, merchandise subtotal, shipping, total, and a server issue/version fact);
+- bind the MAC to the current anonymous cart/checkout identity as server-only context in addition to those payload bytes; do not expose the raw HttpOnly cart ID in token bytes;
+- sign/authenticate those canonical bytes/context with the server-only MAC key; no unsigned hidden field and no server-stored nonce/version record proves what the buyer saw;
 - reject proof strings above `MAX_RENDERED_QUOTE_PROOF_BYTES` before decode/verification;
-- keep the proof bounded and non-PII; do not put customer address/phone/secrets into the token/logs;
+- keep the proof bounded and non-PII; do not put customer address/phone/secrets/session handles into the token/logs;
 - use constant-time MAC comparison where the runtime primitive supports it;
 - verify authenticity/binding before using the proof for stale detection;
 - missing, oversized, malformed, forged, wrong-cart, or otherwise unverifiable proof fails closed as `PRICE_CHANGED` (or a narrower typed quote-proof error rendered with the same refreshed-price/no-submit behavior), returns a fresh server-issued proof, creates no submit-capable DRAFT, enters no `POS_SUBMITTING`, and performs no Pancake write;
 - after proof verification, the server still recomputes current authoritative pricing; the proof can only establish the previously rendered quote, never authorize price.
 
 On submit:
-- server verifies the rendered-quote proof and recomputes current authoritative quote before creating submit-capable DRAFT;
+- server verifies the rendered-quote proof against the current server-read cart identity and recomputes current authoritative quote before creating submit-capable DRAFT;
 - verified rendered quote != current quote → typed `PRICE_CHANGED`, refreshed lines/totals + fresh proof, no Pancake write, explicit resubmit required;
 - browser values never calculate authoritative price.
 
@@ -393,6 +396,7 @@ Required cases:
 - buyer saw 400k → promotion expires → first submit returns 500k/no POS write + fresh proof → buyer must explicitly confirm again;
 - buyer saw 400k → promotion expires → client tampers hidden/rendered quote to 500k but reuses/forges proof → cannot bypass reconfirmation;
 - proof from a different cart/checkout instance cannot authorize this cart;
+- decoding/inspecting the browser-visible proof never reveals the raw HttpOnly cart UUID;
 - proof at `MAX_RENDERED_QUOTE_PROOF_BYTES` follows normal verification; `max+1` is rejected before decode/MAC work.
 
 ### Stage 2 — DRAFT → fresh Pancake
@@ -469,10 +473,12 @@ When Merchant is enabled with promotions:
 - #153's `MERCHANT_FEED_CACHE_TTL_SECONDS = 300` is a **maximum normal success TTL**, not a guarantee that a success body remains valid for all 300 seconds;
 - known promotion start/end boundaries cap effective success-cache expiry to the nearest relevant transition, or use an equivalent tested invalidation mechanism;
 - every successful promotion mutation that can change current or future Merchant-visible price/schedule — publish, re-enable, Disable/end-early, and Scheduled material edit — advances the durable promotion pricing revision **inside the same database transaction** as the mutation; Draft-only edits and Copy do not advance it solely because they are not storefront-effective;
-- Merchant cache validation uses that durable revision as correctness authority. A cache hit may be served only after a bounded cheap read confirms stored revision == current durable revision; this cheap revision read is not a heavy feed generation and remains inside the route's bounded DB budget;
+- every success-cache entry is tagged with the durable revision under which it was built;
+- a Merchant cache-hit decision has an explicit linearization point at its bounded cheap read of the current durable revision. If that read occurs after a promotion mutation commits, an entry with the prior revision must not be served. A request whose revision read completed before the concurrent mutation commit is ordered before that mutation for cache-freshness purposes even if its HTTP response completes later;
+- this cheap revision read is not a heavy feed generation and remains inside the route's bounded DB budget;
 - invalidation/revision does not add request-controlled cache dimensions or weaken the fixed-key, single-flight, 60-second negative-backoff, complete-success-only, no-partial-200 rules from #153;
-- an in-flight heavy generation reads/captures the current durable revision before generation and re-reads it immediately before publishing a new success body. It may publish only if the revision still matches, so a pre-mutation generator cannot reinsert stale bytes after a committed mutation;
-- the promotion mutation must not rely on a post-commit callback to make the revision visible. After the campaign transaction commits, any Merchant request observing that committed state can also observe the advanced durable revision before deciding a cache hit is current;
+- an in-flight heavy generation reads/captures the durable revision before generation and re-reads it immediately before publishing a new success body. If the revision changed, it does not publish that result as current. Even if a concurrent DB commit races after the final read, the entry remains tagged with the old revision and the next cache-hit revision check cannot serve it as current;
+- the promotion mutation must not rely on a post-commit callback to make the revision visible. After the campaign transaction commits, any later cache decision's revision read observes/compares against the advanced durable revision before deciding an old entry is current;
 - if the deployed topology cannot provide this durable revision read plus the same fixed-key/single-flight/backoff guarantees across the active Merchant cache domain, Merchant activation remains blocked rather than serving potentially stale promotion pricing.
 
 Existing indexing policy/ADR remains unchanged. Tracking scripts are never required for SEO-visible content/price.
@@ -485,12 +491,14 @@ Assets:
 - campaign state/schedule;
 - final order money integrity;
 - Pancake credentials/integration;
-- customer totals.
+- customer totals;
+- anonymous-cart session handle confidentiality.
 
 Trust boundaries:
 - browser/admin input untrusted;
 - mirrored/direct Pancake data external/untrusted until validated;
 - validated DB campaign/order records server-owned;
+- raw anonymous-cart UUID is HttpOnly/server context, not browser-visible proof payload data;
 - Pancake create-order external one-shot side effect.
 
 Required controls:
@@ -498,12 +506,12 @@ Required controls:
 - bounded names/IDs/arrays/pages/money/time/proof bytes;
 - target IDs resolved server-side;
 - browser price never authoritative;
-- rendered-checkout stale detection uses bounded stateless server-MAC proof bound to the correct cart/checkout identity; unsigned client quote facts and server-stored unbounded nonce state cannot prove what the buyer saw;
+- rendered-checkout stale detection uses bounded stateless server-MAC proof bound to the correct cart/checkout identity as server-only MAC context; unsigned client quote facts, exposed raw cart session handles, and server-stored unbounded nonce state cannot prove what the buyer saw;
 - concurrency-safe overlap;
 - Pancake payload strict allowlist from immutable order snapshot + validated identity/stock;
-- no secrets/customer PII in diagnostics.
+- no secrets/customer PII/session handles in diagnostics.
 
-Abuse tests include forged IDs/discounts/timestamps, oversized payloads, large page/offset input, racing publishes, oversized/malformed/manipulated/forged/wrong-cart rendered-quote proof, promotion-commit-versus-Merchant-cache races, and malformed external prices.
+Abuse tests include forged IDs/discounts/timestamps, oversized payloads, large page/offset input, racing publishes, oversized/malformed/manipulated/forged/wrong-cart rendered-quote proof, browser-visible proof inspection for cart-ID leakage, promotion-commit-versus-Merchant-cache linearization races, and malformed external prices.
 
 ## Performance/data access
 - no per-card/per-variant N+1 promotion lookup;
@@ -529,7 +537,7 @@ Structured non-PII reason-coded events for:
 - promotion-aware Pancake submission rejection;
 - Merchant promotion-cache revision mismatch/rebuild when Merchant is enabled.
 
-Useful context: campaign ID, target type/ID, variant ID, bounded reason code. No customer address/phone/secrets or raw quote proof.
+Useful context: campaign ID, target type/ID, variant ID, bounded reason code. No customer address/phone/secrets/session handles or raw quote proof.
 
 ## Testing requirements
 New behavior requires tests that fail without the implementation.
@@ -554,17 +562,17 @@ Must cover at least:
 - `/flash-sale` active-valid membership using same SQL projection;
 - storefront page-size/page/offset max/max+1; for 48-item page, 1042/1043 offset-window regression;
 - query-wide off-page transition, empty Flash Sale start, clock skew, background resume;
-- Stage-1 stateless server-MAC quote proof: valid proof/unchanged quote succeeds; oversized max/max+1, malformed/invalid/wrong-cart/forged proof fails closed; client changing hidden quote facts to current price cannot bypass a stale rendered proof; no DB proof/nonce rows are created by render/submit;
+- Stage-1 stateless server-MAC quote proof: valid proof/unchanged quote succeeds; oversized max/max+1, malformed/invalid/wrong-cart/forged proof fails closed; client changing hidden quote facts to current price cannot bypass a stale rendered proof; decoded/browser-visible token bytes do not contain the raw HttpOnly cart UUID; no DB proof/nonce rows are created by render/submit;
 - two-stage checkout `PRICE_CHANGED`;
 - immutable final audit snapshot;
 - all three Pancake raw-live-price regressions;
 - effective promotion mutation and durable promotion-pricing revision advance atomically; failed/rolled-back/Draft-only/Copy mutations do not advance revision;
-- Merchant cached normal → immediate Publish → next GET observes new durable revision and rebuilds;
-- Merchant cached sale → Disable/end-early → next GET observes new durable revision and rebuilds;
+- Merchant cached normal → immediate Publish → next cache decision reads newer durable revision and rebuilds;
+- Merchant cached sale → Disable/end-early → next cache decision reads newer durable revision and rebuilds;
 - Scheduled material edit that moves a boundary inside current success TTL advances revision transactionally;
-- concurrent Merchant GET racing a promotion commit cannot serve an old-revision cache hit after the mutation commit becomes visible;
-- concurrent GET after invalidation still produces at most one heavy generation in the proved cache domain;
-- in-flight pre-mutation heavy generation cannot publish stale success after durable revision changes;
+- Merchant cache-hit revision read before concurrent mutation commit may finish as the request logically ordered before the mutation; a cache-hit revision read after commit must never serve the prior revision;
+- concurrent GET after revision change still produces at most one heavy generation in the proved cache domain;
+- in-flight pre-mutation heavy generation cannot be served as current after durable revision changes, including a commit racing after the generator's final revision read;
 - Merchant negative failure sentinel remains isolated and cannot poison a valid success-cache generation;
 - structured data fail-closed when variant offer shape is not representable;
 - no `AggregateOffer` introduced by promotion work;
@@ -595,14 +603,14 @@ Implementation migration is additive:
 - keep Pancake mirror Float field types unchanged;
 - keep `pancakeRetailPriceAfterDiscount` mirrored;
 - add promotion campaign/target persistence;
-- add one durable bounded promotion-pricing revision persistence shape used transactionally by effective mutations and Merchant cache validation;
+- add one durable bounded-cardinality `BigInt`/equivalent promotion-pricing revision persistence shape used transactionally by effective mutations and Merchant cache validation;
 - add nullable promotion-audit fields for historical order compatibility;
 - support rolling app rollback without destructive down-migration.
 
 Rollback order:
 1. turn off new activation gate;
 2. disable active campaigns through the bounded campaign-only Disable path — this must work even if PRODUCT coverage >2000 and advances the durable promotion-pricing revision in the same transaction;
-3. Merchant cache validation observes that new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation is relied upon;
+3. later Merchant cache decisions observe that new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation is relied upon;
 4. stop new promotion-priced final submissions before rolling app code back;
 5. reject/supersede promotion DRAFT attempts that rolled-back code cannot validate;
 6. never rewrite finalized order history;
@@ -616,10 +624,10 @@ Always:
 - enabled coverage is validated atomically;
 - runtime promotion invalidation is affected-variant granular;
 - runtime conflicts fail closed;
-- rendered buyer-price acknowledgement is bounded/stateless/server-MAC-verifiable and client-tamper-resistant but never price authority;
+- rendered buyer-price acknowledgement is bounded/stateless/server-MAC-verifiable, keeps raw HttpOnly cart identity server-only, and is client-tamper-resistant but never price authority;
 - final audit is immutable;
 - Disable remains operationally available under catalog growth;
-- enabled Merchant cache cannot outlive known promotion boundaries or a durable promotion-pricing revision advanced by a committed effective mutation;
+- enabled Merchant cache cannot outlive known promotion boundaries or be served as current after a cache-decision revision read has observed a newer committed promotion-pricing revision;
 - SEO structured data stays truthful/fail-closed;
 - #153 identity/cart/analytics/Merchant contracts remain binding unless separately superseded.
 
@@ -634,14 +642,14 @@ Ask first:
 
 Never:
 - trust browser final price;
-- accept unsigned/client-editable quote facts or unbounded server-stored proof state as proof of what the buyer saw;
+- accept unsigned/client-editable quote facts, expose the raw HttpOnly cart UUID in proof payload, or persist unbounded server-stored proof state as proof of what the buyer saw;
 - stack promotions;
 - silently choose conflict winner;
 - apply invalid promotion;
 - submit stale quote after `PRICE_CHANGED`;
 - recompute promoted final totals/request price from raw base;
 - blind-retry ambiguous Pancake create-order;
-- serve an old-revision Merchant success body after a committed promotion mutation;
+- serve an old-revision Merchant success body from a cache decision whose durable-revision read occurred after the newer promotion mutation committed;
 - rely on `after()`/fire-and-forget/post-commit callbacks as Merchant cache correctness authority;
 - block Disable because a dynamic PRODUCT target grew beyond the activation expansion cap;
 - fail Copy solely because current dynamic expansion exceeds 2000;
@@ -673,12 +681,12 @@ Never:
 9. Percentage arithmetic is exact across full accepted domain; SQL↔TS parity is proven.
 10. Storefront `/shop` and `/flash-sale` share one bounded pricing/membership projection and page/offset guards.
 11. Storefront transition refresh handles off-page/empty-state/clock-skew/resume within 60s display bound.
-12. Cart/checkout use server price with bounded stateless server-MAC rendered-quote proof plus two-stage explicit `PRICE_CHANGED` reconfirmation; client quote tampering cannot bypass acknowledgement and no unbounded proof state is persisted.
+12. Cart/checkout use server price with bounded stateless server-MAC rendered-quote proof plus two-stage explicit `PRICE_CHANGED` reconfirmation; client quote tampering cannot bypass acknowledgement, raw HttpOnly cart identity remains server-only, and no unbounded proof state is persisted.
 13. Final order lines retain immutable base/final/promotion audit facts.
 14. Pancake comparison/totals/request mapping all use effective/final website pricing, with controlled semantic acceptance before activation.
 15. SEO Offer price uses effective price only when current SEO shape can truthfully represent it; unsupported variant pricing stays fail-closed and no AggregateOffer shortcut is introduced.
 16. Analytics/Merchant consumers preserve the reviewed #153 identity/cart/Purchase/cache contracts while consuming authoritative effective/final promotion pricing; current module ownership is re-verified against then-current `main` rather than redefined ad hoc.
-17. Merchant success cache is transition-aware and validates against a durable promotion-pricing revision advanced transactionally with every effective promotion mutation; stale cache/in-flight bytes cannot survive that revision change and #153 fixed-key/single-flight/backoff rules remain intact.
+17. Merchant success cache is transition-aware and validates against a durable BigInt/equivalent promotion-pricing revision advanced transactionally with every effective promotion mutation; cache decisions that observe a newer committed revision cannot serve prior-revision bodies and #153 fixed-key/single-flight/backoff rules remain intact.
 18. Security, bounds, migration, observability, rollback, tests, browser/a11y and full repository gates pass before launch.
 
 ## PR sizing guidance
