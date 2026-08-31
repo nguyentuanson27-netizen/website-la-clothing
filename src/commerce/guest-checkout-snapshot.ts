@@ -55,6 +55,7 @@ const snapshotOrderSelection = {
 
 const productSelection = {
   name: true,
+  pancakeProductId: true,
   isPresent: true,
   isActive: true,
   variants: {
@@ -248,6 +249,7 @@ function toStorefrontProduct(product: SelectedProduct) {
     if (sellableStock === null) return null;
     variants.push({
       id: variant.id,
+      pancakeVariationId: variant.pancakeVariationId,
       isPresent: variant.isPresent,
       isActive: variant.isActive,
       isCompositeComponentAvailable: variant.compositeParents.some(
@@ -265,7 +267,10 @@ function toStorefrontProduct(product: SelectedProduct) {
     });
   }
   return {
+    // Checkout never renders a public product link, so the slug is a placeholder rather than a
+    // public fact. The external product identity is real and comes straight from the mirror.
     slug: "checkout-snapshot",
+    pancakeProductId: product.pancakeProductId,
     name: product.name,
     isPresent: product.isPresent,
     isActive: product.isActive,
@@ -358,16 +363,12 @@ export function createGuestCheckoutSnapshotService(
         });
 
         const storefrontProducts = [];
-        const variationIdentity = new Map<string, string>();
         for (const product of products) {
           const storefrontProduct = toStorefrontProduct(product);
           if (!storefrontProduct) {
             return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
           }
           storefrontProducts.push(storefrontProduct);
-          for (const variant of product.variants) {
-            variationIdentity.set(variant.id, variant.pancakeVariationId);
-          }
         }
 
         const lines = buildStorefrontCartLines({ items, products: storefrontProducts });
@@ -385,7 +386,10 @@ export function createGuestCheckoutSnapshotService(
         let totalQuantity = 0;
 
         for (const line of lines) {
-          const pancakeVariationId = variationIdentity.get(line.variantId);
+          // Identity comes from the resolved line, which is the one projection that knows whether a
+          // real variation was resolved at all. Re-deriving it here from a side map was a second
+          // identity path that could disagree with the line it is describing.
+          const pancakeVariationId = line.pancakeVariationId;
           if (
             !line.available ||
             line.price === null ||
