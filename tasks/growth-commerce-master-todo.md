@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 0 IN PROGRESS — U5/U6 delivered; U0–U4 land in sibling PRs; Wave 1 onward planned**
+Status: **WAVE 0 COMPLETE — U0–U6 merged and integrated on `main@fe05184518a55e00ba24049fa895c6a4fdc3639c`; Wave 1 onward planned**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -18,23 +18,24 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 
 ## Wave 0 — baseline and safety
 
-Wave 0 is being delivered from base `main@be1dd63735af358ca6d44c0ad669da2cfd7beb66`. Per ADR 0005 it
-was split into five focused pull requests rather than one: **PR-A1** (U0+U1), **PR-A2** (U2),
-**PR-A3** (U3), **PR-A4** (U4) and **PR-A5** (U5+U6, and this checklist update). They share one base
-and own disjoint subsystems.
+Wave 0 was delivered from base `main@be1dd63735af358ca6d44c0ad669da2cfd7beb66`. Per ADR 0005 it
+was split into five focused pull requests rather than one: **PR-A1 / #156** (U0+U1),
+**PR-A2 / #157** (U2), **PR-A3 / #158** (U3), **PR-A4 / #159** (U4) and
+**PR-A5 / #160** (U5+U6). They shared one base and owned disjoint subsystems.
 
-**Only the units this PR actually delivers are ticked.** U0–U4 stay unticked here even though their
-PRs are open, because a merge of this PR alone must not make `main` claim work whose code and
-evidence are not on `main`. A small reconciliation change ticks them once all five have merged and
-one integrated exact-head run is green.
+All five slices are merged. The post-merge integrated exact-head gate passed on
+`main@fe05184518a55e00ba24049fa895c6a4fdc3639c`: CI push run `33413224530` completed both
+`verify` and `admin-a11y-runtime` successfully, and Catalog indexation runtime run `33413225233`
+(#670) completed successfully. This reconciliation records that merged/integrated state only; it does
+not resolve downstream owner or launch gates.
 
-- [ ] **U0** Master + #151 P0 — reconcile latest `main`; confirm shared ownership unchanged. *(PR-A1, open)*
-- [ ] **U1** #152 P0/G1 — hard-block indexing on `la.lanadesign.vn`; permanent-domain enablement stays separate. *(PR-A1, open)*
-- [ ] **U2** #153 T1–T3 — canonical events/config/dataLayer/consent/page views; requested preview/live still loads no GTM. *(PR-A2, open)*
-- [ ] **U3** #151 P1 — campaign/target persistence + order audit + bounded durable promotion-pricing revision. *(PR-A3, open)*
-- [ ] **U4** #152 W2a — prove collision-safe metadata uniqueness replacement before slug/path cleanup. *(PR-A4, open.)* **Verdict: BLOCKED** — U29/W2b waits on owner decision **B5** below.
-- [x] **U5** #152 W15a — inventory dedicated SEO smoke coverage vs existing tests/P18/runtime jobs. See `docs/audits/seo-runtime-coverage-w15a.md`; all five smokes already run through `pnpm test`, and U13 has two genuinely missing signals to wire.
-- [x] **U6** #152 W13A — inventory owner-approved/missing About/Returns/Shipping/Size/Contact facts; missing policy = BLOCKED. See `docs/audits/first-party-content-facts-w13a.md`.
+- [x] **U0** Master + #151 P0 — reconcile latest `main`; confirm shared ownership unchanged. *(PR-A1 / #156, merged)*
+- [x] **U1** #152 P0/G1 — hard-block indexing on `la.lanadesign.vn`; permanent-domain enablement stays separate. *(PR-A1 / #156, merged)*
+- [x] **U2** #153 T1–T3 — canonical events/config/dataLayer/consent/page views; requested preview/live still loads no GTM. *(PR-A2 / #157, merged)*
+- [x] **U3** #151 P1 — campaign/target persistence + order audit + bounded durable promotion-pricing revision. *(PR-A3 / #158, merged)*
+- [x] **U4** #152 W2a — prove collision-safe metadata uniqueness replacement before slug/path cleanup. *(PR-A4 / #159, merged)* **U4 delivered; downstream U29/W2b remains BLOCKED** on owner decision **B5** below.
+- [x] **U5** #152 W15a — inventory dedicated SEO smoke coverage vs existing tests/P18/runtime jobs. *(PR-A5 / #160, merged)* See `docs/audits/seo-runtime-coverage-w15a.md`; all five smokes already run through `pnpm test`, and U13 has two genuinely missing signals to wire.
+- [x] **U6** #152 W13A — inventory owner-approved/missing About/Returns/Shipping/Size/Contact facts; missing policy = BLOCKED. *(PR-A5 / #160, merged)* See `docs/audits/first-party-content-facts-w13a.md`.
 
 ## Wave 1 — commerce truth and identity
 
