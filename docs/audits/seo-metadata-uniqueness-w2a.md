@@ -27,9 +27,24 @@ remove it before a replacement is proven.
 |---|---|---|---|
 | Distinct-slug published copy stays unique | `tests/domain/product-metadata.test.ts` — "published SEO copy remains unique across distinct canonical product slugs" | Two products with the same published `seoTitle`/`seoDescription` still get different titles and descriptions | Yes (`pnpm test`) |
 | Distinct-slug fallback copy stays unique | `tests/domain/product-metadata.test.ts` — "fallback metadata stays factual and unique for distinct slugs sharing the same product name" | Two products with the same `name` and no published copy still get different titles and descriptions | Yes (`pnpm test`) |
-| Rendered HTML keeps both classes unique | `scripts/product-metadata-http-smoke.ts` (`publishedDuplicate*`, `fallback*` fixtures) | The same two classes stay unique in the real `<title>`/`<meta name="description">` of a Next response | **No** — see `docs/audits/seo-runtime-coverage-w15a.md` |
+| Rendered HTML keeps both classes unique | `scripts/product-metadata-http-smoke.ts` (`publishedDuplicate*`, `fallback*` fixtures) | The same two classes stay unique in the real `<title>`/`<meta name="description">` of a Next response | Yes — see [How the HTTP smoke reaches CI](#how-the-http-smoke-reaches-ci) |
 | Collisions are reachable through the deployed schema | `tests/database/product-metadata-uniqueness.test.ts` (added by U4) | Neither `ProductContent.seoTitle`/`seoDescription` nor `ProductMirror.name` is constrained unique, so both collision classes are real data states | Yes (`pnpm test:db`) |
 | The replacement contract's collision report | `tests/domain/product-metadata-uniqueness.test.ts` (added by U4) | The slug-free candidate copy collides for both classes and is deterministic | Yes (`pnpm test`) |
+
+### How the HTTP smoke reaches CI
+
+No workflow step or npm script names `scripts/product-metadata-http-smoke.ts`, which makes it easy
+to assume it is unwired. It is not. The chain is:
+
+```text
+.github/workflows/ci.yml  → job `verify` → step "Domain tests" → pnpm test
+package.json              → "test": node --test tests/domain/*.test.ts tests/integrations/*.test.ts
+tests/integrations/product-slug-http.test.ts
+                          → await import("../../scripts/product-metadata-http-smoke.ts")
+```
+
+The import boots a real Next server, seeds PostgreSQL and asserts against real HTTP responses, so
+the uniqueness contract is gated at the rendered-HTML level on every pull request.
 
 ## When two PDPs collide
 
@@ -97,3 +112,32 @@ its regressions.
 
 `BLOCKED — OWNER FACT/APPROVAL REQUIRED`: which of the two paths above to take, and the resulting
 publish-time behaviour when copy collides.
+
+**Owner:** repository owner / brand authority — the same human authority that owns ADR 0004's domain
+decision. Not a coding decision, and not one a coding agent may infer from the catalog.
+
+**Stop rule for U29 / W2b:** do not remove the slug/path discriminator, do not substitute a
+discriminator of your own, and do not narrow the collision definition to make the verdict pass. If
+U29 is reached before this decision exists, stop at U29 and report; every other unit that does not
+depend on PDP metadata copy continues normally.
+
+## Open semantic question for the owner: pair-level or per-field uniqueness
+
+This must be settled in the source contract before U29 implements anything, not decided by accident
+inside that implementation.
+
+The **current live contract** keeps title *and* description individually distinct, because the slug
+discriminator is appended to both. The **replacement contract implemented here** treats a collision
+as *both* matching, and explicitly treats a shared title with different descriptions as safe — a
+test pins that.
+
+Those are different guarantees, and the choice is a search-presentation judgement:
+
+- **Pair-level** (what this module implements): two PDPs may share a title as long as their
+  descriptions differ. Fewer copy changes forced on editors; two results in a SERP can carry the
+  same headline.
+- **Per-field**: title and description must each be unique across products. Stricter, closer to
+  today's behaviour, and more work for editors on a catalog of near-identical garments.
+
+Whichever is chosen, `findProductMetadataCollisions` changes in one place — its grouping key — and
+the regressions follow. It belongs to the same owner decision above rather than being left implicit.
