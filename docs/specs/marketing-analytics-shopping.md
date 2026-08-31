@@ -139,6 +139,7 @@ Rules:
 - candidate product external ID is `pancakeProductId` after repository propagation;
 - one visible card produces one product impression, not one impression per hidden variant;
 - do not guess first/cheapest variant to obtain a `pancakeVariationId`;
+- GA4 upper-funnel mapping may use `item_id = productExternalId` (or item name where appropriate); a selected Merchant-offer ID is not promised before a variant exists;
 - if all represented resolved options have one exact common price, that exact value may be mapped to vendor price/value;
 - if prices form a range, min/max may remain canonical/custom facts but the minimum must not be reported as if it were a selected exact variant price;
 - unresolved product price omits monetary vendor fields rather than fabricating values.
