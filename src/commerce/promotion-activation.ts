@@ -55,6 +55,7 @@ export type CampaignActivationError =
   | "PERCENTAGE_OUT_OF_RANGE"
   | "FIXED_PRICE_NOT_POSITIVE"
   | "WINDOW_NOT_POSITIVE"
+  | "WINDOW_ALREADY_ENDED"
   | "FLASH_SALE_WINDOW_REQUIRED"
   | "NO_TARGETS"
   | "TOO_MANY_TARGETS"
@@ -123,6 +124,12 @@ function validateWindow(
   ) {
     // Half-open intervals make an empty window meaningless, not merely useless.
     errors.push("WINDOW_NOT_POSITIVE");
+  }
+  // Activation makes a campaign capable of charging someone. A window that has already closed can
+  // never do that, so enabling it is an admin mistake rather than a harmless no-op — and it would
+  // leave an enabled campaign sitting in a terminal state that only Copy can escape.
+  if (input.endsAt !== null && input.endsAt.getTime() <= input.now.getTime()) {
+    errors.push("WINDOW_ALREADY_ENDED");
   }
 }
 
