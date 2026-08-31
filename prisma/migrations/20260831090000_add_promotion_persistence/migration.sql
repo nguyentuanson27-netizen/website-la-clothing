@@ -30,10 +30,23 @@ CREATE TABLE "PromotionCampaign" (
   CONSTRAINT "PromotionCampaign_pkey" PRIMARY KEY ("id")
 );
 
--- Server-authoritative bound: 120 code units after trim, and never empty, including for a Draft.
+-- A sound-but-incomplete guard, deliberately not a restatement of the source bound.
+--
+-- #151 defines the name bound as 120 JavaScript string code units *after trim*, which PostgreSQL
+-- cannot evaluate: `char_length` counts characters, so 120 non-BMP characters are 120 here and 240
+-- code units there. What the database can express exactly is that a name is never blank after
+-- trimming, plus a character ceiling that can only ever reject names the source bound already
+-- rejects — it never accepts less than JavaScript does, so it is safe as defence in depth.
+--
+-- The blank check trims the ASCII whitespace set rather than bare `btrim`, which strips spaces only
+-- and would let a tab-and-newline name through. JavaScript's `trim()` also strips Unicode
+-- whitespace, which this does not; that residue is the application bound's job too.
+--
+-- `normalizePromotionCampaignName` in src/commerce/promotion-campaign-name.ts is the one place the
+-- exact contract is enforced, before persistence.
 ALTER TABLE "PromotionCampaign"
 ADD CONSTRAINT "PromotionCampaign_name_check"
-CHECK (length("name") BETWEEN 1 AND 120);
+CHECK (btrim("name", E' \t\n\r\f\x0B') <> '' AND char_length("name") <= 120);
 
 -- Exactly one money field per discount type. A campaign carrying both would leave two candidate
 -- prices for the same line with nothing to arbitrate between them.

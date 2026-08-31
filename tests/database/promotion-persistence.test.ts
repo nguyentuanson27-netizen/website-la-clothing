@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { normalizePromotionCampaignName } from "../../src/commerce/promotion-campaign-name.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -202,16 +203,54 @@ test("P1 rejects out-of-range percentages and non-positive fixed prices", async 
   }
 });
 
-test("P1 enforces the campaign name bound at its exact 120/121 boundary", async () => {
+test("P1 the database rejects a blank or whitespace-only campaign name", async () => {
+  for (const [suffix, name] of [["empty", ""], ["spaces", "   "], ["tabs", "\t\n "]] as const) {
+    await assertRejected(
+      () => insertCampaign(`${PREFIX}-name-${suffix}`, { name }),
+      `${JSON.stringify(name)} must be rejected after trimming`,
+    );
+  }
+});
+
+/**
+ * The blank check names its trim set explicitly, and PostgreSQL does not understand `\v`, so a
+ * careless escape silently adds the letter `v` to that set and makes "vvv" a blank name. This pins
+ * the set to whitespace only.
+ */
+test("P1 the blank-name check trims whitespace and nothing else", async () => {
+  await insertCampaign(`${PREFIX}-name-v`, { name: "v" });
+  await insertCampaign(`${PREFIX}-name-vv`, { name: "vvv" });
+  await insertCampaign(`${PREFIX}-name-btnrf`, { name: "bfnrtv" });
+});
+
+test("P1 the database character ceiling never accepts more than the source bound would", async () => {
   await insertCampaign(`${PREFIX}-name-120`, { name: "a".repeat(120) });
   await assertRejected(
     () => insertCampaign(`${PREFIX}-name-121`, { name: "a".repeat(121) }),
-    "121 code units must be rejected",
+    "121 characters must be rejected",
   );
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-name-empty`, { name: "" }),
-    "an empty name must be rejected",
-  );
+});
+
+/**
+ * The database check is deliberately sound but incomplete, and this pins the exact gap so nobody
+ * later mistakes it for the source contract.
+ *
+ * 61 non-BMP characters are 122 JavaScript code units — over the bound — but only 61 characters to
+ * PostgreSQL, so `char_length` lets the row through. `normalizePromotionCampaignName` is what
+ * actually enforces the contract, before persistence.
+ */
+test("P1 the exact code-unit bound is enforced in the application, not by char_length", async () => {
+  const overBound = "\u{1D49C}".repeat(61);
+  assert.equal(overBound.length, 122, "122 code units");
+  assert.equal([...overBound].length, 61, "but only 61 characters");
+
+  assert.deepEqual(normalizePromotionCampaignName(overBound), {
+    ok: false,
+    error: "NAME_TOO_LONG",
+  });
+
+  // The database alone would accept it, which is exactly why the application bound exists.
+  await insertCampaign(`${PREFIX}-name-non-bmp`, { name: overBound });
 });
 
 test("P1 enforces the half-open interval and the Flash Sale window requirement", async () => {
