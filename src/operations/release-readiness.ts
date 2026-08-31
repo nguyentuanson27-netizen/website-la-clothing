@@ -2,6 +2,7 @@ import { readAuthServerConfig } from "../auth/config.ts";
 import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 import { validateSearchExposureForRelease } from "../seo/search-exposure.ts";
+import { readTrackingConfig, resolveTrackingRuntime, type TrackingMode } from "../tracking/config.ts";
 
 type ReleaseEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -9,6 +10,8 @@ export type ReleaseReadinessSummary = Readonly<{
   databaseConfigured: true;
   storefrontOriginConfigured: true;
   searchIndexingEnabled: boolean;
+  trackingMode: TrackingMode;
+  trackingLoadsGoogleTagManager: boolean;
   authConfigured: true;
   trustedIpHeaderConfigured: boolean;
   pancakeConfigured: true;
@@ -42,6 +45,10 @@ export function validateReleaseEnvironment(
 ): ReleaseReadinessSummary {
   validateDatabaseUrl(env.DATABASE_URL);
   const searchExposure = validateSearchExposureForRelease(env);
+  // A malformed desired mode or container id must stop a deployment here rather than at the first
+  // request. The reported posture is deliberately mode-only: the container id is configuration, not
+  // a secret, but the summary is printed and has no reason to carry vendor identifiers.
+  const tracking = resolveTrackingRuntime(readTrackingConfig(env));
   const auth = readAuthServerConfig(env);
   const pancake = readPancakeConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
@@ -50,6 +57,8 @@ export function validateReleaseEnvironment(
     databaseConfigured: true,
     storefrontOriginConfigured: true,
     searchIndexingEnabled: searchExposure.indexingEnabled,
+    trackingMode: tracking.mode,
+    trackingLoadsGoogleTagManager: tracking.loadsGoogleTagManager,
     authConfigured: true,
     trustedIpHeaderConfigured: auth.ipAddressHeader !== undefined,
     pancakeConfigured: true,
