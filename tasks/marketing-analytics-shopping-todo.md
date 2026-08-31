@@ -25,7 +25,7 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] **R5 GTM live interlock:** PR-A contains **no GTM loader**. Requested preview/live stay operationally disabled until T8 has an exact saved GTM version + reviewed export. PR-C owns first GTM script/CSP opening.
 - [ ] **R6 Server-truth AddToCart:** successful server purchase action returns `pancakeVariationId`, current resolved unit price, accepted quantity, and bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price.
 - [ ] **R7 Product vs variant identity:** list/select/initial unselected PDP use product-level `pancakeProductId`; exact variant `pancakeVariationId` begins only when a concrete variant is selected/committed. Price ranges are never reported as an exact selected price.
-- [ ] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation.
+- [ ] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight for current one-app-service topology; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation. Multi-replica deployment requires shared cross-replica protection before activation.
 
 ## PR-A — tracking preparation; zero new GTM/vendor network delivery
 
@@ -159,7 +159,8 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Fixed cache key is configured shop + feed schema/version only; query/header noise cannot create unbounded keys.
 - [ ] Cache only complete successful serialized feed.
 - [ ] Repeated GETs within TTL perform zero additional heavy DB generations.
-- [ ] Concurrent cold requests are collapsed by a tested single-flight mechanism for current runtime/cache domain.
+- [ ] Concurrent cold requests are collapsed by a tested single-flight mechanism for current one-app-service topology.
+- [ ] If production changes to multiple app replicas, block activation until shared cross-replica cache/single-flight protection is proved.
 - [ ] Failed/overflow rebuild never publishes/caches partial result as success.
 - [ ] Overflow target `503`; never partial/truncated `200`.
 - [ ] Tests: parse output, escaping/Unicode/control chars, malformed URLs, deterministic order, offer/byte limit and limit+1, query budget, first miss/repeated hit, concurrent cold miss, concurrent TTL expiry, query-string cache noise.
@@ -183,6 +184,7 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Applicable browser/runtime suites green.
 - [ ] Exact GTM container/version/export record + GTM/GA4/Ads/TikTok diagnostics recorded.
 - [ ] Merchant cache/fetch/diagnostics/crawler evidence recorded.
+- [ ] Verify production topology still matches one-app-service cache/single-flight assumption; otherwise shared cross-replica protection is mandatory.
 - [ ] Final review: correctness → security → architecture → simplicity → performance.
 - [ ] Rollback documented for GTM exact-version delivery and Merchant data source/cache.
 - [ ] Human approval before publishing live GTM version / enabling Merchant listings or campaigns.
