@@ -97,7 +97,7 @@ The source documents were reviewed independently, so this master plan names the 
 
 1. **M1 may run in parallel with T4.** #153 §5 draws `T4 → M1`; this master intentionally relaxes that edge because M1 is a read-only audit over already mirrored `pancakeVariationId`/`pancakeProductId`/SKU/catalog facts and does not require T4 application-layer propagation. **M2 still waits for both T4 and accepted M1 durability evidence.**
 2. **P6 does not wait for M1/M2.** P6 waits for P4 + P2 evidence + T4 and uses the T4 selected-variant state. M2 later attaches the reviewed deep link to that state.
-3. **T5/T6 are not semantically owned by P6.** #153 allows T5/T6 from T4; this combined train additionally requires the central pricing foundation U7 before their server-authoritative money snapshots are considered promotion-aware. They may run in parallel with P6/P7 once U7 + T4 are green. G1 later proves rendered/current-event convergence after storefront promotion projection lands.
+3. **T5/T6 are not semantically owned by P6.** #153 allows T5/T6 from T4; this combined train additionally requires the central pricing foundation U7 before their server-authoritative money snapshots are considered promotion-aware. They may run in parallel with P6/P7 once U7 + T4 are green. This is also source-backed by #151's **Shared cart checkpoint**, which explicitly says that if #151 reaches the boundary first, the shared contract is implemented once and #153 consumes it rather than creating a duplicate path. G1 later proves rendered/current-event convergence after storefront promotion projection lands.
 4. **W15b is not a hard prerequisite for W4d implementation.** U27 carries its own focused HTTP/structured-data verification; U13/W15b remains required before organic-index launch where its coverage map says the signal is missing.
 
 ## 4. Security boundaries carried across the program
@@ -116,7 +116,7 @@ The source documents were reviewed independently, so this master plan names the 
 ## 5. Dependency graph
 
 ```text
-main@36ca06c
+U0 reconcile latest reviewed main (current planning baseline main@36ca06c)
  |
  +-- U1  #152 P0 temporary-host enforcement
  +-- U2  #153 T1-T3 tracking foundation (NO GTM)
@@ -124,7 +124,7 @@ main@36ca06c
  +-- U4  #152 W2a metadata uniqueness contract
  +-- U5  #152 W15a coverage inventory
  +-- U6  #152 W13A first-party fact inventory
- +-- U8  #153 T4 canonical identity -------------------+
+ +-- U8  #153 T4 canonical identity ------------------+
  +-- U9  #153 M1 durability/catalog audit ------------+--> U12 #153 M2 deep-link
 
 U3 -> U7 (#151 P2 + #152 W3) -> U10 (#151 P3) -> U11 (#151 P4)
@@ -148,6 +148,7 @@ U2 + U18 + U19 + U24 -> U28 #153 T8
 U4 -> U29 #152 W2b
 U5 -> U13 #152 W15b
 U6 -> U33 #152 W13
+#152 P3-P7 -> U30-U32 + U34-U38 as their factual/domain prerequisites become available
 
 U24 + enabled consumers -> U39 #151 G1 convergence
 U23 -> U40 #151 G2 observability/readiness/rollback
@@ -202,7 +203,7 @@ Before promotion storefront or Merchant cache work: #151 P1–P4 focused verific
 
 #### Checkpoint B — storefront truth
 
-PDP/cards/shop/Flash share one price authority; T4 regressions green; **if U12/M2 has landed**, its addressability regressions also green; SQL↔TS parity and required browser freshness/a11y checks green; activation remains off; fresh review **0 Critical / 0 Required**.
+**Blocks U20/P8 and later promotion checkout/order convergence; it does not block U18/U19 canonical analytics/cart work from their own prerequisites.** PDP/cards/shop/Flash share one price authority; T4 regressions green; **if U12/M2 has landed**, its addressability regressions also green; SQL↔TS parity and required browser freshness/a11y checks green; activation remains off; fresh review **0 Critical / 0 Required**.
 
 ### Wave 3 — canonical analytics/cart APIs
 
@@ -226,7 +227,7 @@ Real promotion activation remains off while P8–P10 are partial.
 
 #### Checkpoint C — transaction truth
 
-Two-stage `PRICE_CHANGED`, three Pancake raw-live-price regressions, controlled custom-price semantic acceptance, immutable Purchase identity/value and direct Meta compatibility are green; fresh review **0 Critical / 0 Required**.
+**Blocks real discounted promotion activation and live enabling/publishing of price-bearing downstream destinations that rely on finalized transaction truth; U25-U27 implementation may still proceed from their own prerequisites.** Two-stage `PRICE_CHANGED`, three Pancake raw-live-price regressions, controlled custom-price semantic acceptance, immutable Purchase identity/value and direct Meta compatibility are green; fresh review **0 Critical / 0 Required**.
 
 ### Wave 5 — downstream consumers
 
