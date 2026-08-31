@@ -24,6 +24,8 @@ test("release preflight validates required server configuration without returnin
     databaseConfigured: true,
     storefrontOriginConfigured: true,
     searchIndexingEnabled: false,
+    trackingMode: "disabled",
+    trackingLoadsGoogleTagManager: false,
     authConfigured: true,
     trustedIpHeaderConfigured: true,
     pancakeConfigured: true,
@@ -114,6 +116,35 @@ test("release preflight requires explicit fail-closed search indexing configurat
     SEARCH_INDEXING_ENABLED: "true",
   });
   assert.equal(enabled.searchIndexingEnabled, true);
+});
+
+test("T2 release preflight fails closed on malformed tracking configuration", () => {
+  assert.throws(
+    () => validateReleaseEnvironment({ ...validEnvironment, LA_TRACKING_MODE: "enabled" }),
+    /LA_TRACKING_MODE/,
+  );
+  assert.throws(
+    () => validateReleaseEnvironment({ ...validEnvironment, LA_TRACKING_MODE: "live" }),
+    /LA_GTM_CONTAINER_ID/,
+  );
+});
+
+test("T2 release preflight reports a requested tracking mode that still loads no GTM", () => {
+  for (const mode of ["preview", "live"] as const) {
+    const summary = validateReleaseEnvironment({
+      ...validEnvironment,
+      LA_TRACKING_MODE: mode,
+      LA_GTM_CONTAINER_ID: "GTM-ABC123",
+    });
+
+    assert.equal(summary.trackingMode, mode);
+    assert.equal(summary.trackingLoadsGoogleTagManager, false);
+    assert.equal(
+      JSON.stringify(summary).includes("GTM-ABC123"),
+      false,
+      "the release summary reports posture, not vendor configuration values",
+    );
+  }
 });
 
 test("release preflight delegates auth, Pancake and shipping validation fail closed", () => {
