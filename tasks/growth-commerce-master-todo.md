@@ -52,6 +52,7 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 
 ### Checkpoint B
 
+- [ ] **Blocker:** U20/P8 and later promotion checkout/order convergence must not start before Checkpoint B passes; U18/U19 canonical analytics/cart work may proceed from their own prerequisites.
 - [ ] PDP/cards/shop/Flash share one pricing authority.
 - [ ] T4 identity regressions green; **if U12/M2 has landed, its addressability regressions are also green**.
 - [ ] SQL↔TS parity + required browser freshness/a11y green.
@@ -72,6 +73,7 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 
 ### Checkpoint C
 
+- [ ] **Blocker:** real discounted promotion activation and live enabling/publishing of price-bearing downstream destinations that rely on finalized transaction truth must wait for Checkpoint C; U25-U27 implementation may proceed from their own prerequisites.
 - [ ] Two-stage `PRICE_CHANGED` and three Pancake regressions green.
 - [ ] Custom-price acceptance succeeds or promotion activation remains blocked.
 - [ ] Immutable Purchase identity/value + direct Meta compatibility green.
