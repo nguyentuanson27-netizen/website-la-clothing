@@ -37,6 +37,7 @@ Core invariants:
 - `anonymous-cart.ts#setItemQuantity()` is an **absolute set** operation: under the cart lock its upsert writes `quantity` directly for both create/update. Therefore reusing it for the PDP “Thêm vào giỏ hàng” button can report success while producing zero or negative delta when the line already exists.
 - `storefront-purchase.ts` re-fetches the current product and re-resolves the authorized option on the server before the cart mutation, while the public action currently collapses success to `{ ok: true }`. Therefore the browser price is not an authoritative post-mutation fact.
 - current storefront cart resolution can derive product name, color, size and current resolved price server-side, but the repository projection does not yet expose `pancakeVariationId` in those cart facts and update/remove public actions discard mutation details.
+- current `canSetQuantity` storefront pre-check is outside the cart mutation transaction. It is advisory only for the future analytics/cart correctness contract; T6 must re-resolve current item/price/stock eligibility at the serialized mutation boundary before accepting an absolute update.
 - `/checkout` renders only when current cart, price, stock, and shipping facts resolve, so it is the current `begin_checkout` truth point.
 - `/checkout/success` checks `OrderMirror.state === CONFIRMED` before browser Purchase.
 - `OrderLineSnapshot` stores `pancakeVariationId`, product name, color, size, quantity, and immutable prices, but not SKU/slug/Merchant/composite context.
@@ -221,6 +222,7 @@ The cart editor keeps its current **absolute quantity** UX; only the PDP add pat
 
 For absolute update/remove, analytics facts are captured under the same cart lock/transaction that commits the mutation:
 
+- any existing `canSetQuantity`/rendered pre-check outside the transaction is advisory only; the serialized mutation must re-resolve current commerce eligibility, requested-quantity stock sufficiency, identity and price before accepting the update;
 - update captures `previousQuantity`, committed `quantity`, and a bounded canonical item snapshot;
 - remove captures `removedQuantity` and the canonical item snapshot **before destructive delete**;
 - snapshot includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, product/item name, color/size where available, and optional safe product/projection context;
@@ -390,7 +392,7 @@ Focused tests + `pnpm typecheck` + `pnpm lint`; security review proves PR-A cann
 - snapshot failure emits no canonical tracking but does not roll back an otherwise successful commerce mutation;
 - direct Meta delivery semantics remain compatible; any value-source change has regression tests.
 
-**Verification:** multi/equal/no-price products, click-before-selection, absent→1, existing1→2, existing>1 increment, stock-bound failure, concurrent repeated PDP clicks, stale-browser-price/server-current-price, snapshot failure, failed mutation, no duplicate Meta.
+**Verification:** multi/equal/no-price products, click-before-selection, absent→1, existing1→2, existing>1 increment, stock-bound failure, **concurrent repeated PDP clicks against the same live cart identity**, stale-browser-price/server-current-price, snapshot failure, failed mutation, no duplicate Meta.
 
 ## T6 — Atomic cart delta events, authoritative mutation snapshot, and BeginCheckout
 
@@ -398,6 +400,7 @@ Focused tests + `pnpm typecheck` + `pnpm lint`; security review proves PR-A cann
 
 Required facts captured **inside the existing cart lock/transaction**:
 
+- any pre-transaction `canSetQuantity` result is advisory only; re-resolve current commerce eligibility and requested-quantity stock sufficiency before accepting the write;
 - update success returns `previousQuantity`, committed `quantity`, and bounded canonical item snapshot;
 - remove success captures `removedQuantity` and snapshot before delete, and distinguishes already-missing line;
 - snapshot includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item/product name, color/size where available, plus optional safe product/projection context;
@@ -408,7 +411,7 @@ Required facts captured **inside the existing cart lock/transaction**:
 
 **Acceptance:** increase → delta AddToCart; decrease/remove → delta RemoveFromCart; same quantity/failure/already-removed/snapshot-unavailable → no fabricated event; cart/checkout payloads contain no customer PII; valid checkout emits `begin_checkout`; shipping/payment milestones remain absent until real accepted states exist.
 
-**Verification:** concurrent absolute updates, concurrent remove/already-removed, same quantity, failed mutation, price/catalog change between render and mutation, full remove pre-delete snapshot, enrichment disappearance/snapshot failure, existing cart behavior.
+**Verification:** concurrent absolute updates, concurrent remove/already-removed, same quantity, failed mutation, price/catalog/stock change between pre-check/render and serialized mutation, full remove pre-delete snapshot, enrichment disappearance/snapshot failure, existing cart behavior.
 
 ### Checkpoint B
 
