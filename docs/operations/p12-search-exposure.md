@@ -8,7 +8,9 @@ P12 is implemented as a fail-closed search-exposure boundary. P15 extends that b
 - `staging.lanadesign.vn` is the dedicated staging hostname and indexing-blocked origin (`BLOCKED_INDEXING_HOSTS`).
 - `SEARCH_INDEXING_ENABLED=false` is the active production configuration for `la.lanadesign.vn`.
 - Runtime policy permits public hostnames (including `la.lanadesign.vn`), but enabling search indexing (`SEARCH_INDEXING_ENABLED=true`) is **NOT** approved by this temporary-domain decision.
+- That policy is now also **enforced in code**: `la.lanadesign.vn` is listed in `TEMPORARY_PRODUCTION_HOSTS` in `src/seo/search-exposure.ts`, so `SEARCH_INDEXING_ENABLED=true` on that host resolves to `indexingEnabled: false` at runtime and is rejected by `pnpm release:check`. The host stays a valid public origin; only index enablement fails closed.
 - Enabling search indexing requires a separate explicit human approval gate and permanent domain confirmation.
+- Moving to the permanent domain is an explicit, reviewable removal of the temporary host from `TEMPORARY_PRODUCTION_HOSTS`. Any other hostname — including the future permanent brand domain — remains governed by the existing `SEARCH_INDEXING_ENABLED` gate and is not hardcoded out of it.
 - Until that separate approval: `noindex, nofollow`, no public canonical, and an empty non-advertised sitemap remain expected production behavior.
 
 ## Runtime policy
@@ -55,7 +57,7 @@ Domain-level crawl-policy tests additionally verify malformed, leading-zero, per
 
 ## Release preflight
 
-`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`. Missing or malformed values fail closed. `true` is rejected for `staging.lanadesign.vn`, `localhost`, and `127.0.0.1` origins.
+`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`. Missing or malformed values fail closed. `true` is rejected for `staging.lanadesign.vn`, `localhost`, and `127.0.0.1` origins, and separately for the temporary production origin `la.lanadesign.vn` with a distinct temporary-host message.
 
 The repository examples and CI/VPS verification use `false`. Do not weaken this validation to make a deployment pass.
 
