@@ -103,7 +103,7 @@ one integrated exact-head run is green.
 - [ ] **U30** #152 P3 — W8 OG/Twitter, W10 static canonical, W14 branded/HTML 404 work in focused PRs.
 - [ ] **U31** #152 W9 — sitemap `lastModified` only after significant public-change timestamp semantics exist.
 - [ ] **U32** product-level remainder of #152 W5 + W6 — verified product-level identifiers/attributes + Organization only; **do not redefine ProductGroup/variant Offer owned by U27**. Organization enrichment (address, contact point, social profiles) is **blocked by B2**; the product-level identifier work is not, and proceeds independently.
-- [ ] **U33** #152 P5/W13 — evergreen pages only after U6 human-approved facts; no invented policies. **Blocked by B1–B4.** Stop at U33 and report; build no page from inferred policy.
+- [ ] **U33** #152 P5/W13 — evergreen pages only after U6 human-approved facts; no invented policies. **Blocked by B1–B4 and B6.** Stop at U33 and report; build no page from inferred policy.
 - [ ] **U34** #152 P6/W16/W17 — SEO admin/operational readiness; advisory UI does not become hard unreviewed policy.
 - [ ] **U35** #152 P6/W18 — permanent-domain Search Console/Bing/Merchant verification; does not itself enable indexing.
 - [ ] **U36** #152 P6/W19 — owner-approved crawler governance matrix.
@@ -144,13 +144,14 @@ nothing else.
 | **B3** | Size chart: measurements per size, how to measure, fit vocabulary and what each fit means, units and tolerance | Repository owner / brand authority | U33 (Size Guide page) | Stop at U33's Size Guide and report. Do not derive measurements from product names or per-product editorial free text. |
 | **B4** | Shipping terms: delivery estimate, delivery coverage or areas not served, carrier and whether orders are carrier-trackable, whether phone confirmation before delivery is policy or current practice | Repository owner / brand authority | U33 (Shipping/Payment page) | Build no Shipping page from the A-class base alone. Pancake province/district/commune data is a geography reference, **never** a statement of where LA Clothing delivers. |
 | **B5** | Metadata uniqueness: enforce unique published `seoTitle`/`seoDescription` across products (and decide publish-time behaviour on collision), **or** supply an owner-approved human-readable per-product discriminator. Also settle whether uniqueness is pair-level or per-field. | Repository owner / brand authority | U29 / W2b | Stop at U29 and report. Do not remove the slug/path discriminator, substitute a discriminator of your own, or narrow the collision definition to make the verdict pass. |
+| **B6** | About/brand/legal facts — founding story/year/values/people, registered entity name, and whether the tax identifier should be public | Repository owner / brand authority | U33 (About page) | Stop at U33's About page and report. Reuse `brandName`/`brandSummary` as A-class facts, but do not infer history, legal identity or public tax facts from editorial copy. |
 
-Sources: B1–B4 come from the W13A first-party fact inventory; B5 from the W2a metadata uniqueness
+Sources: B1–B4 and B6 come from the W13A first-party fact inventory; B5 from the W2a metadata uniqueness
 contract. Both audits record the full per-fact classification behind these summaries.
 
 When a gate is answered, record the approved facts in a reviewed source of truth first — for B1–B4
-that means one authoritative fact source rather than copy pasted between footer, page and structured
-data — and only then build the page or change the contract.
+and B6 that means one authoritative fact source rather than copy pasted between footer, page and
+structured data — and only then build the page or change the contract.
 
 ## Owner/account gates from #153
 
