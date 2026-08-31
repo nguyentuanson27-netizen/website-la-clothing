@@ -402,12 +402,17 @@ export type PurchaseEvent = Readonly<{
  * `publicCode` is both the GA4/Ads transaction id and the TikTok event id, so a later Events API
  * implementation shares one identity with the browser event and Meta's existing deduplication.
  *
- * `value` stays the merchandise sum with shipping reported separately; the order total is carried
- * as a first-party fact for the destinations whose owner-approved semantics use it.
+ * `value` is derived from the normalized immutable item projection, so the emitted Purchase cannot
+ * carry a merchandise total that contradicts its own item prices/quantities. The separately supplied
+ * snapshot fact is still range-validated for contract hygiene but is not a second output authority.
+ * Shipping remains separate; the order total is carried as a first-party fact for destinations whose
+ * owner-approved semantics use it.
  */
 export function buildPurchaseEvent(facts: CommercePurchaseFacts): PurchaseEvent {
   const publicCode = requireIdentity(facts.publicCode, "transaction identity");
   const items = requireItems("purchase", facts.items);
+  requireIntegerVnd(facts.merchandiseValueVnd, "merchandise value");
+  const merchandiseValueVnd = sumMerchandiseVnd(items);
 
   return Object.freeze({
     event: "purchase" as const,
@@ -415,7 +420,7 @@ export function buildPurchaseEvent(facts: CommercePurchaseFacts): PurchaseEvent 
       transaction_id: publicCode,
       event_id: publicCode,
       currency: "VND" as const,
-      value: requireIntegerVnd(facts.merchandiseValueVnd, "merchandise value"),
+      value: merchandiseValueVnd,
       shipping: requireIntegerVnd(facts.shippingVnd, "shipping value"),
       la_total_vnd: requireIntegerVnd(facts.totalVnd, "order total"),
       items,
