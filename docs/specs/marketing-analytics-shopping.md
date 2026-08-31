@@ -214,7 +214,9 @@ If commerce mutation succeeds but a safe analytics snapshot cannot be resolved, 
 
 ### 4.5 Atomic cart quantity events and mutation snapshots
 
-The cart editor keeps absolute-set quantity semantics. Update/removal analytics must use facts captured under the same serialized cart transaction that commits the mutation.
+The cart editor keeps absolute-set quantity semantics. Any rendered/pre-transaction quantity/availability pre-check is advisory only; the serialized mutation must re-resolve current commerce eligibility and requested-quantity stock sufficiency before accepting an absolute update.
+
+Update/removal analytics must use facts captured under the same serialized cart transaction that commits the mutation.
 
 Required success facts:
 
@@ -224,7 +226,7 @@ Required success facts:
 
 Client/pre-read/rendered quantity, price, item name or variant identity is not authoritative for mutation event construction. Browser derives positive/negative delta only from returned committed facts.
 
-If safe snapshot resolution fails, tracking fails closed without altering the authoritative cart mutation result. A catalog/price change between render and mutation must not produce a stale analytics event.
+If safe snapshot resolution fails, tracking fails closed without altering the authoritative cart mutation result. A catalog/price/stock change between render or pre-check and mutation must not produce a stale or no-longer-valid accepted update/event.
 
 ### 4.6 Purchase truth
 
@@ -364,10 +366,10 @@ The public route must not regenerate a bounded-but-expensive feed for every requ
 Initial v1 envelope:
 
 ```text
-MAX_MERCHANT_OFFERS                  = 5_000
-MAX_MERCHANT_FEED_BYTES              = 16 MiB
-MAX_MERCHANT_DB_ROUND_TRIPS          = 8 per heavy generation
-MERCHANT_FEED_CACHE_TTL_SECONDS      = 300
+MAX_MERCHANT_OFFERS                   = 5_000
+MAX_MERCHANT_FEED_BYTES               = 16 MiB
+MAX_MERCHANT_DB_ROUND_TRIPS           = 8 per heavy generation
+MERCHANT_FEED_CACHE_TTL_SECONDS       = 300
 MERCHANT_FEED_FAILURE_BACKOFF_SECONDS = 60
 ```
 
@@ -434,7 +436,7 @@ Implementation is ready for live activation only when:
 1. canonical product-vs-variant event contracts pass focused tests;
 2. PDP AddToCart is a distinct atomic +1 mutation and each successful event reflects exactly the committed positive delta;
 3. PDP/cart mutation events use authoritative server snapshots for variation identity, price, name/options and quantity delta; snapshot failure has no stale fallback;
-4. cart absolute update/remove delta facts are transactionally authoritative, including pre-delete remove snapshot;
+4. cart absolute update/remove delta facts and requested-quantity validity are transactionally authoritative, including pre-delete remove snapshot;
 5. Purchase is confirmed-only and uses `publicCode` identity;
 6. exact GTM saved version/export has been reviewed and previewed; production tags all have live guard;
 7. one GA4 page view per navigation is demonstrated;
