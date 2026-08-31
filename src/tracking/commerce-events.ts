@@ -434,9 +434,9 @@ export function buildPurchaseEvent(facts: CommercePurchaseFacts): PurchaseEvent 
 /**
  * The canonical page view.
  *
- * Query state is deliberately excluded: it is the surface most likely to carry a tracking token or
- * a customer-supplied value, and no reviewed destination needs it. One navigation still produces
- * exactly one event.
+ * Query and fragment state are deliberately excluded: those surfaces may carry tracking tokens or
+ * customer-supplied values, and no reviewed destination needs them. Callers must pass a pathname,
+ * not a combined URL; malformed combined input fails closed instead of being silently normalized.
  */
 export function buildPageViewEvent(
   location: Readonly<{ pathname: string; search?: string }>,
@@ -444,6 +444,9 @@ export function buildPageViewEvent(
   const pathname = typeof location.pathname === "string" ? location.pathname : "";
   if (!pathname.startsWith("/")) {
     throw new RangeError("page path must be an absolute application path");
+  }
+  if (pathname.includes("?") || pathname.includes("#")) {
+    throw new RangeError("page path must be path-only without query or fragment");
   }
 
   return Object.freeze({ event: "page_view", page_path: pathname });
