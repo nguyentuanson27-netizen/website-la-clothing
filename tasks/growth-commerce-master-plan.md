@@ -23,47 +23,41 @@ This document owns only:
 
 - cross-plan dependency order;
 - shared-contract ownership;
-- implementation PR boundaries;
-- safe parallelization/checkpoints;
-- separate launch gates.
+- implementation/operations unit boundaries;
+- safe parallelization and checkpoints;
+- independent launch gates.
 
-It **does not duplicate or supersede** the detailed business/security acceptance criteria in the source documents.
+It does **not** replace detailed acceptance criteria in the source documents.
 
-Precedence rule:
+Precedence:
 
-1. Source spec/audit/plan owns domain behavior.
-2. This master plan owns sequencing and cross-feature seams.
-3. Each implementation PR re-reads then-current `main` to locate actual modules without redefining reviewed contracts.
-4. A material source-contract conflict stops implementation at that dependency; it is resolved in planning/review, not invented inside `/build`.
+1. The owning source spec/audit/plan remains normative for domain behavior and security.
+2. This master plan is normative for sequencing and cross-feature seams after the three source PRs are combined.
+3. Every implementation PR starts from latest reviewed `main` and re-reads its owning source task.
+4. A later material source-contract conflict stops the affected dependency and returns to planning/review; `/build` must not invent a reconciliation.
+5. Directly affected tests stay with the behavior they prove; ADR 0005 governs split/reviewability by atomicity and risk, not file count.
 
 ## 2. Shared contracts — implement once
 
 ### Pricing
-Owner: **#151 P2**, with **#152 W3 evidence gate**.
+Owner: **#151 P2**, with **#152 W3** as the Pancake evidence gate.
 
-- Website campaign state + central TypeScript resolver own effective promotion price.
-- One sanctioned SQL projection may mirror the contract where pre-pagination behavior requires it; SQL↔TS parity remains mandatory.
-- Cart, checkout, analytics, Merchant, structured data and Pancake consume authoritative quote/snapshot facts; none owns a second promotion formula.
+Website promotion state + the central TypeScript resolver own promotional effective price. The sanctioned SQL storefront projection may mirror that contract where pre-pagination behavior requires it and must stay parity-tested. Cart, checkout, analytics, Merchant, structured data and Pancake submission consume authoritative quote/snapshot facts; none owns a second promotion formula.
 
 ### Identity
 Owner: **#153 T4**.
 
-- unselected product-level upper funnel → `pancakeProductId`;
+- product-level upper funnel → `pancakeProductId`;
 - concrete selected/committed variant → `pancakeVariationId`;
-- internal mutation/authorization → `VariantMirror.id`;
+- internal authorization/mutation → `VariantMirror.id`;
 - Purchase transaction/event identity → `OrderMirror.publicCode`.
 
-No consumer may fabricate a selected variant or substitute slug/local CUID/presentation key for the reviewed external identity.
+No consumer may fabricate a selected variant or substitute slug/local CUID/presentation key for a reviewed external identity.
 
 ### Cart/checkout truth
 Owner: **#153 T5/T6**, consumed by **#151 P8–P10**.
 
-- PDP AddToCart = one atomic committed `+1`;
-- update/remove returns committed transition + server-authoritative bounded item snapshot;
-- `view_cart` / `begin_checkout` use one complete all-or-nothing canonical projection;
-- promotion pricing plugs into this API instead of creating a second cart path.
-
-Whichever implementation stream reaches this seam first builds the canonical API once; the other consumes it.
+PDP AddToCart is one committed `+1`; update/remove return committed transitions plus bounded server-authoritative item facts; `view_cart` and `begin_checkout` use one complete all-or-nothing canonical projection. Promotion pricing plugs into this shared API instead of creating another cart path.
 
 ### Variant URL / canonical query
 Owner: **#153 M2**, satisfying **#152 W4a–W4c** after identity evidence.
@@ -72,422 +66,266 @@ Owner: **#153 M2**, satisfying **#152 W4a–W4c** after identity evidence.
 /shop/<slug>?variant=<pancakeVariationId>
 ```
 
-The URL preselects only a valid public standalone option. Base PDP canonical/search policy remains authoritative. Variant-level structured data may not precede this contract.
-
-Promotion PDP work may land before M2, but it must use the T4-selected concrete variant identity/state and must not invent a competing query/canonical contract. When M2 lands, it binds its deep link to that same selected-variant state.
+The URL preselects only a valid public standalone option. Base PDP canonical/search policy remains authoritative. #151 P6 may land before M2, but it must use the T4-selected concrete variant state and must not invent a competing query/canonical contract; M2 later binds its deep link to that same state.
 
 ### Merchant cache freshness
-Owner: **#153 M4**, extended by **#151 durable promotion-pricing revision**.
+Owner: **#153 M4**, extended by **#151's durable promotion-pricing revision**.
 
-- one fixed success-cache/single-flight/failure-backoff domain;
-- 300s is maximum normal success TTL, not permission to cross known promotion boundaries;
-- effective promotion mutations advance durable pricing revision in the same DB transaction;
-- cache decisions/in-flight publication validate that revision;
-- no post-commit `after()`/fire-and-forget callback is correctness authority.
+There is one fixed success-cache/single-flight/failure-backoff domain. The 300-second success TTL is a maximum normal TTL, not permission to cross known promotion boundaries. Effective promotion mutations advance the durable pricing revision in the same DB transaction; cache decisions and in-flight publication validate that revision. No post-commit `after()`/fire-and-forget callback is correctness authority.
+
+### Product structured-data ownership
+Owner split from **#152 W4/W5/W6**:
+
+- **U27** owns `ProductGroup` + variant `Product`/`Offer` shape, variant-level price/availability/URL parity, and the variant-level portion of W5 that is inseparable from W4d.
+- **U32** owns only additional verified **product-level** identifiers/attributes plus W6 Organization enrichment; it must not redefine `ProductGroup` or variant `Offer` behavior.
+
+This split prevents two implementation PRs from both claiming `buildOffer`/variant-schema authority.
 
 ### Tracking / consent
 Owner: **#153**.
 
-- GA4 + Google Ads + TikTok Pixel through GTM;
-- existing Meta Pixel + CAPI stay direct;
-- T1–T3 may prepare canonical events/dataLayer/consent/page-view authority but load **no GTM**;
-- T8 owns the first actual GTM loader/CSP opening after exact immutable saved-version review;
-- no customer PII in generic commerce dataLayer;
-- tracking failure never changes commerce success.
+GA4 + Google Ads + TikTok Pixel route through GTM; existing Meta Pixel + CAPI stay direct. T1–T3 prepare canonical events/dataLayer/consent/page-view authority with **zero GTM load**. T8 owns the first actual GTM loader/CSP opening after exact saved-version review. Generic commerce dataLayer carries no customer PII and tracking failure never changes commerce success.
 
 ### Search exposure
 Owner: **#152 / ADR 0004**.
 
-- `SEARCH_INDEXING_ENABLED=false` remains intentional on `la.lanadesign.vn`;
-- temporary production host gets a hard enforcement block;
-- promotion/GTM/Merchant activation never implies organic indexing;
-- permanent domain + explicit human approval remain prerequisites for index enablement.
+`SEARCH_INDEXING_ENABLED=false` remains intentional on `la.lanadesign.vn`; temporary production gets a hard enforcement block. Promotion/GTM/Merchant activation never implies organic indexing. Permanent domain + explicit human approval remain prerequisites for index enablement.
 
-## 3. Security boundaries carried across the program
+## 3. Explicit cross-plan sequencing decisions
 
-Apply source security requirements at every relevant PR:
+The source documents were reviewed independently, so this master plan names the few sequencing changes introduced by combining them.
 
-- admin promotions: authn + authz + finite bounds + concurrency safety;
+1. **M1 may run in parallel with T4.** #153 §5 draws `T4 → M1`; this master intentionally relaxes that edge because M1 is a read-only audit over already mirrored `pancakeVariationId`/`pancakeProductId`/SKU/catalog facts and does not require T4 application-layer propagation. **M2 still waits for both T4 and accepted M1 durability evidence.**
+2. **P6 does not wait for M1/M2.** P6 waits for P4 + P2 evidence + T4 and uses the T4 selected-variant state. M2 later attaches the reviewed deep link to that state.
+3. **T5/T6 are not semantically owned by P6.** #153 allows T5/T6 from T4; this combined train additionally requires the central pricing foundation U7 before their server-authoritative money snapshots are considered promotion-aware. They may run in parallel with P6/P7 once U7 + T4 are green. G1 later proves rendered/current-event convergence after storefront promotion projection lands.
+4. **W15b is not a hard prerequisite for W4d implementation.** U27 carries its own focused HTTP/structured-data verification; U13/W15b remains required before organic-index launch where its coverage map says the signal is missing.
+
+## 4. Security boundaries carried across the program
+
+- promotion admin: authn/authz, finite bounds, deterministic concurrency safety;
 - browser price/quote/cart/tracking input: untrusted;
-- Stage-1 checkout acknowledgement: bounded stateless server-MAC proof; raw HttpOnly cart UUID remains server-only context;
+- Stage-1 checkout acknowledgement: bounded stateless server-MAC proof; raw HttpOnly cart UUID stays server-only context;
 - Pancake catalog/order data: external untrusted input;
-- Merchant route: public DoS/resource-abuse boundary with offer/byte/DB limits, fixed-key cache, single-flight and failure backoff;
+- Merchant public route: DoS/resource-abuse boundary with offer/byte/DB limits, fixed-key cache, single-flight and failure backoff;
 - Merchant/XML/JSON-LD text: standards-aware escaping/serialization;
 - GTM workspace/config: mutable external control plane until exact saved version is reviewed;
 - CSP origins stay closed until required by the reviewed integration;
 - no secrets/PII/raw external payloads in logs;
-- search index config is deployment-owned, never Host/query/client-controlled.
+- search-index configuration is deployment-owned, never Host/query/client-controlled.
 
-## 4. Dependency graph
+## 5. Dependency graph
 
 ```text
 main@36ca06c
  |
- +-- SEO P0 temporary-host enforcement
- +-- #153 T1-T3 tracking foundation (NO GTM)
- +-- #151 P1 persistence + durable pricing revision
- +-- #153 T4 canonical identity -----------------------------+
- +-- #153 M1 identity/durability audit ----------------------+--> #153 M2 variant deep-link
- +-- #152 W2a metadata uniqueness contract
- +-- #152 W15a coverage inventory
- +-- #152 W13A first-party fact inventory
+ +-- U1  #152 P0 temporary-host enforcement
+ +-- U2  #153 T1-T3 tracking foundation (NO GTM)
+ +-- U3  #151 P1 persistence + durable pricing revision
+ +-- U4  #152 W2a metadata uniqueness contract
+ +-- U5  #152 W15a coverage inventory
+ +-- U6  #152 W13A first-party fact inventory
+ +-- U8  #153 T4 canonical identity -------------------+
+ +-- U9  #153 M1 durability/catalog audit ------------+--> U12 #153 M2 deep-link
 
-#151 P1 -> #151 P2 + #152 W3 pricing/evidence -> #151 P3 -> #151 P4
-                                                     |
-                                                     +-> #151 P5 admin UX
+U3 -> U7 (#151 P2 + #152 W3) -> U10 (#151 P3) -> U11 (#151 P4)
+                                                    |
+                                                    +-> U14 #151 P5 admin UX
 
-#151 P4 + #151 P2 + #153 T4 -> #151 P6 PDP -> #151 P7a /shop -> #151 P7b /flash-sale
-                  |                    |
-                  |                    +-> #153 T5 PDP add -> #153 T6 cart/checkout
-                  |
-                  +-- selected-variant state keyed by pancakeVariationId
+U11 + U7 + U8 -> U15 #151 P6 PDP
+                       |\
+                       | +-> U16 #151 P7a /shop -> U17 #151 P7b /flash-sale
+                       |
+                       +---- selected-variant state keyed by pancakeVariationId
 
-#153 T4 + #153 M1 -> #153 M2 deep-link -> binds to the same selected-variant state
+U7 + U8 -> U18 #153 T5 upper-funnel + atomic PDP AddToCart
+             -> U19 #153 T6 cart update/remove + complete cart/checkout projection
 
-#151 P7b + #153 T6 -> #151 P8 -> P9a -> P9b -> P10 -> #153 T7 Purchase
+U17 + U19 -> U20 #151 P8 -> U21 P9a -> U22 P9b -> U23 P10 -> U24 #153 T7 Purchase
 
-#153 M1 + M2 + #151 P7b -> #153 M3 Merchant mapper
-#153 M3 + #151 P4 durable revision -> #153 M4 Merchant route/cache
+U9 + U12 + U17 -> U25 #153 M3 -> U26 #153 M4
+U12 + U17 + verified identifiers -> U27 #152 W4d + variant-level W5
+U2 + U18 + U19 + U24 -> U28 #153 T8
 
-#153 M2 + #151 P7b + verified identifiers -> #152 W4d ProductGroup/variant Offer
-#153 T1-T7 -> #153 T8 exact saved-version review -> actual GTM loader/live mapping
+U4 -> U29 #152 W2b
+U5 -> U13 #152 W15b
+U6 -> U33 #152 W13
 
-#152 W2a -> W2b metadata cleanup
-#152 W15a -> W15b missing HTTP/runtime gates
-#152 P3-P7 continue independently as their factual/domain prerequisites become available.
+U24 + enabled consumers -> U39 #151 G1 convergence
+U23 -> U40 #151 G2 observability/readiness/rollback
+U25 + U26 + owner/account gates -> U41 #153 M5 Merchant activation
+U28 + U41 -> U42 #153 V1 final convergence/rollback
+U39 + U40 -> U43 #151 G3 integrated DoD
 ```
 
-Important parallelization rules:
+## 6. Implementation / operations train
 
-- **#153 M1 and T4 are independent prerequisites of M2.** M1 is a read-only catalog/provider/repository evidence task and can run in parallel with T4; M2 waits for both reviewed application identity propagation and accepted durability evidence.
-- **#151 P6 does not wait for M1/M2.** It waits for P4 + pricing evidence + T4 identity and uses the same concrete selected-variant state keyed by `pancakeVariationId`. It must not define a competing URL/canonical contract; M2 later attaches the reviewed deep link to that state.
-
-## 5. Implementation PR train
-
-Each unit below is normally one focused implementation PR. Detailed acceptance criteria/verification are inherited from the named source task. Split further when the source task or actual diff crosses a focused review/revert boundary.
+Each unit is normally one focused implementation or operations PR/change set. If the owning source task is larger than a reviewable/revertable concern, split it further without changing the unit's contract.
 
 ### Wave 0 — baseline and safety
 
-#### U0 — Reconcile latest main
-Source: master plan.
+- **U0 — Reconcile latest `main`**  
+  Source: this master plan + **#151 P0** reconciliation pattern. Re-read all three source artifacts, confirm no later reviewed PR superseded shared ownership, and record exact base SHA.
+- **U1 — Temporary production host hard block**  
+  Source: **#152 P0/G1**.
+- **U2 — Tracking foundation, still no GTM**  
+  Source: **#153 T1–T3 / PR-A**.
+- **U3 — Promotion persistence + durable pricing revision**  
+  Source: **#151 P1**.
+- **U4 — Metadata uniqueness replacement contract**  
+  Source: **#152 P1/W2a**.
+- **U5 — SEO runtime coverage inventory**  
+  Source: **#152 P2/W15a**.
+- **U6 — First-party content fact inventory**  
+  Source: **#152 P5/W13A**; missing owner facts remain BLOCKED, never inferred.
 
-- Re-read #151/#152/#153 sources on latest `main` before implementation starts.
-- Confirm no later reviewed PR superseded pricing, identity, cart, variant-URL or Merchant-cache ownership.
-- Record exact base SHA for the first implementation wave.
-
-#### U1 — Temporary production host hard block
-Source: **#152 P0 / G1**.
-
-Purpose: make temporary-domain noindex policy mechanically fail closed in release readiness without changing the permanent-domain approval gate.
-
-#### U2 — Tracking foundation, still no GTM
-Source: **#153 T1–T3 / PR-A**.
-
-Purpose: canonical event contracts, desired mode config, dataLayer, consent defaults and app-owned page views while preview/live remain operationally no-GTM.
-
-#### U3 — Promotion persistence + durable pricing revision
-Source: **#151 P1**.
-
-Purpose: additive campaign/target persistence, order promotion audit and durable revision foundation required later by Merchant freshness.
-
-#### U4 — Metadata uniqueness replacement contract
-Source: **#152 P1/W2a**.
-
-Purpose: prove collision-safe uniqueness before removing slug/path technical metadata copy.
-
-#### U5 — SEO runtime coverage inventory
-Source: **#152 P2/W15a**.
-
-Purpose: map five dedicated SEO smoke scripts against existing tests/P18/runtime coverage before wiring anything new.
-
-#### U6 — First-party content fact inventory
-Source: **#152 P5/W13A**.
-
-Purpose: identify owner-approved vs missing About/Returns/Shipping-Payment/Size/Contact facts; missing policy remains BLOCKED, not inferred.
-
-**Safe parallel set:** U1–U6 may proceed independently from the same reviewed baseline, subject to normal file overlap coordination.
+U1–U6 are a safe parallel set when file ownership does not collide. U8/U9 may also begin early from the reviewed baseline.
 
 ### Wave 1 — commerce truth and identity
 
-#### U7 — Central pricing + Pancake evidence
-Source: **#151 P2 + #152 W3**.
+- **U7 — Central pricing + Pancake evidence** — **#151 P2 + #152 W3**; depends U3. Material contradiction in real Pancake evidence returns to product review.
+- **U8 — Canonical external identity propagation** — **#153 T4**; may run from baseline.
+- **U9 — Merchant identity/durability/catalog audit** — **#153 M1 + #152 W4a caution**; read-only and may run in parallel with U8.
+- **U10 — Promotion repository/lifecycle/runtime health** — **#151 P3**; depends U7.
+- **U11 — Promotion concurrency/admin domain + activation gate + atomic revision** — **#151 P4**; depends U10 + U3 revision persistence.
 
-Depends on: U3.
+#### Checkpoint A — commerce foundation
 
-Stop if real Pancake evidence materially contradicts the approved pricing ownership; return to product review.
-
-#### U8 — Canonical external identity propagation
-Source: **#153 T4**.
-
-Can run from the reviewed baseline in parallel with U7/U9 when file overlap is controlled.
-
-#### U9 — Merchant identity/durability/catalog audit
-Source: **#153 M1 + #152 W4a identifier caution**.
-
-Can begin from baseline in parallel with U8. Final M2 gate later requires U8 + accepted U9 evidence.
-
-#### U10 — Promotion repository/lifecycle/runtime health
-Source: **#151 P3**.
-
-Depends on: U7.
-
-#### U11 — Promotion concurrency/admin domain + activation gate + atomic revision
-Source: **#151 P4**.
-
-Depends on: U10 + U3 revision persistence.
-
-### Checkpoint A — commerce foundation
-
-Before promotion storefront/UI or Merchant cache work:
-
-- #151 P1–P4 focused verification green;
-- activation gate proved default-off;
-- pricing evidence accepted;
-- identity contract ready before consumers rely on external IDs;
-- authz/bounds/concurrency/external-data security review complete;
-- fresh review: 0 Critical / 0 Required.
+Before promotion storefront or Merchant cache work: #151 P1–P4 focused verification green; activation gate default-off; pricing evidence accepted; authz/bounds/concurrency/external-data security review green; identity ready before consumers rely on it; fresh review **0 Critical / 0 Required**.
 
 ### Wave 2 — addressability and storefront
 
-#### U12 — Standalone variant deep link
-Source: **#153 M2 + #152 W4b/W4c**.
+- **U12 — Standalone variant deep link** — **#153 M2 + #152 W4b/W4c**; depends U8 + accepted U9 evidence.
+- **U13 — Wire only missing SEO HTTP/runtime gates** — **#152 P2/W15b**; depends U5 coverage inventory. Avoid duplicate expensive smoke work.
+- **U14 — Promotion admin UX** — **#151 P5**; depends U11.
+- **U15 — PDP promotion projection** — **#151 P6**; depends U11 + U7 evidence + U8. Uses T4 selected-variant state; consumes U12 only if already landed and never invents URL/canonical semantics.
+- **U16 — `/shop` effective-price discovery** — **#151 P7a**; depends U15.
+- **U17 — `/flash-sale` + freshness** — **#151 P7b**; depends U16.
 
-Depends on: U8 + accepted U9 identity/durability evidence.
+#### Checkpoint B — storefront truth
 
-This is the single preselection/canonical-query contract for Merchant and later variant structured data. It binds to the same concrete selected-variant state used by the PDP; it does not introduce a parallel selection model.
+PDP/cards/shop/Flash share one price authority; T4 regressions green; **if U12/M2 has landed**, its addressability regressions also green; SQL↔TS parity and required browser freshness/a11y checks green; activation remains off; fresh review **0 Critical / 0 Required**.
 
-#### U13 — Wire only missing SEO HTTP/runtime gates
-Source: **#152 P2/W15b**.
+### Wave 3 — canonical analytics/cart APIs
 
-Depends on: U5 coverage inventory.
-
-Do not create duplicate expensive smoke work where existing CI already proves the same signal.
-
-#### U14 — Promotion admin UX
-Source: **#151 P5**.
-
-Depends on: U11.
-
-#### U15 — PDP promotion projection
-Source: **#151 P6**.
-
-Depends on: U11 + U7 evidence + U8.
-
-P6 may land before U12. It must model concrete selected variants with the T4 `pancakeVariationId` identity/state and must not invent query/canonical semantics. If U12 has already landed, P6 consumes it directly; if not, U12 later binds its URL to the same selected-variant state.
-
-#### U16 — `/shop` effective-price discovery
-Source: **#151 P7a**.
-
-Depends on: U15.
-
-#### U17 — `/flash-sale` + freshness
-Source: **#151 P7b**.
-
-Depends on: U16.
-
-### Checkpoint B — storefront truth
-
-Before checkout promotion persistence:
-
-- PDP/cards/shop/Flash share one pricing authority;
-- T4 identity regressions are green; if M2 has landed, its addressability regressions are also green;
-- SQL↔TS pricing parity green;
-- browser freshness/a11y verification green where applicable;
-- activation still off;
-- fresh review: 0 Critical / 0 Required.
-
-### Wave 3 — canonical cart/checkout APIs
-
-#### U18 — Atomic PDP AddToCart
-Source: **#153 T5**.
-
-Depends on: U15 + U8 + U7.
-
-Purpose: make the shared committed `+1` mutation/event snapshot promotion-aware from its first implementation.
-
-#### U19 — Cart update/remove + complete cart/checkout projection
-Source: **#153 T6 + #151 shared cart checkpoint**.
-
-Depends on: U18 + U8 + U7.
-
-Purpose: one authoritative mutation/read projection for both analytics and promotion checkout; no duplicate temporary path.
+- **U18 — T5 upper-funnel events + atomic PDP AddToCart** — **#153 T5**; depends U7 + U8. Covers `view_item_list`, `select_item`, initial product-level `view_item`, product-vs-selected-variant semantics, and the serialized `+1` mutation with authoritative event snapshot. It may run in parallel with U15–U17 after shared prerequisites are green.
+- **U19 — Cart update/remove + complete cart/checkout projection** — **#153 T6 + #151 shared cart checkpoint**; depends U18 + U7 + U8. One authoritative API only; no temporary duplicate path.
 
 ### Wave 4 — checkout/order convergence
 
-Strict transaction sequence:
+Strict sequence:
 
 ```text
 U17 + U19
-   -> U20 #151 P8 mutable DRAFT quote/audit
-   -> U21 #151 P9a stateless rendered-quote proof
-   -> U22 #151 P9b fresh Pancake reconfirmation
-   -> U23 #151 P10 final Pancake convergence
-   -> U24 #153 T7 confirmed Purchase
+  -> U20 #151 P8 mutable DRAFT quote/audit
+  -> U21 #151 P9a stateless rendered-quote proof
+  -> U22 #151 P9b fresh Pancake reconfirmation
+  -> U23 #151 P10 final Pancake convergence
+  -> U24 #153 T7 confirmed Purchase
 ```
 
-Do not enable real promotions while P8–P10 are only partially landed. The #151 technical activation gate remains off.
+Real promotion activation remains off while P8–P10 are partial.
 
-### Checkpoint C — transaction truth
+#### Checkpoint C — transaction truth
 
-Before downstream live consumers/real discounted activation:
-
-- two-stage `PRICE_CHANGED` proved;
-- all three Pancake raw-live-price regressions green;
-- controlled Pancake custom-price semantic acceptance recorded before real discounts;
-- immutable Purchase identity/value uses finalized order snapshot;
-- existing direct Meta compatibility green;
-- fresh review: 0 Critical / 0 Required.
+Two-stage `PRICE_CHANGED`, three Pancake raw-live-price regressions, controlled custom-price semantic acceptance, immutable Purchase identity/value and direct Meta compatibility are green; fresh review **0 Critical / 0 Required**.
 
 ### Wave 5 — downstream consumers
 
-#### U25 — Merchant standalone mapper
-Source: **#153 M3**.
+- **U25 — Merchant standalone mapper** — **#153 M3**; depends accepted U9 + U12 + U17 + U7.
+- **U26 — Merchant cached public route + promotion revision integration** — **#153 M4 + #151 Merchant freshness**; depends U25 + U11.
+- **U27 — Variant ProductGroup/Offer structured data** — **#152 W4d + variant-level portion of W5 only**; depends U12 + U17 + verified identifier semantics. It owns variant ProductGroup/Product/Offer behavior and carries its own focused HTTP/structured-data verification. It does **not** wait for U13, though missing W15b coverage still must be wired before Gate S.
+- **U28 — Exact GTM saved version + actual loader/CSP + destination mapping** — **#153 T8**; depends U2 + U18/U19 + U24. Only this unit may introduce the first GTM load after exact saved-version export/checksum review.
 
-Depends on: accepted U9 audit + U12 + U17 + central pricing.
-
-#### U26 — Merchant cached public route + promotion revision integration
-Source: **#153 M4 + #151 Merchant freshness contract**.
-
-Depends on: U25 + U11 durable revision behavior.
-
-#### U27 — Variant ProductGroup/Offer structured data
-Source: **#152 W4d/W5**.
-
-Depends on: U12 + U17 + verified identifier semantics + U13 HTTP/runtime coverage ownership.
-
-U27 does **not** require the Merchant mapper to land first. U25 and U27 may run in parallel once they share the same reviewed canonical storefront facts. Before Merchant or index launch, add integration evidence that feed and JSON-LD do not disagree on identity/price/availability.
-
-#### U28 — Exact GTM saved version + actual loader/CSP + destination mapping
-Source: **#153 T8**.
-
-Depends on: U2 + U18/U19 canonical cart events + U24 Purchase.
-
-Only this unit may introduce the first actual GTM load for the new integration, after exact saved-version export/checksum review.
+U25 and U27 may run in parallel from the same canonical storefront facts. Before Merchant or index launch, verify feed and JSON-LD do not disagree on identity/price/availability.
 
 ### Wave 6 — SEO/search follow-through
 
-#### U29 — PDP metadata cleanup
-Source: **#152 W2b**.
+- **U29 — PDP metadata cleanup** — **#152 W2b**; depends U4.
+- **U30 — Search/social fundamentals** — **#152 P3 / W8, W10, W14a, W14b**; split into focused PRs where review/revert boundaries are cleaner.
+- **U31 — Significant sitemap `lastModified`** — **#152 W9**; blocked until significant public-change timestamp semantics exist.
+- **U32 — Product-level discovery + Organization enrichment** — **product-level remainder of #152 W5 + W6**. Add only verified product-level identifiers/attributes/public facts; **do not modify ProductGroup/variant Offer ownership assigned to U27**.
+- **U33 — Evergreen public pages** — **#152 P5/W13**; depends owner-approved facts from U6.
+- **U34 — SEO admin/operational readiness** — **#152 P6/W16/W17**; soft editorial guidance stays advisory.
+- **U35 — Permanent-domain verification** — **#152 P6/W18**; blocked on permanent branded domain + owner approval and does not itself enable indexing.
+- **U36 — Crawler governance matrix** — **#152 P6/W19**; blocked on owner distribution/data-use policy.
+- **U37 — Sitemap scale trigger** — **#152 P6/W21**; implement index/sharding only when measured URL volume approaches the current cliff.
+- **U38 — Runtime performance verification** — **#152 P7**; measure representative pages after promotion and third-party script costs are materially present; create budgets only from measured evidence.
 
-Depends on: U4.
+### Wave 7 — convergence, readiness and final operations
 
-#### U30 — Search/social fundamentals
-Source: **#152 P3 / W8, W10, W14a, W14b**.
+- **U39 — Enabled-consumer monetary convergence** — **#151 G1**. G1 is satisfied incrementally by the consumer-specific work above and any focused residual fixes; **do not bundle analytics/Meta, Merchant and SEO into one mega PR**. This unit records integration evidence that every currently enabled price-bearing consumer uses effective/final authoritative money, while disabled/fail-closed consumers remain non-blocking.
+- **U40 — Promotion observability, readiness and rollback** — **#151 G2**; depends U23 and closes real implementation/ops work: bounded/redacted telemetry, activation/invalid/conflict/`PARTIALLY_INVALID`/`PRICE_CHANGED`/quote-proof/Merchant-revision/Pancake-semantic signals, runbook and rollback rehearsal. No PII, secrets, raw quote proofs or cart UUIDs in telemetry.
+- **U41 — Merchant Center Scheduled Fetch activation** — **#153 M5**; operational activation after U25/U26/U12 and Gate M preconditions. Verify/claim site, configure approved data source/market/shipping/returns/Ads linkage, point Scheduled Fetch at production HTTPS feed, and collect Merchant diagnostics/crawler evidence while search indexing remains independently off unless Gate S is approved.
+- **U42 — Marketing final convergence / rollback verification** — **#153 V1**; depends U28 + U41. This is primarily verification/ops evidence unless a focused launch defect requires code.
+- **U43 — Promotion final integrated DoD** — **#151 G3**; depends U39 + U40 and verifies exact-head integrated current truth, including #153 identity/cart/Purchase/Merchant-cache regressions and unchanged #152 indexing policy unless separately approved.
 
-Split into focused PRs where appropriate: root OG/Twitter fallback, static self-canonical, branded route-level 404, unknown product-slug HTML 404 while preserving current slug/historical 301 behavior.
+## 7. Conditional items not on the default critical path
 
-#### U31 — Significant sitemap `lastModified`
-Source: **#152 W9**.
+- **#152 W12** listing `ItemList`/`CollectionPage`: schedule only if target-market/consumer/search evidence justifies it.
+- **#152 W20** `llms.txt`: not a Google SEO/GEO requirement; schedule only for a named non-Google consumer with owner-approved value.
+- TikTok Events API, Meta-to-GTM migration, Enhanced Conversions/customer PII, composite Merchant offers, coupons/stacking/BXGY/personalized promotion expansion remain future source-contract work.
 
-Blocked until a timestamp contract for significant public-page change exists. Do not use raw mirror/internal `updatedAt` blindly.
+## 8. Owner/account gates from #153
 
-#### U32 — Product/Organization discovery enrichment
-Source: **#152 P4 / W5/W6**.
+These do not block pure foundations; they block the affected live destination:
 
-Use only verified identifier/public first-party facts. Merchant and JSON-LD must describe the same catalog/price/availability contract.
+- **O1 — Google Ads Purchase value:** owner chooses merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish. GA4 remains merchandise value with shipping separate.
+- **O2 — Merchant market:** confirm target market/language/currency before Merchant activation.
+- **O3 — Apparel facts:** confirm truthful `gender`/`age_group`/`condition` semantics for emitted standalone offers or add product-owned facts first.
+- **O4 — Vendor configuration:** provide/review GTM container, GA4 Measurement ID, Ads conversion ID/label and TikTok Pixel ID through proper account owners.
 
-#### U33 — Evergreen public pages
-Source: **#152 P5/W13**.
+## 9. Safe parallelization summary
 
-Depends on: owner approval from U6. Build from approved facts only; do not invent return/contact/address/size policy.
+Can start together from reviewed baseline when file ownership permits: U1–U6, U8 and U9.
 
-#### U34 — SEO admin/operational readiness
-Source: **#152 P6/W16/W17**.
+Must stay sequential:
 
-Keep UI advisory where the audit says guidance is soft; UI does not become a new SEO policy authority.
-
-#### U35 — Permanent-domain verification
-Source: **#152 P6/W18**.
-
-Blocked on permanent branded domain + owner approval. Search Console/Bing/Merchant verification does not itself enable indexing.
-
-#### U36 — Crawler governance matrix
-Source: **#152 P6/W19**.
-
-Blocked on owner distribution/data-use policy.
-
-#### U37 — Sitemap scale trigger
-Source: **#152 P6/W21**.
-
-Measure catalog URL volume and add sitemap index/sharding before the current hard cliff only when evidence shows the trigger is approaching.
-
-#### U38 — Runtime performance verification
-Source: **#152 P7**.
-
-Measure representative `/`, `/shop`, collection and PDP pages on mobile/desktop after promotion and third-party script changes are materially present. Create optimization/budget work only from measured evidence.
-
-## 6. Conditional items not on the default critical path
-
-### #152 W12 — listing `ItemList` / `CollectionPage`
-
-Do not schedule by default. Promote into the plan only when target-market/consumer evidence shows value; current audit does not justify it for the Vietnam storefront.
-
-### #152 W20 — `llms.txt`
-
-Do not schedule for Google SEO/GEO. Add only if a named non-Google consumer/use case has enough owner-approved value to justify maintenance.
-
-### Other deferred items inherited from #153/#151
-
-- TikTok Events API;
-- Meta-to-GTM migration;
-- Enhanced Conversions/customer PII;
-- composite Merchant offers;
-- coupons/stacking/BXGY/personalized promotion expansion.
-
-These require their own future source contract; they are not hidden substeps of this program.
-
-## 7. Safe parallelization summary
-
-### Can start together
-
-- U1 SEO temporary-host enforcement;
-- U2 tracking foundation/no GTM;
-- U3 promotion persistence;
-- U4 metadata uniqueness contract;
-- U5 SEO coverage inventory;
-- U6 content fact inventory;
-- U8 identity propagation and U9 Merchant audit may also proceed early when file overlap is controlled.
-
-### Must stay sequential
-
-- promotion domain: U7 -> U10 -> U11;
+- promotion domain: U3 -> U7 -> U10 -> U11;
 - storefront promotion: U15 -> U16 -> U17;
 - checkout/order: U20 -> U21 -> U22 -> U23 -> U24;
 - SEO metadata: U4 -> U29;
-- SEO coverage: U5 -> U13.
+- SEO coverage: U5 -> U13;
+- Merchant feed: U9/U12 -> U25 -> U26 -> U41;
+- full marketing convergence: U28 + U41 -> U42.
 
-### Coordinate at shared interfaces
+Coordinate at shared interfaces:
 
 - U8 -> U15 selected-variant state;
-- U8/U9 -> U12 variant URL binding onto the same state;
-- U15/U18/U19 shared selected variant/cart facts;
+- U8/U9 -> U12 deep-link binding;
+- U7/U8 -> U18/U19 authoritative event/cart money + identity;
 - U11 durable revision -> U26 Merchant cache;
-- U12 + canonical storefront facts -> U25 Merchant and U27 structured data;
-- U24 Purchase -> U28 GTM live mappings.
+- U12 + canonical storefront facts -> U25 Merchant and U27 variant structured data;
+- U27 variant schema ↔ U32 product-level enrichment: separate ownership, shared verified identifiers only;
+- U24 Purchase -> U28 GTM live mapping;
+- enabled consumers -> U39 G1 convergence.
 
-## 8. Separate launch gates
+## 10. Independent launch gates
 
-These are independent approvals, not one release switch.
+These are independent approvals; no gate implies another.
 
 ### Gate P — Promotion activation
 
-Requires #151 P1–P10 plus enabled-consumer convergence, price/catalog evidence, controlled Pancake custom-price semantic acceptance, readiness/rollback/observability and explicit human activation. GTM/Merchant still mechanically disabled/fail-closed do not block promotion; if enabled, they must already consume promotion-aware money.
+Requires #151 P1–P10, accepted price/catalog evidence, controlled Pancake custom-price semantic acceptance, **U39/G1 for currently enabled monetary consumers**, **U40/G2 readiness/rollback**, **U43/G3 exact-head DoD**, and explicit human activation. GTM/Merchant that remain mechanically disabled/fail-closed do not block promotion; if enabled, they must already be promotion-aware.
 
 ### Gate T — GTM live
 
-Requires T1–T7 canonical facts, exact immutable saved GTM version/export/checksum, preview isolation proving zero production-destination traffic, reviewed destination semantics and publication of the same reviewed saved version.
+Requires T1–T8 through U28, **O1 Ads Purchase value decision**, **O4 vendor configuration**, exact immutable GTM version/export/checksum, preview isolation proving zero production-destination traffic, reviewed destination semantics and publication of the same reviewed version. If promotions are active, the analytics/Ads/TikTok monetary paths must be covered by U39/G1 before live publish.
 
 ### Gate M — Merchant activation
 
-Requires M1–M4, exact standalone variant landing URL, audited IDs/MPN, canonical pricing, bounded cache/single-flight/backoff, #151 promotion revision integration when promotions are supported, topology proof and Merchant account/market/apparel owner gates. Composite remains excluded.
+**Pre-activation approval** requires M1–M4 through U9/U12/U25/U26, exact standalone variant URL, audited IDs/MPN, canonical pricing, bounded cache/single-flight/backoff/topology proof, **O2 market** and **O3 apparel-fact** approval, plus Merchant account/site/shipping/returns prerequisites. If promotions are active, Merchant monetary/cache behavior must be covered by U39/G1. **U41 executes M5** only after this approval; Gate M is complete only after U41 Scheduled Fetch + Diagnostics/crawler verification succeeds. Composite remains excluded.
 
 ### Gate S — Organic indexing
 
-Requires temporary-host enforcement, permanent branded domain, applicable #152 Required correctness/regression/operational gates and explicit human approval to enable indexing on the permanent domain. Promotion/GTM/Merchant activation never implies this gate.
+Requires temporary-host enforcement, permanent branded domain, applicable #152 Required correctness/regression/operational gates (including U13 where its coverage map identifies missing signals), permanent-domain verification and explicit human approval. Promotion/GTM/Merchant activation never implies this gate.
 
-## 9. Verification baseline
+### Final combined program gate
 
-Every implementation unit inherits source verification and uses focused RED/GREEN tests first. At major checkpoints run the applicable project commands:
+When the intended combined program includes both GTM live and Merchant activation, **U42/#153 V1** records final marketing convergence/rollback evidence. **U43/#151 G3** records final promotion-integrated DoD. Program completion requires the applicable source-task acceptance criteria and every launch gate actually chosen for release; intentionally disabled destinations stay explicitly disabled rather than being silently treated as complete.
+
+## 11. Verification baseline
+
+Every implementation unit inherits source verification and uses the smallest discriminating RED/GREEN test first. At major checkpoints run applicable repository commands:
 
 ```bash
 pnpm test
@@ -500,19 +338,17 @@ pnpm prisma:generate
 pnpm release:check
 ```
 
-`pnpm pancake:catalog:audit` is run only in an approved real-catalog context with sanitized evidence.
+`pnpm pancake:catalog:audit` runs only in an approved real-catalog context with sanitized evidence. Browser/runtime/a11y/SEO/GTM/Merchant/Pancake external checks are required where the owning source task requires them. Never claim a command, browser check or external acceptance result unless it was actually executed.
 
-Browser/runtime/a11y/SEO/GTM/Merchant checks are required when the affected source task requires them. Never claim a command/browser/external acceptance check unless it was actually executed.
-
-## 10. Program Definition of Done
+## 12. Program Definition of Done
 
 Before calling the combined program complete:
 
-- source-task acceptance criteria for implemented scope are met;
-- no duplicate pricing/cart/identity/variant-URL/Purchase/Merchant-cache authority exists;
-- focused regressions would fail without the new behavior;
-- existing relevant tests + lint/typecheck/build + applicable DB/runtime/browser/a11y checks are green;
-- security review covers admin authz, browser/external input, quote proof, Merchant public route, serialization, GTM/CSP/secrets and PII;
+- implemented source-task acceptance criteria are met;
+- no duplicate pricing/cart/identity/variant-URL/Purchase/Merchant-cache/variant-schema authority exists;
+- focused regressions would fail without the new behavior and relevant existing tests pass;
+- applicable lint/typecheck/build/DB/runtime/browser/a11y checks are green;
+- security review covers admin authz, untrusted input, quote proof, Merchant public route/serialization, GTM/CSP/secrets and PII;
 - migrations/backward compatibility and rollback are reviewed;
 - observability exists for new critical production failure modes without leaking secrets/PII;
 - docs describe current truth;
