@@ -137,8 +137,7 @@ U11 + U7 + U8 -> U15 #151 P6 PDP
                        |
                        +---- selected-variant state keyed by pancakeVariationId
 
-U7 + U8 -> U18 #153 T5 upper-funnel + atomic PDP AddToCart
-             -> U19 #153 T6 cart update/remove + complete cart/checkout projection
+U7 + U8 -> U18 #153 T5 upper-funnel + atomic PDP AddToCart -> U19 #153 T6 cart/update projection
 
 U17 + U19 -> U20 #151 P8 -> U21 P9a -> U22 P9b -> U23 P10 -> U24 #153 T7 Purchase
 
@@ -257,7 +256,7 @@ U25 and U27 may run in parallel from the same canonical storefront facts. Before
 - **U40 — Promotion observability, readiness and rollback** — **#151 G2**; depends U23 and closes real implementation/ops work: bounded/redacted telemetry, activation/invalid/conflict/`PARTIALLY_INVALID`/`PRICE_CHANGED`/quote-proof/Merchant-revision/Pancake-semantic signals, runbook and rollback rehearsal. No PII, secrets, raw quote proofs or cart UUIDs in telemetry.
 - **U41 — Merchant Center Scheduled Fetch activation** — **#153 M5**; operational activation after U25/U26/U12 and Gate M preconditions. Verify/claim site, configure approved data source/market/shipping/returns/Ads linkage, point Scheduled Fetch at production HTTPS feed, and collect Merchant diagnostics/crawler evidence while search indexing remains independently off unless Gate S is approved.
 - **U42 — Marketing final convergence / rollback verification** — **#153 V1**; depends U28 + U41. This is primarily verification/ops evidence unless a focused launch defect requires code.
-- **U43 — Promotion final integrated DoD** — **#151 G3**; depends U39 + U40 and verifies exact-head integrated current truth, including #153 identity/cart/Purchase/Merchant-cache regressions and unchanged #152 indexing policy unless separately approved.
+- **U43 — Promotion final integrated DoD** — **#151 G3**; depends U39 + U40 and verifies exact-head integrated current truth, including **applicable #153 identity/cart/Purchase/Merchant-cache regressions for slices that are actually implemented** and unchanged #152 indexing policy unless separately approved. A mechanically disabled/fail-closed future consumer does not become a prerequisite merely because G3 names its regression family.
 
 ## 7. Conditional items not on the default critical path
 
