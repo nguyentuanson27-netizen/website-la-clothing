@@ -150,56 +150,49 @@ test("P1 stores website-owned fixed sale price as an integer VND BigInt", async 
   assert.equal(row?.fixedPriceVnd, BigInt("9007199254740993"));
 });
 
-test("P1 enforces discount-type money exclusivity in the database, not the UI", async () => {
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-bad-1`, { discountType: "PERCENTAGE", percentageValue: null }),
-    "percentage campaigns require a percentage value",
-  );
+test("P1 database keeps discount-field shape while allowing an incomplete Draft value", async () => {
+  await insertCampaign(`${PREFIX}-percentage-incomplete`, {
+    discountType: "PERCENTAGE",
+    percentageValue: null,
+    fixedPriceVnd: null,
+  });
+  await insertCampaign(`${PREFIX}-fixed-incomplete`, {
+    discountType: "FIXED_PRICE",
+    percentageValue: null,
+    fixedPriceVnd: null,
+  });
+
   await assertRejected(
     () =>
-      insertCampaign(`${PREFIX}-bad-2`, {
+      insertCampaign(`${PREFIX}-bad-percentage-shape`, {
         discountType: "PERCENTAGE",
         percentageValue: 10,
         fixedPriceVnd: BigInt(100_000),
       }),
-    "percentage campaigns must not carry a fixed price",
+    "percentage campaigns must not carry a fixed-price field",
   );
   await assertRejected(
     () =>
-      insertCampaign(`${PREFIX}-bad-3`, {
+      insertCampaign(`${PREFIX}-bad-fixed-shape`, {
         discountType: "FIXED_PRICE",
         percentageValue: 10,
         fixedPriceVnd: BigInt(100_000),
       }),
-    "fixed-price campaigns must not carry a percentage",
-  );
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-bad-4`, { discountType: "FIXED_PRICE", percentageValue: null }),
-    "fixed-price campaigns require a fixed price",
+    "fixed-price campaigns must not carry a percentage field",
   );
 });
 
-test("P1 rejects out-of-range percentages and non-positive fixed prices", async () => {
-  for (const percentageValue of [0, 100, -1]) {
-    await assertRejected(
-      () => insertCampaign(`${PREFIX}-pct-${percentageValue}`, { percentageValue }),
-      `percentage ${percentageValue} must be rejected`,
-    );
-  }
-  for (const percentageValue of [1, 99]) {
-    await insertCampaign(`${PREFIX}-pct-ok-${percentageValue}`, { percentageValue });
+test("P1 Draft persistence leaves economic validity to publish/re-enable lifecycle validation", async () => {
+  for (const percentageValue of [0, 100, -1, 1, 99]) {
+    await insertCampaign(`${PREFIX}-pct-${percentageValue}`, { percentageValue });
   }
 
-  for (const fixedPriceVnd of [BigInt(0), BigInt(-1)]) {
-    await assertRejected(
-      () =>
-        insertCampaign(`${PREFIX}-fixed-${fixedPriceVnd}`, {
-          discountType: "FIXED_PRICE",
-          percentageValue: null,
-          fixedPriceVnd,
-        }),
-      `fixed price ${fixedPriceVnd} must be rejected`,
-    );
+  for (const fixedPriceVnd of [BigInt(0), BigInt(-1), BigInt(1)]) {
+    await insertCampaign(`${PREFIX}-fixed-${fixedPriceVnd}`, {
+      discountType: "FIXED_PRICE",
+      percentageValue: null,
+      fixedPriceVnd,
+    });
   }
 });
 
@@ -253,26 +246,17 @@ test("P1 the exact code-unit bound is enforced in the application, not by char_l
   await insertCampaign(`${PREFIX}-name-non-bmp`, { name: overBound });
 });
 
-test("P1 enforces the half-open interval and the Flash Sale window requirement", async () => {
+test("P1 Draft persistence leaves time-window validity to publish/re-enable lifecycle validation", async () => {
   const start = "2026-09-01T00:00:00.000Z";
   const end = "2026-09-02T00:00:00.000Z";
 
   await insertCampaign(`${PREFIX}-window`, { startsAt: start, endsAt: end });
   await insertCampaign(`${PREFIX}-open`, { startsAt: null, endsAt: null });
+  await insertCampaign(`${PREFIX}-inverted`, { startsAt: end, endsAt: start });
+  await insertCampaign(`${PREFIX}-empty-window`, { startsAt: start, endsAt: start });
   await insertCampaign(`${PREFIX}-flash`, { kind: "FLASH_SALE", startsAt: start, endsAt: end });
-
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-inverted`, { startsAt: end, endsAt: start }),
-    "endsAt must be strictly after startsAt",
-  );
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-empty-window`, { startsAt: start, endsAt: start }),
-    "an empty interval must be rejected",
-  );
-  await assertRejected(
-    () => insertCampaign(`${PREFIX}-flash-open`, { kind: "FLASH_SALE", startsAt: start, endsAt: null }),
-    "a Flash Sale requires both bounds",
-  );
+  await insertCampaign(`${PREFIX}-flash-open`, { kind: "FLASH_SALE", startsAt: start, endsAt: null });
+  await insertCampaign(`${PREFIX}-flash-empty`, { kind: "FLASH_SALE", startsAt: null, endsAt: null });
 });
 
 test("P1 target rows carry exactly one of product or variant scope", async () => {
