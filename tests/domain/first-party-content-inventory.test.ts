@@ -11,6 +11,7 @@ import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
  * document still describes every fact it does expose.
  */
 const INVENTORY = new URL("../../docs/audits/first-party-content-facts-w13a.md", import.meta.url);
+const MASTER_TODO = new URL("../../tasks/growth-commerce-master-todo.md", import.meta.url);
 
 const AUTHORITATIVE_FACT_KEYS = [
   "brandName",
@@ -72,4 +73,18 @@ test("W13A the inventory documents every fact the repository owns and every bloc
   for (const key of [...AUTHORITATIVE_FACT_KEYS, ...OWNER_BLOCKED_FACT_KEYS]) {
     assert.ok(inventory.includes(key), `${key} must appear in the W13A inventory`);
   }
+});
+
+test("W13A About has an explicit owner-decision gate everywhere U33 consumes the inventory", async () => {
+  const [inventory, masterTodo] = await Promise.all([
+    readFile(INVENTORY, "utf8"),
+    readFile(MASTER_TODO, "utf8"),
+  ]);
+
+  assert.match(inventory, /\| \*\*B6\*\* \| About(?:\/brand\/legal)? facts .*\| U33 \(About page\) \|/);
+  assert.match(inventory, /For each of About, Returns, Shipping delivery terms, Size Guide and Contact:/);
+  assert.match(masterTodo, /\*\*U33\*\*[^\n]+Blocked by B1–B4 and B6/);
+  assert.match(masterTodo, /\| \*\*B6\*\* \| About(?:\/brand\/legal)? facts .*\| U33 \(About page\) \|/);
+
+  assert.match(masterTodo, /\| \*\*B5\*\* \| Metadata uniqueness:/, "B5 metadata gate must remain unchanged");
 });
