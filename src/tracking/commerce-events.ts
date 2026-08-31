@@ -242,11 +242,27 @@ export function buildCommerceItemsEvent(
   return Object.freeze({ event: name, ecommerce });
 }
 
+const MAX_SAFE_VND = BigInt(Number.MAX_SAFE_INTEGER);
+
+/**
+ * Exact integer accumulation.
+ *
+ * Every operand is individually a safe integer, but that says nothing about their product or their
+ * running sum: two safe prices can multiply past 2^53 and silently lose precision while still
+ * looking like a valid number. A checkout value that is quietly wrong is worse than one that fails,
+ * so the arithmetic is done in `BigInt` and the result fails closed if it leaves the safe domain.
+ */
 function sumMerchandiseVnd(items: readonly CommerceItem[]): number {
-  return items.reduce((total, item) => {
+  let total = BigInt(0);
+  for (const item of items) {
     const variant = item as VariantItem;
-    return total + variant.price * variant.quantity;
-  }, 0);
+    total += BigInt(variant.price) * BigInt(variant.quantity);
+  }
+
+  if (total > MAX_SAFE_VND) {
+    throw new RangeError("merchandise value must stay inside the safe integer VND domain");
+  }
+  return Number(total);
 }
 
 /** GA4 checkout value is the merchandise item sum; shipping is reported separately at Purchase. */

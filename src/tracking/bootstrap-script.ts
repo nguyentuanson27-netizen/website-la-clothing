@@ -6,7 +6,10 @@
  * and contacts no vendor origin.
  */
 
-import { buildConsentDefaultCommand, type ConsentPolicy } from "./consent.ts";
+import {
+  buildConsentDefaultCommand,
+  type ConsentPolicy,
+} from "./consent.ts";
 import { DATA_LAYER_NAME } from "./data-layer.ts";
 import type { TrackingRuntime } from "./config.ts";
 
@@ -24,6 +27,7 @@ export function buildTrackingBootstrapScript(
   policy: ConsentPolicy,
 ): string {
   const mode = serialize(runtime.mode);
+  const [command, stage, state] = buildConsentDefaultCommand(policy);
 
   return [
     `window.${DATA_LAYER_NAME} = window.${DATA_LAYER_NAME} || [];`,
@@ -32,7 +36,14 @@ export function buildTrackingBootstrapScript(
     // rather than throwing inside a page that is otherwise fine.
     `try { Object.defineProperty(window, 'la_tracking_mode', { value: ${mode}, writable: false, configurable: false }); } catch (error) {}`,
     `window.${DATA_LAYER_NAME}.push({ la_tracking_mode: ${mode} });`,
-    // Consent defaults are queued ahead of anything that could ever measure.
-    `window.${DATA_LAYER_NAME}.push(${serialize(buildConsentDefaultCommand(policy))});`,
+    // Consent defaults are queued through Google's documented `gtag` wrapper, ahead of anything
+    // that could ever measure.
+    //
+    // The wrapper is not decoration: `gtag(...)` pushes its `arguments` object, and that array-like
+    // shape — not a plain array — is what a container recognises as a consent command. Emitting
+    // `["consent","default",{...}]` directly would look equivalent and be ignored. Defined
+    // defensively so an existing `gtag` (a later loader's, say) is never replaced.
+    `window.gtag = window.gtag || function () { window.${DATA_LAYER_NAME}.push(arguments); };`,
+    `window.gtag(${serialize(command)}, ${serialize(stage)}, ${serialize(state)});`,
   ].join("\n");
 }

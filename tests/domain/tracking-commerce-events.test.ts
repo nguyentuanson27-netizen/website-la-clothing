@@ -272,3 +272,49 @@ test("T3 page_view is a deterministic first-party fact without query state", () 
   });
   assert.throws(() => buildPageViewEvent({ pathname: "shop", search: "" }), /page path/);
 });
+
+test("T1 begin_checkout accumulates merchandise value exactly rather than in floating point", () => {
+  const half = Math.floor(Number.MAX_SAFE_INTEGER / 2);
+
+  // Three lines that individually fit and together land exactly on the boundary.
+  const event = buildBeginCheckoutEvent({
+    items: [
+      buildVariantItem({ ...variantItem, variantExternalId: "v-1", unitPriceVnd: half, quantity: 1 }),
+      buildVariantItem({ ...variantItem, variantExternalId: "v-2", unitPriceVnd: half, quantity: 1 }),
+      buildVariantItem({ ...variantItem, variantExternalId: "v-3", unitPriceVnd: 1, quantity: 1 }),
+    ],
+  });
+
+  assert.equal((event.ecommerce as { value: number }).value, Number.MAX_SAFE_INTEGER);
+});
+
+test("T1 begin_checkout fails closed when one line's price times quantity leaves the safe domain", () => {
+  assert.throws(
+    () =>
+      buildBeginCheckoutEvent({
+        items: [
+          buildVariantItem({
+            ...variantItem,
+            unitPriceVnd: Math.floor(Number.MAX_SAFE_INTEGER / 2) + 1,
+            quantity: 2,
+          }),
+        ],
+      }),
+    /safe integer VND domain/,
+    "safe operands do not imply a safe product",
+  );
+});
+
+test("T1 begin_checkout fails closed when the accumulated total leaves the safe domain", () => {
+  assert.throws(
+    () =>
+      buildBeginCheckoutEvent({
+        items: [
+          buildVariantItem({ ...variantItem, variantExternalId: "v-1", unitPriceVnd: Number.MAX_SAFE_INTEGER, quantity: 1 }),
+          buildVariantItem({ ...variantItem, variantExternalId: "v-2", unitPriceVnd: 1, quantity: 1 }),
+        ],
+      }),
+    /safe integer VND domain/,
+    "safe lines do not imply a safe sum",
+  );
+});

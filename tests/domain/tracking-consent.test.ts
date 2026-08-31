@@ -79,7 +79,8 @@ test("T3 the browser bootstrap establishes the dataLayer and consent without con
   assert.match(script, /window\.dataLayer = window\.dataLayer \|\| \[\];/);
   assert.match(script, /Object\.defineProperty\(window, 'la_tracking_mode'/);
   assert.match(script, /writable: false/);
-  assert.match(script, /\["consent","default",/);
+  assert.match(script, /window\.gtag = window\.gtag \|\| function \(\) \{ window\.dataLayer\.push\(arguments\); \};/);
+  assert.match(script, /window\.gtag\("consent", "default", \{/);
 
   for (const forbidden of ["googletagmanager", "gtm.js", "GTM-ABC123", "src=", "http"]) {
     assert.equal(
@@ -89,4 +90,77 @@ test("T3 the browser bootstrap establishes the dataLayer and consent without con
     );
   }
   assert.equal(script.includes("<"), false, "the bootstrap must not be able to close its script tag");
+});
+
+/**
+ * Runs the emitted bytes against a synthetic window, so what is asserted is what a browser would
+ * actually do rather than what the source looks like.
+ */
+function runBootstrap(policy = CURRENT_CONSENT_POLICY) {
+  const script = buildTrackingBootstrapScript(
+    resolveTrackingRuntime({ desiredMode: "preview", containerId: "GTM-ABC123" }),
+    policy,
+  );
+  const win: Record<string, unknown> = {};
+  new Function("window", script)(win);
+  return win;
+}
+
+test("T3 the executed bootstrap initializes the dataLayer and pins the tracking mode", () => {
+  const win = runBootstrap();
+
+  assert.ok(Array.isArray(win.dataLayer));
+  assert.equal(win.la_tracking_mode, "preview");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(win, "la_tracking_mode"), {
+    value: "preview",
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  assert.deepEqual((win.dataLayer as unknown[])[0], { la_tracking_mode: "preview" });
+});
+
+test("T3 consent defaults reach the dataLayer as a gtag arguments object, not a plain array", () => {
+  const win = runBootstrap();
+  const pushed = win.dataLayer as unknown[];
+  const consentEntry = pushed[1] as Record<string, unknown> & { length: number };
+
+  // This is the finding this test exists for: `gtag(...)` pushes its `arguments` object. A plain
+  // array would serialize identically in the source and be ignored by a container.
+  assert.equal(Object.prototype.toString.call(consentEntry), "[object Arguments]");
+  assert.equal(Array.isArray(consentEntry), false);
+  assert.equal(consentEntry.length, 3);
+  assert.equal(consentEntry[0], "consent");
+  assert.equal(consentEntry[1], "default");
+  assert.deepEqual(consentEntry[2], resolveConsentDefaults(CURRENT_CONSENT_POLICY));
+});
+
+test("T3 the bootstrap never replaces an existing dataLayer or gtag", () => {
+  const script = buildTrackingBootstrapScript(
+    resolveTrackingRuntime({ desiredMode: "live", containerId: "GTM-ABC123" }),
+    CURRENT_CONSENT_POLICY,
+  );
+  const existingEntries = [{ event: "gtm.js" }];
+  const seenByExistingGtag: unknown[] = [];
+  const existingGtag = (...args: unknown[]) => {
+    seenByExistingGtag.push(args);
+  };
+  const win: Record<string, unknown> = { dataLayer: existingEntries, gtag: existingGtag };
+
+  new Function("window", script)(win);
+
+  assert.equal(win.dataLayer, existingEntries, "an initialized dataLayer must survive");
+  assert.equal(win.gtag, existingGtag, "an existing gtag must not be replaced");
+  assert.deepEqual(existingEntries[0], { event: "gtm.js" }, "prior entries stay in order");
+  assert.deepEqual(seenByExistingGtag, [["consent", "default", resolveConsentDefaults(CURRENT_CONSENT_POLICY)]]);
+});
+
+test("T3 a swapped default-denied policy changes the queued state and nothing else", () => {
+  const denied = { id: "denied-until-choice", defaultSignal: "denied" as const, visibleConsentUi: true };
+  const win = runBootstrap(denied);
+  const consentEntry = (win.dataLayer as unknown[])[1] as Record<string, unknown>;
+
+  assert.equal(consentEntry[0], "consent");
+  assert.equal(consentEntry[1], "default");
+  assert.deepEqual(consentEntry[2], resolveConsentDefaults(denied));
 });
