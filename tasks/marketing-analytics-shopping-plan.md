@@ -24,6 +24,7 @@ Core invariants:
 - upper-funnel events must not invent a selected variant when the UI has not selected one;
 - PDP AddToCart means one committed positive cart increment, not an absolute quantity reset;
 - cart/Purchase events use server-committed identity, price and quantity facts rather than stale browser facts;
+- `view_cart` / `begin_checkout` require one complete canonical cart analytics projection; unsafe mixed carts fail the whole analytics event rather than emitting partial items/totals;
 - Merchant output is fail-closed when identity, price, landing context, serialization, cache, backoff, or resource limits are unsafe.
 
 ## 2. Repository facts that shape implementation
@@ -36,7 +37,7 @@ Core invariants:
 - `storefront-purchase.ts` always asks its cart port for `quantity: 1`; that port is wired to `setAnonymousCartItemQuantity()`.
 - `anonymous-cart.ts#setItemQuantity()` is an **absolute set** operation: under the cart lock its upsert writes `quantity` directly for both create/update. Therefore reusing it for the PDP “Thêm vào giỏ hàng” button can report success while producing zero or negative delta when the line already exists.
 - `storefront-purchase.ts` re-fetches the current product and re-resolves the authorized option on the server before the cart mutation, while the public action currently collapses success to `{ ok: true }`. Therefore the browser price is not an authoritative post-mutation fact.
-- current storefront cart resolution can derive product name, color, size and current resolved price server-side, but the repository projection does not yet expose `pancakeVariationId` in those cart facts and update/remove public actions discard mutation details.
+- current storefront cart resolution can derive product name, color, size and current resolved price server-side, but `StorefrontCartLine` exposes only local `variantId`; `storefront-cart-repository.ts` does not currently select/propagate `pancakeVariationId`, and `/checkout` consumes the same resolved cart lines. Therefore current cart/checkout facts cannot yet satisfy the canonical external variant identity required by `view_cart` / `begin_checkout`.
 - current `canSetQuantity` storefront pre-check is outside the cart mutation transaction. It is advisory only for the future analytics/cart correctness contract; T6 must re-resolve current item/price/stock eligibility at the serialized mutation boundary before accepting an absolute update.
 - `/checkout` renders only when current cart, price, stock, and shipping facts resolve, so it is the current `begin_checkout` truth point.
 - `/checkout/success` checks `OrderMirror.state === CONFIRMED` before browser Purchase.
@@ -105,7 +106,7 @@ type CommerceVariantItem = {
 Rules:
 
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
-- internal `VariantMirror.id` remains the mutation/authorization identity.
+- internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
 - SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted Merchant items.
 - Pancake barcode is never assumed to be GTIN.
@@ -216,7 +217,7 @@ The browser builds canonical `add_to_cart` only from this success payload and re
 
 If the cart mutation succeeds but a safe analytics snapshot cannot be produced, commerce remains successful and canonical analytics fails closed: emit no new vendor event and never fall back to stale browser facts. Existing direct Meta event name/content-ID/direct-delivery architecture remains unchanged; any Meta value-source correction must use server truth and have dedicated regression coverage.
 
-### 3.9 Cart absolute update/remove return the same authoritative event snapshot contract
+### 3.9 Cart mutation and cart/checkout analytics use authoritative complete projections
 
 The cart editor keeps its current **absolute quantity** UX; only the PDP add path becomes increment semantics.
 
@@ -230,7 +231,19 @@ For absolute update/remove, analytics facts are captured under the same cart loc
 - browser derives delta and event payload only from returned committed facts;
 - if snapshot identity/price cannot be resolved safely, tracking fails closed with no rendered/client fallback and without changing the authoritative commerce result.
 
-This means a price/catalog change between page render and mutation cannot cause an event with stale client values, and a full remove remains measurable from the pre-delete server snapshot when safe.
+For read-only cart/checkout funnel events, T4/T6 extend the canonical resolved cart facts (or one dedicated equivalent analytics projection) so every analytics-safe line carries the actual purchased `pancakeVariationId` in addition to the internal local ID. Composite component lines use the component variation external ID; parent/composite presentation identity is optional context, never a replacement external variant ID.
+
+`view_cart` and `begin_checkout` use an explicit **all-or-nothing** projection policy:
+
+- every non-empty line must resolve a safe `pancakeVariationId`, authoritative non-negative unit price, positive integer quantity, and item name;
+- if any line fails that contract, suppress the entire event rather than dropping only that line;
+- local CUID/`VariantMirror.id` is never used as vendor `item_id` fallback;
+- event merchandise value is exactly `sum(unitPriceVnd × quantity)` over the complete emitted line set; partial items/partial totals are forbidden;
+- `view_cart` is built from current canonical cart truth;
+- `begin_checkout` is built only after the existing checkout commerce-validity gates pass;
+- inability to build the analytics projection never blocks or alters cart/checkout commerce behavior.
+
+This means price/catalog/identity changes between render and mutation cannot cause stale mutation events, and mixed/unresolvable carts cannot create internally inconsistent cart/checkout funnel events.
 
 ### 3.10 Merchant public-route envelope, cache, single-flight, and failure backoff
 
@@ -297,11 +310,11 @@ T2 desired tracking config / fail-closed interlock
  ↓
 T3 dataLayer + consent + page_view preparation (NO GTM load)
  ↓
-T4 product + variant projection facts
+T4 product + variant + canonical cart projection facts
  ├──────────────────────┐
  ↓                      ↓
-T5 atomic PDP add +     T6 atomic cart update/remove + checkout
-server event snapshot   server event snapshot
+T5 atomic PDP add +     T6 atomic cart update/remove + cart/checkout projection events
+server event snapshot   server event snapshot + complete funnel snapshot
  └──────────┬───────────┘
             ↓
 T7 confirmed Purchase
@@ -326,7 +339,7 @@ T8 + M5 → V1 final verification / rollback gate
 ADR 0005 governs reviewability; file count is only a signal.
 
 - **PR-A — tracking preparation:** T1–T3. It must produce zero new GTM/vendor network delivery.
-- **PR-B — commerce browser events:** T4–T6, including a dedicated atomic PDP increment and server-authoritative mutation snapshots.
+- **PR-B — commerce browser events:** T4–T6, including a dedicated atomic PDP increment, server-authoritative mutation snapshots, and complete canonical cart/checkout analytics projection.
 - **PR-C — confirmed Purchase + immutable GTM activation:** T7–T8, including actual GTM loader/CSP opening, saved-version export, static live-guard audit, preview enablement, and later live publish gate.
 - **PR-D — Merchant identity + standalone deep link:** M1–M2.
 - **PR-E — Merchant feed:** M3–M4, including cache/single-flight/backoff/resource controls.
@@ -366,13 +379,13 @@ Focused tests + `pnpm typecheck` + `pnpm lint`; security review proves PR-A cann
 
 ---
 
-## T4 — Product-impression and selected-variant projection facts
+## T4 — Product-impression, selected-variant, and canonical cart projection facts
 
-**Build:** expose stable `pancakeProductId` on product/list/detail facts and `pancakeVariationId` on concrete options **and server cart mutation lookup facts** while retaining local variant ID for authorization.
+**Build:** expose stable `pancakeProductId` on product/list/detail facts and `pancakeVariationId` on concrete options, server cart mutation lookup facts, and canonical resolved cart/checkout line facts while retaining local variant ID for authorization.
 
-**Acceptance:** one card has product-level identity independent of variant choice; concrete options/mutation snapshots carry variation identity; presentation `kindKey` never becomes external identity; existing price/stock/ambiguity/privacy behavior unchanged.
+**Acceptance:** one card has product-level identity independent of variant choice; concrete options/mutation snapshots carry variation identity; every analytics-safe resolved cart line carries the actual `pancakeVariationId`; standalone and composite component cart lines preserve the purchased variation external identity; local `VariantMirror.id` remains internal mutation identity only; presentation `kindKey` never becomes external identity; existing price/stock/ambiguity/privacy behavior unchanged.
 
-**Verification:** list/PDP standalone + multi-price + composite projection tests, plus server cart snapshot identity tests.
+**Verification:** list/PDP standalone + multi-price + composite projection tests, server cart mutation snapshot identity tests, standalone resolved cart-line external ID, composite component resolved cart-line external ID, and unresolvable/private line that never fabricates an external identity.
 
 ## T5 — List/PDP/select events and atomic server-authoritative AddToCart
 
@@ -394,11 +407,11 @@ Focused tests + `pnpm typecheck` + `pnpm lint`; security review proves PR-A cann
 
 **Verification:** multi/equal/no-price products, click-before-selection, absent→1, existing1→2, existing>1 increment, stock-bound failure, **concurrent repeated PDP clicks against the same live cart identity**, stale-browser-price/server-current-price, snapshot failure, failed mutation, no duplicate Meta.
 
-## T6 — Atomic cart delta events, authoritative mutation snapshot, and BeginCheckout
+## T6 — Atomic cart delta events, authoritative mutation snapshot, complete cart/checkout projection, and BeginCheckout
 
-**Build:** extend absolute update/remove transaction results so analytics receives committed quantity transitions plus canonical item facts rather than stale UI state.
+**Build:** extend absolute update/remove transaction results so analytics receives committed quantity transitions plus canonical item facts rather than stale UI state; build one pure complete cart analytics projection from current canonical resolved cart/checkout facts for `view_cart` / `begin_checkout`.
 
-Required facts captured **inside the existing cart lock/transaction**:
+Required mutation facts captured **inside the existing cart lock/transaction**:
 
 - any pre-transaction `canSetQuantity` result is advisory only; re-resolve current commerce eligibility and requested-quantity stock sufficiency before accepting the write;
 - update success returns `previousQuantity`, committed `quantity`, and bounded canonical item snapshot;
@@ -409,13 +422,24 @@ Required facts captured **inside the existing cart lock/transaction**:
 - no rendered/client-cached identity/price/name/quantity fallback;
 - unsafe snapshot resolution fails tracking closed without changing commerce success/failure semantics.
 
-**Acceptance:** increase → delta AddToCart; decrease/remove → delta RemoveFromCart; same quantity/failure/already-removed/snapshot-unavailable → no fabricated event; cart/checkout payloads contain no customer PII; valid checkout emits `begin_checkout`; shipping/payment milestones remain absent until real accepted states exist.
+Required cart/checkout projection contract:
 
-**Verification:** concurrent absolute updates, concurrent remove/already-removed, same quantity, failed mutation, price/catalog/stock change between pre-check/render and serialized mutation, full remove pre-delete snapshot, enrichment disappearance/snapshot failure, existing cart behavior.
+- every non-empty canonical line must have safe `pancakeVariationId`, authoritative non-negative `unitPriceVnd`, positive integer quantity, and item name;
+- composite lines use their actual purchased component `pancakeVariationId`;
+- projection returns the entire canonical item array plus `currency="VND"` and merchandise value `sum(unitPriceVnd × quantity)`, or returns unavailable;
+- **all-or-nothing:** one unsafe/unresolvable/missing-external-ID line suppresses the whole event; do not drop one line, do not report a partial item array, and do not report a partial/rebased total;
+- internal local variant CUID is forbidden as a fallback vendor item ID;
+- `view_cart` uses the complete projection from current cart truth;
+- `begin_checkout` uses the same complete projection only after existing checkout commerce-validity gates pass;
+- analytics projection failure never blocks or alters cart/checkout UX.
+
+**Acceptance:** increase → delta AddToCart; decrease/remove → delta RemoveFromCart; same quantity/failure/already-removed/snapshot-unavailable → no fabricated mutation event; fully safe cart → complete `view_cart`; fully safe commerce-valid checkout → complete `begin_checkout`; mixed/unresolvable cart → no whole cart/checkout tracking event; cart/checkout payloads contain no customer PII; shipping/payment milestones remain absent until real accepted states exist.
+
+**Verification:** concurrent absolute updates, concurrent remove/already-removed, same quantity, failed mutation, price/catalog/stock change between pre-check/render and serialized mutation, full remove pre-delete snapshot, enrichment disappearance/snapshot failure, existing cart behavior; standalone safe cart line, composite component safe line, multiple safe lines with exact full merchandise sum, and mixed safe+unresolvable/private/missing-external-ID cart proving **no `view_cart` and no `begin_checkout` event** with no partial totals.
 
 ### Checkpoint B
 
-Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; review product-vs-variant identity, current server price, committed delta, failure-closed tracking and Meta compatibility.
+Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; review product-vs-variant identity, canonical cart/checkout external IDs, exact full-cart value, committed delta, failure-closed tracking and Meta compatibility.
 
 ---
 
@@ -544,6 +568,6 @@ Do not enable Cache Components merely to implement M4. If the source-verified ch
 
 ## 10. Human approval gate
 
-Before `/build`, reviewer approves this task split, two-level product/variant identity contract, dedicated atomic PDP increment semantics, authoritative mutation event snapshots, GTM no-load-until-T8 interlock + immutable version workflow, standalone Merchant identity/durability gate, composite Merchant deferral, Merchant success-cache/single-flight/failure-backoff/resource envelope, owner gates O1–O4 or their continued activation block, and PR slicing.
+Before `/build`, reviewer approves this task split, two-level product/variant identity contract, dedicated atomic PDP increment semantics, authoritative mutation event snapshots, **complete all-or-nothing cart/checkout external-ID projection**, GTM no-load-until-T8 interlock + immutable version workflow, standalone Merchant identity/durability gate, composite Merchant deferral, Merchant success-cache/single-flight/failure-backoff/resource envelope, owner gates O1–O4 or their continued activation block, and PR slicing.
 
 Approval authorizes implementation work only. It is not approval to publish GTM tags, enable Merchant listings/campaigns, change consent defaults, or enable search indexing.
