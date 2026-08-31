@@ -124,23 +124,21 @@ main@36ca06c
  +-- SEO P0 temporary-host enforcement
  +-- #153 T1-T3 tracking foundation (NO GTM)
  +-- #151 P1 persistence + durable pricing revision
+ +-- #153 T4 canonical identity -----------------------------+
+ +-- #153 M1 identity/durability audit ----------------------+--> #153 M2 variant deep-link
  +-- #152 W2a metadata uniqueness contract
  +-- #152 W15a coverage inventory
  +-- #152 W13A first-party fact inventory
 
 #151 P1 -> #151 P2 + #152 W3 pricing/evidence -> #151 P3 -> #151 P4
-                  |                          
-                  |                           -> #151 P5 admin UX
-                  |
-                  +----> #153 T4 identity ------------------+
-                  |                                         |
-                  +----> #153 M1 identity/durability audit -+-> #153 M2 variant deep-link
-                                                            |
-#151 P4 + T4 + M2 + P2 ------------------------------------> #151 P6 PDP
-                                                               |
-                                                               +-> #151 P7a /shop -> #151 P7b /flash-sale
-                                                               |
-                                                               +-> #153 T5 PDP add -> #153 T6 cart/checkout
+                                                     |
+                                                     +-> #151 P5 admin UX
+
+#151 P4 + #151 P2 + #153 T4 + #153 M2 -> #151 P6 PDP
+                                               |
+                                               +-> #151 P7a /shop -> #151 P7b /flash-sale
+                                               |
+                                               +-> #153 T5 PDP add -> #153 T6 cart/checkout
 
 #151 P7b + #153 T6 -> #151 P8 -> P9a -> P9b -> P10 -> #153 T7 Purchase
 
@@ -148,14 +146,14 @@ main@36ca06c
 #153 M3 + #151 P4 durable revision -> #153 M4 Merchant route/cache
 
 #153 M2 + #151 P7b + verified identifiers -> #152 W4d ProductGroup/variant Offer
-#153 T1-T7 + exact saved GTM version -> #153 T8 actual GTM loader/live mapping
+#153 T1-T7 -> #153 T8 exact saved-version review -> actual GTM loader/live mapping
 
 #152 W2a -> W2b metadata cleanup
 #152 W15a -> W15b missing HTTP/runtime gates
 #152 P3-P7 continue independently as their factual/domain prerequisites become available.
 ```
 
-Important parallelization correction: **#153 M1 does not wait for T4 to begin.** M1 is a read-only catalog/provider/repository evidence task and can run in parallel with T4. M2 requires both reviewed application identity propagation and accepted identity/durability evidence.
+Important parallelization rule: **#153 M1 and T4 are independent prerequisites of M2.** M1 is a read-only catalog/provider/repository evidence task and can run in parallel with T4; M2 waits for both reviewed application identity propagation and accepted durability evidence.
 
 ## 5. Implementation PR train
 
@@ -214,7 +212,7 @@ Stop if real Pancake evidence materially contradicts the approved pricing owners
 #### U8 — Canonical external identity propagation
 Source: **#153 T4**.
 
-Can run in parallel with U7 after shared types/file ownership are checked.
+Can run from the reviewed baseline in parallel with U7/U9 when file overlap is controlled.
 
 #### U9 — Merchant identity/durability/catalog audit
 Source: **#153 M1 + #152 W4a identifier caution**.
