@@ -6,7 +6,7 @@ import {
   buildVariantItem,
 } from "../../src/tracking/commerce-events.ts";
 
-test("T1 Purchase derives merchandise value from the canonical item sum", () => {
+test("T1 Purchase rejects merchandise value that disagrees with the canonical item sum", () => {
   const item = buildVariantItem({
     variantExternalId: "pancake-variation-1",
     productExternalId: "pancake-product-1",
@@ -15,13 +15,15 @@ test("T1 Purchase derives merchandise value from the canonical item sum", () => 
     quantity: 2,
   });
 
-  const event = buildPurchaseEvent({
-    publicCode: "LA-2026-0001",
-    merchandiseValueVnd: 890_000,
-    shippingVnd: 30_000,
-    totalVnd: 1_810_000,
-    items: [item],
-  });
-
-  assert.equal(event.ecommerce.value, 1_780_000);
+  assert.throws(
+    () =>
+      buildPurchaseEvent({
+        publicCode: "LA-2026-0001",
+        merchandiseValueVnd: 890_000,
+        shippingVnd: 30_000,
+        totalVnd: 1_810_000,
+        items: [item],
+      }),
+    /merchandise value.*item sum/i,
+  );
 });
