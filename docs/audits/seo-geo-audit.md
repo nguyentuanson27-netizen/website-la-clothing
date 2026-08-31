@@ -107,6 +107,11 @@ precision. Các trạng thái dưới đây có nghĩa:
   `tests/domain/product-metadata.test.ts` phải được cập nhật để tiếp tục chứng minh uniqueness sau
   khi thay contract.
 
+  **Cập nhật W2a (U4):** replacement contract và bằng chứng collision nằm ở
+  `docs/audits/seo-metadata-uniqueness-w2a.md`. Kết luận hiện tại: **BLOCKED** — không có
+  discriminator human-readable nào chứng minh được unique từ schema hiện tại, nên W2b chưa được
+  phép bỏ slug/path.
+
 - **W3 — Sale price bị biến thành `PRICE_UNRESOLVED`.** `resolveStorefrontPrice` trả `null` khi
   `retailPrice !== retailPriceAfterDiscount`, khiến variant không purchasable, card có thể hiện
   "Giá đang cập nhật" và JSON-LD không có offer. Không được sửa bằng phỏng đoán. Trước hết chạy
