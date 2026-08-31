@@ -6,8 +6,11 @@
 -- older code does not write. The mirrored Pancake price columns keep their external `DOUBLE
 -- PRECISION` contract; website-owned money is integer VND.
 --
--- Shape, uniqueness, money and window invariants are enforced here rather than in the admin UI: the
--- database is the last line that a mistaken service, script or manual fix still has to pass.
+-- Only invariants that are universal for persisted state live here. Draft campaigns are explicit
+-- work-in-progress and may be incomplete or business-invalid; P4's lifecycle service owns the
+-- activation-capable Publish/re-enable/Scheduled-edit checks for economic validity and time windows.
+-- The database still protects syntactic name storage, discount-field shape, target shape/identity,
+-- uniqueness, final-order audit integrity, and the bounded durable pricing revision.
 
 CREATE TYPE "PromotionCampaignKind" AS ENUM ('PROMOTION', 'FLASH_SALE');
 CREATE TYPE "PromotionDiscountType" AS ENUM ('PERCENTAGE', 'FIXED_PRICE');
@@ -48,50 +51,26 @@ ALTER TABLE "PromotionCampaign"
 ADD CONSTRAINT "PromotionCampaign_name_check"
 CHECK (btrim("name", E' \t\n\r\f\x0B') <> '' AND char_length("name") <= 120);
 
--- Exactly one money field per discount type. A campaign carrying both would leave two candidate
--- prices for the same line with nothing to arbitrate between them.
+-- Discount-field shape is universal at rest: the inactive field for the selected discount type must
+-- stay null so a row never carries two competing money representations. The selected value itself
+-- may be null or business-invalid while Draft; Publish/re-enable validates completeness and the
+-- 1..99 / positive-below-base economic rules in P4.
 ALTER TABLE "PromotionCampaign"
 ADD CONSTRAINT "PromotionCampaign_discount_money_check"
 CHECK (
   (
     "discountType" = 'PERCENTAGE'
-    AND "percentageValue" IS NOT NULL
     AND "fixedPriceVnd" IS NULL
   )
   OR (
     "discountType" = 'FIXED_PRICE'
-    AND "fixedPriceVnd" IS NOT NULL
     AND "percentageValue" IS NULL
   )
 );
 
--- 100% would make the price zero and 0% is not a discount at all.
-ALTER TABLE "PromotionCampaign"
-ADD CONSTRAINT "PromotionCampaign_percentage_range_check"
-CHECK ("percentageValue" IS NULL OR "percentageValue" BETWEEN 1 AND 99);
-
--- FIXED_PRICE is a final customer unit price, not an amount off, so it must be positive. Whether it
--- is below the base price is a per-variant runtime question the pricing resolver owns.
-ALTER TABLE "PromotionCampaign"
-ADD CONSTRAINT "PromotionCampaign_fixed_price_check"
-CHECK ("fixedPriceVnd" IS NULL OR "fixedPriceVnd" > 0);
-
--- Intervals are half-open [startsAt, endsAt): an empty or inverted window is never valid, and a
--- Flash Sale is defined by having both bounds.
-ALTER TABLE "PromotionCampaign"
-ADD CONSTRAINT "PromotionCampaign_window_check"
-CHECK (
-  "startsAt" IS NULL
-  OR "endsAt" IS NULL
-  OR "endsAt" > "startsAt"
-);
-
-ALTER TABLE "PromotionCampaign"
-ADD CONSTRAINT "PromotionCampaign_flash_sale_window_check"
-CHECK (
-  "kind" <> 'FLASH_SALE'
-  OR ("startsAt" IS NOT NULL AND "endsAt" IS NOT NULL)
-);
+-- Time configuration is intentionally unconstrained at rest beyond PostgreSQL timestamp storage.
+-- Draft may carry missing, empty or inverted windows while an admin edits it. P4 validates the
+-- half-open interval contract and requires both Flash Sale bounds before an activation-capable write.
 
 CREATE INDEX "PromotionCampaign_isEnabled_startsAt_endsAt_idx"
 ON "PromotionCampaign"("isEnabled", "startsAt", "endsAt");
