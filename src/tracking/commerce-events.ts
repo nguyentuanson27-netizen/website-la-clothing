@@ -200,18 +200,44 @@ function isVariantItem(item: CommerceItem): item is VariantItem {
     && typeof (item as VariantItem).quantity === "number";
 }
 
-function requireItems(name: CommerceEventName, items: readonly CommerceItem[]): CommerceItem[] {
+/**
+ * Re-validates an item at the event boundary.
+ *
+ * The builders above cannot be the only gate: the event builders accept a `CommerceItem`, so a
+ * caller mapping straight from a repository row — or writing a literal — reaches them without ever
+ * passing through `buildVariantItem`. A negative price or a fractional quantity that slips through
+ * becomes a negative conversion value at a destination, which is worse than no event at all.
+ */
+function assertCommerceItem(name: CommerceEventName, item: CommerceItem): void {
+  if (typeof item !== "object" || item === null) {
+    throw new RangeError(`${name} items must be commerce item objects`);
+  }
+  requireIdentity((item as CommerceItem).item_id, `${name} item identity`);
+  requireText((item as CommerceItem).item_name, `${name} item name`);
+
+  const price = (item as VariantItem).price;
+  if (price !== undefined) requireIntegerVnd(price, `${name} item price`);
+
+  const quantity = (item as VariantItem).quantity;
+  if (quantity !== undefined) requireQuantity(quantity);
+}
+
+function requireItems(name: CommerceEventName, items: readonly CommerceItem[]): readonly CommerceItem[] {
   if (!Array.isArray(items) || items.length === 0) {
     throw new RangeError(`${name} requires at least one item`);
   }
-  if (COMMITTED_VARIANT_EVENTS.has(name)) {
-    for (const item of items) {
-      if (!isVariantItem(item)) {
-        throw new RangeError(`${name} requires concrete variant identity, not a product impression`);
-      }
+
+  for (const item of items) {
+    assertCommerceItem(name, item);
+    if (COMMITTED_VARIANT_EVENTS.has(name) && !isVariantItem(item)) {
+      throw new RangeError(`${name} requires concrete variant identity, not a product impression`);
     }
   }
-  return [...items];
+
+  // Copied and frozen, so neither the caller's later mutation of its own array nor a mutation of the
+  // published event can add a field the validation above never saw. The no-PII property has to hold
+  // at publish time, not only at construction time.
+  return Object.freeze(items.map((item) => Object.freeze({ ...item })));
 }
 
 export type CommerceItemsEventInput = Readonly<{
@@ -239,7 +265,7 @@ export function buildCommerceItemsEvent(
   }
   ecommerce.items = items;
 
-  return Object.freeze({ event: name, ecommerce });
+  return Object.freeze({ event: name, ecommerce: Object.freeze(ecommerce) });
 }
 
 const MAX_SAFE_VND = BigInt(Number.MAX_SAFE_INTEGER);
@@ -273,11 +299,11 @@ export function buildBeginCheckoutEvent(
 
   return Object.freeze({
     event: "begin_checkout",
-    ecommerce: {
+    ecommerce: Object.freeze({
       currency: "VND",
       value: sumMerchandiseVnd(items),
       items,
-    },
+    }),
   });
 }
 

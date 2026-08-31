@@ -318,3 +318,72 @@ test("T1 begin_checkout fails closed when the accumulated total leaves the safe 
     "safe lines do not imply a safe sum",
   );
 });
+
+test("T1 an item that never passed a builder is still validated at the event boundary", () => {
+  // The event builders accept a CommerceItem, so a caller mapping straight from a repository row
+  // reaches them without going through buildVariantItem. A negative price must not become a
+  // negative conversion value at a destination.
+  for (const bad of [
+    { item_id: "v", item_name: "n", price: -100, quantity: 1 },
+    { item_id: "v", item_name: "n", price: 1.5, quantity: 1 },
+    { item_id: "v", item_name: "n", price: Number.NaN, quantity: 1 },
+    { item_id: "v", item_name: "n", price: 100, quantity: 0 },
+    { item_id: "v", item_name: "n", price: 100, quantity: Number.POSITIVE_INFINITY },
+    { item_id: "   ", item_name: "n", price: 100, quantity: 1 },
+    { item_id: "v", item_name: "   ", price: 100, quantity: 1 },
+  ]) {
+    assert.throws(
+      () => buildBeginCheckoutEvent({ items: [bad] }),
+      RangeError,
+      `${JSON.stringify(bad)} must be rejected at the event boundary`,
+    );
+    assert.throws(
+      () => buildCommerceItemsEvent("add_to_cart", { items: [bad] }),
+      RangeError,
+      `${JSON.stringify(bad)} must be rejected for add_to_cart too`,
+    );
+  }
+});
+
+test("T1 upper-funnel items are validated at the boundary as well", () => {
+  assert.throws(
+    () => buildCommerceItemsEvent("view_item_list", { items: [{ item_id: "p", item_name: "n", price: -5 }] }),
+    /item price/,
+  );
+  assert.throws(
+    () => buildCommerceItemsEvent("select_item", { items: [{ item_id: "", item_name: "n" }] }),
+    /item identity/,
+  );
+});
+
+test("T1 a published event cannot be widened after it was validated", () => {
+  const event = buildPurchaseEvent({
+    publicCode: "LA-2026-0001",
+    merchandiseValueVnd: 890_000,
+    shippingVnd: 0,
+    totalVnd: 890_000,
+    items: [buildVariantItem(variantItem)],
+  });
+
+  // The no-PII property has to hold at publish time, not only at construction time.
+  assert.throws(() => {
+    (event.ecommerce.items[0] as Record<string, unknown>).guestPhone = "0900000000";
+  }, TypeError);
+  assert.throws(() => {
+    (event.ecommerce.items as unknown[]).push({ guestName: "Nguyen Van A" });
+  }, TypeError);
+  assert.throws(() => {
+    (event.ecommerce as Record<string, unknown>).value = 999_999;
+  }, TypeError);
+
+  assert.equal(JSON.stringify(event).includes("0900000000"), false);
+});
+
+test("T1 the caller's own array is never aliased into a published event", () => {
+  const items = [buildVariantItem(variantItem)];
+  const event = buildCommerceItemsEvent("view_cart", { items });
+
+  items.push(buildVariantItem({ ...variantItem, variantExternalId: "pancake-variation-2" }));
+
+  assert.equal((event.ecommerce as { items: readonly unknown[] }).items.length, 1);
+});
