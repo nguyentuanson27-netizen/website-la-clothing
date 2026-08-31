@@ -32,6 +32,9 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] **R10 Mutation event snapshot:** PDP add, cart absolute update, and remove return a bounded non-PII `CommerceVariantItem` snapshot captured/resolved server-side at the accepted mutation truth point under the same serialized cart transaction. It includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item name, color/size where available, and the relevant committed delta quantity. Any pre-transaction availability check is advisory only; accepted absolute update must revalidate current eligibility/stock under the serialized mutation. If a safe snapshot cannot be resolved, the commerce mutation remains authoritative but analytics fails closed with no stale client fallback.
 - [ ] **R11 Merchant failure backoff:** a failed/overflow heavy rebuild installs a fixed-key negative backoff sentinel for `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS=60`. Sequential or concurrent requests during backoff return a cheap bounded `503` (with bounded `Retry-After`) and do not invoke heavy generation. Failure state never overwrites/poisons a valid successful feed cache entry.
 
+### Review `5062818394`
+- [ ] **R12 Canonical cart/checkout analytics projection:** propagate `pancakeVariationId` through canonical resolved cart facts used by cart/checkout (or one dedicated equivalent projection). `view_cart` and `begin_checkout` are **all-or-nothing**: if any non-empty line lacks safe external variant identity, authoritative price, positive quantity, or item name, suppress the whole event. Never substitute local `VariantMirror.id`, never drop only the unsafe line, and never report a partial merchandise total.
+
 ## PR-A — tracking preparation; zero new GTM/vendor network delivery
 
 ### T1 Canonical event/dataLayer contracts
@@ -68,9 +71,11 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 ### T4 Product + selected-variant projection facts
 - [ ] Expose stable `pancakeProductId` on list/PDP product facts.
 - [ ] Propagate `pancakeVariationId` + optional SKU through concrete standalone/composite options and server cart mutation lookup facts.
-- [ ] Keep local `VariantMirror.id` as mutation/authorization identity.
+- [ ] Extend canonical resolved cart/checkout line facts with `pancakeVariationId` for every analytics-safe line; composite component lines use the actual purchased component variation ID, not parent/presentation identity.
+- [ ] Keep local `VariantMirror.id` as mutation/authorization identity only; it must never be mapped as vendor `item_id` fallback.
 - [ ] Presentation `kindKey` never becomes external identity.
 - [ ] Existing price/stock/composite privacy behavior unchanged.
+- [ ] RED/GREEN projection tests cover standalone cart line, composite component cart line, and unresolvable/private line without fabricating external identity.
 
 ### T5 Product-level list/PDP/select + atomic server-authoritative AddToCart
 - [ ] `view_item_list` emits exactly one product impression per visible card.
@@ -93,14 +98,18 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Increase → delta `add_to_cart`; decrease/remove → delta `remove_from_cart`; zero delta/failure → no event.
 - [ ] Browser builds quantity events only from the returned server snapshot + delta. It never falls back to server-rendered/client-cached name, price, variant ID, or quantity after a mutation.
 - [ ] If safe identity/price snapshot resolution fails, cart mutation result remains commerce truth but tracking emits nothing and must not throw into cart UX.
-- [ ] RED/GREEN concurrency tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog/stock change between render/pre-check and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
-- [ ] Emit `view_cart` / `begin_checkout` from canonical resolved state.
+- [ ] Build one pure canonical cart analytics projection from current resolved cart facts. It succeeds only when **every** non-empty line has safe `pancakeVariationId`, authoritative non-negative unit price, positive integer quantity, and item name; otherwise it returns unavailable without a partial items array.
+- [ ] `view_cart` and `begin_checkout` use only that complete projection. Event merchandise `value` is the sum of `unitPriceVnd × quantity` across the exact full emitted line set. If projection is unavailable, suppress the whole event; do not drop unsafe lines or recalculate/report a partial total.
+- [ ] `view_cart` may emit only from current cart truth. `begin_checkout` may emit only after the existing checkout commerce-validity gates pass; analytics projection failure never blocks cart/checkout UI.
+- [ ] Local CUID/`VariantMirror.id` is forbidden as GA4/Ads/TikTok item identity fallback.
+- [ ] RED/GREEN mutation tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog/stock change between render/pre-check and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
+- [ ] RED/GREEN cart/checkout projection tests: all-safe standalone lines → complete `view_cart`; all-safe composite component line → real component `pancakeVariationId`; multiple safe lines → full item set and exact full merchandise sum; one safe + one unresolvable/private/missing-external-ID line → **no whole `view_cart`** and **no `begin_checkout` tracking event**; no partial totals.
 - [ ] Keep `add_shipping_info` / `add_payment_info` absent until a real accepted milestone exists.
 
 ### Checkpoint B
 - [ ] Focused cart/PDP/checkout tests green.
 - [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` green.
-- [ ] Review product-vs-variant IDs, exact/range values, committed delta, server snapshot and failure-closed tracking semantics.
+- [ ] Review product-vs-variant IDs, canonical cart/checkout external identity, exact full-cart values, committed delta, server snapshot and all-or-nothing failure-closed tracking semantics.
 
 ## PR-C — confirmed Purchase + immutable GTM activation
 
