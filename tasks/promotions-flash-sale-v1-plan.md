@@ -36,6 +36,8 @@ Review order: correctness → security → architecture → simplicity → perfo
 - #153 M2 owns standalone variant deep link `/shop/<slug>?variant=<pancakeVariationId>` and its preselection/canonical-query contract.
 - Merchant v1 remains standalone-only; composites fail closed/defer.
 - Merchant price consumes storefront effective price.
+- #153 M4 keeps one fixed-key complete-success cache/single-flight/60s negative-backoff domain. Its 300s success TTL is the normal **maximum**, not permission to serve across a known promotion boundary or a later promotion mutation.
+- Promotion integration with Merchant must invalidate/advance the same cache generation after successful price/schedule-changing promotion mutations and guard against stale in-flight generation republishing after invalidation.
 - Structured Offer price uses effective price only when the variant URL/schema contract can represent it truthfully; no `AggregateOffer` shortcut for variants.
 - Organic indexing remains a separate ADR 0004 gate.
 
@@ -59,9 +61,11 @@ Detailed rules remain normative in the spec. Implementation must preserve:
 - restart/zero-traffic lifecycle correctness and atomic `disabledAt` clearing for legal never-Active re-enable;
 - activation kill switch default-off;
 - one request clock, query-wide transition awareness, max 60s storefront staleness and existing `/shop`/`/flash-sale` page/offset bounds;
-- two stale-price handshakes: rendered quote → DRAFT → fresher Pancake quote;
+- Stage-1 rendered-price acknowledgement uses a server-verifiable cart-bound quote proof; unsigned/client-editable quote facts cannot prove what buyer saw;
+- two stale-price handshakes: verified rendered quote → DRAFT → fresher Pancake quote;
 - immutable final order-line base/final/promotion audit;
 - final Pancake submission removes raw-live-price comparison, totals and outbound-price assumptions;
+- enabled Merchant cache is transition-aware, mutation-invalidated and guarded against stale in-flight republish without weakening #153 fixed-key/single-flight/backoff semantics;
 - controlled Pancake custom-price semantic acceptance before real discounted activation.
 
 ## C. Dependency graph
@@ -91,7 +95,7 @@ Checkpoint A
                               ↓
                            P8 DRAFT quote/audit
                               ↓
-                           P9a render→DRAFT reconfirm
+                           P9a render→DRAFT proof/reconfirm
                               ↓
                            P9b DRAFT→fresh Pancake reconfirm
                               ↓
@@ -110,11 +114,12 @@ Checkpoint A
 
 **Acceptance criteria:**
 - [ ] branch includes current reviewed `main`;
-- [ ] analytics/Merchant/cart/deep-link ownership is explicit and no longer deferred to “rediscover later”;
+- [ ] spec, plan and todo all name `main@323c07cf...` / #152 + #153 as the planning baseline and preserve #153 ownership instead of “rediscover later”;
+- [ ] analytics/Merchant/cart/deep-link ownership is explicit;
 - [ ] plan/todo keep all reviewed promotion correctness/rollback gates;
 - [ ] fresh review has 0 Critical / 0 Required before `/build`.
 
-**Verification:** branch compare; exact-head CI; spec/plan/todo consistency review.
+**Verification:** branch compare; exact-head CI; spec/plan/todo consistency review; grep that stale pre-#153 “rediscover analytics ownership” wording is gone.
 
 **Dependencies:** none.
 
@@ -176,16 +181,17 @@ Checkpoint A
 
 ## P4 — concurrency-safe admin domain + activation gate
 
-**Description:** Make enabled mutations race-safe while keeping rollback bounded.
+**Description:** Make enabled mutations race-safe while keeping rollback bounded and expose one post-commit promotion-change signal that enabled consumers can safely integrate with.
 
 **Acceptance criteria:**
 - [ ] admin authz and all named bounds enforced;
 - [ ] publish/re-enable/Scheduled material edit locks campaign → owning products → bounded expansion probe → needed variants, re-reads facts and commits atomically;
 - [ ] same-campaign lost-update and cross-campaign PRODUCT↔VARIANT overlap races fail closed;
 - [ ] Disable is campaign-row bounded and succeeds after PRODUCT coverage grows above 2000; Copy remains non-expanding;
-- [ ] activation gate defaults off and publish/re-enable fail typed `ACTIVATION_DISABLED` while off.
+- [ ] activation gate defaults off and publish/re-enable fail typed `ACTIVATION_DISABLED` while off;
+- [ ] successful publish/re-enable/Disable/end-early/Scheduled material edit exposes a bounded post-commit “promotion price/schedule changed” signal/hook; Draft-only edits and Copy do not emit it solely for Merchant invalidation. P4 does not calculate Merchant prices or own Merchant cache policy.
 
-**Verification:** repeated concurrency tests; 2000/2001 expansion; 1900→2001 Disable; gate-off/no-partial-write tests.
+**Verification:** repeated concurrency tests; 2000/2001 expansion; 1900→2001 Disable; gate-off/no-partial-write tests; mutation-signal fires only after successful effective mutations and never on failed/rolled-back writes.
 
 **Dependencies:** P3.
 
@@ -273,33 +279,39 @@ If #151 reaches this boundary first, implement the shared contract once and make
 
 ## P8 — mutable DRAFT quote + promotion audit
 
-**Description:** Persist current quote/audit in retryable DRAFT while preserving #153 Purchase facts.
+**Description:** Persist current quote/audit in retryable DRAFT while preserving #153 Purchase facts; raw browser quote fields never become acknowledgement authority.
 
 **Acceptance criteria:**
 - [ ] DRAFT line keeps purchased `pancakeVariationId`, name/options/quantity plus base/final/promotion audit;
-- [ ] browser rendered price is stale-detection input only;
+- [ ] checkout render can produce bounded non-PII quote facts for P9a proof issuance, but unsigned/client-editable quote facts alone cannot authorize a DRAFT;
 - [ ] DRAFT is mutable until guarded finalization; pricing freezes when leaving DRAFT for submission.
 
-**Verification:** no-promo/%/fixed snapshots; composite identity; invalid base; retryable DRAFT replacement.
+**Verification:** no-promo/%/fixed snapshots; composite identity; invalid base; retryable DRAFT replacement; unsigned quote facts alone cannot create submit-capable DRAFT.
 
 **Dependencies:** P7b + shared T5/T6 contract.
 
 **Scope:** M.
 
-## P9a — rendered quote → DRAFT reconfirmation
+## P9a — rendered quote proof → DRAFT reconfirmation
 
-**Description:** Prevent submission at a price the buyer has not seen.
+**Description:** Prevent submission at a price the buyer has not seen by binding the rendered quote to server-verifiable proof while keeping the current quote server-authoritative.
 
 **Acceptance criteria:**
-- [ ] server recomputes quote before submit-capable DRAFT acceptance;
-- [ ] mismatch returns typed `PRICE_CHANGED` + refreshed totals, no `POS_SUBMITTING`, no Pancake create;
-- [ ] explicit resubmit required.
+- [ ] checkout render issues an opaque server-verifiable proof bound to the current anonymous cart/checkout identity and canonical rendered non-PII quote facts (variant IDs, quantities, effective unit prices, merchandise subtotal, shipping, total, plus a server issue/version fact);
+- [ ] proof uses a server-only MAC/signature or equivalent server-stored nonce/version mechanism; no unsigned hidden fields prove what the buyer saw;
+- [ ] proof is bounded/non-PII and no proof/secret/customer PII is logged;
+- [ ] submit verifies proof authenticity + cart binding before stale comparison, then independently recomputes current authoritative quote;
+- [ ] missing/malformed/forged/wrong-cart/unverifiable proof fails closed with refreshed quote + fresh proof, no submit-capable DRAFT, no `POS_SUBMITTING`, no Pancake create;
+- [ ] verified rendered quote != current quote returns typed `PRICE_CHANGED` + refreshed totals + fresh proof, no `POS_SUBMITTING`, no Pancake create;
+- [ ] explicit resubmit with the fresh proof is required; the proof never becomes price authority.
 
-**Verification:** customer saw 400k → sale ended → first submit returns 500k `PRICE_CHANGED` with zero POS write → second unchanged submit can continue.
+**Verification:** buyer saw 400k → sale ended → first submit returns 500k `PRICE_CHANGED`/fresh proof/zero POS write → second unchanged submit can continue; client edits hidden quote to 500k or forges/reuses proof and cannot bypass reconfirmation; proof from another cart fails closed; valid bound proof + unchanged quote succeeds.
 
 **Dependencies:** P8.
 
-**Scope:** S/M.
+**Likely files:** guest checkout render/action/service + focused tests; choose MAC vs server-stored proof only after re-reading current secret/session/cart patterns. No new third-party dependency is needed.
+
+**Scope:** M.
 
 ## P9b — DRAFT → fresher Pancake reconfirmation
 
@@ -341,13 +353,17 @@ If #151 reaches this boundary first, implement the shared contract once and make
 - [ ] #153 canonical current-state/cart events consume authoritative effective price and Purchase consumes immutable finalized snapshot money; GTM never calculates promotion;
 - [ ] existing active direct Meta value source is promotion-aware where money is emitted, while Meta Pixel+CAPI remain direct and deduplicated as before;
 - [ ] Merchant M3 consumes storefront effective price with no Merchant-specific promotion formula;
-- [ ] if Merchant success cache is enabled, cached feed must not remain valid across a **known relevant promotion transition**: effective cache expiry is `min(300s normal TTL, nearest relevant promotion transition)` or an equivalent tested invalidation mechanism; the existing 60s failure-backoff semantics remain unchanged;
+- [ ] #153 `MERCHANT_FEED_CACHE_TTL_SECONDS=300` is treated as maximum normal success TTL; effective expiry is `min(300s, nearest relevant known promotion transition)` or equivalent tested invalidation;
+- [ ] the P4 successful promotion-change signal for publish/re-enable/Disable/end-early/Scheduled material edit invalidates or advances a bounded server-owned promotion generation/revision in the **same fixed cache domain** used by #153 M4; Draft-only edits/Copy do not invalidate solely for Merchant;
+- [ ] a Merchant cache hit is valid only when stored promotion generation/revision equals current; an in-flight heavy build may publish only if the generation/revision it captured still matches after generation, preventing stale pre-mutation feed bytes from being reinserted after invalidation;
+- [ ] invalidation/generation does not add request-controlled keys and does not weaken #153 fixed-key/single-flight/complete-success-only/60s negative-backoff/no-partial-200 semantics;
+- [ ] if current deployment topology cannot make mutation invalidation/generation visible to the same cache domain used by Merchant GETs, Merchant remains mechanically disabled/fail-closed;
 - [ ] structured Offer uses effective price only when #152 W4/#153 M2 can truthfully represent the variant; unsupported cases fail closed/omit;
 - [ ] disabled GTM/Merchant consumers may remain mechanically off and do not block promotion activation; once enabled, their own gate requires these convergence checks first.
 
-**Verification:** analytics mapping + Purchase snapshot tests; Meta regression where applicable; Merchant normal/sale/start/end transition cache tests; visible PDP ↔ Merchant ↔ JSON-LD consistency where representable; inventory W15 coverage before new SEO smoke gates.
+**Verification:** analytics mapping + Purchase snapshot tests; Meta regression where applicable; Merchant normal/sale/start/end transition cache tests; cached-normal→immediate Publish→next GET rebuild; cached-sale→Disable→rebuild; Scheduled edit moving boundary inside TTL→rebuild; concurrent GET after invalidation still one heavy generation; stale in-flight pre-mutation generator cannot publish; negative sentinel remains isolated from valid success generation; visible PDP ↔ Merchant ↔ JSON-LD consistency where representable; inventory W15 coverage before new SEO smoke gates.
 
-**Dependencies:** P10 + only the relevant enabled #153 consumer slices.
+**Dependencies:** P10 + P4 mutation-change signal + only the relevant enabled #153 consumer slices.
 
 **Scope:** split into focused analytics/Meta, Merchant and SEO consumer PRs; do not bundle independent subsystems.
 
@@ -356,12 +372,13 @@ If #151 reaches this boundary first, implement the shared contract once and make
 **Description:** Make incidents bounded, visible and reversible.
 
 **Acceptance criteria:**
-- [ ] redacted/bounded telemetry for activation rejection, invalid/recovery, conflict, `PARTIALLY_INVALID`, `PRICE_CHANGED`, Pancake semantic validation and activation-gate state;
-- [ ] no PII/secrets/raw external payloads logged;
+- [ ] redacted/bounded telemetry for activation rejection, invalid/recovery, conflict, `PARTIALLY_INVALID`, `PRICE_CHANGED`/quote-proof rejection, Merchant promotion-cache invalidation/generation mismatch, Pancake semantic validation and activation-gate state;
+- [ ] no PII/secrets/raw external payloads/raw quote proofs logged;
 - [ ] rollback is activation gate off + explicit campaign Disable; Disable remains bounded after >2000 dynamic variants;
+- [ ] when Merchant is enabled, rollback Disable also invalidates/advances Merchant promotion generation so cached sale bytes cannot mask rollback;
 - [ ] rollout evidence includes mirrored-money audit and Pancake custom-price acceptance.
 
-**Verification:** telemetry tests/inspection; runbook review; safe rollback rehearsal where possible.
+**Verification:** telemetry tests/inspection; runbook review; safe rollback rehearsal where possible; Merchant rollback cache regression when enabled.
 
 **Dependencies:** P10.
 
@@ -374,7 +391,7 @@ If #151 reaches this boundary first, implement the shared contract once and make
 **Acceptance criteria:**
 - [ ] focused + relevant DB/domain/lint/typecheck/build/runtime/browser/a11y gates green;
 - [ ] no duplicate pricing authority, N+1, unbounded query or unrelated refactor;
-- [ ] #153 identity/cart/Purchase regressions remain green;
+- [ ] #153 identity/cart/Purchase/Merchant-cache regressions remain green;
 - [ ] #152 indexing policy remains unchanged unless separately approved;
 - [ ] docs/runbooks describe current launch and rollback truth.
 
@@ -397,7 +414,7 @@ If #151 reaches this boundary first, implement the shared contract once and make
 9. `promo-D3-flash-freshness` — P7b
 10. converge one shared #153 T5/T6 cart contract
 11. `promo-E1-draft-quote` — P8
-12. `promo-E2-render-reconfirm` — P9a
+12. `promo-E2-render-proof-reconfirm` — P9a
 13. `promo-E3-fresh-pancake-reconfirm` — P9b
 14. `promo-F-pancake-final-price` — P10
 15. #153 T7 Purchase consumes finalized snapshot
@@ -419,7 +436,7 @@ Contract-first coordination:
 - P6 ↔ #153 T4 identity;
 - P8/P9 ↔ #153 T5/T6 cart mutation/snapshot;
 - structured data ↔ #152 W4 + #153 M2 deep link;
-- Merchant M3/M4 ↔ P7 effective pricing and promotion transition facts.
+- Merchant M3/M4 ↔ P7 effective pricing/transition facts + P4 successful promotion-change signal.
 
 Sequential:
 - P1→P2→P3→P4;
@@ -433,6 +450,7 @@ Promotion code may deploy with activation gate off. Real discounted campaigns re
 - mirrored-money/Pancake catalog evidence accepted;
 - controlled Pancake custom-price semantic acceptance succeeds;
 - all **currently enabled** price-bearing consumers are converged, or remain explicitly disabled/fail-closed;
+- if Merchant is enabled, mutation invalidation + generation guard + transition-aware effective expiry are proved in the same cache domain;
 - G2 rollback/readiness accepted;
 - G3 DoD green;
 - human explicitly enables promotion activation.
