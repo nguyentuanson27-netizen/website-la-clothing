@@ -74,6 +74,8 @@ Owner: **#153 M2**, satisfying **#152 W4a–W4c** after identity evidence.
 
 The URL preselects only a valid public standalone option. Base PDP canonical/search policy remains authoritative. Variant-level structured data may not precede this contract.
 
+Promotion PDP work may land before M2, but it must use the T4-selected concrete variant identity/state and must not invent a competing query/canonical contract. When M2 lands, it binds its deep link to that same selected-variant state.
+
 ### Merchant cache freshness
 Owner: **#153 M4**, extended by **#151 durable promotion-pricing revision**.
 
@@ -134,11 +136,13 @@ main@36ca06c
                                                      |
                                                      +-> #151 P5 admin UX
 
-#151 P4 + #151 P2 + #153 T4 + #153 M2 -> #151 P6 PDP
-                                               |
-                                               +-> #151 P7a /shop -> #151 P7b /flash-sale
-                                               |
-                                               +-> #153 T5 PDP add -> #153 T6 cart/checkout
+#151 P4 + #151 P2 + #153 T4 -> #151 P6 PDP -> #151 P7a /shop -> #151 P7b /flash-sale
+                  |                    |
+                  |                    +-> #153 T5 PDP add -> #153 T6 cart/checkout
+                  |
+                  +-- selected-variant state keyed by pancakeVariationId
+
+#153 T4 + #153 M1 -> #153 M2 deep-link -> binds to the same selected-variant state
 
 #151 P7b + #153 T6 -> #151 P8 -> P9a -> P9b -> P10 -> #153 T7 Purchase
 
@@ -153,7 +157,10 @@ main@36ca06c
 #152 P3-P7 continue independently as their factual/domain prerequisites become available.
 ```
 
-Important parallelization rule: **#153 M1 and T4 are independent prerequisites of M2.** M1 is a read-only catalog/provider/repository evidence task and can run in parallel with T4; M2 waits for both reviewed application identity propagation and accepted durability evidence.
+Important parallelization rules:
+
+- **#153 M1 and T4 are independent prerequisites of M2.** M1 is a read-only catalog/provider/repository evidence task and can run in parallel with T4; M2 waits for both reviewed application identity propagation and accepted durability evidence.
+- **#151 P6 does not wait for M1/M2.** It waits for P4 + pricing evidence + T4 identity and uses the same concrete selected-variant state keyed by `pancakeVariationId`. It must not define a competing URL/canonical contract; M2 later attaches the reviewed deep link to that state.
 
 ## 5. Implementation PR train
 
@@ -247,7 +254,7 @@ Source: **#153 M2 + #152 W4b/W4c**.
 
 Depends on: U8 + accepted U9 identity/durability evidence.
 
-This is the single preselection/canonical-query contract for Merchant and later variant structured data.
+This is the single preselection/canonical-query contract for Merchant and later variant structured data. It binds to the same concrete selected-variant state used by the PDP; it does not introduce a parallel selection model.
 
 #### U13 — Wire only missing SEO HTTP/runtime gates
 Source: **#152 P2/W15b**.
@@ -264,9 +271,9 @@ Depends on: U11.
 #### U15 — PDP promotion projection
 Source: **#151 P6**.
 
-Depends on: U11 + U7 evidence + U8 + U12.
+Depends on: U11 + U7 evidence + U8.
 
-Master-plan choice: land M2 first so promotion work consumes the canonical variant-selection URL/state instead of creating a temporary competing PDP state model.
+P6 may land before U12. It must model concrete selected variants with the T4 `pancakeVariationId` identity/state and must not invent query/canonical semantics. If U12 has already landed, P6 consumes it directly; if not, U12 later binds its URL to the same selected-variant state.
 
 #### U16 — `/shop` effective-price discovery
 Source: **#151 P7a**.
@@ -283,7 +290,7 @@ Depends on: U16.
 Before checkout promotion persistence:
 
 - PDP/cards/shop/Flash share one pricing authority;
-- T4/M2 identity and URL regressions green;
+- T4 identity regressions are green; if M2 has landed, its addressability regressions are also green;
 - SQL↔TS pricing parity green;
 - browser freshness/a11y verification green where applicable;
 - activation still off;
@@ -451,7 +458,8 @@ These require their own future source contract; they are not hidden substeps of 
 
 ### Coordinate at shared interfaces
 
-- U8/U9 -> U12 variant identity/URL;
+- U8 -> U15 selected-variant state;
+- U8/U9 -> U12 variant URL binding onto the same state;
 - U15/U18/U19 shared selected variant/cart facts;
 - U11 durable revision -> U26 Merchant cache;
 - U12 + canonical storefront facts -> U25 Merchant and U27 structured data;
