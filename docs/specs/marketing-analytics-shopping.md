@@ -33,6 +33,8 @@ The storefront and order system remain the source of truth. Tracking/catalog ven
 12. Pancake/internal barcode is not assumed to be GTIN.
 13. Structurally valid zero-stock standalone offer remains in feed as `out_of_stock`.
 14. Search indexing remains separately governed; this feature does not enable `SEARCH_INDEXING_ENABLED`.
+15. PDP “Thêm vào giỏ hàng” means one committed positive unit increment; cart quantity controls remain absolute set semantics.
+16. Public Merchant failure paths are bounded as well as success paths; persistent rebuild failure cannot trigger unbounded heavy regeneration from sequential public GETs.
 
 ## 3. Repository invariants to preserve
 
@@ -96,7 +98,7 @@ ADR 0004 remains authoritative. Merchant crawlability must not silently enable o
 
 ### Current runtime topology
 
-Current VPS Compose declares a single `app` service instance behind the proxy path. Merchant v1 may use a process/runtime-scoped single-flight guard only while that topology remains true. If production is changed to multiple app replicas before Merchant activation, shared cross-replica cache/single-flight protection becomes a launch prerequisite.
+Current VPS Compose declares a single `app` service instance behind the proxy path. Merchant v1 may use process/runtime-scoped single-flight and failure-backoff protection only while that topology remains true. If production changes to multiple app replicas before Merchant activation, shared cross-replica cache/single-flight/backoff protection becomes a launch prerequisite.
 
 ## 4. Canonical commerce event contract
 
@@ -139,7 +141,7 @@ Rules:
 - candidate product external ID is `pancakeProductId` after repository propagation;
 - one visible card produces one product impression, not one impression per hidden variant;
 - do not guess first/cheapest variant to obtain a `pancakeVariationId`;
-- GA4 upper-funnel mapping may use `item_id = productExternalId` (or item name where appropriate); a selected Merchant-offer ID is not promised before a variant exists;
+- GA4 upper-funnel mapping may use `item_id = productExternalId`; a selected Merchant-offer ID is not promised before a variant exists;
 - if all represented resolved options have one exact common price, that exact value may be mapped to vendor price/value;
 - if prices form a range, min/max may remain canonical/custom facts but the minimum must not be reported as if it were a selected exact variant price;
 - unresolved product price omits monetary vendor fields rather than fabricating values.
@@ -180,28 +182,49 @@ Supported baseline events:
 Truth rules:
 
 - list/select/view_item use canonical rendered facts and the identity level described above;
-- AddToCart only after successful server-authoritative mutation;
+- PDP AddToCart only after one successful atomic positive server increment;
+- cart quantity AddToCart/RemoveFromCart only from committed server delta;
 - RemoveFromCart only after committed cart mutation;
 - ViewCart/BeginCheckout use resolved canonical cart/checkout state;
 - Purchase only after confirmed-order truth.
 
-### 4.4 Server-authoritative AddToCart
+### 4.4 Atomic server-authoritative PDP AddToCart
 
-The browser must not report a price captured before awaiting the server action when the server re-resolves the product/option.
+The PDP button means “add one unit”. The implementation must not route it through an absolute `set quantity = 1` operation, because a pre-existing line could otherwise produce zero or negative committed delta while the UI/action still reports success.
 
-Successful AddToCart must return a bounded, non-PII item snapshot from the **same current server-resolved option that passed authorization and was committed**, including at minimum:
+Under the same serialized cart lock used for cart mutation, the PDP add operation must:
+
+- resolve/authorize the current selected option;
+- read `previousQuantity` (`0` if absent);
+- validate prospective `previousQuantity + 1` against current stock/integer/commerce bounds;
+- commit exactly one additional unit;
+- return `previousQuantity`, committed `quantity`, and `addedQuantity = 1` on success.
+
+The same accepted transaction must capture/resolve a bounded non-PII event snapshot containing at minimum:
 
 - `pancakeVariationId`;
-- current resolved unit price;
-- accepted quantity;
-- item/product name required for analytics;
-- color/size when available.
+- authoritative current resolved unit price;
+- item/product name;
+- color/size when available;
+- the committed quantity transition.
 
-Canonical AddToCart is built only from those returned success facts. Failed mutations emit no AddToCart.
+Canonical PDP `add_to_cart` is built only from those returned success facts, with event quantity equal to `addedQuantity`, never from a stale pre-request price/quantity or the assumption that any `{ ok: true }` means +1.
 
-### 4.5 Atomic cart quantity events
+If commerce mutation succeeds but a safe analytics snapshot cannot be resolved, commerce success stands and analytics fails closed: emit no new canonical vendor event and do not fall back to stale client/rendered facts.
 
-Quantity update/removal analytics must use facts captured under the same serialized cart transaction that commits the mutation. Required success facts include previous/committed quantity for update and removed quantity for removal. Client/pre-read quantity is not authoritative for delta measurement.
+### 4.5 Atomic cart quantity events and mutation snapshots
+
+The cart editor keeps absolute-set quantity semantics. Update/removal analytics must use facts captured under the same serialized cart transaction that commits the mutation.
+
+Required success facts:
+
+- update: `previousQuantity`, committed `quantity`, plus bounded canonical event item snapshot;
+- remove: `removedQuantity`, plus the canonical event item snapshot captured **before destructive delete**;
+- snapshot identity/value: `pancakeVariationId`, authoritative current resolved unit price, item/product name, color/size when available, optional safe product/projection context.
+
+Client/pre-read/rendered quantity, price, item name or variant identity is not authoritative for mutation event construction. Browser derives positive/negative delta only from returned committed facts.
+
+If safe snapshot resolution fails, tracking fails closed without altering the authoritative cart mutation result. A catalog/price change between render and mutation must not produce a stale analytics event.
 
 ### 4.6 Purchase truth
 
@@ -334,28 +357,33 @@ Never infer GTIN from Pancake barcode.
 
 External catalog/editorial text is untrusted input. Use standards-aware serialization; escape XML correctly; reject/normalize illegal controls/malformed URLs/oversized fields; parse generated output in tests. No hand-built raw XML interpolation.
 
-### 6.6 Public route resource and amplification boundary
+### 6.6 Public route resource, cache, single-flight and failure-backoff boundary
 
-The public route must not regenerate a bounded-but-expensive feed for every request.
+The public route must not regenerate a bounded-but-expensive feed for every request, including persistent failure paths.
 
 Initial v1 envelope:
 
 ```text
-MAX_MERCHANT_OFFERS             = 5_000
-MAX_MERCHANT_FEED_BYTES         = 16 MiB
-MAX_MERCHANT_DB_ROUND_TRIPS     = 8 per heavy generation
-MERCHANT_FEED_CACHE_TTL_SECONDS = 300
+MAX_MERCHANT_OFFERS                  = 5_000
+MAX_MERCHANT_FEED_BYTES              = 16 MiB
+MAX_MERCHANT_DB_ROUND_TRIPS          = 8 per heavy generation
+MERCHANT_FEED_CACHE_TTL_SECONDS      = 300
+MERCHANT_FEED_FAILURE_BACKOFF_SECONDS = 60
 ```
 
 Requirements:
 
 - complete successful serialized feed is cached under a fixed configured-shop/feed-schema key;
-- request query/header noise must not create unbounded cache dimensions;
-- repeated GETs within TTL perform no additional heavy DB generation;
+- request query/header noise must not create unbounded cache or failure-backoff dimensions;
+- repeated GETs within success TTL perform no additional heavy DB generation;
 - concurrent cold requests are collapsed by a tested single-flight mechanism for the current single-app-service runtime;
-- if production topology changes to multiple app replicas, activation is blocked until shared cross-replica cache/single-flight protection is proved;
-- serialization maintains incremental UTF-8 byte accounting and aborts before exceeding 16 MiB; do not first build an unbounded body and only then measure it;
-- overflow/failure returns non-success (target 503), never truncated/partial 200;
+- failed/overflow heavy generation installs a fixed-key 60-second negative backoff sentinel containing only bounded non-sensitive failure class/retry time;
+- sequential or concurrent GETs during active backoff return cheap bounded `503` with bounded `Retry-After` and perform no additional heavy DB generation;
+- backoff expiry admits one new single-flight retry, not one retry per concurrent caller;
+- failure/backoff state must not overwrite, corrupt or mark a complete successful feed body as failed;
+- if production topology changes to multiple app replicas, activation is blocked until shared cross-replica cache/single-flight/backoff protection is proved;
+- serialization maintains incremental UTF-8 byte accounting and aborts before exceeding 16 MiB;
+- overflow/failure returns non-success, never truncated/partial 200;
 - failed rebuild cannot publish/cache partial output as successful feed;
 - no N+1 per-offer query path.
 
@@ -372,7 +400,7 @@ Start automatic price/availability/condition updates disabled until exact varian
 - Secrets remain server-only; GTM/GA/Ads/TikTok public IDs are configuration identifiers, not authorization secrets.
 - Tracking failures are no-op for commerce.
 - GTM CSP changes are least privilege; no convenience production `unsafe-eval`, wildcard origins or unreviewed Custom HTML/JS.
-- Merchant route has fixed configured source scope, finite work limits, caching/single-flight protection and no arbitrary request-driven upstream fetch.
+- Merchant route has fixed configured source scope, finite work limits, success caching, single-flight and bounded failure-backoff protection; no arbitrary request-driven upstream fetch.
 - External catalog text cannot inject markup/XML/script.
 
 ## 8. Environment/activation policy
@@ -404,20 +432,22 @@ After the corresponding reviewed implementation/activation gates:
 Implementation is ready for live activation only when:
 
 1. canonical product-vs-variant event contracts pass focused tests;
-2. AddToCart uses server-returned committed variation/price/quantity facts;
-3. cart delta facts are transactionally authoritative;
-4. Purchase is confirmed-only and uses `publicCode` identity;
-5. exact GTM saved version/export has been reviewed and previewed; production tags all have live guard;
-6. one GA4 page view per navigation is demonstrated;
-7. existing Meta direct behavior/dedup remains healthy;
-8. standalone Merchant identity/MPN/durability audit is green;
-9. exact standalone variant deep links match feed-visible facts;
-10. Merchant feed serialization/resource/cache/single-flight tests pass;
-11. current production topology is verified; multi-replica topology has shared cache/single-flight protection before activation;
-12. Merchant diagnostics/crawler checks are acceptable;
-13. `SEARCH_INDEXING_ENABLED=false` remains unchanged unless separately approved;
-14. owner decisions for Ads value, Merchant market/apparel facts and vendor account configuration are resolved before affected activation;
-15. repository Definition of Done and exact-head verification gates are satisfied.
+2. PDP AddToCart is a distinct atomic +1 mutation and each successful event reflects exactly the committed positive delta;
+3. PDP/cart mutation events use authoritative server snapshots for variation identity, price, name/options and quantity delta; snapshot failure has no stale fallback;
+4. cart absolute update/remove delta facts are transactionally authoritative, including pre-delete remove snapshot;
+5. Purchase is confirmed-only and uses `publicCode` identity;
+6. exact GTM saved version/export has been reviewed and previewed; production tags all have live guard;
+7. one GA4 page view per navigation is demonstrated;
+8. existing Meta direct behavior/dedup remains healthy;
+9. standalone Merchant identity/MPN/durability audit is green;
+10. exact standalone variant deep links match feed-visible facts;
+11. Merchant feed serialization/resource/success-cache/single-flight/failure-backoff tests pass;
+12. repeated sequential failed feed GETs during backoff do not re-run heavy generation;
+13. current production topology is verified; multi-replica topology has shared cache/single-flight/backoff protection before activation;
+14. Merchant diagnostics/crawler checks are acceptable;
+15. `SEARCH_INDEXING_ENABLED=false` remains unchanged unless separately approved;
+16. owner decisions for Ads value, Merchant market/apparel facts and vendor account configuration are resolved before affected activation;
+17. repository Definition of Done and exact-head verification gates are satisfied.
 
 ## 10. Explicitly out of scope / deferred
 
@@ -440,10 +470,10 @@ The implementation lifecycle remains:
 
 ```text
 PR-A tracking preparation (no GTM load)
-→ PR-B commerce browser truth
+→ PR-B commerce browser truth (atomic PDP add + mutation snapshots)
 → PR-C Purchase + immutable GTM version/loader
 → PR-D Merchant identity/deep-link
-→ PR-E cached bounded Merchant feed
+→ PR-E cached/backoff-protected bounded Merchant feed
 → PR-F activation/final verification
 ```
 
