@@ -14,6 +14,7 @@
  */
 
 import type { TrackingEvent } from "./commerce-events.ts";
+import { canonicalizeTrackingEvent } from "./event-boundary.ts";
 
 export const DATA_LAYER_NAME = "dataLayer";
 
@@ -40,25 +41,28 @@ export function ensureDataLayer(host: DataLayerHost): unknown[] | null {
   }
 }
 
-function isPublishableEvent(event: unknown): event is TrackingEvent {
-  if (typeof event !== "object" || event === null) return false;
-  const name = (event as { event?: unknown }).event;
-  return typeof name === "string" && name.length > 0;
-}
-
 /**
- * Publishes one canonical event. Returns whether it reached the dataLayer, so a caller that needs
- * to know can react — but no caller is required to, and no path may treat `false` as an error.
+ * Publishes one canonical event. The runtime boundary rebuilds even structurally compatible input
+ * before it reaches the sink, so caller-added checkout/customer fields cannot hitch a ride through
+ * TypeScript's open object compatibility. Malformed input fails before the dataLayer is initialized.
+ *
+ * Returns whether the canonical event reached the dataLayer, so a caller that needs to know can
+ * react — but no caller is required to, and no path may treat `false` as an error.
  */
 export function publishTrackingEvent(host: DataLayerHost, event: TrackingEvent): boolean {
-  if (!isPublishableEvent(event)) return false;
+  let canonicalEvent: TrackingEvent;
+  try {
+    canonicalEvent = canonicalizeTrackingEvent(event);
+  } catch {
+    return false;
+  }
 
   const dataLayer = ensureDataLayer(host);
   if (dataLayer === null) return false;
 
   try {
     dataLayer.push({ ecommerce: null });
-    dataLayer.push(event);
+    dataLayer.push(canonicalEvent);
     return true;
   } catch {
     return false;
