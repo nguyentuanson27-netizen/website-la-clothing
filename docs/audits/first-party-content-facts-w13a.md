@@ -128,7 +128,7 @@ not by anything technical.
 
 ## Registered decision gates
 
-These are recorded as **B1–B4** in the "Owner decision gates" register in
+These are recorded as **B1–B4 and B6** in the "Owner decision gates" register in
 `tasks/growth-commerce-master-todo.md`, each with its owner, what it blocks and where the blocked
 unit must stop:
 
@@ -138,6 +138,7 @@ unit must stop:
 | **B2** | Contact channels | U33 Contact page; U32 `Organization` enrichment only |
 | **B3** | Size chart | U33 Size Guide page |
 | **B4** | Shipping delivery terms | U33 Shipping/Payment page |
+| **B6** | About/brand/legal facts — founding story/year/values/people, registered entity name, and whether the tax identifier should be public | U33 (About page) |
 
 Owner in every case: repository owner / brand authority. Until a gate is answered, the blocked unit
 stops and reports; every other unit continues. No page is built from an inferred policy, and no
@@ -145,7 +146,7 @@ missing fact is reconstructed from UI copy, checkout wording or naming conventio
 
 ## What the owner needs to supply
 
-For each of Returns, Shipping delivery terms, Size Guide and Contact:
+For each of About, Returns, Shipping delivery terms, Size Guide and Contact:
 
 1. the factual content itself, in Vietnamese, as the brand wants it published;
 2. confirmation of who owns it and when it was last reviewed;
