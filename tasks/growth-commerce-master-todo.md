@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **PLANNED / NOT IMPLEMENTED**
+Status: **WAVE 0 IMPLEMENTED — Wave 1 onward planned / not implemented**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -18,13 +18,19 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 
 ## Wave 0 — baseline and safety
 
-- [ ] **U0** Master + #151 P0 — reconcile latest `main`; confirm shared ownership unchanged.
-- [ ] **U1** #152 P0/G1 — hard-block indexing on `la.lanadesign.vn`; permanent-domain enablement stays separate.
-- [ ] **U2** #153 T1–T3 — canonical events/config/dataLayer/consent/page views; requested preview/live still loads no GTM.
-- [ ] **U3** #151 P1 — campaign/target persistence + order audit + bounded durable promotion-pricing revision.
-- [ ] **U4** #152 W2a — prove collision-safe metadata uniqueness replacement before slug/path cleanup.
-- [ ] **U5** #152 W15a — inventory dedicated SEO smoke coverage vs existing tests/P18/runtime jobs.
-- [ ] **U6** #152 W13A — inventory owner-approved/missing About/Returns/Shipping/Size/Contact facts; missing policy = BLOCKED.
+Wave 0 landed from base `main@be1dd63735af358ca6d44c0ad669da2cfd7beb66`. Per ADR 0005 it was split
+into five focused pull requests rather than one: **PR-A1** (U0+U1), **PR-A2** (U2), **PR-A3** (U3),
+**PR-A4** (U4) and **PR-A5** (U5+U6, and this checklist update). They share one base, own disjoint
+subsystems and do not depend on each other, so they may merge in any order; this checklist entry is
+accurate once all five have merged.
+
+- [x] **U0** Master + #151 P0 — reconcile latest `main`; confirm shared ownership unchanged.
+- [x] **U1** #152 P0/G1 — hard-block indexing on `la.lanadesign.vn`; permanent-domain enablement stays separate.
+- [x] **U2** #153 T1–T3 — canonical events/config/dataLayer/consent/page views; requested preview/live still loads no GTM.
+- [x] **U3** #151 P1 — campaign/target persistence + order audit + bounded durable promotion-pricing revision.
+- [x] **U4** #152 W2a — prove collision-safe metadata uniqueness replacement before slug/path cleanup. **Verdict: BLOCKED** — see `docs/audits/seo-metadata-uniqueness-w2a.md`; U29/W2b waits on an owner decision.
+- [x] **U5** #152 W15a — inventory dedicated SEO smoke coverage vs existing tests/P18/runtime jobs. See `docs/audits/seo-runtime-coverage-w15a.md`; all five smokes already run through `pnpm test`, and U13 has two genuinely missing signals to wire.
+- [x] **U6** #152 W13A — inventory owner-approved/missing About/Returns/Shipping/Size/Contact facts; missing policy = BLOCKED. See `docs/audits/first-party-content-facts-w13a.md`.
 
 ## Wave 1 — commerce truth and identity
 
@@ -44,7 +50,7 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 ## Wave 2 — addressability and storefront
 
 - [ ] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link; requires U8 + accepted U9 evidence.
-- [ ] **U13** #152 W15b — wire only missing SEO HTTP/runtime signals from U5 coverage map.
+- [ ] **U13** #152 W15b — wire only missing SEO HTTP/runtime signals from U5 coverage map: a negative `release:check` case for the temporary-host indexing block, and an HTTP case proving that host stays noindex when a deployment requests indexing. Do not re-invoke the five smokes that already run in `pnpm test`.
 - [ ] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React.
 - [ ] **U15** #151 P6 — PDP promotion projection using central pricing + **U8/T4 selected-variant state (`pancakeVariationId`)**; do not define a query/canonical contract. If U12 has landed, consume it directly.
 - [ ] **U16** #151 P7a — `/shop` effective-price discovery; SQL↔TS parity and product-level analytics identity preserved.
@@ -89,11 +95,11 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 
 ## Wave 6 — SEO/search follow-through
 
-- [ ] **U29** #152 W2b — metadata cleanup only after U4 uniqueness proof.
+- [ ] **U29** #152 W2b — metadata cleanup only after U4 uniqueness proof. **Currently blocked:** U4 found no provably unique human-readable discriminator in the present schema; an owner decision is required first.
 - [ ] **U30** #152 P3 — W8 OG/Twitter, W10 static canonical, W14 branded/HTML 404 work in focused PRs.
 - [ ] **U31** #152 W9 — sitemap `lastModified` only after significant public-change timestamp semantics exist.
-- [ ] **U32** product-level remainder of #152 W5 + W6 — verified product-level identifiers/attributes + Organization only; **do not redefine ProductGroup/variant Offer owned by U27**.
-- [ ] **U33** #152 P5/W13 — evergreen pages only after U6 human-approved facts; no invented policies.
+- [ ] **U32** product-level remainder of #152 W5 + W6 — verified product-level identifiers/attributes + Organization only; **do not redefine ProductGroup/variant Offer owned by U27**. Organization enrichment is blocked by the same owner facts as U33 (address, contact point, social profiles).
+- [ ] **U33** #152 P5/W13 — evergreen pages only after U6 human-approved facts; no invented policies. **Currently blocked:** Returns, Size Guide and Contact have no source of truth at all, and Shipping lacks a delivery estimate and coverage statement.
 - [ ] **U34** #152 P6/W16/W17 — SEO admin/operational readiness; advisory UI does not become hard unreviewed policy.
 - [ ] **U35** #152 P6/W18 — permanent-domain Search Console/Bing/Merchant verification; does not itself enable indexing.
 - [ ] **U36** #152 P6/W19 — owner-approved crawler governance matrix.

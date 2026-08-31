@@ -144,12 +144,22 @@ precision. Các trạng thái dưới đây có nghĩa:
   còn chưa được gate, rồi wire các case còn gap; chỉ gom thành một SEO runtime command chuẩn nếu
   việc đó giảm duplication và làm ownership/verification rõ hơn.
 
+  **Cập nhật W15a (U5):** inventory đã hoàn tất trong `docs/audits/seo-runtime-coverage-w15a.md`.
+  Nó đính chính tiền đề "0/5 được wire": không script nào được gọi trực tiếp bởi workflow/npm
+  script, nhưng cả năm đều được `tests/integrations/product-slug-http.test.ts` import nên chạy
+  qua `pnpm test` trong mọi PR. Gap thật sự còn lại được liệt kê theo signal trong coverage map.
+
 - **W13A — Evergreen content thiếu owner-approved source facts/policies.** Site chưa có các page
   chuẩn về About, Returns, Shipping/Payment, Size Guide, Contact; nhưng `buildPublicBrandFacts`
   hiện mới có brand summary, COD, account-less checkout, shipping promotion, order tracking và
   server verification. Nó **không** cung cấp return policy, contact/address facts hay một site-wide
   size policy đầy đủ. Coding agent không được tự bịa các business facts này. Trước page build phải
   có human-approved factual source/content contract cho từng nhóm policy cần public.
+
+  **Cập nhật W13A (U6):** inventory đầy đủ nằm ở `docs/audits/first-party-content-facts-w13a.md`.
+  Kết luận: chỉ Shipping/Payment có phần A-class dùng được; Returns, Size Guide và Contact
+  **BLOCKED — OWNER FACT/APPROVAL REQUIRED** toàn bộ. W6/U32 Organization enrichment bị chặn bởi
+  cùng quyết định owner đó.
 
 ### Medium — leverage cao sau correctness
 
