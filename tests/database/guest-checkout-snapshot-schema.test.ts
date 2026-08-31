@@ -81,5 +81,14 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "unitPriceVnd", data_type: "bigint", is_nullable: "NO" },
     { column_name: "lineTotalVnd", data_type: "bigint", is_nullable: "NO" },
     { column_name: "createdAt", data_type: "timestamp without time zone", is_nullable: "NO" },
+    // P1 promotion audit. Appended and nullable, so the immutable snapshot contract above is
+    // unchanged and rows written before promotions existed stay valid.
+    { column_name: "baseUnitPriceVnd", data_type: "bigint", is_nullable: "YES" },
+    { column_name: "promotionCampaignId", data_type: "text", is_nullable: "YES" },
+    { column_name: "promotionName", data_type: "text", is_nullable: "YES" },
+    { column_name: "promotionKind", data_type: "USER-DEFINED", is_nullable: "YES" },
+    { column_name: "promotionDiscountType", data_type: "USER-DEFINED", is_nullable: "YES" },
+    { column_name: "promotionPercentageValue", data_type: "integer", is_nullable: "YES" },
+    { column_name: "promotionFixedPriceVnd", data_type: "bigint", is_nullable: "YES" },
   ]);
 });
