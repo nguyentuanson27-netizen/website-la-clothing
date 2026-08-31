@@ -475,6 +475,12 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   );
   expect(horizontalOverflow).toBe(false);
 
+  // The bulk action's revalidation re-streams the dynamic head — the root layout's
+  // generateMetadata awaits connection() — so the document title is briefly absent afterwards and
+  // Axe can scan that transient state instead of the settled page. Same guard checkout.spec.ts
+  // already applies before its own scan. A title that never arrives still fails here.
+  await expect(page).toHaveTitle(/.+/);
+
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
