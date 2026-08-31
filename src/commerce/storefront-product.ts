@@ -47,6 +47,15 @@ function isUsablePrice(value: number | null): value is number {
   return value !== null && Number.isFinite(value) && value >= 0;
 }
 
+/**
+ * The current storefront price gate, still equality-gated on the mirrored Pancake fields.
+ *
+ * `src/commerce/promotion-pricing.ts` is the central effective-price authority this will defer to.
+ * The switch is deliberately not made here: removing the
+ * `retailPrice === retailPriceAfterDiscount` availability gate requires the approved real-catalog
+ * evidence W3 demands, and doing it early would change what buyers are charged on the strength of
+ * an assumption. Do not add a third price path in the meantime.
+ */
 export function resolveStorefrontPrice({
   retailPrice,
   retailPriceAfterDiscount,
