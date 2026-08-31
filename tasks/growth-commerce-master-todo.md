@@ -104,7 +104,7 @@ This checklist tracks orchestration only. Detailed acceptance criteria remain in
 - [ ] **U40** #151 G2 — bounded/redacted observability + readiness/runbook + rollback rehearsal for activation rejection, invalid/recovery/conflict/`PARTIALLY_INVALID`, `PRICE_CHANGED`/quote-proof, Merchant revision mismatch/rebuild, Pancake semantic validation and activation-gate state; no PII/secrets/raw quote proofs/cart UUIDs.
 - [ ] **U41** #153 M5 — after Gate M preconditions, execute Merchant Center Scheduled Fetch activation, account/site/data-source/market/shipping/returns/Ads linkage and collect Diagnostics/crawler evidence without implicitly enabling search indexing.
 - [ ] **U42** #153 V1 — final marketing convergence/rollback verification after U28 + U41; code only for a focused verified launch defect.
-- [ ] **U43** #151 G3 — exact-head final integrated DoD after U39 + U40; verify #153 identity/cart/Purchase/Merchant-cache regressions and unchanged #152 indexing policy unless separately approved.
+- [ ] **U43** #151 G3 — exact-head final integrated DoD after U39 + U40; verify **applicable #153 identity/cart/Purchase/Merchant-cache regressions for slices actually implemented** plus unchanged #152 indexing policy unless separately approved. Disabled/fail-closed future consumers are not prerequisites.
 
 ## Conditional — not on default critical path
 
