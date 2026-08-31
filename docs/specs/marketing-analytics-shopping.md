@@ -2,7 +2,7 @@
 
 Status: Proposed — self-reviewed; implementation plan added; ready for human review before `/build`
 
-This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows several conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
+This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 
 ## 1. Objective
 
@@ -93,6 +93,10 @@ Third-party origins remain closed unless the reviewed integration actually needs
 ### Search exposure
 
 ADR 0004 remains authoritative. Merchant crawlability must not silently enable organic indexing, canonical exposure policy, or sitemap exposure.
+
+### Current runtime topology
+
+Current VPS Compose declares a single `app` service instance behind the proxy path. Merchant v1 may use a process/runtime-scoped single-flight guard only while that topology remains true. If production is changed to multiple app replicas before Merchant activation, shared cross-replica cache/single-flight protection becomes a launch prerequisite.
 
 ## 4. Canonical commerce event contract
 
@@ -347,7 +351,8 @@ Requirements:
 - complete successful serialized feed is cached under a fixed configured-shop/feed-schema key;
 - request query/header noise must not create unbounded cache dimensions;
 - repeated GETs within TTL perform no additional heavy DB generation;
-- concurrent cold requests are collapsed by a tested single-flight mechanism for the current runtime/cache domain;
+- concurrent cold requests are collapsed by a tested single-flight mechanism for the current single-app-service runtime;
+- if production topology changes to multiple app replicas, activation is blocked until shared cross-replica cache/single-flight protection is proved;
 - serialization maintains incremental UTF-8 byte accounting and aborts before exceeding 16 MiB; do not first build an unbounded body and only then measure it;
 - overflow/failure returns non-success (target 503), never truncated/partial 200;
 - failed rebuild cannot publish/cache partial output as successful feed;
@@ -407,10 +412,11 @@ Implementation is ready for live activation only when:
 8. standalone Merchant identity/MPN/durability audit is green;
 9. exact standalone variant deep links match feed-visible facts;
 10. Merchant feed serialization/resource/cache/single-flight tests pass;
-11. Merchant diagnostics/crawler checks are acceptable;
-12. `SEARCH_INDEXING_ENABLED=false` remains unchanged unless separately approved;
-13. owner decisions for Ads value, Merchant market/apparel facts and vendor account configuration are resolved before affected activation;
-14. repository Definition of Done and exact-head verification gates are satisfied.
+11. current production topology is verified; multi-replica topology has shared cache/single-flight protection before activation;
+12. Merchant diagnostics/crawler checks are acceptable;
+13. `SEARCH_INDEXING_ENABLED=false` remains unchanged unless separately approved;
+14. owner decisions for Ads value, Merchant market/apparel facts and vendor account configuration are resolved before affected activation;
+15. repository Definition of Done and exact-head verification gates are satisfied.
 
 ## 10. Explicitly out of scope / deferred
 
