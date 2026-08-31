@@ -23,9 +23,14 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 
 ### Review `5062244480`
 - [ ] **R5 GTM live interlock:** PR-A contains **no GTM loader**. Requested preview/live stay operationally disabled until T8 has an exact saved GTM version + reviewed export. PR-C owns first GTM script/CSP opening.
-- [ ] **R6 Server-truth AddToCart:** successful server purchase action returns `pancakeVariationId`, current resolved unit price, accepted quantity, and bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price.
+- [ ] **R6 Server-truth AddToCart:** successful server purchase action returns canonical bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price.
 - [ ] **R7 Product vs variant identity:** list/select/initial unselected PDP use product-level `pancakeProductId`; exact variant `pancakeVariationId` begins only when a concrete variant is selected/committed. Price ranges are never reported as an exact selected price.
 - [ ] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight for current one-app-service topology; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation. Multi-replica deployment requires shared cross-replica protection before activation.
+
+### Review `5062693858`
+- [ ] **R9 PDP atomic add semantics:** PDP “Thêm vào giỏ hàng” uses a distinct server mutation that atomically increments the existing line by exactly `+1` under the cart lock; it must not reuse absolute `setItemQuantity(..., 1)` semantics. Success returns `previousQuantity`, committed `quantity`, and `addedQuantity=1`; no successful no-op/decrease may be reported as `add_to_cart`.
+- [ ] **R10 Mutation event snapshot:** PDP add, cart absolute update, and remove return a bounded non-PII `CommerceVariantItem` snapshot captured/resolved server-side at the accepted mutation truth point under the same serialized cart transaction. It includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item name, color/size where available, and the relevant committed delta quantity. If a safe snapshot cannot be resolved, the commerce mutation remains authoritative but analytics fails closed with no stale client fallback.
+- [ ] **R11 Merchant failure backoff:** a failed/overflow heavy rebuild installs a fixed-key negative backoff sentinel for `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS=60`. Sequential or concurrent requests during backoff return a cheap bounded `503` (with bounded `Retry-After`) and do not invoke heavy generation. Failure state never overwrites/poisons a valid successful feed cache entry.
 
 ## PR-A — tracking preparation; zero new GTM/vendor network delivery
 
@@ -62,34 +67,39 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 
 ### T4 Product + selected-variant projection facts
 - [ ] Expose stable `pancakeProductId` on list/PDP product facts.
-- [ ] Propagate `pancakeVariationId` + optional SKU through concrete standalone/composite options.
+- [ ] Propagate `pancakeVariationId` + optional SKU through concrete standalone/composite options and server cart mutation lookup facts.
 - [ ] Keep local `VariantMirror.id` as mutation/authorization identity.
 - [ ] Presentation `kindKey` never becomes external identity.
 - [ ] Existing price/stock/composite privacy behavior unchanged.
 
-### T5 Product-level list/PDP/select + server-authoritative AddToCart
+### T5 Product-level list/PDP/select + atomic server-authoritative AddToCart
 - [ ] `view_item_list` emits exactly one product impression per visible card.
 - [ ] `select_item` uses clicked product identity even though no size/color is selected yet.
-- [ ] initial unselected `view_item` uses product identity.
+- [ ] Initial unselected `view_item` uses product identity.
 - [ ] Equal resolved product price may map as exact price; multi-price range does **not** map minimum as selected exact price; unresolved price omits monetary fields.
-- [ ] Successful AddToCart server result includes bounded canonical item facts from the same re-resolved option that passed server validation and was committed.
-- [ ] AddToCart event uses server-returned `pancakeVariationId`, `unitPriceVnd`, accepted quantity; never stale `selection.selectedPrice` captured before request.
-- [ ] Failed mutation emits no AddToCart.
+- [ ] Introduce a dedicated PDP atomic add mutation; do not call the cart’s absolute set-quantity path with `quantity=1`.
+- [ ] Under the existing cart lock, absent line → `0→1`; existing quantity `q` → `q→q+1`, subject to current stock/integer bounds. Each successful repeated/concurrent PDP add contributes exactly one committed unit.
+- [ ] Successful PDP add returns `previousQuantity`, committed `quantity`, `addedQuantity=1`, plus bounded canonical item snapshot from the same accepted transaction.
+- [ ] `add_to_cart.quantity = addedQuantity`; a no-op/decrease/failure can never emit PDP `add_to_cart`.
+- [ ] AddToCart event uses server-returned `pancakeVariationId`, `unitPriceVnd`, item name/color/size and accepted delta; never stale `selection.selectedPrice` or rendered cart data.
 - [ ] Direct Meta event name/content IDs/direct-delivery/success boundary remain compatible; any Meta value-source correction has regression coverage.
-- [ ] RED/GREEN tests: multi-price/tie/no-price product, click before variant selection, stale browser price vs new server price, failed mutation, no duplicate Meta behavior.
+- [ ] RED/GREEN tests: absent→1, existing 1→2, existing >1 increments rather than resetting, stock-bound failure, concurrent repeated PDP clicks, stale browser price vs current server snapshot, failed snapshot → no canonical tracking, no duplicate Meta behavior.
 
-### T6 Atomic cart delta + checkout events
-- [ ] Under existing cart lock, update returns `previousQuantity` + committed `quantity`.
-- [ ] Under same lock, remove captures/returns `removedQuantity`; already-missing line is not a real removal.
+### T6 Atomic cart delta + authoritative mutation snapshot + checkout events
+- [ ] Under existing cart lock, absolute update returns `previousQuantity` + committed `quantity`.
+- [ ] Under the same lock, remove captures `removedQuantity` before destructive delete; already-missing line is not a real removal.
+- [ ] The transaction also captures/resolves bounded non-PII event item facts: `pancakeVariationId`, authoritative `unitPriceVnd`, product/item name, color/size where available, plus optional safe product/projection context.
 - [ ] Increase → delta `add_to_cart`; decrease/remove → delta `remove_from_cart`; zero delta/failure → no event.
-- [ ] RED/GREEN concurrency tests: two absolute updates, remove/already-removed, same quantity, failed mutation.
+- [ ] Browser builds quantity events only from the returned server snapshot + delta. It never falls back to server-rendered/client-cached name, price, variant ID, or quantity after a mutation.
+- [ ] If safe identity/price snapshot resolution fails, cart mutation result remains commerce truth but tracking emits nothing and must not throw into cart UX.
+- [ ] RED/GREEN concurrency tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog change between render and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
 - [ ] Emit `view_cart` / `begin_checkout` from canonical resolved state.
 - [ ] Keep `add_shipping_info` / `add_payment_info` absent until a real accepted milestone exists.
 
 ### Checkpoint B
 - [ ] Focused cart/PDP/checkout tests green.
 - [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` green.
-- [ ] Review product-vs-variant IDs, exact/range values, quantity and server-truth semantics.
+- [ ] Review product-vs-variant IDs, exact/range values, committed delta, server snapshot and failure-closed tracking semantics.
 
 ## PR-C — confirmed Purchase + immutable GTM activation
 
@@ -150,25 +160,29 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Structurally valid zero-stock offers remain `out_of_stock`.
 - [ ] Unsafe/unresolved/composite records excluded with bounded reason.
 
-### M4 Cached/single-flight serializer + bounded public route
+### M4 Cached/single-flight serializer + bounded public route + failure backoff
 - [ ] GET-only `/feeds/google-merchant` with safe standards-aware serialization.
 - [ ] `MAX_MERCHANT_OFFERS = 5_000`.
 - [ ] `MAX_MERCHANT_FEED_BYTES = 16 MiB` with **incremental UTF-8 byte accounting**; abort before next chunk exceeds limit.
 - [ ] `MAX_MERCHANT_DB_ROUND_TRIPS = 8`; no N+1.
 - [ ] `MERCHANT_FEED_CACHE_TTL_SECONDS = 300`.
-- [ ] Fixed cache key is configured shop + feed schema/version only; query/header noise cannot create unbounded keys.
-- [ ] Cache only complete successful serialized feed.
-- [ ] Repeated GETs within TTL perform zero additional heavy DB generations.
+- [ ] `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS = 60`.
+- [ ] Fixed success-cache and failure-backoff key domain is configured shop + feed schema/version only; query/header noise cannot create unbounded keys.
+- [ ] Cache only complete successful serialized feed; failure sentinel stores bounded non-sensitive failure class/retry time only.
+- [ ] Repeated GETs within success TTL perform zero additional heavy DB generations.
 - [ ] Concurrent cold requests are collapsed by a tested single-flight mechanism for current one-app-service topology.
-- [ ] If production changes to multiple app replicas, block activation until shared cross-replica cache/single-flight protection is proved.
+- [ ] After a failed/overflow heavy rebuild, sequential or concurrent requests inside 60s backoff return cheap `503` with bounded `Retry-After` and perform zero additional heavy DB generations.
+- [ ] Backoff expiry admits one new single-flight rebuild attempt, not one attempt per waiting request.
+- [ ] Failure/backoff state never overwrites, corrupts, or marks a complete successful feed body as failed.
+- [ ] If production changes to multiple app replicas, block activation until shared cross-replica cache/single-flight/backoff protection is proved.
 - [ ] Failed/overflow rebuild never publishes/caches partial result as success.
 - [ ] Overflow target `503`; never partial/truncated `200`.
-- [ ] Tests: parse output, escaping/Unicode/control chars, malformed URLs, deterministic order, offer/byte limit and limit+1, query budget, first miss/repeated hit, concurrent cold miss, concurrent TTL expiry, query-string cache noise.
+- [ ] Tests: parse output, escaping/Unicode/control chars, malformed URLs, deterministic order, offer/byte limit and limit+1, query budget, first miss/repeated hit, concurrent cold miss, concurrent TTL expiry, query-string cache noise, sequential failure backoff, concurrent failed rebuild, backoff expiry single retry, success-cache/failure-sentinel isolation.
 
 ### Checkpoint E
-- [ ] Focused Merchant mapping/route/cache tests green.
+- [ ] Focused Merchant mapping/route/cache/backoff tests green.
 - [ ] `pnpm test`, `pnpm test:db`, `pnpm typecheck`, `pnpm lint`, `pnpm build` green on exact PR-E head.
-- [ ] Real Next runtime smoke confirms cached route status/content type/complete body/no secrets.
+- [ ] Real Next runtime smoke confirms cached/backoff route status/content type/complete body/no secrets and cheap repeated failure behavior.
 
 ## PR-F — Merchant activation + final convergence
 
@@ -183,10 +197,10 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Exact-head `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:db`, `pnpm build`, `pnpm release:check`.
 - [ ] Applicable browser/runtime suites green.
 - [ ] Exact GTM container/version/export record + GTM/GA4/Ads/TikTok diagnostics recorded.
-- [ ] Merchant cache/fetch/diagnostics/crawler evidence recorded.
-- [ ] Verify production topology still matches one-app-service cache/single-flight assumption; otherwise shared cross-replica protection is mandatory.
+- [ ] Merchant cache/backoff/fetch/diagnostics/crawler evidence recorded.
+- [ ] Verify production topology still matches one-app-service cache/single-flight/backoff assumption; otherwise shared cross-replica protection is mandatory.
 - [ ] Final review: correctness → security → architecture → simplicity → performance.
-- [ ] Rollback documented for GTM exact-version delivery and Merchant data source/cache.
+- [ ] Rollback documented for GTM exact-version delivery and Merchant data source/cache/backoff.
 - [ ] Human approval before publishing live GTM version / enabling Merchant listings or campaigns.
 
 ## Explicitly deferred
