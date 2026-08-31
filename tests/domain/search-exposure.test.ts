@@ -7,6 +7,8 @@ import {
   validateSearchExposureForRelease,
 } from "../../src/seo/search-exposure.ts";
 
+const TEMPORARY_PRODUCTION_DOMAIN = "la.lanadesign.vn";
+
 const publicEnvironment = {
   APP_DOMAIN: "shop.example.com",
   SEARCH_INDEXING_ENABLED: "true",
@@ -170,4 +172,80 @@ test("enabled noindex policy allows only explicit public routes without query st
       `${request.pathname}${request.search} must remain noindex`,
     );
   }
+});
+
+test("G1 runtime search exposure never enables the temporary production origin", () => {
+  const exposure = readSearchExposure({
+    APP_DOMAIN: TEMPORARY_PRODUCTION_DOMAIN,
+    SEARCH_INDEXING_ENABLED: "true",
+  });
+
+  assert.deepEqual(exposure, {
+    origin: `https://${TEMPORARY_PRODUCTION_DOMAIN}`,
+    indexingEnabled: false,
+  });
+});
+
+test("G1 release preflight hard-blocks indexing on the temporary production origin", () => {
+  assert.throws(
+    () =>
+      validateSearchExposureForRelease({
+        APP_DOMAIN: TEMPORARY_PRODUCTION_DOMAIN,
+        SEARCH_INDEXING_ENABLED: "true",
+      }),
+    /Search indexing cannot be enabled on the temporary production storefront origin/,
+  );
+});
+
+test("G1 keeps the approved temporary production origin serving buyer traffic with indexing disabled", () => {
+  assert.deepEqual(
+    validateSearchExposureForRelease({
+      APP_DOMAIN: TEMPORARY_PRODUCTION_DOMAIN,
+      SEARCH_INDEXING_ENABLED: "false",
+    }),
+    {
+      origin: `https://${TEMPORARY_PRODUCTION_DOMAIN}`,
+      indexingEnabled: false,
+    },
+  );
+});
+
+test("G1 leaves a future approved permanent domain on the existing indexing gate", () => {
+  for (const appDomain of [
+    "laclothing.example",
+    "www.laclothing.example",
+    "lanadesign.vn",
+    `www.${TEMPORARY_PRODUCTION_DOMAIN}`,
+    `${TEMPORARY_PRODUCTION_DOMAIN}.attacker.example`,
+  ]) {
+    assert.deepEqual(
+      readSearchExposure({ APP_DOMAIN: appDomain, SEARCH_INDEXING_ENABLED: "true" }),
+      { origin: `https://${appDomain}`, indexingEnabled: true },
+      `${appDomain} must stay governed by the existing indexing gate`,
+    );
+    assert.deepEqual(
+      validateSearchExposureForRelease({
+        APP_DOMAIN: appDomain,
+        SEARCH_INDEXING_ENABLED: "true",
+      }),
+      { origin: `https://${appDomain}`, indexingEnabled: true },
+      `${appDomain} must not be hardcoded out of release preflight`,
+    );
+  }
+});
+
+test("G1 temporary-host enforcement reads only the server-owned storefront origin", () => {
+  const clientControlled = {
+    APP_DOMAIN: TEMPORARY_PRODUCTION_DOMAIN,
+    SEARCH_INDEXING_ENABLED: "true",
+    HOST: "shop.example.com",
+    "x-forwarded-host": "shop.example.com",
+    NEXT_PUBLIC_SEARCH_INDEXING_ENABLED: "true",
+  } as const;
+
+  assert.equal(readSearchExposure(clientControlled).indexingEnabled, false);
+  assert.throws(
+    () => validateSearchExposureForRelease(clientControlled),
+    /Search indexing cannot be enabled on the temporary production storefront origin/,
+  );
 });
