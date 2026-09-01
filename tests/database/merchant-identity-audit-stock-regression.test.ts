@@ -67,7 +67,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("M1 rejects a mixed invalid warehouse source instead of hiding it in the aggregate", async () => {
+test("M1 preserves invalid warehouse availability separately from valid zero stock", async () => {
   const mixed = await insertVariant("mixed");
   const zero = await insertVariant("zero");
 
@@ -78,7 +78,7 @@ test("M1 rejects a mixed invalid warehouse source instead of hiding it in the ag
 
   assert.deepEqual(
     summary.availability,
-    { IN_STOCK: 0, OUT_OF_STOCK: 2 },
-    "a negative source quantity is not evidence of stock even when another warehouse makes the sum positive",
+    { IN_STOCK: 0, OUT_OF_STOCK: 1, AVAILABILITY_UNRESOLVED: 1 },
+    "a negative source must remain unresolved while real zero stock remains a valid out-of-stock fact",
   );
 });
