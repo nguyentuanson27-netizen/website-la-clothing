@@ -223,6 +223,11 @@ test("admin product directory selects current-page products and bulk-updates sta
     "Preserve this editorial field.",
   );
 
+  // The scan runs just after a Server Action revalidation, while the dynamic head is re-streaming.
+  // Axe can catch that window with no <title> yet and report a document-title violation that has
+  // nothing to do with the page's accessibility. Same guard as checkout.spec.ts and
+  // admin-bulk-operations.spec.ts: wait for the head to settle before scanning.
+  await expect(page).toHaveTitle(/.+/);
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(BUYER_AXE_TAGS)
     .analyze();
