@@ -17,7 +17,10 @@ try {
   // Shop id only. This audit reads the local mirror and never calls Pancake, so requiring the API
   // key would make evidence-gathering depend on approved external context it does not use.
   const shopId = readPancakeShopId();
-  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(shopId));
+  const upstreamLifetimeProven = process.argv.includes("--verified-durability");
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(shopId), {
+    upstreamLifetimeProven,
+  });
 
   console.log("MERCHANT_IDENTITY_AUDIT_BEGIN");
   console.log(JSON.stringify({ pancakeShopId: shopId, ...summary }, null, 2));

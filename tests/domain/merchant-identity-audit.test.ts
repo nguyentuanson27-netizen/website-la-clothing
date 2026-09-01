@@ -189,6 +189,14 @@ test("M1 the durability verdict is never satisfied by this audit alone", () => {
   assert.equal(summary.durability.verdict, "BLOCKED");
 });
 
+test("M1 reports durability verdict PROVEN when verified upstream lifetime evidence is passed", () => {
+  const summary = summarizeMerchantIdentity([row()], { upstreamLifetimeProven: true });
+
+  assert.equal(summary.durability.mirrorReconcilesByExternalId, true);
+  assert.equal(summary.durability.upstreamLifetimeProven, true);
+  assert.equal(summary.durability.verdict, "PROVEN");
+});
+
 /* -------------------------------------------------------------- catalog facts beyond identity */
 
 /**

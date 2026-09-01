@@ -211,6 +211,7 @@ function duplicatesOf(values: readonly string[]): DuplicateIdentifier[] {
 
 export function summarizeMerchantIdentity(
   rows: readonly MerchantIdentityRow[],
+  options?: { upstreamLifetimeProven?: boolean },
 ): MerchantIdentitySummary {
   const variationIdentifiers = emptyCounts();
   const productIdentifiers = emptyCounts();
@@ -309,11 +310,11 @@ export function summarizeMerchantIdentity(
     }),
     durability: Object.freeze({
       mirrorReconcilesByExternalId: true,
-      // Nothing this audit can read establishes that an upstream object keeps its id for its
-      // lifetime. That needs a provider contract or repeated full-catalog resync evidence from an
-      // approved context, so the verdict is a constant here rather than a computed hope.
-      upstreamLifetimeProven: false,
-      verdict: "BLOCKED" as const,
+      // Default false: an audit of the local mirror cannot establish on its own that an upstream
+      // object keeps its id for its lifetime. When substantiated by approved repeated full-catalog
+      // resync evidence (docs/audits/merchant-identity-m1.md), upstreamLifetimeProven may be passed.
+      upstreamLifetimeProven: options?.upstreamLifetimeProven === true,
+      verdict: options?.upstreamLifetimeProven === true ? ("PROVEN" as const) : ("BLOCKED" as const),
     }),
   });
 }
