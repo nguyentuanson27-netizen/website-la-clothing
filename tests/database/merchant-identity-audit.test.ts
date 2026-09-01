@@ -347,16 +347,17 @@ test("M1 malformed mirrored text is reported rather than silently emitted", asyn
   );
 });
 
-test("M1 apparel facts stay owner-blocked over the real catalog", async () => {
+test("M1 apparel runtime stays blocked over the real catalog even though the policy is settled", async () => {
   await insertProduct("p", "external-product-1");
   await insertVariant("v1", "p", "external-variation-1", "LA-A");
 
   const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
 
+  // Neither of these is a fact about the mirror, so no catalog shape can move them: the policy was
+  // decided by a human in ADR 0007, and the override runtime either exists or does not.
   assert.deepEqual(summary.apparelFacts, {
-    gender: "OWNER_BLOCKED",
-    ageGroup: "OWNER_BLOCKED",
-    condition: "OWNER_BLOCKED",
+    policy: "RESOLVED",
+    productOverrides: "NOT_IMPLEMENTED",
     verdict: "BLOCKED",
   });
   assert.equal(summary.durability.verdict, "BLOCKED");

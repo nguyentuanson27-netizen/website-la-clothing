@@ -108,13 +108,23 @@ export type MerchantIdentitySummary = Readonly<{
    */
   merchantFactsReady: number;
   /**
-   * Owner-gated apparel attributes (O3). Constants, never derived: guessing `gender` from a product
-   * name is exactly the kind of invention that puts wrong data in front of shoppers.
+   * Apparel attributes (O3), split the way ADR 0007 splits them.
+   *
+   * The policy is settled — approved shop defaults plus local product-owned overrides — so reporting
+   * this as an open owner gate would be false. What is missing is the runtime: persistence,
+   * validation, admin editing and effective-fact projection. The verdict stays BLOCKED, for that
+   * reason and not the other one.
+   *
+   * No value appears here, then or now. Deriving `gender` from a product name is the invention ADR
+   * 0007 forbids as firmly as the original gate did, and restating the approved defaults would make
+   * this a second authority for a value the feed publishes — M3 applies them.
    */
   apparelFacts: Readonly<{
-    gender: "OWNER_BLOCKED";
-    ageGroup: "OWNER_BLOCKED";
-    condition: "OWNER_BLOCKED";
+    /** Settled by ADR 0007. */
+    policy: "RESOLVED";
+    /** No local override persistence, validation, admin editing or projection exists yet. */
+    productOverrides: "NOT_IMPLEMENTED";
+    /** Blocked by the missing runtime, no longer by an open owner decision. */
     verdict: "BLOCKED";
   }>;
   durability: Readonly<{
@@ -290,12 +300,11 @@ export function summarizeMerchantIdentity(
     description: Object.freeze(description),
     merchantFactsReady,
     apparelFacts: Object.freeze({
-      // O3 is an owner decision. Deriving these from a product name or category is precisely the
-      // invention the spec forbids, so they are constants that stay blocked until a human supplies
-      // the approved source of truth.
-      gender: "OWNER_BLOCKED" as const,
-      ageGroup: "OWNER_BLOCKED" as const,
-      condition: "OWNER_BLOCKED" as const,
+      // Constants, like the durability verdict: nothing this audit can read decides either of
+      // these. The policy was decided by a human in ADR 0007, and the runtime either exists or
+      // does not — neither is a fact about the mirror.
+      policy: "RESOLVED" as const,
+      productOverrides: "NOT_IMPLEMENTED" as const,
       verdict: "BLOCKED" as const,
     }),
     durability: Object.freeze({
