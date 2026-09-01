@@ -74,8 +74,8 @@ export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK";
 export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
 
 /**
- * `MALFORMED` is not a style judgement. It means text that cannot be serialized into a feed:
- * control characters and lone surrogates break XML, and neither is recoverable by escaping.
+ * `MALFORMED` is not a style judgement. It means text that cannot be serialized as XML 1.0 text;
+ * XML-illegal code points and lone surrogates cannot be repaired by escaping.
  */
 export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
 
@@ -130,13 +130,29 @@ export function classifyExternalIdentifier(value: string | null): ExternalIdenti
   return "PRESENT";
 }
 
-/** Control characters and lone surrogates: text a feed serializer cannot represent. */
-const UNSERIALIZABLE_TEXT =
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+/** XML 1.0 Fifth Edition `Char`: #x9 | #xA | #xD | #x20-#xD7FF | #xE000-#xFFFD | #x10000-#x10FFFF. */
+function isXml10Text(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) return false;
+
+    const allowed =
+      codePoint === 0x09
+      || codePoint === 0x0a
+      || codePoint === 0x0d
+      || (codePoint >= 0x20 && codePoint <= 0xd7ff)
+      || (codePoint >= 0xe000 && codePoint <= 0xfffd)
+      || (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+
+    if (!allowed) return false;
+  }
+
+  return true;
+}
 
 export function classifyMerchantText(value: string | null): TextReadiness {
   if (value === null || value.trim().length === 0) return "MISSING";
-  if (UNSERIALIZABLE_TEXT.test(value)) return "MALFORMED";
+  if (!isXml10Text(value)) return "MALFORMED";
   return "READY";
 }
 
