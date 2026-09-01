@@ -217,9 +217,8 @@ function withCode(code: number): string {
 }
 
 /**
- * MALFORMED means unserializable, not ugly. A control character or a lone surrogate cannot be
- * escaped into valid XML, so a feed carrying one is broken for every record after it, which is why
- * it is worth counting before anyone builds the serializer.
+ * MALFORMED means XML-unserializable, not ugly. XML-illegal code points and lone surrogates cannot
+ * be escaped into valid XML, while XML-legal characters such as U+007F remain READY.
  */
 test("M1 text readiness separates missing copy from copy a feed cannot serialize", () => {
   assert.equal(classifyMerchantText("Ao so mi LA"), "READY");
@@ -228,7 +227,7 @@ test("M1 text readiness separates missing copy from copy a feed cannot serialize
 
   assert.equal(classifyMerchantText(withCode(0x00)), "MALFORMED", "NUL cannot be escaped into XML");
   assert.equal(classifyMerchantText(withCode(0x1b)), "MALFORMED", "nor an escape character");
-  assert.equal(classifyMerchantText(withCode(0x7f)), "MALFORMED", "nor DEL");
+  assert.equal(classifyMerchantText(withCode(0x7f)), "READY", "DEL is XML-legal");
   assert.equal(classifyMerchantText(withCode(0xd83d)), "MALFORMED", "nor a lone high surrogate");
   assert.equal(classifyMerchantText(withCode(0xdc55)), "MALFORMED", "nor a lone low surrogate");
 
@@ -263,7 +262,6 @@ test("M1 catalog facts are counted only for emittable records", () => {
     "the out-of-stock record is still Merchant-ready: it simply carries out_of_stock",
   );
 });
-
 
 /**
  * The exact boundary of what the report may echo.
