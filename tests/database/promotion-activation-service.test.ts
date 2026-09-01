@@ -35,9 +35,17 @@ async function seedCatalog() {
     `${P}-prod`, SHOP, `${P}-prod-ext`, `${P}-prod-slug`,
   );
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "VariantMirror" ("id","pancakeVariationId","productId","syncedAt","createdAt","updatedAt")
-     VALUES ($1,$2,$3,NOW(),NOW(),NOW())`,
-    `${P}-v1`, `${P}-v1-ext`, `${P}-prod`,
+    `INSERT INTO "VariantMirror"
+       ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,NOW(),NOW(),NOW())`,
+    `${P}-v1`, `${P}-v1-ext`, `${P}-prod`, 500_000,
+  );
+}
+
+async function setBasePrice(variantSuffix: string, price: number | null) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "VariantMirror" SET "pancakeRetailPrice" = $2 WHERE "id" = $1`,
+    `${P}-${variantSuffix}`, price,
   );
 }
 
@@ -364,4 +372,135 @@ test("P4 an unknown campaign fails closed without advancing the revision", async
 
   assert.deepEqual(result, { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } });
   assert.equal(await revision(), before);
+});
+
+/* ------------------------------------------------- current affected-variant money at activation */
+
+/**
+ * Activation is the moment a campaign becomes able to charge someone, so it has to be checked
+ * against the money it would actually produce — not only against its own definition. A fixed price
+ * at or above a covered variant's current base discounts nothing; publishing it puts a campaign in
+ * front of buyers that can only ever report `PROMOTION_INVALID` at runtime.
+ *
+ * The check runs through the central pricing authority rather than a second comparison here, so
+ * activation and the storefront cannot disagree about what counts as a discount.
+ */
+test("P4 a fixed price that is not below a covered variant's current base is refused at activation", async () => {
+  await draft("a", false);
+  await setBasePrice("v1", 400_000);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(500_000) },
+  });
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  assert.equal(await revision(), before);
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).isEnabled,
+    false,
+  );
+});
+
+/** A percentage whose rounding lands back on the base is the same mistake in a different shape. */
+test("P4 a percentage that rounds away to no discount is refused at activation", async () => {
+  await draft("a", false);
+  // 1% of 1 VND rounds to 1 VND: the effective price equals the base, so nothing is discounted.
+  await setBasePrice("v1", 1);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { percentageValue: 1 },
+  });
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+});
+
+/**
+ * A variant whose mirrored base is unusable is a catalog problem, not a campaign defect, and the
+ * accepted runtime contract is that healthy siblings keep their promotion. Activation therefore
+ * tolerates it as long as the campaign still discounts something — otherwise a single bad mirror row
+ * would make a whole product unpublishable, and U10c's per-variant health would have nothing to do.
+ */
+test("P4 an unusable base on one variant does not block a campaign that still discounts others", async () => {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VariantMirror"
+       ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,NULL,NOW(),NOW(),NOW())`,
+    `${P}-v2`, `${P}-v2-ext`, `${P}-prod`,
+  );
+  await draft("a");
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
+
+  assert.equal(result.ok, true, "the sibling with a usable base still takes the promotion");
+});
+
+test("P4 a campaign that can discount no covered variant at all is refused", async () => {
+  await setBasePrice("v1", null);
+  await draft("a");
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
+
+  assert.equal(result.ok, false, "a campaign that can charge nobody anything is not publishable");
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  assert.equal(await revision(), before);
+});
+
+/* ------------------------------------------------------------------ catalog facts under the lock */
+
+/**
+ * The revision lock serializes promotion mutations against each other, but catalog sync does not
+ * take it. P4 asks for the mutation to lock campaign -> owning products -> needed variants and
+ * decide on facts that cannot move underneath it.
+ *
+ * A competing catalog write is simulated on its own connection: it takes the variant row lock and
+ * then drops the base price to a value the campaign's fixed price no longer beats. If publish
+ * decided before locking that row, it would enable a campaign against a base that no longer exists.
+ */
+test("P4 a publish cannot decide on catalog facts a concurrent sync is changing", async () => {
+  await draft("a", false);
+  await setBasePrice("v1", 500_000);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(450_000) },
+  });
+
+  const sync = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  let syncCommitted = false;
+
+  try {
+    const catalogWrite = sync.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "VariantMirror" WHERE "id" = ${`${P}-v1`} FOR UPDATE`;
+      await tx.$queryRaw`SELECT pg_sleep(0.5)::text`;
+      // The base falls below the campaign's fixed price: it can no longer discount anything.
+      await tx.$executeRaw`
+        UPDATE "VariantMirror" SET "pancakeRetailPrice" = 400000 WHERE "id" = ${`${P}-v1`}
+      `;
+      syncCommitted = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const publish = publishPromotionCampaign({
+      campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN,
+    });
+
+    const [, result] = await Promise.all([catalogWrite, publish]);
+
+    assert.equal(syncCommitted, true);
+    assert.equal(
+      result.ok,
+      false,
+      "publish must observe the committed base price, not the one it read before the sync",
+    );
+    assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  } finally {
+    await sync.$disconnect();
+  }
 });

@@ -146,8 +146,12 @@ function splitsSurrogatePair(value: string, index: number): boolean {
  * Copy naming.
  *
  * The suffix always survives, because it is what tells an admin which record they are looking at;
- * the source name is what gets shortened. Truncation never splits a surrogate pair and never leaves
- * a trailing space in front of the suffix, so repeated copies stay storable and deterministic.
+ * the source name is what gets shortened.
+ *
+ * The order is normative and fixed: normalize the source, reserve the suffix budget, truncate
+ * surrogate-safely, append. Nothing re-trims the retained prefix afterwards — a second trim there
+ * shortens the result by a variable amount, so two sources differing only in where their spaces
+ * fall would produce names of different lengths from the same budget.
  */
 export function buildCopyCampaignName(sourceName: string): string {
   const source = sourceName.trim();
@@ -158,5 +162,5 @@ export function buildCopyCampaignName(sourceName: string): string {
   let cut = available;
   if (splitsSurrogatePair(source, cut)) cut -= 1;
 
-  return `${source.slice(0, cut).trimEnd()}${COPY_NAME_SUFFIX}`;
+  return `${source.slice(0, cut)}${COPY_NAME_SUFFIX}`;
 }

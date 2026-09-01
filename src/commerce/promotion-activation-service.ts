@@ -16,6 +16,18 @@
  * Serializing every effective mutation is a deliberate throughput trade. Promotion publishes are
  * rare administrative actions, and correctness under concurrency is worth far more here than
  * parallelism.
+ *
+ * The revision lock alone is not enough, because catalog sync never takes it. A coverage-validating
+ * mutation therefore also locks, in one fixed order, the campaign row, then its owning product
+ * rows, then the variant rows the expansion probe produced, and re-reads every fact it decides on
+ * *after* holding those locks. The order is fixed so concurrent mutations cannot deadlock against
+ * each other, and each set is taken with `ORDER BY "id"` so two callers with overlapping sets queue
+ * rather than cross.
+ *
+ * That boundary has a known limit worth stating rather than implying: `FOR UPDATE` cannot lock a row
+ * that does not exist yet, so a variant inserted for an already-locked product during validation is
+ * not covered by it. Locking the owning product row is the mitigation — a sync that adds a variant
+ * touches its product — and per-variant runtime health is what catches whatever still slips through.
  */
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
@@ -32,7 +44,11 @@ import {
   buildCopyCampaignName,
   deriveCampaignLifecycle,
 } from "./promotion-campaign-lifecycle.ts";
-import type { PromotionDiscountType } from "./promotion-pricing.ts";
+import {
+  resolvePromotionPricing,
+  type ApplicablePromotionCampaign,
+  type PromotionDiscountType,
+} from "./promotion-pricing.ts";
 
 /**
  * Coverage-validating writes expand PRODUCT targets to their current variants. The bound protects
@@ -48,6 +64,8 @@ export type ActivationFailure =
   | { reason: "ILLEGAL_TRANSITION"; from: string }
   | { reason: "INVALID_CAMPAIGN"; errors: readonly CampaignActivationError[] }
   | { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" }
+  /** No currently covered variant would actually be discounted by this campaign. */
+  | { reason: "NO_EFFECTIVE_DISCOUNT"; invalidVariantIds: readonly string[] }
   | { reason: "OVERLAPPING_CAMPAIGN"; conflictingCampaignIds: readonly string[] };
 
 export type ActivationOutcome =
@@ -122,6 +140,103 @@ async function expandCoverage(
   const covered = new Set<string>([...directVariantIds, ...owned.map((variant) => variant.id)]);
   // Probing one past the bound is what lets this report the limit instead of silently truncating.
   return covered.size > MAX_EXPANDED_VARIANTS_PER_CAMPAIGN ? null : [...covered];
+}
+
+/**
+ * Locks a set of rows in one deterministic order.
+ *
+ * `ORDER BY "id"` is what keeps two callers holding overlapping sets from crossing: they queue on
+ * the same first row instead of each holding what the other still needs.
+ */
+async function lockRows(
+  tx: Tx,
+  table: "PromotionCampaign" | "ProductMirror" | "VariantMirror",
+  ids: readonly string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  await tx.$queryRawUnsafe(
+    `SELECT "id" FROM "${table}" WHERE "id" = ANY($1::text[]) ORDER BY "id" FOR UPDATE`,
+    [...ids].sort(),
+  );
+}
+
+/** Owning products of a campaign's targets: the named products, plus owners of the named variants. */
+async function owningProductIds(
+  tx: Tx,
+  targets: readonly { productId: string | null; variantId: string | null }[],
+): Promise<string[]> {
+  const named = targets.flatMap((t) => (t.productId === null ? [] : [t.productId]));
+  const variantIds = targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
+  const owners = variantIds.length === 0
+    ? []
+    : await tx.variantMirror.findMany({
+        where: { id: { in: variantIds } },
+        select: { productId: true },
+      });
+  return [...new Set([...named, ...owners.map((variant) => variant.productId)])];
+}
+
+type CandidateMoney = Readonly<{
+  discountType: "PERCENTAGE" | "FIXED_PRICE";
+  percentageValue: number | null;
+  fixedPriceVnd: bigint | null;
+}>;
+
+/**
+ * Runs the campaign's money rule over every variant it currently covers, through the central pricing
+ * authority rather than a comparison written here — activation and the storefront must not be able
+ * to disagree about what counts as a discount.
+ *
+ * A variant whose mirrored base is unusable is tolerated. That is catalog drift, not a campaign
+ * defect, and the accepted runtime contract keeps healthy siblings discounted while only the
+ * offending variant loses its promotion; refusing here would let one bad mirror row block a whole
+ * product, and would leave per-variant health with nothing to do. A variant whose base *is* usable
+ * but which the campaign still fails to discount is a mis-specified campaign, and is refused.
+ */
+async function findVariantsTheCampaignCannotDiscount(
+  tx: Tx,
+  candidate: CandidateMoney,
+  coveredVariantIds: readonly string[],
+  now: Date,
+): Promise<{ invalid: string[]; discounted: number }> {
+  if (coveredVariantIds.length === 0) return { invalid: [], discounted: 0 };
+
+  const variants = await tx.variantMirror.findMany({
+    where: { id: { in: [...coveredVariantIds] } },
+    select: { id: true, pancakeRetailPrice: true },
+  });
+
+  // The window is deliberately dropped. Activation asks whether this campaign *could* discount these
+  // variants, not whether it is running at this instant: a Scheduled campaign must be validated
+  // before its window opens.
+  const applicable: ApplicablePromotionCampaign = {
+    id: "candidate",
+    name: "candidate",
+    kind: "PROMOTION",
+    discountType: candidate.discountType,
+    percentageValue: candidate.percentageValue,
+    fixedPriceVnd: candidate.fixedPriceVnd,
+    startsAt: null,
+    endsAt: null,
+  };
+
+  const invalid: string[] = [];
+  let discounted = 0;
+  for (const variant of variants) {
+    const pricing = resolvePromotionPricing({
+      basePriceVnd: variant.pancakeRetailPrice,
+      campaigns: [applicable],
+      now,
+    });
+    if (pricing.isDiscounted) {
+      discounted += 1;
+      continue;
+    }
+    if (pricing.reason === "BASE_PRICE_UNAVAILABLE") continue;
+    invalid.push(variant.id);
+  }
+
+  return { invalid, discounted };
 }
 
 function windowsOverlap(
@@ -204,6 +319,14 @@ async function validateEffectiveState(
   candidate: CandidateState,
   now: Date,
 ): Promise<ActivationFailure | null> {
+  // Owning products, then the variants the probe finds. The caller has already locked the campaign
+  // row; everything below is read after these locks are held, so catalog sync cannot move a fact
+  // between validation and commit.
+  await lockRows(tx, "ProductMirror", await owningProductIds(tx, candidate.targets));
+  const probe = await expandCoverage(tx, candidate.targets);
+  if (probe === null) return { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" };
+  await lockRows(tx, "VariantMirror", probe);
+
   const variantOwnerProductIds = new Map<string, string>();
   const targetedVariantIds = candidate.targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
   if (targetedVariantIds.length > 0) {
@@ -218,12 +341,19 @@ async function validateEffectiveState(
   const validation = validateCampaignForActivation({ ...candidate, now, variantOwnerProductIds });
   if (!validation.ok) return { reason: "INVALID_CAMPAIGN", errors: validation.errors };
 
+  // Re-expanded under the locks. The probe above decided which rows to lock; this is the coverage
+  // the decision is actually made on, and it cannot move before commit.
   const coverage = await expandCoverage(tx, candidate.targets);
   if (coverage === null) return { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" };
 
   const conflicting = await findOverlappingCampaigns(tx, campaignId, candidate, coverage);
   if (conflicting.length > 0) {
     return { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: conflicting };
+  }
+
+  const money = await findVariantsTheCampaignCannotDiscount(tx, candidate, coverage, now);
+  if (money.invalid.length > 0 || money.discounted === 0) {
+    return { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: money.invalid };
   }
 
   return null;
@@ -250,6 +380,7 @@ export async function publishPromotionCampaign({
 
   return client.$transaction(async (tx) => {
     const currentRevision = await lockRevision(tx);
+    await lockRows(tx, "PromotionCampaign", [campaignId]);
 
     const campaign = await tx.promotionCampaign.findUnique({
       where: { id: campaignId },

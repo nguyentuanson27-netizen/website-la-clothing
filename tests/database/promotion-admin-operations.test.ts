@@ -57,9 +57,12 @@ async function seedProduct(suffix: string, variantCount: number) {
 
 async function addVariants(suffix: string, from: number, to: number) {
   if (to < from) return;
+  // A usable base price is part of the fixture, not decoration: activation refuses a campaign that
+  // cannot discount anything, so a variant with no mirrored price is not publishable.
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "VariantMirror" ("id","pancakeVariationId","productId","syncedAt","createdAt","updatedAt")
-     SELECT $1 || i, $1 || i || '-ext', $2, NOW(), NOW(), NOW()
+    `INSERT INTO "VariantMirror"
+       ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     SELECT $1 || i, $1 || i || '-ext', $2, 500000, NOW(), NOW(), NOW()
      FROM generate_series($3::int, $4::int) AS i`,
     `${P}-${suffix}-v`, `${P}-${suffix}`, from, to,
   );
