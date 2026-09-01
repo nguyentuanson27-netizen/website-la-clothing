@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -151,4 +152,36 @@ test("W3 the audit rejects a malformed shop scope before touching the database",
       `${shopId} must be rejected`,
     );
   }
+});
+
+/**
+ * The audit's documented contract is `DATABASE_URL=... PANCAKE_SHOP_ID=... pnpm money:audit`.
+ *
+ * That matters beyond tidiness: W3 evidence is deliberately gathered *without* approved external
+ * context, so an audit that cannot run until someone supplies a live API key is an audit that
+ * cannot be run by the person who needs it. This spawns the real script with the key removed from
+ * the environment rather than asserting against the import graph, because only the process proves
+ * what the process requires.
+ */
+test("W3 the mirror-only audit runs with a database and a shop id, and no API key", async () => {
+  const { PANCAKE_API_KEY: _removed, ...env } = process.env;
+
+  const audit = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/mirrored-money-audit.ts"],
+    { env, encoding: "utf8", cwd: process.cwd() },
+  );
+
+  assert.equal(
+    audit.status,
+    0,
+    `the audit must not require PANCAKE_API_KEY; stderr was: ${audit.stderr}`,
+  );
+  assert.match(audit.stdout, /MIRRORED_MONEY_AUDIT_BEGIN/);
+  assert.match(audit.stdout, /MIRRORED_MONEY_AUDIT_END/);
+  assert.equal(
+    audit.stderr.includes("PANCAKE_API_KEY"),
+    false,
+    "and it must not complain about a key it does not use",
+  );
 });

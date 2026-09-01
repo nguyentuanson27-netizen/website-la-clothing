@@ -11,10 +11,12 @@
 import { readMirroredVariantMoneyRows } from "../src/commerce/mirrored-money-audit-repository.ts";
 import { summarizeMirroredMoney } from "../src/commerce/mirrored-money-audit.ts";
 import { prisma } from "../src/db/prisma.ts";
-import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
+import { readPancakeShopId } from "../src/integrations/pancake/config.ts";
 
 try {
-  const { shopId } = readPancakeConfig();
+  // Shop id only. This audit reads the local mirror and never calls Pancake, so requiring the API
+  // key would make evidence-gathering depend on approved external context it does not use.
+  const shopId = readPancakeShopId();
   const summary = summarizeMirroredMoney(await readMirroredVariantMoneyRows(shopId));
 
   console.log("MIRRORED_MONEY_AUDIT_BEGIN");
