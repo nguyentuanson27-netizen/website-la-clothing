@@ -195,6 +195,30 @@ test("P3 Copy at 119 and 120 code units both stay valid and deterministic", () =
   }
 });
 
+/**
+ * The normative algorithm is: normalize the source, reserve the suffix budget, truncate
+ * surrogate-safely, append the suffix. Nothing trims the retained prefix *after* the budget has
+ * been computed — a second trim there silently shortens the result by a variable amount, so two
+ * sources that differ only in where their spaces fall produce names of different lengths.
+ *
+ * This fixture puts the cut point immediately after an internal space, which is the only place the
+ * two algorithms disagree.
+ */
+test("P3 Copy does not re-trim the retained prefix after the budget is computed", () => {
+  const available = MAX_CAMPAIGN_NAME_LENGTH - " - Bản sao".length;
+  // The character at the cut boundary is a space, and there is more source after it to truncate.
+  const source = `${"a".repeat(available - 1)} ${"b".repeat(20)}`;
+
+  const copied = buildCopyCampaignName(source);
+
+  assert.equal(
+    copied,
+    `${"a".repeat(available - 1)}  - Bản sao`,
+    "the retained prefix is exactly the budgeted slice, trailing space and all",
+  );
+  assert.equal(copied.length, MAX_CAMPAIGN_NAME_LENGTH, "the budget is used in full");
+});
+
 test("P3 Copy never splits a surrogate pair when it truncates", () => {
   const nonBmp = "\u{1D49C}";
   // The leading ASCII character puts the pairs on odd offsets, so the truncation point lands

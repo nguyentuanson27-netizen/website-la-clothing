@@ -181,6 +181,31 @@ test("P4 a variant target already covered by a product target in the same campai
   );
 });
 
+/**
+ * A closed window is not merely a useless activation. Enabling it writes an `enabledAt` and lands
+ * the campaign in a terminal Ended state that only Copy escapes, so the mistake is not recoverable
+ * by simply publishing again — which is why it is refused rather than allowed as a no-op.
+ */
+test("P4 a window that has already closed cannot be activated", () => {
+  const closed = new Date(NOW.getTime() - 1);
+  assert.deepEqual(
+    validateCampaignForActivation(input({ startsAt: null, endsAt: closed })),
+    { ok: false, errors: ["WINDOW_ALREADY_ENDED"] },
+  );
+  // Half-open: ending exactly now means it is already over.
+  assert.deepEqual(
+    validateCampaignForActivation(input({ startsAt: null, endsAt: NOW })),
+    { ok: false, errors: ["WINDOW_ALREADY_ENDED"] },
+  );
+  // One millisecond of window left is still a window.
+  assert.deepEqual(
+    validateCampaignForActivation(input({ startsAt: null, endsAt: new Date(NOW.getTime() + 1) })),
+    { ok: true },
+  );
+  // An unbounded end never expires.
+  assert.deepEqual(validateCampaignForActivation(input({ startsAt: null, endsAt: null })), { ok: true });
+});
+
 test("P4 every failing rule is reported at once so an admin fixes one form, not five", () => {
   const result = validateCampaignForActivation(
     input({ name: "  ", percentageValue: 0, startsAt: END, endsAt: START, targets: [] }),
