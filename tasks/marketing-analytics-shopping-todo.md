@@ -10,7 +10,7 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 
 - [ ] **O1 Google Ads value:** approve merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish.
 - [ ] **O2 Merchant market:** confirm initial country/language/currency; proposed Vietnam / Vietnamese / VND.
-- [ ] **O3 Apparel facts:** confirm whether emitted standalone inventory can truthfully use `gender=male`, `age_group=adult`, `condition=new`; otherwise add product-owned facts before Merchant activation.
+- [x] **O3 Apparel facts — policy decision resolved by ADR 0007:** Merchant v1 shop defaults are `gender=male`, `age_group=adult`, `condition=new`; standalone products may override each fact through local website-owned product data. Runtime persistence/validation/admin/effective-fact resolution remains open under M3 and Merchant activation stays blocked until that implementation is verified.
 - [ ] **O4 Vendor config:** provide/review GTM container, GA4 Measurement ID, Google Ads conversion ID/label, TikTok Pixel ID.
 
 ## Review-resolution gates
@@ -148,7 +148,7 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 - [ ] Prove external-ID durability by provider contract, controlled repeated full-catalog resync evidence + repository reconciliation tests, or equivalent approved history.
 - [ ] Audit SKU-as-MPN presence/uniqueness/stability.
 - [ ] Every composite projection becomes `COMPOSITE_DEFERRED` in v1.
-- [ ] Audit price/media/content/apparel coverage with bounded non-PII diagnostics.
+- [ ] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready.
 
 ### M2 Standalone variant deep link + canonical/query contract
 - [ ] Implement `/shop/<slug>?variant=<pancakeVariationId>` only for valid current standalone options.
@@ -166,9 +166,13 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 
 ### M3 Standalone Merchant mapper
 - [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN.
-- [ ] Map canonical price, availability, trusted image, description, exact deep link, color/size, current required variant fields, O2/O3 values.
+- [ ] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides.
+- [ ] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default.
+- [ ] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output.
+- [ ] Map canonical price, availability, trusted image, description, exact deep link, color/size, current required variant fields and effective O2/O3 values.
 - [ ] Structurally valid zero-stock offers remain `out_of_stock`.
-- [ ] Unsafe/unresolved/composite records excluded with bounded reason.
+- [ ] Malformed/unavailable apparel policy or overrides exclude the offer with a bounded `APPAREL_FACT_UNRESOLVED`-class reason; unsafe/unresolved/composite records remain excluded with bounded reasons.
+- [ ] RED/GREEN tests cover inherited defaults, each independent override, mixed overrides, clearing back to inheritance, invalid values, Pancake resync preservation, and fail-closed unresolved apparel facts.
 
 ### M4 Cached/single-flight serializer + bounded public route + failure backoff
 - [ ] GET-only `/feeds/google-merchant` with safe standards-aware serialization.
