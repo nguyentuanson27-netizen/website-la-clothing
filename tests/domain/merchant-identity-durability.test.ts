@@ -289,7 +289,7 @@ test("durability evidence error messages never leak passwords, hosts, or full UR
       cwd: process.cwd(),
       encoding: "utf8",
       env: {
-        PATH: process.env.PATH,
+        ...process.env,
         CI: "false",
         GITHUB_ACTIONS: "false",
         DATABASE_URL: sensitiveUrl,
