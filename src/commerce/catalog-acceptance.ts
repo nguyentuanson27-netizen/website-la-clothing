@@ -13,6 +13,7 @@ type CatalogAcceptanceContent = Readonly<{
 
 type CatalogAcceptanceVariant = Readonly<{
   id: string;
+  pancakeVariationId: string;
   color: string | null;
   size: string | null;
   sellableStock: number;

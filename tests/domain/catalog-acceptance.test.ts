@@ -35,6 +35,7 @@ test("P17 acceptance report passes a fully reviewed public product without expos
         variants: [
           {
             id: "variation-1",
+            pancakeVariationId: "pancake-variation-1",
             color: null,
             size: "M",
             sellableStock: 3,
@@ -82,6 +83,7 @@ test("P17 acceptance report blocks flat-mirror readiness when Pancake has compos
         variants: [
           {
             id: "variation-flat",
+            pancakeVariationId: "pancake-variation-flat",
             color: null,
             size: "M",
             sellableStock: 2,
@@ -143,6 +145,7 @@ test("P17 acceptance report treats an explicitly approved media fallback as read
         variants: [
           {
             id: "variation-fallback",
+            pancakeVariationId: "pancake-variation-fallback",
             color: null,
             size: "M",
             sellableStock: 2,
@@ -176,6 +179,7 @@ test("P17 acceptance report surfaces mapping, media, slug, collection, editorial
         variants: [
           {
             id: "variation-mapping",
+            pancakeVariationId: "pancake-variation-mapping",
             color: null,
             size: null,
             sellableStock: 2,
@@ -194,6 +198,7 @@ test("P17 acceptance report surfaces mapping, media, slug, collection, editorial
         variants: [
           {
             id: "variation-duplicate-a",
+            pancakeVariationId: "pancake-variation-duplicate-a",
             color: null,
             size: "M",
             sellableStock: 1,
@@ -203,6 +208,7 @@ test("P17 acceptance report surfaces mapping, media, slug, collection, editorial
           },
           {
             id: "variation-duplicate-b",
+            pancakeVariationId: "pancake-variation-duplicate-b",
             color: null,
             size: "M",
             sellableStock: 1,
@@ -227,6 +233,7 @@ test("P17 acceptance report surfaces mapping, media, slug, collection, editorial
         variants: [
           {
             id: "variation-price",
+            pancakeVariationId: "pancake-variation-price",
             color: "Black",
             size: "L",
             sellableStock: 2,

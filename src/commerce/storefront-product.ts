@@ -1,5 +1,8 @@
 export type StorefrontVariantFacts = {
+  /** Internal mutation/authorization identity. Never a vendor-facing external id. */
   id: string;
+  /** The external variation identity a selected or committed option refers to. */
+  pancakeVariationId: string;
   color: string | null;
   size: string | null;
   sellableStock: number;
@@ -23,7 +26,13 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
 
 export type StorefrontSelectableOption = Pick<
   StorefrontVariantOption,
-  "id" | "color" | "size" | "price" | "purchasable" | "unavailableReason"
+  | "id"
+  | "pancakeVariationId"
+  | "color"
+  | "size"
+  | "price"
+  | "purchasable"
+  | "unavailableReason"
 >;
 
 type StorefrontPriceFacts = Pick<
@@ -85,8 +94,11 @@ export function getStorefrontResolvedPriceRange(
 export function toStorefrontSelectableOptions(
   options: readonly StorefrontVariantOption[],
 ): StorefrontSelectableOption[] {
-  return options.map(({ id, color, size, price, purchasable, unavailableReason }) => ({
+  return options.map((
+    { id, pancakeVariationId, color, size, price, purchasable, unavailableReason },
+  ) => ({
     id,
+    pancakeVariationId,
     color,
     size,
     price,

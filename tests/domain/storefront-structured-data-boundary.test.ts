@@ -11,6 +11,7 @@ const baseProduct = {
   variants: [
     {
       id: "parent-m",
+      pancakeVariationId: "pancake-parent-m",
       color: null,
       size: "M",
       sellableStock: 0,

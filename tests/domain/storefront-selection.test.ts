@@ -7,6 +7,7 @@ import { buildStorefrontVariantOptions } from "../../src/commerce/storefront-pro
 const options = buildStorefrontVariantOptions([
   {
     id: "black-m",
+    pancakeVariationId: "pancake-black-m",
     color: "Black",
     size: "M",
     sellableStock: 3,
@@ -15,6 +16,7 @@ const options = buildStorefrontVariantOptions([
   },
   {
     id: "black-l-sold-out",
+    pancakeVariationId: "pancake-black-l-sold-out",
     color: "Black",
     size: "L",
     sellableStock: 0,
@@ -23,6 +25,7 @@ const options = buildStorefrontVariantOptions([
   },
   {
     id: "stone-m",
+    pancakeVariationId: "pancake-stone-m",
     color: "Stone",
     size: "M",
     sellableStock: 2,
@@ -31,6 +34,7 @@ const options = buildStorefrontVariantOptions([
   },
   {
     id: "stone-l",
+    pancakeVariationId: "pancake-stone-l",
     color: "Stone",
     size: "L",
     sellableStock: 1,
@@ -39,6 +43,7 @@ const options = buildStorefrontVariantOptions([
   },
   {
     id: "olive-xl-unresolved",
+    pancakeVariationId: "pancake-olive-xl-unresolved",
     color: "Olive",
     size: "XL",
     sellableStock: 1,
@@ -90,6 +95,7 @@ test("storefront selection resolves a size-only product without requiring color"
   const sizeOnlyOptions = buildStorefrontVariantOptions([
     {
       id: "size-only-m",
+      pancakeVariationId: "pancake-size-only-m",
       color: null,
       size: "M",
       sellableStock: 2,
@@ -98,6 +104,7 @@ test("storefront selection resolves a size-only product without requiring color"
     },
     {
       id: "size-only-l",
+      pancakeVariationId: "pancake-size-only-l",
       color: null,
       size: "L",
       sellableStock: 1,
@@ -136,6 +143,7 @@ test("storefront selection keeps another purchasable color reachable when the cu
   const disjointOptions = buildStorefrontVariantOptions([
     {
       id: "black-small",
+      pancakeVariationId: "pancake-black-small",
       color: "Black",
       size: "S",
       sellableStock: 1,
@@ -144,6 +152,7 @@ test("storefront selection keeps another purchasable color reachable when the cu
     },
     {
       id: "stone-large",
+      pancakeVariationId: "pancake-stone-large",
       color: "Stone",
       size: "L",
       sellableStock: 1,
@@ -165,11 +174,11 @@ test("storefront selection keeps another purchasable color reachable when the cu
 
 test("storefront selection sorts sizes according to standard clothing order (S, M, L, XL, XXL)", () => {
   const shuffledOptions = buildStorefrontVariantOptions([
-    { id: "v-l", color: null, size: "L", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
-    { id: "v-m", color: null, size: "M", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
-    { id: "v-xl", color: null, size: "XL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
-    { id: "v-s", color: null, size: "S", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
-    { id: "v-xxl", color: null, size: "XXL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-l", pancakeVariationId: "pancake-v-l", color: null, size: "L", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-m", pancakeVariationId: "pancake-v-m", color: null, size: "M", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-xl", pancakeVariationId: "pancake-v-xl", color: null, size: "XL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-s", pancakeVariationId: "pancake-v-s", color: null, size: "S", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
+    { id: "v-xxl", pancakeVariationId: "pancake-v-xxl", color: null, size: "XXL", sellableStock: 1, retailPrice: 500_000, retailPriceAfterDiscount: 500_000 },
   ]);
 
   const state = deriveStorefrontSelection(shuffledOptions, { color: null, size: null });
