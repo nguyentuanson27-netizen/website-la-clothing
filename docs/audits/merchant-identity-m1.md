@@ -18,7 +18,7 @@ can prove. The identifier lifetime evidence Merchant activation requires does no
 | Does the mirror reconcile rows by external id rather than slug/position/local id? | **Proven** — see below |
 | Do upstream objects keep those ids for their lifetime? | **BLOCKED** |
 | Does every emittable record have a price the website would publish? | **Runnable** — `PRICE_UNRESOLVED` counted |
-| Is stock status known? | **Runnable** — `IN_STOCK` / `OUT_OF_STOCK`; out-of-stock is a fact, not an exclusion |
+| Is stock status known? | **Runnable** — valid positive/zero stock is `IN_STOCK` / `OUT_OF_STOCK`; unsafe source data is `AVAILABILITY_UNRESOLVED` |
 | Does every emittable record have a trusted image? | **Runnable** — `MISSING` / `UNTRUSTED` counted |
 | Is title and published description text serializable into a feed? | **Runnable** — `MALFORMED` counted |
 | Is a GTIN available? | **Not asserted, by design** |
@@ -51,11 +51,12 @@ Beyond identity, the audit counts the facts an offer needs, for emittable record
 | Price | `resolveStorefrontPrice` | An audit with its own definition of a usable price would report a readiness the storefront does not share. That rule is still equality-gated on the mirrored Pancake fields pending **W3**, so `PRICE_UNRESOLVED` is exactly the number that decides whether the gate can move. |
 | Media | `parseTrustedProductImageUrl` | An untrusted host is not a Merchant image, however well-formed the URL. |
 | Description | `ProductContent.status === "PUBLISHED"` | A Draft is work in progress; auditing it would overstate readiness. |
-| Availability | Validated sum of `WarehouseStock.quantity` | Reported, never an exclusion: an out-of-stock offer is valid and simply carries `out_of_stock`. Every source quantity is validated before aggregation; if any source row is non-finite or negative, the availability fact fails closed instead of allowing another warehouse to hide it in a positive sum. Zero remains a valid `OUT_OF_STOCK` fact. |
+| Availability | Validated `WarehouseStock.quantity` sources, then aggregate | Every source quantity is validated before aggregation. Valid positive stock is `IN_STOCK`; a real zero total is valid `OUT_OF_STOCK` and may later be emitted as `out_of_stock`. If any source row is non-finite or negative, the fact is `AVAILABILITY_UNRESOLVED` rather than fabricated as zero stock. M3 must exclude that unresolved row with a bounded reason. |
 | Title / description text | XML 1.0 serializability | `MALFORMED` means at least one code point is outside the XML 1.0 `Char` production (including U+FFFE/U+FFFF) or a surrogate is unpaired. XML-legal characters such as U+007F remain `READY`. Not a style judgement. |
 
-`merchantFactsReady` counts emittable records with a publishable price, a trusted image, and
-serializable title and description. Availability is excluded from it on purpose.
+`merchantFactsReady` counts emittable records with a publishable price, a trusted image, serializable
+title/description **and a resolved availability fact**. A valid zero-stock row still counts because
+`out_of_stock` is a real Merchant state; `AVAILABILITY_UNRESOLVED` does not count as ready.
 
 ### What the report may echo
 
@@ -119,7 +120,9 @@ could make them true, and a test pins that.
 
 - **U12 / M2** may not treat this as accepted M1 evidence. The deep link depends on a variation id
   being a durable public address; that is exactly what is unproven.
-- **U25 / M3** must not emit offers built on these identifiers until the gate clears.
+- **U25 / M3** must not emit offers built on these identifiers until the gate clears. When M3 is
+  implemented, a valid zero-stock row may map to `out_of_stock`, while `AVAILABILITY_UNRESOLVED`
+  must be excluded with a bounded reason rather than coerced into an availability value.
 - **Gate M** stays blocked independently of anything else on the Merchant path.
 - **U32** must not read `pancakeBarcode` as a GTIN on the strength of this audit.
 
