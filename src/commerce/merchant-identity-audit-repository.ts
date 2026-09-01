@@ -13,6 +13,13 @@ export const MAX_AUDITED_VARIATIONS = 50_000;
 
 export class MerchantIdentityAuditError extends Error {}
 
+function aggregateWarehouseStock(quantities: readonly number[]): number {
+  for (const quantity of quantities) {
+    if (!Number.isFinite(quantity) || quantity < 0) return Number.NaN;
+  }
+  return quantities.reduce((total, quantity) => total + quantity, 0);
+}
+
 export async function readMerchantIdentityRows(
   pancakeShopId: number,
 ): Promise<MerchantIdentityRow[]> {
@@ -68,7 +75,9 @@ export async function readMerchantIdentityRows(
       row.isPresent && row.isActive && row.product.isPresent && row.product.isActive,
     retailPrice: row.pancakeRetailPrice,
     retailPriceAfterDiscount: row.pancakeRetailPriceAfterDiscount,
-    stockQuantity: row.warehouseStocks.reduce((total, stock) => total + stock.quantity, 0),
+    // Reject the whole availability fact when any source row is invalid; summing first would let a
+    // positive warehouse hide a negative mirrored quantity (for example -3 + 4 => 1).
+    stockQuantity: aggregateWarehouseStock(row.warehouseStocks.map((stock) => stock.quantity)),
     primaryImageUrl: row.product.primaryImageUrl,
     title: row.product.name,
     publishedDescription: row.product.content?.status === "PUBLISHED"
