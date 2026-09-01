@@ -34,7 +34,7 @@ test("storefront catalog exposes only present active products for the configured
   const visibleProduct = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
-      pancakeProductId: "storefront-visible-product",
+      pancakeProductId: "storefront-visible-product-external",
       slug: "storefront-visible-product",
       name: "Visible Product",
       isPresent: true,
@@ -144,6 +144,14 @@ test("storefront catalog exposes only present active products for the configured
   const products = await repository.listProducts({ shopId, limit: 12 });
   assert.equal(products.length, 1);
   assert.equal(products[0]?.slug, "storefront-visible-product");
+  // T4: one card carries product-level external identity, independent of any variant choice, and
+  // never reuses the internal row id or the public slug as that identity.
+  assert.equal(products[0]?.pancakeProductId, "storefront-visible-product-external");
+  assert.notEqual(products[0]?.pancakeProductId, products[0]?.id);
+  assert.ok(
+    products[0]?.variants.every((variant) => variant.pancakeVariationId.length > 0),
+    "every listed variant carries its own variation identity",
+  );
   assert.equal(products[0]?.editorialDescription, "Relaxed tailoring for everyday wear.");
   assert.equal(products[0]?.variants.length, 2);
   assert.equal(products[0]?.variants[0]?.sellableStock, 3);
