@@ -264,15 +264,47 @@ test("M1 catalog facts are counted only for emittable records", () => {
   );
 });
 
-test("M1 the audit reports no personal data", () => {
+
+/**
+ * The exact boundary of what the report may echo.
+ *
+ * It is not "counts and verdicts only": a duplicate report is useless without naming the value that
+ * collides, so identifiers deliberately survive into the diagnostics. What must never survive is
+ * free text — a product title or a description is where a person's name or phone number would end
+ * up, and an audit summary gets pasted into issues.
+ *
+ * Pinned in both directions, because a one-sided assertion would be satisfied by a report that
+ * echoes nothing useful as easily as by one that echoes too much.
+ */
+test("M1 the report echoes colliding identifiers and never free text", () => {
   const summary = summarizeMerchantIdentity([
-    row({ title: "Ao cho Nguyen Van A", publishedDescription: "0912345678" }),
+    row({
+      pancakeVariationId: "v-1",
+      sku: "LA-DUP",
+      title: "Ao cho Nguyen Van A",
+      publishedDescription: "Lien he 0912345678",
+    }),
+    row({
+      pancakeVariationId: "v-2",
+      sku: "LA-DUP",
+      title: "Ao cho Nguyen Van A",
+      publishedDescription: "Lien he 0912345678",
+    }),
   ]);
   const serialized = JSON.stringify(summary);
 
-  // The summary is counts and verdicts. No row text reaches it, so no customer or catalog free text
-  // can leak through an audit report that gets pasted into an issue.
-  for (const leak of ["Nguyen", "0912345678", "Ao cho"]) {
-    assert.equal(serialized.includes(leak), false, `${leak} must not reach the summary`);
+  assert.deepEqual(
+    summary.duplicateSkus,
+    [{ value: "LA-DUP", occurrences: 2 }],
+    "an admin cannot act on a duplicate report that will not say which value collided",
+  );
+  assert.equal(serialized.includes("LA-DUP"), true);
+
+  for (const freeText of ["Nguyen", "0912345678", "Ao cho", "Lien he"]) {
+    assert.equal(
+      serialized.includes(freeText),
+      false,
+      `${freeText} is catalog free text and must never reach the summary`,
+    );
   }
 });
