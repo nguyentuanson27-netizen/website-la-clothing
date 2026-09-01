@@ -22,6 +22,7 @@ function projection(): StorefrontProductProjection {
     options: [
       {
         id: "set-m",
+        pancakeVariationId: "pancake-set-m",
         color: null,
         size: "M",
         price: 790_000,
@@ -32,6 +33,7 @@ function projection(): StorefrontProductProjection {
       },
       {
         id: "shirt-m",
+        pancakeVariationId: "pancake-shirt-m",
         color: null,
         size: "M",
         price: 390_000,
@@ -61,6 +63,7 @@ test("P17 acceptance derives composite projection readiness from persisted proje
         variants: [
           {
             id: "set-m",
+            pancakeVariationId: "pancake-set-m",
             color: null,
             size: "M",
             sellableStock: 2,

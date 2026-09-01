@@ -10,6 +10,7 @@ test("storefront client options omit stock and raw integration price fields", ()
   const [fullOption] = buildStorefrontVariantOptions([
     {
       id: "variant-1",
+      pancakeVariationId: "pancake-variant-1",
       color: "Black",
       size: "M",
       sellableStock: 7,
@@ -22,6 +23,7 @@ test("storefront client options omit stock and raw integration price fields", ()
   assert.deepEqual(toStorefrontSelectableOptions([fullOption]), [
     {
       id: "variant-1",
+      pancakeVariationId: "pancake-variant-1",
       color: "Black",
       size: "M",
       price: 590_000,

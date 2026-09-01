@@ -8,6 +8,7 @@ import type { StorefrontVariantFacts } from "../../src/commerce/storefront-produ
 function variant(id: string, size = "M"): StorefrontVariantFacts {
   return {
     id,
+    pancakeVariationId: `pancake-${id}`,
     color: null,
     size,
     sellableStock: 2,
@@ -21,6 +22,7 @@ const projection: StorefrontProductProjection = {
   options: [
     {
       id: "set-m",
+      pancakeVariationId: "pancake-set-m",
       color: null,
       size: "M",
       price: 590_000,
@@ -31,6 +33,7 @@ const projection: StorefrontProductProjection = {
     },
     {
       id: "shirt-m",
+      pancakeVariationId: "pancake-shirt-m",
       color: null,
       size: "M",
       price: 390_000,

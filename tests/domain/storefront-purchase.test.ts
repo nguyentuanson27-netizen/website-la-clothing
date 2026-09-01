@@ -7,6 +7,7 @@ import type { StorefrontVariantFacts } from "../../src/commerce/storefront-produ
 function variant(overrides: Partial<StorefrontVariantFacts> = {}): StorefrontVariantFacts {
   return {
     id: "variant-available",
+    pancakeVariationId: "pancake-variant-available",
     color: "Black",
     size: "M",
     sellableStock: 3,

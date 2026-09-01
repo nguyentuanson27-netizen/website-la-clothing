@@ -30,6 +30,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
   const options = buildStorefrontVariantOptions([
     {
       id: "available",
+      pancakeVariationId: "pancake-available",
       color: "Black",
       size: "M",
       sellableStock: 3,
@@ -38,6 +39,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
     },
     {
       id: "sold-out",
+      pancakeVariationId: "pancake-sold-out",
       color: "Black",
       size: "L",
       sellableStock: 0,
@@ -46,6 +48,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
     },
     {
       id: "unresolved-price",
+      pancakeVariationId: "pancake-unresolved-price",
       color: "Stone",
       size: "M",
       sellableStock: 2,
@@ -54,6 +57,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
     },
     {
       id: "missing-size",
+      pancakeVariationId: "pancake-missing-size",
       color: "Olive",
       size: null,
       sellableStock: 2,
@@ -62,6 +66,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
     },
     {
       id: "duplicate-a",
+      pancakeVariationId: "pancake-duplicate-a",
       color: "Navy",
       size: "XL",
       sellableStock: 2,
@@ -70,6 +75,7 @@ test("storefront variants fail closed on required size, stock, price, and duplic
     },
     {
       id: "duplicate-b",
+      pancakeVariationId: "pancake-duplicate-b",
       color: "Navy",
       size: "XL",
       sellableStock: 1,
@@ -92,6 +98,7 @@ test("storefront variants allow size-only products when no variant has a color",
   const options = buildStorefrontVariantOptions([
     {
       id: "size-only-m",
+      pancakeVariationId: "pancake-size-only-m",
       color: null,
       size: "M",
       sellableStock: 2,
@@ -100,6 +107,7 @@ test("storefront variants allow size-only products when no variant has a color",
     },
     {
       id: "size-only-l",
+      pancakeVariationId: "pancake-size-only-l",
       color: null,
       size: "L",
       sellableStock: 1,
@@ -121,6 +129,7 @@ test("storefront variants require color consistently when the product has a colo
   const options = buildStorefrontVariantOptions([
     {
       id: "black-m",
+      pancakeVariationId: "pancake-black-m",
       color: "Black",
       size: "M",
       sellableStock: 2,
@@ -129,6 +138,7 @@ test("storefront variants require color consistently when the product has a colo
     },
     {
       id: "missing-color-l",
+      pancakeVariationId: "pancake-missing-color-l",
       color: null,
       size: "L",
       sellableStock: 2,
@@ -145,6 +155,7 @@ test("storefront size-only variants fail closed on duplicate sizes", () => {
   const options = buildStorefrontVariantOptions([
     {
       id: "duplicate-size-a",
+      pancakeVariationId: "pancake-duplicate-size-a",
       color: null,
       size: "M",
       sellableStock: 2,
@@ -153,6 +164,7 @@ test("storefront size-only variants fail closed on duplicate sizes", () => {
     },
     {
       id: "duplicate-size-b",
+      pancakeVariationId: "pancake-duplicate-size-b",
       color: null,
       size: "M",
       sellableStock: 1,
@@ -169,6 +181,7 @@ test("storefront price range keeps resolved sold-out prices separate from purcha
   const options = buildStorefrontVariantOptions([
     {
       id: "sold-out-low",
+      pancakeVariationId: "pancake-sold-out-low",
       color: "Black",
       size: "S",
       sellableStock: 0,
@@ -177,6 +190,7 @@ test("storefront price range keeps resolved sold-out prices separate from purcha
     },
     {
       id: "available-high",
+      pancakeVariationId: "pancake-available-high",
       color: "Stone",
       size: "M",
       sellableStock: 2,
@@ -185,6 +199,7 @@ test("storefront price range keeps resolved sold-out prices separate from purcha
     },
     {
       id: "unresolved",
+      pancakeVariationId: "pancake-unresolved",
       color: "Olive",
       size: "L",
       sellableStock: 2,

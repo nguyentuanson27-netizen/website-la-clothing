@@ -48,6 +48,7 @@ function parseJsonStringArray(value: unknown): string[] {
 
 const productSelection = {
   slug: true,
+  pancakeProductId: true,
   name: true,
   primaryImageUrl: true,
   isPresent: true,
@@ -56,6 +57,7 @@ const productSelection = {
     orderBy: [{ pancakeVariationId: "asc" as const }],
     select: {
       id: true,
+      pancakeVariationId: true,
       isPresent: true,
       isActive: true,
       color: true,
@@ -92,12 +94,14 @@ type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSe
 function toCartProduct(product: SelectedProduct) {
   return {
     slug: product.slug,
+    pancakeProductId: product.pancakeProductId,
     name: product.name,
     primaryImageUrl: product.primaryImageUrl,
     isPresent: product.isPresent,
     isActive: product.isActive,
     variants: product.variants.map((variant) => ({
       id: variant.id,
+      pancakeVariationId: variant.pancakeVariationId,
       isPresent: variant.isPresent,
       isActive: variant.isActive,
       isCompositeComponentAvailable: variant.compositeParents.some(
