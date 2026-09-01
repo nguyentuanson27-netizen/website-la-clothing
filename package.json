@@ -20,6 +20,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "release:check": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/release-readiness.ts",
     "money:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/mirrored-money-audit.ts",
+    "merchant:identity:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/merchant-identity-audit.ts",
     "pancake:contract:discover": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-contract-discover.ts",
     "pancake:contract:verify": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-contract-shape.ts",
     "pancake:catalog:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-catalog-audit.ts",
