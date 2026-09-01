@@ -57,6 +57,8 @@ export type ActivationFailure =
   | { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" }
   /** No currently covered variant would actually be discounted by this campaign. */
   | { reason: "NO_EFFECTIVE_DISCOUNT"; invalidVariantIds: readonly string[] }
+  /** A currently covered variant has no usable mirrored base price. Names the catalog rows to fix. */
+  | { reason: "UNUSABLE_BASE_PRICE"; variantIds: readonly string[] }
   | { reason: "OVERLAPPING_CAMPAIGN"; conflictingCampaignIds: readonly string[] };
 
 export type ActivationOutcome =
@@ -158,19 +160,22 @@ type CandidateMoney = Readonly<{
  * authority rather than a comparison written here — activation and the storefront must not be able
  * to disagree about what counts as a discount.
  *
- * A variant whose mirrored base is unusable is tolerated. That is catalog drift, not a campaign
- * defect, and the accepted runtime contract keeps healthy siblings discounted while only the
- * offending variant loses its promotion; refusing here would let one bad mirror row block a whole
- * product, and would leave per-variant health with nothing to do. A variant whose base *is* usable
- * but which the campaign still fails to discount is a mis-specified campaign, and is refused.
+ * Every current affected variant must come out discounted. An unusable mirrored base fails
+ * activation exactly as a mis-specified discount does; the two are reported apart only because they
+ * point at different things to fix — a catalog row versus the campaign.
+ *
+ * Partial validity is a *post-activation* concept. It covers catalog drift and variants newly
+ * covered after the campaign was enabled, which is what per-variant runtime health reports. It is
+ * not a licence to enable a campaign over a variant that is already unpriceable: that ships a
+ * promotion known to be broken for part of its coverage from the moment it goes live.
  */
 async function findVariantsTheCampaignCannotDiscount(
   tx: Tx,
   candidate: CandidateMoney,
   coveredVariantIds: readonly string[],
   now: Date,
-): Promise<{ invalid: string[]; discounted: number }> {
-  if (coveredVariantIds.length === 0) return { invalid: [], discounted: 0 };
+): Promise<{ invalid: string[]; unusableBase: string[]; discounted: number }> {
+  if (coveredVariantIds.length === 0) return { invalid: [], unusableBase: [], discounted: 0 };
 
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: [...coveredVariantIds] } },
@@ -192,6 +197,7 @@ async function findVariantsTheCampaignCannotDiscount(
   };
 
   const invalid: string[] = [];
+  const unusableBase: string[] = [];
   let discounted = 0;
   for (const variant of variants) {
     const pricing = resolvePromotionPricing({
@@ -203,11 +209,11 @@ async function findVariantsTheCampaignCannotDiscount(
       discounted += 1;
       continue;
     }
-    if (pricing.reason === "BASE_PRICE_UNAVAILABLE") continue;
-    invalid.push(variant.id);
+    if (pricing.reason === "BASE_PRICE_UNAVAILABLE") unusableBase.push(variant.id);
+    else invalid.push(variant.id);
   }
 
-  return { invalid, discounted };
+  return { invalid, unusableBase, discounted };
 }
 
 function windowsOverlap(
@@ -344,6 +350,14 @@ export async function publishPromotionCampaign({
     }
 
     const money = await findVariantsTheCampaignCannotDiscount(tx, campaign, coverage, now);
+    // Reported before the discount mismatch: an unusable base is a catalog fact the admin must fix
+    // first, and surfacing it as a campaign problem would send them to the wrong screen.
+    if (money.unusableBase.length > 0) {
+      return {
+        ok: false,
+        failure: { reason: "UNUSABLE_BASE_PRICE", variantIds: money.unusableBase },
+      } as const;
+    }
     if (money.invalid.length > 0 || money.discounted === 0) {
       return {
         ok: false,

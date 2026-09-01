@@ -416,12 +416,15 @@ test("P4 a percentage that rounds away to no discount is refused at activation",
 });
 
 /**
- * A variant whose mirrored base is unusable is a catalog problem, not a campaign defect, and the
- * accepted runtime contract is that healthy siblings keep their promotion. Activation therefore
- * tolerates it as long as the campaign still discounts something — otherwise a single bad mirror row
- * would make a whole product unpublishable, and U10c's per-variant health would have nothing to do.
+ * The normative activation contract is unconditional: publish, re-enable and a Scheduled material
+ * edit "validate all current affected variants" and "reject unusable base".
+ *
+ * Partial validity is a *post-activation* concept — it covers catalog drift and variants newly
+ * covered after the campaign was enabled, which is what U10c's per-variant runtime health reports.
+ * It is not a licence to enable a campaign over a variant that is already unpriceable: doing so
+ * ships a promotion that is known-broken for part of its coverage from the moment it goes live.
  */
-test("P4 an unusable base on one variant does not block a campaign that still discounts others", async () => {
+test("P4 an unusable base on any current covered variant blocks activation", async () => {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "VariantMirror"
        ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
@@ -429,13 +432,24 @@ test("P4 an unusable base on one variant does not block a campaign that still di
     `${P}-v2`, `${P}-v2-ext`, `${P}-prod`,
   );
   await draft("a");
+  const before = await revision();
 
   const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
 
-  assert.equal(result.ok, true, "the sibling with a usable base still takes the promotion");
+  assert.equal(
+    result.ok,
+    false,
+    "a discountable sibling does not license enabling over an unpriceable one",
+  );
+  assert.deepEqual(
+    result.ok === false && result.failure,
+    { reason: "UNUSABLE_BASE_PRICE", variantIds: [`${P}-v2`] },
+    "the failure names the catalog rows to fix, not the campaign",
+  );
+  assert.equal(await revision(), before);
 });
 
-test("P4 a campaign that can discount no covered variant at all is refused", async () => {
+test("P4 a campaign whose only covered variant has no usable base is refused", async () => {
   await setBasePrice("v1", null);
   await draft("a");
   const before = await revision();
@@ -443,6 +457,23 @@ test("P4 a campaign that can discount no covered variant at all is refused", asy
   const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
 
   assert.equal(result.ok, false, "a campaign that can charge nobody anything is not publishable");
+  assert.equal(result.ok === false && result.failure.reason, "UNUSABLE_BASE_PRICE");
+  assert.equal(await revision(), before);
+});
+
+/**
+ * Covering no variant at all is a different failure from covering unpriceable ones, and it stays
+ * `NO_EFFECTIVE_DISCOUNT`: there is no catalog row to point an admin at.
+ */
+test("P4 a campaign that currently covers nothing is refused", async () => {
+  await draft("a");
+  // The product loses its only variant between drafting and publishing.
+  await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" = ${`${P}-v1`}`;
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
   assert.equal(await revision(), before);
 });
