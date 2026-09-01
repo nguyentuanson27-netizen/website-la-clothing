@@ -15,6 +15,11 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { AuthorizationError } from "../../src/auth/authorization.ts";
 import {
+  MAX_PROMOTION_IDENTIFIER_LENGTH,
+  MAX_TARGETS_PER_CAMPAIGN,
+} from "../../src/commerce/promotion-activation.ts";
+import { MAX_CAMPAIGN_NAME_LENGTH } from "../../src/commerce/promotion-campaign-name.ts";
+import {
   copyPromotionCampaign,
   disablePromotionCampaign,
   editDraftPromotionCampaign,
@@ -430,4 +435,147 @@ test("P4 a campaign whose window has already closed cannot be published", async 
     (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).isEnabled,
     false,
   );
+});
+
+/* ---------------------------------------------------------- Draft input bounds and concurrency */
+
+/**
+ * "A Draft may be business-invalid" is not "a Draft may be anything".
+ *
+ * The reviewed bounds reject syntactically oversized names, identifiers and target arrays *before
+ * persistence, Draft included* — those are storage and input-surface limits, not opinions about
+ * whether a campaign makes commercial sense. Skipping them on the Draft path means the only thing
+ * standing between browser input and the table is whatever the database happens to reject.
+ */
+test("P4 a Draft edit rejects an oversized name before it reaches the database", async () => {
+  await seedProduct("prod", 1);
+  await draft("a", "prod");
+
+  const result = await editDraftPromotionCampaign({
+    campaignId: `${P}-a`,
+    now: NOW,
+    session: ADMIN,
+    patch: { name: "n".repeat(MAX_CAMPAIGN_NAME_LENGTH + 1) },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "INVALID_DRAFT_INPUT");
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).name,
+    "Campaign a",
+    "nothing is written when the input is refused",
+  );
+});
+
+test("P4 a Draft edit accepts a name exactly at the bound", async () => {
+  await seedProduct("prod", 1);
+  await draft("a", "prod");
+  const atBound = "n".repeat(MAX_CAMPAIGN_NAME_LENGTH);
+
+  const result = await editDraftPromotionCampaign({
+    campaignId: `${P}-a`, now: NOW, session: ADMIN, patch: { name: atBound },
+  });
+
+  assert.equal(result.ok, true, "the bound is inclusive");
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).name,
+    atBound,
+  );
+});
+
+test("P4 a Draft edit rejects more explicit targets than the bound allows", async () => {
+  await seedProduct("prod", 1);
+  await draft("a", "prod");
+
+  const overBound = await editDraftPromotionCampaign({
+    campaignId: `${P}-a`,
+    now: NOW,
+    session: ADMIN,
+    patch: {
+      targets: Array.from({ length: MAX_TARGETS_PER_CAMPAIGN + 1 }, (_, index) => ({
+        productId: `${P}-p${index}`,
+        variantId: null,
+      })),
+    },
+  });
+
+  assert.equal(overBound.ok, false);
+  assert.equal(overBound.ok === false && overBound.failure.reason, "INVALID_DRAFT_INPUT");
+  assert.equal(
+    await prisma.promotionTarget.count({ where: { campaignId: `${P}-a` } }),
+    1,
+    "the existing targets are untouched",
+  );
+});
+
+test("P4 a Draft edit rejects an oversized identifier before any lookup", async () => {
+  await seedProduct("prod", 1);
+  await draft("a", "prod");
+
+  const result = await editDraftPromotionCampaign({
+    campaignId: `${P}-a`,
+    now: NOW,
+    session: ADMIN,
+    patch: { targets: [{ productId: "p".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH + 1), variantId: null }] },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "INVALID_DRAFT_INPUT");
+});
+
+/**
+ * The Draft path used to read the lifecycle, decide "this is a Draft", and then write by id with
+ * nothing holding that fact still.
+ *
+ * A publish committing in between turns the campaign into an enabled one, and the Draft write then
+ * lands a material change — discount, window, targets — on a campaign buyers are being priced
+ * against, with no activation validation and no revision advance. That is a lost update against the
+ * durable pricing contract, not merely an odd sequence.
+ *
+ * The competing publish is forced to commit first by holding the campaign row on its own connection.
+ */
+test("P4 a Draft edit cannot land on a campaign a concurrent publish has enabled", async () => {
+  await seedProduct("prod", 1);
+  await draft("a", "prod");
+
+  const rival = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  let publishCommitted = false;
+
+  try {
+    const publish = rival.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "PromotionCampaign" WHERE "id" = ${`${P}-a`} FOR UPDATE`;
+      await tx.$queryRaw`SELECT pg_sleep(0.5)::text`;
+      await tx.promotionCampaign.update({
+        where: { id: `${P}-a` },
+        data: { isEnabled: true, enabledAt: NOW, disabledAt: null },
+      });
+      await tx.$executeRaw`
+        UPDATE "PromotionPricingRevision" SET "revision" = "revision" + 1, "updatedAt" = NOW()
+        WHERE "id" = ${PROMOTION_REVISION_ID}
+      `;
+      publishCommitted = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const edit = editDraftPromotionCampaign({
+      campaignId: `${P}-a`,
+      now: NOW,
+      session: ADMIN,
+      patch: { percentageValue: 90 },
+    });
+
+    const [, result] = await Promise.all([publish, edit]);
+
+    assert.equal(publishCommitted, true);
+    assert.equal(result.ok, false, "the campaign is no longer a Draft by the time the write runs");
+    assert.equal(result.ok === false && result.failure.reason, "ILLEGAL_TRANSITION");
+    assert.equal(
+      (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).percentageValue,
+      10,
+      "no material change reached the enabled campaign",
+    );
+  } finally {
+    await rival.$disconnect();
+  }
 });

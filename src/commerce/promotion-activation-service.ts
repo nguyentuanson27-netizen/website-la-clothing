@@ -37,8 +37,10 @@ import { prisma } from "../db/prisma.ts";
 import {
   isPromotionActivationEnabled,
   validateCampaignForActivation,
+  validateDraftInput,
   type CampaignActivationError,
   type CampaignTargetInput,
+  type DraftInputError,
 } from "./promotion-activation.ts";
 import {
   buildCopyCampaignName,
@@ -63,6 +65,8 @@ export type ActivationFailure =
   | { reason: "CAMPAIGN_NOT_FOUND" }
   | { reason: "ILLEGAL_TRANSITION"; from: string }
   | { reason: "INVALID_CAMPAIGN"; errors: readonly CampaignActivationError[] }
+  /** Syntactic/storage/input bounds, refused on every write including a Draft. */
+  | { reason: "INVALID_DRAFT_INPUT"; errors: readonly DraftInputError[] }
   | { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" }
   /** No currently covered variant would actually be discounted by this campaign. */
   | { reason: "NO_EFFECTIVE_DISCOUNT"; invalidVariantIds: readonly string[] }
@@ -593,6 +597,11 @@ export async function editScheduledPromotionCampaign({
       } as const;
     }
 
+    const bounds = validateDraftInput(patch);
+    if (!bounds.ok) {
+      return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } } as const;
+    }
+
     const failure = await validateEffectiveState(tx, campaign.id, applyPatch(campaign, patch), now);
     if (failure !== null) return { ok: false, failure } as const;
 
@@ -620,7 +629,21 @@ export async function editDraftPromotionCampaign({
 }: Omit<EditInput, "env">): Promise<ActivationOutcome> {
   authorize(session);
 
+  // Bounds first, outside the transaction: an oversized name or identifier is refused before a
+  // connection is taken, not after a lookup has already been sent with it.
+  const bounds = validateDraftInput(patch);
+  if (!bounds.ok) {
+    return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } };
+  }
+
   return client.$transaction(async (tx) => {
+    // The campaign row is locked before its lifecycle is read, so "this is a Draft" is a fact that
+    // holds until commit rather than an observation a concurrent publish can invalidate. Without it
+    // a publish committing in between would leave this write landing a material change — discount,
+    // window, targets — on an enabled campaign, with no activation validation and no revision
+    // advance: a lost update against the durable pricing contract.
+    await lockRows(tx, "PromotionCampaign", [campaignId]);
+
     const campaign = await tx.promotionCampaign.findUnique({
       where: { id: campaignId },
       select: campaignFacts,
@@ -669,6 +692,9 @@ export async function copyPromotionCampaign({
   authorize(session);
 
   return client.$transaction(async (tx) => {
+    // Locked so the snapshot is of one coherent state rather than of a campaign mid-edit.
+    await lockRows(tx, "PromotionCampaign", [campaignId]);
+
     const campaign = await tx.promotionCampaign.findUnique({
       where: { id: campaignId },
       select: campaignFacts,
