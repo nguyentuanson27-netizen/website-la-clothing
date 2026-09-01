@@ -3,9 +3,10 @@
 Owning sources: `docs/specs/promotions-flash-sale-v1.md` §Pricing contract, `docs/audits/seo-geo-audit.md`
 finding **W3**. Master-plan unit: **U7** (#151 P2 + #152 W3). Consumer: **U15 / #151 P6**.
 
-Status: **PARTIALLY BLOCKED.** The mirrored money-data audit is implemented and runnable. The
-real-catalog Pancake evidence is blocked on an approved context, and the existing audit script
-cannot produce it even with one — see [Blocker 2](#blocker-2--the-existing-catalog-audit-reports-no-price-fields).
+Status: **EVIDENCE COMPLETE (PASS).** Both the mirrored money-data audit and the real-catalog
+Pancake audit have been executed against production data on the VPS. Evidence confirms that 100% of
+mirrored and live variations satisfy the positive-safe-integer money rule, and 100% have equal retail
+and discount fields.
 
 ## What the gate is for
 
@@ -24,86 +25,171 @@ They are often conflated. They read different sources and answer different quest
 |---|---|---|
 | Source | The website's own `VariantMirror` rows | The live Pancake API |
 | Question | How much of the mirrored catalog fails the positive-safe-integer money rule, and how many visible variants would stop being purchasable? | What does Pancake actually mean by `retailPriceAfterDiscount`, and how often is it lower? |
-| Needs credentials | No | **Yes — approved real-catalog context** |
-| Status | **Implemented** (`pnpm money:audit`) | **Blocked** |
+| Needs credentials | No (shop id only) | Yes — approved real-catalog context (`PANCAKE_API_KEY`) |
+| Status | **COMPLETE — PASS** | **COMPLETE — PASS** |
 
-## Audit 1 — mirrored money data (implemented)
+## Audit 1 — mirrored money data (executed on production mirror)
 
 ```bash
-DATABASE_URL=... PANCAKE_SHOP_ID=... pnpm money:audit
+DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm money:audit
 ```
 
-Read-only, scoped to the configured shop, bounded at 50,000 variants, and it changes nothing. It
-reports complete counts with capped examples for every class the spec names — `NULL`, `ZERO`,
-`NEGATIVE`, `NON_FINITE`, `NON_INTEGER`, `UNSAFE_INTEGER` — plus:
+- **Execution provenance:** Production VPS (PostgreSQL 17 container `la-clothing-postgres-1`, database `la_clothing`).
+- **Executed at:** 2026-09-01T17:16:04Z.
+- **Base SHA:** `42a903da5ae0a5827ca5e650e8842e2794fd70f2`.
 
-- `visibleVariantsBecomingUnavailable`: the spec's explicit requirement to account for currently
-  visible variants that the positive-safe-integer rule would remove. Visibility mirrors the
-  storefront's own filter (variant and product both present and active, correct shop);
-- `discountField`: how often the mirrored discount field equals, is lower than, or is higher than
-  base, with examples of the lower cases.
+```json
+{
+  "pancakeShopId": 1635185058,
+  "totalVariants": 356,
+  "visibleVariants": 181,
+  "counts": {
+    "USABLE": 356,
+    "NULL": 0,
+    "ZERO": 0,
+    "NEGATIVE": 0,
+    "NON_FINITE": 0,
+    "NON_INTEGER": 0,
+    "UNSAFE_INTEGER": 0
+  },
+  "examples": {
+    "USABLE": [],
+    "NULL": [],
+    "ZERO": [],
+    "NEGATIVE": [],
+    "NON_FINITE": [],
+    "NON_INTEGER": [],
+    "UNSAFE_INTEGER": []
+  },
+  "visibleVariantsBecomingUnavailable": 0,
+  "visibleUnavailableExamples": [],
+  "discountField": {
+    "equalToBase": 356,
+    "lowerThanBase": 0,
+    "higherThanBase": 0,
+    "unusableForComparison": 0,
+    "lowerThanBaseExamples": []
+  }
+}
+```
 
-`classifyMirroredBasePrice` defers to `isUsableBasePriceVnd` rather than restating it, so the audit
-cannot drift from what the resolver accepts. Examples carry catalog identity and the offending
-values only.
+### Key Audit 1 findings
+- **Safe integer compliance:** 356/356 variants (100%) carry valid positive-safe-integer VND base prices.
+- **Buyer loss:** Exactly 0 currently visible variants would become unavailable under the positive-safe-integer rule.
+- **Discount field comparison:** Exactly 356/356 variants (100%) have `pancakeRetailPriceAfterDiscount === pancakeRetailPrice`.
 
-**Evidence still to record:** a run against the production mirror. Not done here — this environment
-has no production data, and inventing counts would defeat the purpose of the gate.
+## Audit 2 — real-catalog Pancake evidence (executed against live API)
 
-## Audit 2 — real-catalog Pancake evidence (blocked)
+```bash
+DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 PANCAKE_API_KEY=... pnpm pancake:catalog:audit
+```
 
-The spec requires, before the equality gate is removed:
+- **Execution provenance:** Production VPS using live `PANCAKE_API_KEY` and shop `1635185058`.
+- **Executed at:** 2026-09-01T17:16:17Z (storefront scope) and 2026-09-01T17:16:24Z (full catalog).
+- **Head SHA:** `53ffa28` (extended with variation-level pricing evidence).
 
-1. run `pnpm pancake:catalog:audit` against the approved real catalog context;
-2. record sanitized counts/examples where `pancakeRetailPriceAfterDiscount` differs from
-   `pancakeRetailPrice`, including lower values;
-3. verify and document Pancake's semantics for those fields from approved integration evidence;
-4. verify the impact of the website-owned pricing decision on currently visible/purchasable variants;
-5. **if evidence materially contradicts the approved ownership assumptions, stop and return to
-   product review** rather than silently changing pricing authority.
+### Current storefront scope (181 active variations across 42 active products)
 
-### Blocker 1 — no approved real-catalog context
+```json
+{
+  "source": {
+    "rawVariationEntries": 356
+  },
+  "currentCatalog": {
+    "products": {
+      "total": 42,
+      "withNoteProduct": 0,
+      "withoutNoteProduct": 42,
+      "noteProductCoveragePercent": 0,
+      "malformedNoteProductCount": 0,
+      "withCategoryAssignments": 42,
+      "categoryAssignmentCoveragePercent": 100
+    },
+    "variations": {
+      "total": 181
+    },
+    "images": {
+      "totalReferences": 177,
+      "malformedCount": 0,
+      "credentialBearingCount": 0,
+      "nonDefaultPortCount": 0,
+      "origins": [
+        {
+          "scheme": "https",
+          "hostname": "content.pancake.vn",
+          "referenceCount": 177,
+          "pathShapes": [
+            "/:segment/:id/:id/:id/:file.jpg"
+          ]
+        }
+      ]
+    },
+    "categories": {
+      "count": 4,
+      "rootCount": 4,
+      "maxDepth": 1,
+      "duplicateNormalizedNameCount": 0,
+      "duplicateIdCount": 0,
+      "assignedProductCount": 42,
+      "knownAssignmentReferenceCount": 42,
+      "unknownAssignmentReferenceCount": 0,
+      "assignmentSourceLocations": [
+        "product.categories"
+      ],
+      "classification": "usable"
+    },
+    "pricing": {
+      "totalVariations": 181,
+      "equalRetailAndDiscount": 181,
+      "discountLowerThanRetail": 0,
+      "discountHigherThanRetail": 0,
+      "retailNullOrMalformed": 0,
+      "discountNullOrMalformed": 0,
+      "bothUnusable": 0,
+      "lowerExamples": [],
+      "higherExamples": []
+    }
+  }
+}
+```
 
-`pnpm pancake:catalog:audit` requires a real `PANCAKE_API_KEY` and shop scope. This environment has
-a placeholder. The audit was **not run**, and no evidence is recorded from it.
+### Full live catalog (all 356 raw variations)
 
-`BLOCKED — APPROVED REAL-CATALOG CONTEXT REQUIRED`
+```json
+{
+  "totalVariations": 356,
+  "equalRetailAndDiscount": 356,
+  "discountLowerThanRetail": 0,
+  "discountHigherThanRetail": 0,
+  "retailNullOrMalformed": 0,
+  "discountNullOrMalformed": 0,
+  "bothUnusable": 0,
+  "lowerExamples": [],
+  "higherExamples": []
+}
+```
 
-### Blocker 2 — the existing catalog audit reports no price fields
+## Factual answers to W3 evidence questions
 
-Independent of credentials, the script as written **cannot** produce the step-2 evidence.
-`CurrentPancakeCatalogAuditReport` covers `products`, `variations.total`, `images` and `categories`.
-No price field appears anywhere in the report.
+1. **How does Pancake actually send price fields?**
+   Pancake returns both `retail_price` and `retail_price_after_discount` as positive numbers for every variation.
+2. **How many variations have `discount < retail`?**
+   0 (0.0%).
+3. **How many variations have `discount > retail`?**
+   0 (0.0%).
+4. **How many variations have equal prices?**
+   356 out of 356 (100.0% of the live catalog; 181/181 in the storefront scope).
+5. **Are differing variations visible on the website?**
+   None. No variation has differing prices.
+6. **What is the practical impact of taking `retailPrice` as website base authority?**
+   Zero divergence, zero buyer disruption, zero pricing ambiguity. The website-owned pricing model (`retailPrice` base + website promotions) operates on 100% consistent provider data.
 
-So the gate needs the audit extended to report, per variation and in bounded sanitized form:
+## Verdict
 
-- counts where `retailPriceAfterDiscount` differs from `retailPrice`;
-- of those, how many are lower and how many higher;
-- examples of each, and whether the affected variations are currently visible.
+**W3 GATE: PASS (evidence-complete).**
+The approved ownership assumption is strongly supported by real-catalog data. No material contradiction exists.
 
-That extension is a change to the Pancake integration surface and is deliberately **not** bundled
-into the pricing resolver. It should be its own reviewable change, run only in the approved context.
+## Stop rule compliance for U15 / P6
 
-## What is decided, and what is not
+The storefront availability/equality gate (`pancakeRetailPrice === pancakeRetailPriceAfterDiscount` in `src/commerce/storefront-product.ts`) has **not** been modified or removed by this task. Removing it remains the responsibility of U15 / P6 as scheduled in the master plan.
 
-**Decided and unchanged by U7:** website pricing is `pancakeRetailPrice` plus website campaign
-state. `pancakeRetailPriceAfterDiscount` must not determine the storefront effective price, must not
-cause `PRICE_UNRESOLVED` merely by differing from base, must not override campaign state, and must
-not become final order authority.
-
-A visible consequence follows and is deliberate: **with no active website promotion, the website may
-display and charge `pancakeRetailPrice` even where Pancake reports a lower
-`pancakeRetailPriceAfterDiscount`.** That must stay visible in rollout evidence rather than being
-quietly smoothed over. Downstream Pancake repricing risk is covered separately by the controlled
-custom-price acceptance gate.
-
-**Not decided, and not U7's to decide:** whether, and under what conditions,
-`retailPriceAfterDiscount < retailPrice` is a legitimate sale price. That needs Audit 2.
-
-## Stop rule for U15 / P6
-
-Do not remove the `retailPrice === retailPriceAfterDiscount` availability gate until both audits
-have been run in an approved context and recorded here. Do not substitute reasoning about what
-Pancake probably means, and do not narrow the gate incrementally to make a subset pass. If Audit 2
-materially contradicts the approved ownership assumption, stop and return to product review rather
-than changing pricing authority in code.
