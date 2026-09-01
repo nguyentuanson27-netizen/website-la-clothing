@@ -16,6 +16,7 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const ON = { LA_PROMOTION_ACTIVATION_ENABLED: "true" } as const;
+const ADMIN = { user: { id: "admin-1", role: "ADMIN" }, session: { id: "s-1" } } as const;
 const NOW = new Date("2026-09-15T00:00:00.000Z");
 const P = "p4-svc";
 const SHOP = 920_941;
@@ -108,7 +109,7 @@ test("P4 publishing is refused entirely while the activation gate is off", async
   await draft("a");
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: {} });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: {}, session: ADMIN });
 
   assert.deepEqual(result, { ok: false, failure: { reason: "ACTIVATION_DISABLED" } });
   assert.equal(await revision(), before, "a refused publish advances nothing");
@@ -122,7 +123,7 @@ test("P4 a successful publish enables the campaign and advances the revision ato
   await draft("a");
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, true);
   assert.equal(await revision(), before + BigInt(1));
@@ -142,7 +143,7 @@ test("P4 a rejected publish leaves both the campaign and the revision untouched"
   );
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-empty`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-empty`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "INVALID_CAMPAIGN");
@@ -159,8 +160,8 @@ test("P4 two concurrent publishes of overlapping campaigns cannot both succeed",
   const before = await revision();
 
   const [first, second] = await Promise.all([
-    publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON }),
-    publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON }),
+    publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN }),
+    publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON, session: ADMIN }),
   ]);
 
   const succeeded = [first, second].filter((r) => r.ok);
@@ -213,7 +214,7 @@ test("P4 an overlap decision cannot be made before the effective-mutation lock i
 
     // Give the rival time to take the lock before the publish starts.
     await new Promise((resolve) => setTimeout(resolve, 100));
-    const publish = publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON }).then(
+    const publish = publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON, session: ADMIN }).then(
       (result) => {
         publishObservedAt = rivalCommitted ? "after rival" : "before rival";
         return result;
@@ -253,22 +254,24 @@ test("P4 a campaign whose window does not overlap an enabled one may still publi
     data: { startsAt: new Date("2026-10-10T00:00:00.000Z"), endsAt: new Date("2026-10-20T00:00:00.000Z") },
   });
 
-  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON })).ok, true);
-  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON })).ok, true);
+  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN })).ok, true);
+  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON, session: ADMIN })).ok, true);
 });
 
 test("P4 a campaign that has already run is terminal and cannot be re-enabled", async () => {
   await draft("a");
-  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
   await disablePromotionCampaign({
     campaignId: `${P}-a`,
     now: new Date(NOW.getTime() + 60_000),
+    session: ADMIN,
   });
 
   const result = await publishPromotionCampaign({
     campaignId: `${P}-a`,
     now: new Date(NOW.getTime() + 120_000),
     env: ON,
+    session: ADMIN,
   });
 
   assert.equal(result.ok, false);
@@ -277,12 +280,13 @@ test("P4 a campaign that has already run is terminal and cannot be re-enabled", 
 
 test("P4 disable advances the revision so a cache cannot keep serving stale sale bytes", async () => {
   await draft("a");
-  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
   const afterPublish = await revision();
 
   const result = await disablePromotionCampaign({
     campaignId: `${P}-a`,
     now: new Date(NOW.getTime() + 60_000),
+    session: ADMIN,
   });
 
   assert.equal(result.ok, true);
@@ -295,12 +299,13 @@ test("P4 disable advances the revision so a cache cannot keep serving stale sale
 
 test("P4 disable does not depend on the activation gate, so rollback always works", async () => {
   await draft("a");
-  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   // The gate is not consulted at all here: turning it off must never strand an enabled campaign.
   const result = await disablePromotionCampaign({
     campaignId: `${P}-a`,
     now: new Date(NOW.getTime() + 60_000),
+    session: ADMIN,
   });
 
   assert.equal(result.ok, true);
@@ -316,7 +321,7 @@ test("P4 a PRODUCT target wider than the expansion bound refuses the publish rat
   await draftTargeting("wide", `${P}-wide-prod`, null);
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-wide`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-wide`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "TARGET_EXPANSION_LIMIT_EXCEEDED");
@@ -345,7 +350,7 @@ test("P4 an enabled campaign whose coverage cannot be enumerated blocks a publis
   await draftTargeting("b", null, `${P}-v1`);
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.deepEqual(
@@ -362,6 +367,7 @@ test("P4 an unknown campaign fails closed without advancing the revision", async
     campaignId: `${P}-does-not-exist`,
     now: NOW,
     env: ON,
+    session: ADMIN,
   });
 
   assert.deepEqual(result, { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } });
@@ -388,7 +394,7 @@ test("P4 a fixed price that is not below a covered variant's current base is ref
   });
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
@@ -409,7 +415,7 @@ test("P4 a percentage that rounds away to no discount is refused at activation",
     data: { percentageValue: 1 },
   });
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
@@ -434,7 +440,7 @@ test("P4 an unusable base on any current covered variant blocks activation", asy
   await draft("a");
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(
     result.ok,
@@ -454,7 +460,7 @@ test("P4 a campaign whose only covered variant has no usable base is refused", a
   await draft("a");
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false, "a campaign that can charge nobody anything is not publishable");
   assert.equal(result.ok === false && result.failure.reason, "UNUSABLE_BASE_PRICE");
@@ -471,7 +477,7 @@ test("P4 a campaign that currently covers nothing is refused", async () => {
   await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" = ${`${P}-v1`}`;
   const before = await revision();
 
-  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
@@ -513,7 +519,7 @@ test("P4 a publish cannot decide on catalog facts a concurrent sync is changing"
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     const publish = publishPromotionCampaign({
-      campaignId: `${P}-a`, now: NOW, env: ON,
+      campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN,
     });
 
     const [, result] = await Promise.all([catalogWrite, publish]);
