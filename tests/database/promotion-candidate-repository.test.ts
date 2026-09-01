@@ -8,6 +8,7 @@ import {
   MAX_CANDIDATE_VARIANTS_PER_LOOKUP,
   readApplicablePromotionCampaigns,
 } from "../../src/commerce/promotion-candidate-repository.ts";
+import { prisma as sharedPrisma } from "../../src/db/prisma.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -235,4 +236,98 @@ test("P3 candidate campaigns carry exactly the facts the pricing resolver needs"
   ]);
   assert.equal(candidate?.percentageValue, 10);
   assert.equal(candidate?.fixedPriceVnd, null);
+});
+
+/**
+ * P3 asks for a query-count regression, and it is a contract rather than a micro-optimisation: this
+ * repository runs on storefront and cart render paths, so an implementation that drifts into a
+ * per-variant or per-campaign lookup degrades every product page while every behavioural test stays
+ * green.
+ *
+ * Round-trips are counted by wrapping the client the repository actually uses. The wrapper covers
+ * both model delegates it can reach and the raw escape hatches, so a refactor into either shape is
+ * still counted; it would not catch a round-trip issued through some third path, which is why the
+ * assertion is on *growth* rather than on an exact number alone.
+ */
+function countRoundTrips() {
+  const restore: Array<() => void> = [];
+  let count = 0;
+
+  const wrap = (owner: Record<string, unknown>, key: string) => {
+    const original = owner[key];
+    if (typeof original !== "function") return;
+    const previous = original as (...args: unknown[]) => unknown;
+    owner[key] = (...args: unknown[]) => {
+      count += 1;
+      return previous.apply(owner, args);
+    };
+    restore.push(() => {
+      owner[key] = previous;
+    });
+  };
+
+  const client = sharedPrisma as unknown as Record<string, Record<string, unknown>>;
+  wrap(client.variantMirror, "findMany");
+  wrap(client.promotionTarget, "findMany");
+  wrap(client.promotionCampaign, "findMany");
+  for (const raw of ["$queryRaw", "$queryRawUnsafe", "$executeRaw", "$executeRawUnsafe"]) {
+    wrap(client as unknown as Record<string, unknown> as Record<string, unknown>, raw);
+  }
+
+  return {
+    get count() {
+      return count;
+    },
+    reset() {
+      count = 0;
+    },
+    restore() {
+      for (const undo of restore.splice(0)) undo();
+    },
+  };
+}
+
+test("P3 the candidate lookup issues a constant number of queries whatever the batch size", async () => {
+  await product("prod");
+  await campaign("c");
+  await target("t", "c", "prod", null);
+  for (let index = 0; index < 40; index += 1) await variant(`v${index}`, "prod");
+
+  const meter = countRoundTrips();
+  try {
+    const small = [`${P}-v0`];
+    const large = Array.from({ length: 40 }, (_, index) => `${P}-v${index}`);
+
+    meter.reset();
+    await readApplicablePromotionCampaigns({ variantIds: small });
+    const forOne = meter.count;
+
+    meter.reset();
+    await readApplicablePromotionCampaigns({ variantIds: large });
+    const forForty = meter.count;
+
+    assert.ok(forOne > 0, "the meter must actually be observing the repository");
+    assert.equal(
+      forForty,
+      forOne,
+      `query count grew with batch size (${forOne} -> ${forForty}); the lookup has drifted into N+1`,
+    );
+    assert.equal(forOne, 2, "one bounded variant read plus one bounded target read");
+  } finally {
+    meter.restore();
+  }
+});
+
+test("P3 an empty request touches the database not at all", async () => {
+  const meter = countRoundTrips();
+  try {
+    meter.reset();
+    const result = await readApplicablePromotionCampaigns({ variantIds: [] });
+
+    assert.equal(meter.count, 0, "nothing to look up must cost nothing");
+    assert.equal(result.campaignsByVariantId.size, 0);
+    assert.deepEqual(result.unknownVariantIds, []);
+  } finally {
+    meter.restore();
+  }
 });
