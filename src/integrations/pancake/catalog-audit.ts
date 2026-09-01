@@ -11,6 +11,7 @@ const LIMITS = {
   noteLength: 100_000,
   imageUrlLength: 4_096,
   imageReferences: 100_000,
+  pricingExamples: 10,
 } as const;
 
 const IMAGE_EXTENSIONS = new Set(["avif", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -38,6 +39,12 @@ type ImageState = {
   nonDefaultPortCount: number;
   origins: Map<string, { referenceCount: number; pathShapes: Set<string> }>;
 };
+
+export type PricingExample = Readonly<{
+  variationId: string;
+  retailPrice: number | null;
+  retailPriceAfterDiscount: number | null;
+}>;
 
 export type PancakeCatalogAuditReport = {
   products: {
@@ -73,6 +80,17 @@ export type PancakeCatalogAuditReport = {
     unknownAssignmentReferenceCount: number;
     assignmentSourceLocations: string[];
     classification: "usable" | "partial" | "empty" | "unusable";
+  };
+  pricing: {
+    totalVariations: number;
+    equalRetailAndDiscount: number;
+    discountLowerThanRetail: number;
+    discountHigherThanRetail: number;
+    retailNullOrMalformed: number;
+    discountNullOrMalformed: number;
+    bothUnusable: number;
+    lowerExamples: readonly PricingExample[];
+    higherExamples: readonly PricingExample[];
   };
 };
 
@@ -384,6 +402,15 @@ export async function runPancakeCatalogAudit({
     nonDefaultPortCount: 0,
     origins: new Map(),
   };
+  let pricingTotalVariations = 0;
+  let pricingEqual = 0;
+  let pricingLower = 0;
+  let pricingHigher = 0;
+  let pricingRetailUnusable = 0;
+  let pricingDiscountUnusable = 0;
+  let pricingBothUnusable = 0;
+  const pricingLowerExamples: PricingExample[] = [];
+  const pricingHigherExamples: PricingExample[] = [];
   const endpoint = `/shops/${shopId}/products/variations`;
   let expectedEntries: number | undefined;
   let expectedPages: number | undefined;
@@ -431,6 +458,46 @@ export async function runPancakeCatalogAudit({
       for (const image of array(variation.images, "Pancake variation images payload is malformed")) {
         addImage(image, images);
       }
+
+      // Pricing evidence: classify raw API price fields without asserting a shape contract.
+      // The audit reads whatever the API sends and counts what it finds; it does not fail on
+      // absent or non-numeric fields because the catalog-contract parser (which does) is not
+      // in scope here — the audit must work with the same raw payload the contract parser
+      // would reject, precisely to measure how often that happens.
+      pricingTotalVariations += 1;
+      const rawRetail = variation.retail_price;
+      const rawDiscount = variation.retail_price_after_discount;
+      const retailUsable = typeof rawRetail === "number" && Number.isFinite(rawRetail);
+      const discountUsable = typeof rawDiscount === "number" && Number.isFinite(rawDiscount);
+      const variationId = String(variation.id);
+
+      if (!retailUsable && !discountUsable) {
+        pricingBothUnusable += 1;
+      } else if (!retailUsable) {
+        pricingRetailUnusable += 1;
+      } else if (!discountUsable) {
+        pricingDiscountUnusable += 1;
+      } else if (rawDiscount === rawRetail) {
+        pricingEqual += 1;
+      } else if (rawDiscount < rawRetail) {
+        pricingLower += 1;
+        if (pricingLowerExamples.length < LIMITS.pricingExamples) {
+          pricingLowerExamples.push(Object.freeze({
+            variationId,
+            retailPrice: rawRetail,
+            retailPriceAfterDiscount: rawDiscount,
+          }));
+        }
+      } else {
+        pricingHigher += 1;
+        if (pricingHigherExamples.length < LIMITS.pricingExamples) {
+          pricingHigherExamples.push(Object.freeze({
+            variationId,
+            retailPrice: rawRetail,
+            retailPriceAfterDiscount: rawDiscount,
+          }));
+        }
+      }
     }
     if (pageNumber >= (expectedPages ?? 1)) break;
   }
@@ -477,5 +544,16 @@ export async function runPancakeCatalogAudit({
           : left.scheme.localeCompare(right.scheme)),
     },
     categories,
+    pricing: {
+      totalVariations: pricingTotalVariations,
+      equalRetailAndDiscount: pricingEqual,
+      discountLowerThanRetail: pricingLower,
+      discountHigherThanRetail: pricingHigher,
+      retailNullOrMalformed: pricingRetailUnusable,
+      discountNullOrMalformed: pricingDiscountUnusable,
+      bothUnusable: pricingBothUnusable,
+      lowerExamples: Object.freeze(pricingLowerExamples),
+      higherExamples: Object.freeze(pricingHigherExamples),
+    },
   };
 }

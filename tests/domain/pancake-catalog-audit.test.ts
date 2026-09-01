@@ -8,8 +8,8 @@ import { runPancakeCatalogAudit } from "../../src/integrations/pancake/catalog-a
 test("catalog audit emits aggregate source coverage from live-shaped Pancake fields without raw product content", async () => {
   const pages: Record<number, unknown> = {
     1: { success: true, page_number: 1, page_size: 2, total_entries: 3, total_pages: 2, data: [
-      { id: "variation-a", product_id: "product-a", images: ["https://cdn.example.test/catalog/123456/photo-a.jpg?token=IMAGE_QUERY_SECRET"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] }, variations_warehouses: [{ remain_quantity: 999999 }] },
-      { id: "variation-b", product_id: "product-a", images: ["http://legacy.example.test/images/photo-b.png"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] } },
+      { id: "variation-a", product_id: "product-a", retail_price: 500000, retail_price_after_discount: 500000, images: ["https://cdn.example.test/catalog/123456/photo-a.jpg?token=IMAGE_QUERY_SECRET"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] }, variations_warehouses: [{ remain_quantity: 999999 }] },
+      { id: "variation-b", product_id: "product-a", retail_price: 500000, retail_price_after_discount: 300000, images: ["http://legacy.example.test/images/photo-b.png"], product: { name: "RAW_PRODUCT_NAME_SECRET", note: "PRIVATE_NOTE_SECRET", note_product: "APPROVED_DESCRIPTION_SECRET", image: "https://cdn.example.test/catalog/123456/hero-a.webp", categories: [{ id: 10, name: "RAW_CATEGORY_NAME_SECRET" }] } },
     ] },
     2: { success: true, page_number: 2, page_size: 2, total_entries: 3, total_pages: 2, data: [
       { id: "variation-c", product_id: "product-b", images: ["not a url"], product: { name: "SECOND_RAW_PRODUCT_NAME_SECRET", note: "SECOND_PRIVATE_NOTE_SECRET", note_product: "   ", image: null, categories: [] } },
@@ -31,6 +31,14 @@ test("catalog audit emits aggregate source coverage from live-shaped Pancake fie
   assert.equal(report.images.malformedCount, 1);
   assert.deepEqual(report.categories, { count: 2, rootCount: 2, maxDepth: 1, duplicateNormalizedNameCount: 1, duplicateIdCount: 0, assignedProductCount: 1, knownAssignmentReferenceCount: 1, unknownAssignmentReferenceCount: 0, assignmentSourceLocations: ["product.categories"], classification: "partial" });
   assert.deepEqual(requested, ["/shops/4741464/products/variations", "/shops/4741464/products/variations", "/shops/4741464/categories"]);
+  // Pricing evidence: variation-a equal, variation-b lower, variation-c both unusable (missing fields).
+  assert.equal(report.pricing.totalVariations, 3);
+  assert.equal(report.pricing.equalRetailAndDiscount, 1);
+  assert.equal(report.pricing.discountLowerThanRetail, 1);
+  assert.equal(report.pricing.discountHigherThanRetail, 0);
+  assert.equal(report.pricing.bothUnusable, 1);
+  assert.equal(report.pricing.lowerExamples.length, 1);
+  assert.deepEqual(report.pricing.lowerExamples[0], { variationId: "variation-b", retailPrice: 500000, retailPriceAfterDiscount: 300000 });
   const serialized = JSON.stringify(report);
   assert.equal(serialized.includes("https://"), false);
   for (const forbidden of ["RAW_PRODUCT_NAME_SECRET", "PRIVATE_NOTE_SECRET", "APPROVED_DESCRIPTION_SECRET", "RAW_CATEGORY_NAME_SECRET", "IMAGE_QUERY_SECRET", "999999"]) assert.equal(serialized.includes(forbidden), false);
@@ -119,4 +127,99 @@ test("flat unique source taxonomy can be usable when assignment coverage is comp
 test("category assignments fail closed when product and variation source locations disagree", async () => {
   const client = { async getJson() { return { success: true, page_number: 1, page_size: 100, total_entries: 1, total_pages: 1, data: [{ id: "variation-a", product_id: "product-a", images: [], categories: [{ id: 2 }], product: { note_product: null, image: null, categories: [{ id: 1 }] } }] }; } };
   await assert.rejects(() => runPancakeCatalogAudit({ client, shopId: 4741464 }), /category assignments disagree/i);
+});
+
+test("pricing evidence classifies lower, equal and higher discount variations", async () => {
+  const client = { async getJson(endpoint: string) {
+    if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 4, total_pages: 1, data: [
+      { id: "v-equal", product_id: "p-a", retail_price: 100000, retail_price_after_discount: 100000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-lower", product_id: "p-b", retail_price: 200000, retail_price_after_discount: 150000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-higher", product_id: "p-c", retail_price: 300000, retail_price_after_discount: 350000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-equal2", product_id: "p-d", retail_price: 400000, retail_price_after_discount: 400000, images: [], product: { note_product: null, image: null, categories: [] } },
+    ] };
+  } };
+  const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
+  assert.equal(report.pricing.totalVariations, 4);
+  assert.equal(report.pricing.equalRetailAndDiscount, 2);
+  assert.equal(report.pricing.discountLowerThanRetail, 1);
+  assert.equal(report.pricing.discountHigherThanRetail, 1);
+  assert.equal(report.pricing.retailNullOrMalformed, 0);
+  assert.equal(report.pricing.discountNullOrMalformed, 0);
+  assert.equal(report.pricing.bothUnusable, 0);
+  assert.deepEqual(report.pricing.lowerExamples, [{ variationId: "v-lower", retailPrice: 200000, retailPriceAfterDiscount: 150000 }]);
+  assert.deepEqual(report.pricing.higherExamples, [{ variationId: "v-higher", retailPrice: 300000, retailPriceAfterDiscount: 350000 }]);
+});
+
+test("pricing evidence handles null and malformed price fields without failing", async () => {
+  const client = { async getJson(endpoint: string) {
+    if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 5, total_pages: 1, data: [
+      { id: "v-both-null", product_id: "p-a", images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-retail-null", product_id: "p-b", retail_price_after_discount: 50000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-discount-null", product_id: "p-c", retail_price: 100000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-retail-string", product_id: "p-d", retail_price: "not a number", retail_price_after_discount: 100000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-discount-nan", product_id: "p-e", retail_price: 100000, retail_price_after_discount: Number.NaN, images: [], product: { note_product: null, image: null, categories: [] } },
+    ] };
+  } };
+  const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
+  assert.equal(report.pricing.totalVariations, 5);
+  assert.equal(report.pricing.bothUnusable, 1, "both missing");
+  assert.equal(report.pricing.retailNullOrMalformed, 2, "retail unusable, discount usable");
+  assert.equal(report.pricing.discountNullOrMalformed, 2, "retail usable, discount unusable");
+  assert.equal(report.pricing.equalRetailAndDiscount, 0);
+  assert.equal(report.pricing.discountLowerThanRetail, 0);
+  assert.equal(report.pricing.discountHigherThanRetail, 0);
+});
+
+test("pricing evidence bounds lower and higher examples at 10", async () => {
+  const data = [];
+  for (let i = 0; i < 25; i += 1) {
+    data.push({
+      id: `v-lower-${i}`, product_id: `p-lower-${i}`,
+      retail_price: 100000, retail_price_after_discount: 50000,
+      images: [], product: { note_product: null, image: null, categories: [] },
+    });
+    data.push({
+      id: `v-higher-${i}`, product_id: `p-higher-${i}`,
+      retail_price: 100000, retail_price_after_discount: 150000,
+      images: [], product: { note_product: null, image: null, categories: [] },
+    });
+  }
+  const client = { async getJson(endpoint: string) {
+    if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: data.length, total_pages: 1, data };
+  } };
+  const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
+  assert.equal(report.pricing.discountLowerThanRetail, 25);
+  assert.equal(report.pricing.discountHigherThanRetail, 25);
+  assert.equal(report.pricing.lowerExamples.length, 10, "lower examples bounded at 10");
+  assert.equal(report.pricing.higherExamples.length, 10, "higher examples bounded at 10");
+});
+
+test("pricing evidence produces deterministic output for identical input", async () => {
+  const makeClient = () => ({ async getJson(endpoint: string) {
+    if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 2, total_pages: 1, data: [
+      { id: "v-1", product_id: "p-1", retail_price: 500000, retail_price_after_discount: 400000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-2", product_id: "p-2", retail_price: 500000, retail_price_after_discount: 500000, images: [], product: { note_product: null, image: null, categories: [] } },
+    ] };
+  } });
+  const report1 = await runPancakeCatalogAudit({ client: makeClient(), shopId: 4741464 });
+  const report2 = await runPancakeCatalogAudit({ client: makeClient(), shopId: 4741464 });
+  assert.deepEqual(report1.pricing, report2.pricing);
+});
+
+test("pricing evidence handles Infinity and negative Infinity as unusable", async () => {
+  const client = { async getJson(endpoint: string) {
+    if (endpoint.endsWith("/categories")) return { success: true, data: [] };
+    return { success: true, page_number: 1, page_size: 100, total_entries: 2, total_pages: 1, data: [
+      { id: "v-inf", product_id: "p-a", retail_price: Number.POSITIVE_INFINITY, retail_price_after_discount: 100000, images: [], product: { note_product: null, image: null, categories: [] } },
+      { id: "v-neg-inf", product_id: "p-b", retail_price: 100000, retail_price_after_discount: Number.NEGATIVE_INFINITY, images: [], product: { note_product: null, image: null, categories: [] } },
+    ] };
+  } };
+  const report = await runPancakeCatalogAudit({ client, shopId: 4741464 });
+  assert.equal(report.pricing.retailNullOrMalformed, 1);
+  assert.equal(report.pricing.discountNullOrMalformed, 1);
+  assert.equal(report.pricing.equalRetailAndDiscount, 0);
 });
