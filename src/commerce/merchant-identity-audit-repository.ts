@@ -27,7 +27,22 @@ export async function readMerchantIdentityRows(
       sku: true,
       isPresent: true,
       isActive: true,
-      product: { select: { pancakeProductId: true, isPresent: true, isActive: true } },
+      pancakeRetailPrice: true,
+      pancakeRetailPriceAfterDiscount: true,
+      // Availability is a Merchant fact, so it is summed here rather than treated as an exclusion.
+      warehouseStocks: { select: { quantity: true } },
+      product: {
+        select: {
+          pancakeProductId: true,
+          isPresent: true,
+          isActive: true,
+          name: true,
+          primaryImageUrl: true,
+          // Only a PUBLISHED description is a fact the storefront would show, so only that is a
+          // Merchant fact; a Draft is work in progress and auditing it would overstate readiness.
+          content: { select: { status: true, editorialDescription: true } },
+        },
+      },
       // Composite is either side of the graph. A variation that *is* a set is as deferred as one
       // that belongs to a set: Merchant v1 defers all composite projections, and counting a bundle
       // parent as standalone would audit an offer M3 is not allowed to emit.
@@ -51,5 +66,13 @@ export async function readMerchantIdentityRows(
     isComposite: row.compositeParents.length > 0 || row.compositeComponents.length > 0,
     isStorefrontVisible:
       row.isPresent && row.isActive && row.product.isPresent && row.product.isActive,
+    retailPrice: row.pancakeRetailPrice,
+    retailPriceAfterDiscount: row.pancakeRetailPriceAfterDiscount,
+    stockQuantity: row.warehouseStocks.reduce((total, stock) => total + stock.quantity, 0),
+    primaryImageUrl: row.product.primaryImageUrl,
+    title: row.product.name,
+    publishedDescription: row.product.content?.status === "PUBLISHED"
+      ? row.product.content.editorialDescription
+      : null,
   }));
 }

@@ -3,6 +3,10 @@ import test from "node:test";
 
 import {
   classifyExternalIdentifier,
+  classifyMerchantAvailability,
+  classifyMerchantMedia,
+  classifyMerchantPrice,
+  classifyMerchantText,
   MAX_EXTERNAL_IDENTIFIER_LENGTH,
   summarizeMerchantIdentity,
   type MerchantIdentityRow,
@@ -15,6 +19,13 @@ function row(overrides: Partial<MerchantIdentityRow> = {}): MerchantIdentityRow 
     sku: "LA-SHIRT-M",
     isComposite: false,
     isStorefrontVisible: true,
+    // A fully Merchant-ready row by default, so a fixture only states the fact it is exercising.
+    retailPrice: 500_000,
+    retailPriceAfterDiscount: 500_000,
+    stockQuantity: 4,
+    primaryImageUrl: "https://content.pancake.vn/catalog/1/2/3/shirt.jpg",
+    title: "Áo sơ mi LA",
+    publishedDescription: "Áo sơ mi vải cotton, dáng suông.",
     ...overrides,
   };
 }
@@ -112,15 +123,41 @@ test("M1 only storefront-visible standalone variations are counted as emittable"
   assert.equal(summary.mpnReady, true, "a hidden variation is not emitted, so it cannot block MPN");
 });
 
-test("M1 the audit never asserts a GTIN and never invents apparel facts", () => {
-  const summary = summarizeMerchantIdentity([row()]);
-  const serialized = JSON.stringify(summary);
+test("M1 the audit never asserts a GTIN", () => {
+  const serialized = JSON.stringify(summarizeMerchantIdentity([row()])).toLowerCase();
 
-  for (const forbidden of ["gtin", "barcode", "gender", "age_group", "ageGroup", "condition"]) {
+  for (const forbidden of ["gtin", "barcode"]) {
     assert.equal(
-      serialized.toLowerCase().includes(forbidden.toLowerCase()),
+      serialized.includes(forbidden),
       false,
-      `${forbidden} must not appear: it is either unproven or owner-approved input`,
+      `${forbidden} must not appear: a field name is not proof of an identifier type`,
+    );
+  }
+});
+
+/**
+ * The apparel attributes are *reported*, because M1 has to say where they stand — but only ever as
+ * a blocked state. What must never appear is a value: a name, a category or a size chart is not
+ * evidence of who a garment is for, and guessing puts wrong data in front of shoppers.
+ */
+test("M1 apparel facts are reported as owner-blocked and never carry a derived value", () => {
+  const summary = summarizeMerchantIdentity([
+    row({ title: "Áo sơ mi nam người lớn", publishedDescription: "Dành cho nam giới trưởng thành." }),
+  ]);
+
+  assert.deepEqual(summary.apparelFacts, {
+    gender: "OWNER_BLOCKED",
+    ageGroup: "OWNER_BLOCKED",
+    condition: "OWNER_BLOCKED",
+    verdict: "BLOCKED",
+  });
+
+  const values = JSON.stringify(Object.values(summary.apparelFacts)).toLowerCase();
+  for (const derived of ["male", "female", "unisex", "adult", "kids", "infant", "new", "used"]) {
+    assert.equal(
+      values.includes(derived),
+      false,
+      `${derived} must never be produced: O3 is an owner decision, not an inference`,
     );
   }
 });
@@ -131,4 +168,111 @@ test("M1 the durability verdict is never satisfied by this audit alone", () => {
   assert.equal(summary.durability.mirrorReconcilesByExternalId, true);
   assert.equal(summary.durability.upstreamLifetimeProven, false);
   assert.equal(summary.durability.verdict, "BLOCKED");
+});
+
+/* -------------------------------------------------------------- catalog facts beyond identity */
+
+/**
+ * Price readiness defers to the live storefront rule rather than restating it. That matters twice
+ * over: an audit with its own definition would report a readiness the storefront does not share,
+ * and the current rule is equality-gated on the mirrored Pancake fields pending W3 evidence, so
+ * this count is exactly the measurement that decides whether that gate can move.
+ */
+test("M1 price readiness follows the live storefront rule, including its discount equality gate", () => {
+  assert.equal(classifyMerchantPrice(row()), "READY");
+  assert.equal(classifyMerchantPrice(row({ retailPrice: null })), "PRICE_UNRESOLVED");
+  assert.equal(
+    classifyMerchantPrice(row({ retailPrice: 500_000, retailPriceAfterDiscount: 400_000 })),
+    "PRICE_UNRESOLVED",
+    "a mirrored discount the website does not honour leaves no publishable price",
+  );
+  assert.equal(
+    classifyMerchantPrice(row({ retailPrice: Number.NaN, retailPriceAfterDiscount: Number.NaN })),
+    "PRICE_UNRESOLVED",
+  );
+});
+
+test("M1 availability is reported, and an unusable quantity is not evidence of stock", () => {
+  assert.equal(classifyMerchantAvailability(4), "IN_STOCK");
+  assert.equal(classifyMerchantAvailability(0), "OUT_OF_STOCK");
+  assert.equal(classifyMerchantAvailability(-3), "OUT_OF_STOCK");
+  assert.equal(classifyMerchantAvailability(Number.NaN), "OUT_OF_STOCK");
+});
+
+test("M1 media readiness uses the storefront's own trust parser", () => {
+  assert.equal(classifyMerchantMedia("https://content.pancake.vn/catalog/1/2/3/shirt.jpg"), "READY");
+  assert.equal(classifyMerchantMedia(null), "MISSING");
+  assert.equal(classifyMerchantMedia("   "), "MISSING");
+  assert.equal(
+    classifyMerchantMedia("https://cdn.attacker.example/shirt.jpg"),
+    "UNTRUSTED",
+    "an untrusted host is not a Merchant image, however well-formed the URL is",
+  );
+  assert.equal(classifyMerchantMedia("http://content.pancake.vn/catalog/1/2/3/shirt.jpg"), "UNTRUSTED");
+});
+
+/** Built from char codes so the fixture itself stays readable and greppable in the source. */
+function withCode(code: number): string {
+  return `Ao${String.fromCharCode(code)}so mi`;
+}
+
+/**
+ * MALFORMED means unserializable, not ugly. A control character or a lone surrogate cannot be
+ * escaped into valid XML, so a feed carrying one is broken for every record after it, which is why
+ * it is worth counting before anyone builds the serializer.
+ */
+test("M1 text readiness separates missing copy from copy a feed cannot serialize", () => {
+  assert.equal(classifyMerchantText("Ao so mi LA"), "READY");
+  assert.equal(classifyMerchantText(null), "MISSING");
+  assert.equal(classifyMerchantText("   "), "MISSING");
+
+  assert.equal(classifyMerchantText(withCode(0x00)), "MALFORMED", "NUL cannot be escaped into XML");
+  assert.equal(classifyMerchantText(withCode(0x1b)), "MALFORMED", "nor an escape character");
+  assert.equal(classifyMerchantText(withCode(0x7f)), "MALFORMED", "nor DEL");
+  assert.equal(classifyMerchantText(withCode(0xd83d)), "MALFORMED", "nor a lone high surrogate");
+  assert.equal(classifyMerchantText(withCode(0xdc55)), "MALFORMED", "nor a lone low surrogate");
+
+  assert.equal(classifyMerchantText("Ao \u{1F455} so mi"), "READY", "a real emoji is a valid pair");
+  assert.equal(classifyMerchantText(withCode(0x0a)), "READY", "a newline is serializable");
+  assert.equal(classifyMerchantText(withCode(0x09)), "READY", "so is a tab");
+});
+
+test("M1 catalog facts are counted only for emittable records", () => {
+  const summary = summarizeMerchantIdentity([
+    row({ pancakeVariationId: "v-ready" }),
+    row({ pancakeVariationId: "v-no-price", sku: "LA-2", retailPrice: null }),
+    row({ pancakeVariationId: "v-oos", sku: "LA-3", stockQuantity: 0 }),
+    row({ pancakeVariationId: "v-bad-media", sku: "LA-4", primaryImageUrl: "https://evil.example/a.jpg" }),
+    row({ pancakeVariationId: "v-bad-text", sku: "LA-5", title: withCode(0x00) }),
+    // Neither of these is emittable, so neither contributes a fact.
+    row({ pancakeVariationId: "v-composite", sku: "LA-6", isComposite: true, retailPrice: null }),
+    row({ pancakeVariationId: "v-hidden", sku: "LA-7", isStorefrontVisible: false, retailPrice: null }),
+  ]);
+
+  assert.equal(summary.totalVariations, 7);
+  assert.equal(summary.emittableStandaloneVariations, 5);
+  assert.deepEqual(summary.price, { READY: 4, PRICE_UNRESOLVED: 1 });
+  assert.deepEqual(summary.availability, { IN_STOCK: 4, OUT_OF_STOCK: 1 });
+  assert.deepEqual(summary.media, { READY: 4, MISSING: 0, UNTRUSTED: 1 });
+  assert.deepEqual(summary.title, { READY: 4, MISSING: 0, MALFORMED: 1 });
+  assert.deepEqual(summary.description, { READY: 5, MISSING: 0, MALFORMED: 0 });
+
+  assert.equal(
+    summary.merchantFactsReady,
+    2,
+    "the out-of-stock record is still Merchant-ready: it simply carries out_of_stock",
+  );
+});
+
+test("M1 the audit reports no personal data", () => {
+  const summary = summarizeMerchantIdentity([
+    row({ title: "Ao cho Nguyen Van A", publishedDescription: "0912345678" }),
+  ]);
+  const serialized = JSON.stringify(summary);
+
+  // The summary is counts and verdicts. No row text reaches it, so no customer or catalog free text
+  // can leak through an audit report that gets pasted into an issue.
+  for (const leak of ["Nguyen", "0912345678", "Ao cho"]) {
+    assert.equal(serialized.includes(leak), false, `${leak} must not reach the summary`);
+  }
 });

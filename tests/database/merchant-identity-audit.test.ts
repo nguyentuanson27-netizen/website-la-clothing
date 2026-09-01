@@ -20,6 +20,8 @@ const SHOP_ID = 920_921;
 
 async function cleanup() {
   await prisma.$executeRaw`DELETE FROM "CompositeComponentMirror" WHERE "parentVariantId" LIKE ${`${PREFIX}-%`} OR "componentVariantId" LIKE ${`${PREFIX}-%`}`;
+  await prisma.$executeRaw`DELETE FROM "WarehouseStock" WHERE "id" LIKE ${`${PREFIX}-%`}`;
+  await prisma.$executeRaw`DELETE FROM "ProductContent" WHERE "id" LIKE ${`${PREFIX}-%`}`;
   await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" LIKE ${`${PREFIX}-%`}`;
   await prisma.$executeRaw`DELETE FROM "ProductMirror" WHERE "id" LIKE ${`${PREFIX}-%`}`;
 }
@@ -46,6 +48,26 @@ async function insertVariant(
      VALUES ($1,$2,$3,$4,TRUE,$5,NOW(),NOW(),NOW())`,
     `${PREFIX}-${suffix}`, externalId, `${PREFIX}-${productSuffix}`, sku, active,
   );
+}
+
+async function setMoney(suffix: string, retail: number | null, afterDiscount: number | null) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "VariantMirror"
+     SET "pancakeRetailPrice" = $2, "pancakeRetailPriceAfterDiscount" = $3
+     WHERE "id" = $1`,
+    `${PREFIX}-${suffix}`, retail, afterDiscount,
+  );
+}
+
+async function setStock(suffix: string, quantities: readonly number[]) {
+  for (const [index, quantity] of quantities.entries()) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "WarehouseStock"
+         ("id","variantId","pancakeWarehouseId","quantity","syncedAt","createdAt","updatedAt")
+       VALUES ($1,$2,$3,$4,NOW(),NOW(),NOW())`,
+      `${PREFIX}-stock-${suffix}-${index}`, `${PREFIX}-${suffix}`, `wh-${index}`, quantity,
+    );
+  }
 }
 
 test.beforeEach(cleanup);
@@ -240,4 +262,102 @@ test("M1 the mirror-only identity audit runs with a database and a shop id, and 
   assert.match(audit.stdout, /MERCHANT_IDENTITY_AUDIT_BEGIN/);
   assert.match(audit.stdout, /MERCHANT_IDENTITY_AUDIT_END/);
   assert.equal(audit.stderr.includes("PANCAKE_API_KEY"), false);
+});
+
+/**
+ * M1's verification list names out-of-stock, `PRICE_UNRESOLVED` and malformed text explicitly, and
+ * they are checked here rather than only in the domain because the facts have to survive the read:
+ * a summed stock quantity, a Draft description that must not count, and a mirrored price shape are
+ * all things a repository can get wrong without any classifier noticing.
+ */
+test("M1 catalog facts are read from the real mirror, including stock, media and published copy", async () => {
+  await insertProduct("p", "external-product-1");
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ProductMirror" SET "primaryImageUrl" = $2 WHERE "id" = $1`,
+    `${PREFIX}-p`, "https://content.pancake.vn/catalog/1/2/3/shirt.jpg",
+  );
+  await insertVariant("v1", "p", "external-variation-1", "LA-A");
+  await insertVariant("v2", "p", "external-variation-2", "LA-B");
+  await setMoney("v1", 500_000, 500_000);
+  // A mirrored discount the website does not honour: no publishable price.
+  await setMoney("v2", 500_000, 400_000);
+  await setStock("v1", [3, 2]);
+  await setStock("v2", []);
+
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+
+  assert.deepEqual(summary.price, { READY: 1, PRICE_UNRESOLVED: 1 });
+  assert.deepEqual(
+    summary.availability,
+    { IN_STOCK: 1, OUT_OF_STOCK: 1 },
+    "stock is summed across warehouses, and no rows means no stock",
+  );
+  assert.deepEqual(summary.media, { READY: 2, MISSING: 0, UNTRUSTED: 0 });
+  assert.deepEqual(summary.title, { READY: 2, MISSING: 0, MALFORMED: 0 });
+  assert.deepEqual(
+    summary.description,
+    { READY: 0, MISSING: 2, MALFORMED: 0 },
+    "no ProductContent row at all means no publishable description",
+  );
+  assert.equal(summary.merchantFactsReady, 0);
+});
+
+test("M1 only a PUBLISHED description counts as a Merchant fact", async () => {
+  await insertProduct("p", "external-product-1");
+  await insertVariant("v1", "p", "external-variation-1", "LA-A");
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "ProductContent" ("id","productId","status","editorialDescription","createdAt","updatedAt")
+     VALUES ($1,$2,'DRAFT'::"ProductContentStatus",'Ban nhap chua duyet',NOW(),NOW())`,
+    `${PREFIX}-content`, `${PREFIX}-p`,
+  );
+
+  const draft = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+  assert.deepEqual(
+    draft.description,
+    { READY: 0, MISSING: 1, MALFORMED: 0 },
+    "a Draft is work in progress; auditing it would overstate readiness",
+  );
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ProductContent" SET "status" = 'PUBLISHED'::"ProductContentStatus" WHERE "id" = $1`,
+    `${PREFIX}-content`,
+  );
+
+  const published = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+  assert.deepEqual(published.description, { READY: 1, MISSING: 0, MALFORMED: 0 });
+});
+
+test("M1 malformed mirrored text is reported rather than silently emitted", async () => {
+  await insertProduct("p", "external-product-1");
+  // A control character that survives the mirror and would break a feed serializer downstream.
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ProductMirror" SET "name" = 'Ao' || chr(27) || ' so mi' WHERE "id" = $1`,
+    `${PREFIX}-p`,
+  );
+  await insertVariant("v1", "p", "external-variation-1", "LA-A");
+
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+
+  assert.deepEqual(summary.title, { READY: 0, MISSING: 0, MALFORMED: 1 });
+  assert.equal(summary.merchantFactsReady, 0);
+  assert.equal(
+    JSON.stringify(summary).includes("Ao"),
+    false,
+    "the offending text is counted, never echoed into the report",
+  );
+});
+
+test("M1 apparel facts stay owner-blocked over the real catalog", async () => {
+  await insertProduct("p", "external-product-1");
+  await insertVariant("v1", "p", "external-variation-1", "LA-A");
+
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+
+  assert.deepEqual(summary.apparelFacts, {
+    gender: "OWNER_BLOCKED",
+    ageGroup: "OWNER_BLOCKED",
+    condition: "OWNER_BLOCKED",
+    verdict: "BLOCKED",
+  });
+  assert.equal(summary.durability.verdict, "BLOCKED");
 });
