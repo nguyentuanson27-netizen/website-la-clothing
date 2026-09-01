@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -80,9 +81,20 @@ test("M1 a duplicate SKU across emitted variations is reported and blocks MPN", 
   assert.equal(summary.mpnReady, false);
 });
 
-test("M1 a composite component is deferred rather than audited as an emittable offer", async () => {
+/**
+ * Merchant v1 defers *all* composite projections, and a variation sits on one of two sides of the
+ * composite graph: it is a set (it has components) or it is a component (it has parents). Deferring
+ * only components would let a bundle parent into the emittable set — an offer M3 is not allowed to
+ * emit — and make the identity and MPN evidence greener than what can actually be published.
+ *
+ * All three kinds are seeded together so the counts discriminate: a classification that catches
+ * only one side leaves the other in `emittableStandaloneVariations`.
+ */
+test("M1 both sides of a composite are deferred; only a true standalone is emittable", async () => {
+  await insertProduct("alone", "external-product-alone");
   await insertProduct("parent", "external-product-parent");
   await insertProduct("child", "external-product-child");
+  await insertVariant("vstandalone", "alone", "external-variation-standalone", "LA-ALONE");
   await insertVariant("vparent", "parent", "external-variation-parent", "LA-SET");
   await insertVariant("vchild", "child", "external-variation-child", null);
   await prisma.$executeRawUnsafe(
@@ -93,9 +105,35 @@ test("M1 a composite component is deferred rather than audited as an emittable o
 
   const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
 
-  assert.equal(summary.compositeDeferred, 1);
-  assert.equal(summary.emittableStandaloneVariations, 1, "only the parent is emittable");
-  assert.equal(summary.mpnReady, true, "the deferred component's missing SKU does not block");
+  assert.equal(summary.totalVariations, 3);
+  assert.equal(summary.compositeDeferred, 2, "the set and its component are both deferred");
+  assert.equal(
+    summary.emittableStandaloneVariations,
+    1,
+    "only the variation on neither side of the composite graph is emittable",
+  );
+  assert.equal(summary.productIdentifiers.PRESENT, 1, "the deferred families are not counted");
+  assert.equal(summary.sku.PRESENT, 1);
+  assert.equal(summary.mpnReady, true, "the standalone has a present, unique SKU");
+});
+
+/** A set whose SKU is missing must not be able to make MPN readiness look worse either. */
+test("M1 a composite set is deferred even when nothing else is composite", async () => {
+  await insertProduct("parent", "external-product-parent");
+  await insertProduct("child", "external-product-child");
+  await insertVariant("vparent", "parent", "external-variation-parent", null);
+  await insertVariant("vchild", "child", "external-variation-child", "LA-CHILD");
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "CompositeComponentMirror" ("parentVariantId","componentVariantId","quantity","syncedAt")
+     VALUES ($1,$2,1,NOW())`,
+    `${PREFIX}-vparent`, `${PREFIX}-vchild`,
+  );
+
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+
+  assert.equal(summary.compositeDeferred, 2);
+  assert.equal(summary.emittableStandaloneVariations, 0);
+  assert.equal(summary.sku.MISSING, 0, "the set's missing SKU is not an emittable-offer problem");
 });
 
 test("M1 an inactive product's variations are not counted as emittable", async () => {
@@ -171,4 +209,29 @@ test("M1 the audit rejects a malformed shop scope before touching the database",
       `${shopId} must be rejected`,
     );
   }
+});
+
+/**
+ * Same contract as the money audit: M1 evidence is gathered *before* any approved external context
+ * exists, so an audit that will not start without a live API key is one the person who needs the
+ * evidence cannot run. Spawned rather than imported, because only the process proves what the
+ * process requires.
+ */
+test("M1 the mirror-only identity audit runs with a database and a shop id, and no API key", () => {
+  const { PANCAKE_API_KEY: _removed, ...env } = process.env;
+
+  const audit = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/merchant-identity-audit.ts"],
+    { env, encoding: "utf8", cwd: process.cwd() },
+  );
+
+  assert.equal(
+    audit.status,
+    0,
+    `the audit must not require PANCAKE_API_KEY; stderr was: ${audit.stderr}`,
+  );
+  assert.match(audit.stdout, /MERCHANT_IDENTITY_AUDIT_BEGIN/);
+  assert.match(audit.stdout, /MERCHANT_IDENTITY_AUDIT_END/);
+  assert.equal(audit.stderr.includes("PANCAKE_API_KEY"), false);
 });

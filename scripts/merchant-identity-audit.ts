@@ -11,10 +11,12 @@
 import { prisma } from "../src/db/prisma.ts";
 import { readMerchantIdentityRows } from "../src/commerce/merchant-identity-audit-repository.ts";
 import { summarizeMerchantIdentity } from "../src/commerce/merchant-identity-audit.ts";
-import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
+import { readPancakeShopId } from "../src/integrations/pancake/config.ts";
 
 try {
-  const { shopId } = readPancakeConfig();
+  // Shop id only. This audit reads the local mirror and never calls Pancake, so requiring the API
+  // key would make evidence-gathering depend on approved external context it does not use.
+  const shopId = readPancakeShopId();
   const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(shopId));
 
   console.log("MERCHANT_IDENTITY_AUDIT_BEGIN");

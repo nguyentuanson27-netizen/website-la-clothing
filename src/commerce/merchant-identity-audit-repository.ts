@@ -28,8 +28,11 @@ export async function readMerchantIdentityRows(
       isPresent: true,
       isActive: true,
       product: { select: { pancakeProductId: true, isPresent: true, isActive: true } },
-      // A variation that is a component of any parent set is composite for Merchant purposes.
+      // Composite is either side of the graph. A variation that *is* a set is as deferred as one
+      // that belongs to a set: Merchant v1 defers all composite projections, and counting a bundle
+      // parent as standalone would audit an offer M3 is not allowed to emit.
       compositeParents: { select: { parentVariantId: true }, take: 1 },
+      compositeComponents: { select: { componentVariantId: true }, take: 1 },
     },
     orderBy: { pancakeVariationId: "asc" },
     take: MAX_AUDITED_VARIATIONS + 1,
@@ -45,7 +48,7 @@ export async function readMerchantIdentityRows(
     pancakeVariationId: row.pancakeVariationId,
     pancakeProductId: row.product.pancakeProductId,
     sku: row.sku,
-    isComposite: row.compositeParents.length > 0,
+    isComposite: row.compositeParents.length > 0 || row.compositeComponents.length > 0,
     isStorefrontVisible:
       row.isPresent && row.isActive && row.product.isPresent && row.product.isActive,
   }));

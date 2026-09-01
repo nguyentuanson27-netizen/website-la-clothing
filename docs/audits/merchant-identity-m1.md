@@ -14,7 +14,7 @@ can prove. The identifier lifetime evidence Merchant activation requires does no
 | Are `pancakeVariationId` / `pancakeProductId` present, bounded and well-formed in the mirror? | **Runnable** — `pnpm merchant:identity:audit` |
 | Are emitted variation ids unique? | **Runnable** |
 | Is SKU usable as MPN (present, unique across emitted variations)? | **Runnable** |
-| Are composites excluded? | **Proven** — classified `COMPOSITE_DEFERRED` |
+| Are composites excluded? | **Proven** — either side of the composite graph (a set, or a member of one) is classified `COMPOSITE_DEFERRED` |
 | Does the mirror reconcile rows by external id rather than slug/position/local id? | **Proven** — see below |
 | Do upstream objects keep those ids for their lifetime? | **BLOCKED** |
 | Is a GTIN available? | **Not asserted, by design** |
