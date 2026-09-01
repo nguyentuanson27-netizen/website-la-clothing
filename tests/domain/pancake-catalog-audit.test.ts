@@ -173,7 +173,7 @@ test("pricing evidence handles null and malformed price fields without failing",
 });
 
 test("pricing evidence bounds lower and higher examples at 10", async () => {
-  const data = [];
+  const data: Array<Record<string, unknown>> = [];
   for (let i = 0; i < 25; i += 1) {
     data.push({
       id: `v-lower-${i}`, product_id: `p-lower-${i}`,
