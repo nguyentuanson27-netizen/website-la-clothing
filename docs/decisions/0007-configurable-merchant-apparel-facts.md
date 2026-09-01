@@ -1,6 +1,6 @@
 # ADR 0007 — Configurable Merchant apparel facts
 
-Status: **Accepted — owner decision 2026-09-02; implementation remains gated by the Merchant train**
+Status: **Accepted — owner decision 2026-09-02; amends PR #153 O3; runtime implementation remains gated by the Merchant train**
 
 ## Context
 
@@ -19,6 +19,30 @@ Authoritative references:
 - https://support.google.com/merchants/answer/6324479
 - https://support.google.com/merchants/answer/6324463
 - https://support.google.com/merchants/answer/6324469
+
+## Authority and source-plan amendment
+
+This ADR is the explicit human-approved amendment to **O3 only** in PR #153. It does not replace the rest of `docs/specs/marketing-analytics-shopping.md`, `tasks/marketing-analytics-shopping-plan.md`, or `tasks/marketing-analytics-shopping-todo.md`.
+
+Where the original #153 artifacts still phrase O3 as "confirm whether ... or add product-owned facts", this ADR resolves that owner-decision branch in favor of **approved shop defaults plus product-owned overrides**. The old O3 prompt is therefore historical decision context, not an instruction to re-open the choice.
+
+O3 has two distinct readiness states after this ADR:
+
+```text
+O3 policy decision        = RESOLVED by ADR 0007
+O3 runtime implementation = PENDING until Merchant-train persistence,
+                            validation, admin editing and effective-fact
+                            resolution are implemented and verified
+```
+
+Accordingly:
+
+- do not treat the accepted decision as evidence that the current runtime already supports overrides;
+- do not activate Merchant merely because O3 policy is resolved;
+- M3/U25 remains incomplete until the runtime work and tests in this ADR land;
+- historical M1/integration artifacts that predate this decision may say `OWNER_BLOCKED`; that wording describes their then-current runtime/decision state and must not be copied forward as the current owner-policy status after ADR 0007.
+
+O1, O2 and O4 are unchanged.
 
 ## Decision
 
@@ -117,7 +141,7 @@ The initial Merchant implementation does not need a second admin surface for edi
 
 ## Sequencing
 
-This ADR resolves the **owner decision** for O3. It does **not** activate Merchant and does not pull Merchant persistence/UI work into Wave 1.
+This ADR resolves the **owner policy decision** for O3. It does **not** activate Merchant and does not pull Merchant persistence/UI work into Wave 1.
 
 Implementation belongs with the Merchant train before M3/U25 is considered complete:
 
