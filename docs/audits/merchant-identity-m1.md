@@ -51,8 +51,8 @@ Beyond identity, the audit counts the facts an offer needs, for emittable record
 | Price | `resolveStorefrontPrice` | An audit with its own definition of a usable price would report a readiness the storefront does not share. That rule is still equality-gated on the mirrored Pancake fields pending **W3**, so `PRICE_UNRESOLVED` is exactly the number that decides whether the gate can move. |
 | Media | `parseTrustedProductImageUrl` | An untrusted host is not a Merchant image, however well-formed the URL. |
 | Description | `ProductContent.status === "PUBLISHED"` | A Draft is work in progress; auditing it would overstate readiness. |
-| Availability | Summed `WarehouseStock.quantity` | Reported, never an exclusion: an out-of-stock offer is valid and simply carries `out_of_stock`. A non-finite or negative mirrored quantity is not evidence of stock. |
-| Title / description text | Serializability | `MALFORMED` means a control character or lone surrogate — text that cannot be escaped into valid XML, so one record would break every record after it. Not a style judgement. |
+| Availability | Validated sum of `WarehouseStock.quantity` | Reported, never an exclusion: an out-of-stock offer is valid and simply carries `out_of_stock`. Every source quantity is validated before aggregation; if any source row is non-finite or negative, the availability fact fails closed instead of allowing another warehouse to hide it in a positive sum. Zero remains a valid `OUT_OF_STOCK` fact. |
+| Title / description text | XML 1.0 serializability | `MALFORMED` means at least one code point is outside the XML 1.0 `Char` production (including U+FFFE/U+FFFF) or a surrogate is unpaired. XML-legal characters such as U+007F remain `READY`. Not a style judgement. |
 
 `merchantFactsReady` counts emittable records with a publishable price, a trusted image, and
 serializable title and description. Availability is excluded from it on purpose.
