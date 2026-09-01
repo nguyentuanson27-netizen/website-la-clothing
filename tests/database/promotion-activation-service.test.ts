@@ -1,0 +1,531 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { PrismaPg } from "@prisma/adapter-pg";
+
+import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import {
+  disablePromotionCampaign,
+  publishPromotionCampaign,
+  MAX_EXPANDED_VARIANTS_PER_CAMPAIGN,
+  PROMOTION_REVISION_ID,
+} from "../../src/commerce/promotion-activation-service.ts";
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const ON = { LA_PROMOTION_ACTIVATION_ENABLED: "true" } as const;
+const NOW = new Date("2026-09-15T00:00:00.000Z");
+const P = "p4-svc";
+const SHOP = 920_941;
+
+async function cleanup() {
+  await prisma.$executeRaw`DELETE FROM "PromotionTarget" WHERE "id" LIKE ${`${P}-%`}`;
+  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" LIKE ${`${P}-%`}`;
+  await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" LIKE ${`${P}-%`}`;
+  await prisma.$executeRaw`DELETE FROM "ProductMirror" WHERE "id" LIKE ${`${P}-%`}`;
+}
+
+async function seedCatalog() {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "ProductMirror" ("id","pancakeShopId","pancakeProductId","slug","name","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,'P4 Product',NOW(),NOW(),NOW())`,
+    `${P}-prod`, SHOP, `${P}-prod-ext`, `${P}-prod-slug`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VariantMirror"
+       ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,NOW(),NOW(),NOW())`,
+    `${P}-v1`, `${P}-v1-ext`, `${P}-prod`, 500_000,
+  );
+}
+
+async function setBasePrice(variantSuffix: string, price: number | null) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "VariantMirror" SET "pancakeRetailPrice" = $2 WHERE "id" = $1`,
+    `${P}-${variantSuffix}`, price,
+  );
+}
+
+async function draft(suffix: string, targetProduct = true) {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'PERCENTAGE'::"PromotionDiscountType",10,FALSE,NOW(),NOW())`,
+    `${P}-${suffix}`, `Campaign ${suffix}`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,$4,NOW())`,
+    `${P}-t-${suffix}`, `${P}-${suffix}`,
+    targetProduct ? `${P}-prod` : null,
+    targetProduct ? null : `${P}-v1`,
+  );
+}
+
+/** A product with more variants than a coverage-validating write is allowed to expand. */
+async function seedWideProduct() {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "ProductMirror" ("id","pancakeShopId","pancakeProductId","slug","name","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,'P4 Wide Product',NOW(),NOW(),NOW())`,
+    `${P}-wide-prod`, SHOP, `${P}-wide-prod-ext`, `${P}-wide-prod-slug`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VariantMirror" ("id","pancakeVariationId","productId","syncedAt","createdAt","updatedAt")
+     SELECT $1 || i, $1 || i || '-ext', $2, NOW(), NOW(), NOW()
+     FROM generate_series(1, $3::int) AS i`,
+    `${P}-wide-v`, `${P}-wide-prod`, MAX_EXPANDED_VARIANTS_PER_CAMPAIGN + 1,
+  );
+}
+
+async function draftTargeting(suffix: string, productId: string | null, variantId: string | null) {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'PERCENTAGE'::"PromotionDiscountType",10,FALSE,NOW(),NOW())`,
+    `${P}-${suffix}`, `Campaign ${suffix}`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,$4,NOW())`,
+    `${P}-t-${suffix}`, `${P}-${suffix}`, productId, variantId,
+  );
+}
+
+async function revision(): Promise<bigint> {
+  const [row] = await prisma.$queryRaw<Array<{ revision: bigint }>>`
+    SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}
+  `;
+  return row?.revision ?? BigInt(-1);
+}
+
+test.beforeEach(async () => { await cleanup(); await seedCatalog(); });
+test.afterEach(cleanup);
+test.after(async () => { await prisma.$disconnect(); });
+
+test("P4 publishing is refused entirely while the activation gate is off", async () => {
+  await draft("a");
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: {} });
+
+  assert.deepEqual(result, { ok: false, failure: { reason: "ACTIVATION_DISABLED" } });
+  assert.equal(await revision(), before, "a refused publish advances nothing");
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).isEnabled,
+    false,
+  );
+});
+
+test("P4 a successful publish enables the campaign and advances the revision atomically", async () => {
+  await draft("a");
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, true);
+  assert.equal(await revision(), before + BigInt(1));
+  const campaign = await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } });
+  assert.equal(campaign.isEnabled, true);
+  assert.deepEqual(campaign.enabledAt, NOW);
+  assert.equal(campaign.disabledAt, null);
+});
+
+test("P4 a rejected publish leaves both the campaign and the revision untouched", async () => {
+  // No targets: invalid for activation.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'No targets','PERCENTAGE'::"PromotionDiscountType",10,FALSE,NOW(),NOW())`,
+    `${P}-empty`,
+  );
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-empty`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "INVALID_CAMPAIGN");
+  assert.equal(await revision(), before, "the revision never moves for a rejected mutation");
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-empty` } })).isEnabled,
+    false,
+  );
+});
+
+test("P4 two concurrent publishes of overlapping campaigns cannot both succeed", async () => {
+  await draft("a");
+  await draft("b");
+  const before = await revision();
+
+  const [first, second] = await Promise.all([
+    publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON }),
+    publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON }),
+  ]);
+
+  const succeeded = [first, second].filter((r) => r.ok);
+  const failed = [first, second].filter((r) => !r.ok);
+
+  assert.equal(succeeded.length, 1, "exactly one publish may win");
+  assert.equal(
+    failed[0]?.ok === false && failed[0].failure.reason,
+    "OVERLAPPING_CAMPAIGN",
+    "the loser is rejected for overlap, not by an arbitrary error",
+  );
+  assert.equal(await revision(), before + BigInt(1), "only the winning mutation advanced it");
+});
+
+/**
+ * The deterministic version of the test above.
+ *
+ * `Promise.all` alone does not prove the lock is doing the work: if one publish happens to commit
+ * before the other reaches its overlap query, the second sees the committed state and correctly
+ * reports a conflict even with no lock at all. This forces the interleaving that matters.
+ *
+ * A competing effective mutation is simulated on its own connection: it takes the revision lock and
+ * *then* enables a rival campaign. The publish under test must block on that lock before reading
+ * anything, so when it proceeds it observes the committed rival and refuses. An implementation that
+ * decided overlap before locking would have read a conflict-free world and published anyway.
+ */
+test("P4 an overlap decision cannot be made before the effective-mutation lock is held", async () => {
+  await draft("a");
+  await draft("b");
+
+  const competitor = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  let rivalCommitted = false;
+  let publishObservedAt: "before rival" | "after rival" | null = null;
+
+  try {
+    const rival = competitor.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID} FOR UPDATE`;
+      // Hold the lock long enough that the publish under test must be waiting on it.
+      await tx.$queryRaw`SELECT pg_sleep(0.5)::text`;
+      await tx.promotionCampaign.update({
+        where: { id: `${P}-a` },
+        data: { isEnabled: true, enabledAt: NOW, disabledAt: null },
+      });
+      await tx.$executeRaw`
+        UPDATE "PromotionPricingRevision" SET "revision" = "revision" + 1, "updatedAt" = NOW()
+        WHERE "id" = ${PROMOTION_REVISION_ID}
+      `;
+      rivalCommitted = true;
+    });
+
+    // Give the rival time to take the lock before the publish starts.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const publish = publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON }).then(
+      (result) => {
+        publishObservedAt = rivalCommitted ? "after rival" : "before rival";
+        return result;
+      },
+    );
+
+    const [, result] = await Promise.all([rival, publish]);
+
+    assert.equal(
+      publishObservedAt,
+      "after rival",
+      "the publish must wait for the in-flight effective mutation",
+    );
+    assert.equal(result.ok, false, "it must not publish over a rival that committed first");
+    assert.equal(
+      result.ok === false && result.failure.reason,
+      "OVERLAPPING_CAMPAIGN",
+      "and it must say why",
+    );
+  } finally {
+    await competitor.$disconnect();
+  }
+});
+
+test("P4 a campaign whose window does not overlap an enabled one may still publish", async () => {
+  await draft("a");
+  await draft("b");
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    // Both windows are ahead of `now`: activation refuses a window that has already closed, so an
+    // abutting pair in the past would prove nothing about overlap.
+    data: { startsAt: new Date("2026-10-01T00:00:00.000Z"), endsAt: new Date("2026-10-10T00:00:00.000Z") },
+  });
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-b` },
+    // Starts exactly when A ends: half-open windows do not overlap.
+    data: { startsAt: new Date("2026-10-10T00:00:00.000Z"), endsAt: new Date("2026-10-20T00:00:00.000Z") },
+  });
+
+  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON })).ok, true);
+  assert.equal((await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON })).ok, true);
+});
+
+test("P4 a campaign that has already run is terminal and cannot be re-enabled", async () => {
+  await draft("a");
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  await disablePromotionCampaign({
+    campaignId: `${P}-a`,
+    now: new Date(NOW.getTime() + 60_000),
+  });
+
+  const result = await publishPromotionCampaign({
+    campaignId: `${P}-a`,
+    now: new Date(NOW.getTime() + 120_000),
+    env: ON,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "ILLEGAL_TRANSITION");
+});
+
+test("P4 disable advances the revision so a cache cannot keep serving stale sale bytes", async () => {
+  await draft("a");
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+  const afterPublish = await revision();
+
+  const result = await disablePromotionCampaign({
+    campaignId: `${P}-a`,
+    now: new Date(NOW.getTime() + 60_000),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(await revision(), afterPublish + BigInt(1));
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).isEnabled,
+    false,
+  );
+});
+
+test("P4 disable does not depend on the activation gate, so rollback always works", async () => {
+  await draft("a");
+  await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  // The gate is not consulted at all here: turning it off must never strand an enabled campaign.
+  const result = await disablePromotionCampaign({
+    campaignId: `${P}-a`,
+    now: new Date(NOW.getTime() + 60_000),
+  });
+
+  assert.equal(result.ok, true);
+});
+
+/**
+ * The expansion bound is a safety limit on how much work a coverage-validating write may do. It has
+ * to fail the write, not silently validate a truncated coverage set — a truncated set would let an
+ * overlapping campaign through because the variants that actually collide were never looked at.
+ */
+test("P4 a PRODUCT target wider than the expansion bound refuses the publish rather than truncating", async () => {
+  await seedWideProduct();
+  await draftTargeting("wide", `${P}-wide-prod`, null);
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-wide`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "TARGET_EXPANSION_LIMIT_EXCEEDED");
+  assert.equal(await revision(), before, "a refused publish advances nothing");
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-wide` } })).isEnabled,
+    false,
+  );
+});
+
+/**
+ * The same bound applies to an *already enabled* competitor, which is reachable in production: a
+ * campaign published while its product was small, whose product later grew. Its coverage can no
+ * longer be enumerated, so it cannot be proved disjoint. Treating it as non-overlapping would be the
+ * unsafe reading — two campaigns could then both price the same variant.
+ */
+test("P4 an enabled campaign whose coverage cannot be enumerated blocks a publish instead of being waved through", async () => {
+  await seedWideProduct();
+  await draftTargeting("wide", `${P}-wide-prod`, null);
+  // Enabled directly: this is a campaign that was publishable when its product was small.
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-wide` },
+    data: { isEnabled: true, enabledAt: NOW },
+  });
+  // Targets a variant of a different product, so it is genuinely disjoint — but unprovably so.
+  await draftTargeting("b", null, `${P}-v1`);
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-b`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(
+    result.ok === false && result.failure,
+    { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: [`${P}-wide`] },
+  );
+  assert.equal(await revision(), before);
+});
+
+test("P4 an unknown campaign fails closed without advancing the revision", async () => {
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({
+    campaignId: `${P}-does-not-exist`,
+    now: NOW,
+    env: ON,
+  });
+
+  assert.deepEqual(result, { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } });
+  assert.equal(await revision(), before);
+});
+
+/* ------------------------------------------------- current affected-variant money at activation */
+
+/**
+ * Activation is the moment a campaign becomes able to charge someone, so it has to be checked
+ * against the money it would actually produce — not only against its own definition. A fixed price
+ * at or above a covered variant's current base discounts nothing; publishing it puts a campaign in
+ * front of buyers that can only ever report `PROMOTION_INVALID` at runtime.
+ *
+ * The check runs through the central pricing authority rather than a second comparison here, so
+ * activation and the storefront cannot disagree about what counts as a discount.
+ */
+test("P4 a fixed price that is not below a covered variant's current base is refused at activation", async () => {
+  await draft("a", false);
+  await setBasePrice("v1", 400_000);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(500_000) },
+  });
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  assert.equal(await revision(), before);
+  assert.equal(
+    (await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-a` } })).isEnabled,
+    false,
+  );
+});
+
+/** A percentage whose rounding lands back on the base is the same mistake in a different shape. */
+test("P4 a percentage that rounds away to no discount is refused at activation", async () => {
+  await draft("a", false);
+  // 1% of 1 VND rounds to 1 VND: the effective price equals the base, so nothing is discounted.
+  await setBasePrice("v1", 1);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { percentageValue: 1 },
+  });
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+});
+
+/**
+ * The normative activation contract is unconditional: publish, re-enable and a Scheduled material
+ * edit "validate all current affected variants" and "reject unusable base".
+ *
+ * Partial validity is a *post-activation* concept — it covers catalog drift and variants newly
+ * covered after the campaign was enabled, which is what U10c's per-variant runtime health reports.
+ * It is not a licence to enable a campaign over a variant that is already unpriceable: doing so
+ * ships a promotion that is known-broken for part of its coverage from the moment it goes live.
+ */
+test("P4 an unusable base on any current covered variant blocks activation", async () => {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VariantMirror"
+       ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,NULL,NOW(),NOW(),NOW())`,
+    `${P}-v2`, `${P}-v2-ext`, `${P}-prod`,
+  );
+  await draft("a");
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(
+    result.ok,
+    false,
+    "a discountable sibling does not license enabling over an unpriceable one",
+  );
+  assert.deepEqual(
+    result.ok === false && result.failure,
+    { reason: "UNUSABLE_BASE_PRICE", variantIds: [`${P}-v2`] },
+    "the failure names the catalog rows to fix, not the campaign",
+  );
+  assert.equal(await revision(), before);
+});
+
+test("P4 a campaign whose only covered variant has no usable base is refused", async () => {
+  await setBasePrice("v1", null);
+  await draft("a");
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false, "a campaign that can charge nobody anything is not publishable");
+  assert.equal(result.ok === false && result.failure.reason, "UNUSABLE_BASE_PRICE");
+  assert.equal(await revision(), before);
+});
+
+/**
+ * Covering no variant at all is a different failure from covering unpriceable ones, and it stays
+ * `NO_EFFECTIVE_DISCOUNT`: there is no catalog row to point an admin at.
+ */
+test("P4 a campaign that currently covers nothing is refused", async () => {
+  await draft("a");
+  // The product loses its only variant between drafting and publishing.
+  await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" = ${`${P}-v1`}`;
+  const before = await revision();
+
+  const result = await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  assert.equal(await revision(), before);
+});
+
+/* ------------------------------------------------------------------ catalog facts under the lock */
+
+/**
+ * The revision lock serializes promotion mutations against each other, but catalog sync does not
+ * take it. P4 asks for the mutation to lock campaign -> owning products -> needed variants and
+ * decide on facts that cannot move underneath it.
+ *
+ * A competing catalog write is simulated on its own connection: it takes the variant row lock and
+ * then drops the base price to a value the campaign's fixed price no longer beats. If publish
+ * decided before locking that row, it would enable a campaign against a base that no longer exists.
+ */
+test("P4 a publish cannot decide on catalog facts a concurrent sync is changing", async () => {
+  await draft("a", false);
+  await setBasePrice("v1", 500_000);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-a` },
+    data: { discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(450_000) },
+  });
+
+  const sync = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  let syncCommitted = false;
+
+  try {
+    const catalogWrite = sync.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "VariantMirror" WHERE "id" = ${`${P}-v1`} FOR UPDATE`;
+      await tx.$queryRaw`SELECT pg_sleep(0.5)::text`;
+      // The base falls below the campaign's fixed price: it can no longer discount anything.
+      await tx.$executeRaw`
+        UPDATE "VariantMirror" SET "pancakeRetailPrice" = 400000 WHERE "id" = ${`${P}-v1`}
+      `;
+      syncCommitted = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const publish = publishPromotionCampaign({
+      campaignId: `${P}-a`, now: NOW, env: ON,
+    });
+
+    const [, result] = await Promise.all([catalogWrite, publish]);
+
+    assert.equal(syncCommitted, true);
+    assert.equal(
+      result.ok,
+      false,
+      "publish must observe the committed base price, not the one it read before the sync",
+    );
+    assert.equal(result.ok === false && result.failure.reason, "NO_EFFECTIVE_DISCOUNT");
+  } finally {
+    await sync.$disconnect();
+  }
+});
