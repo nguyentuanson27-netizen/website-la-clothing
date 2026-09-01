@@ -22,7 +22,7 @@ can prove. The identifier lifetime evidence Merchant activation requires does no
 | Does every emittable record have a trusted image? | **Runnable** — `MISSING` / `UNTRUSTED` counted |
 | Is title and published description text serializable into a feed? | **Runnable** — `MALFORMED` counted |
 | Is a GTIN available? | **Not asserted, by design** |
-| Are `gender` / `age_group` / `condition` known? | **BLOCKED — owner gate O3** |
+| Are `gender` / `age_group` / `condition` known? | **BLOCKED — owner gate O3**, reported as `OWNER_BLOCKED` rather than omitted |
 
 ## What the audit does
 
@@ -57,8 +57,19 @@ Beyond identity, the audit counts the facts an offer needs, for emittable record
 `merchantFactsReady` counts emittable records with a publishable price, a trusted image, and
 serializable title and description. Availability is excluded from it on purpose.
 
-**No offending value is ever echoed.** The summary is counts and verdicts only, so it carries no
-catalog free text and no personal data, and can be pasted into an issue safely.
+### What the report may echo
+
+Counts and verdicts, plus **one deliberate exception**: the duplicate diagnostics name the colliding
+`pancakeVariationId` or SKU. A duplicate report an admin cannot act on is not worth producing, and a
+catalog identifier is not personal data.
+
+Everything else is a count. **Catalog free text — a product title, a description — never reaches the
+summary**, because that is where a person's name or phone number ends up and an audit report gets
+pasted into issues. A malformed title is counted, never reproduced.
+
+The boundary is pinned in both directions by test: a colliding SKU must appear, and free text must
+not. A one-sided assertion would be satisfied by a report that echoes nothing useful just as easily
+as by one that echoes too much.
 
 ### What it deliberately does not do
 
@@ -71,8 +82,6 @@ catalog free text and no personal data, and can be pasted into an issue safely.
   it exists to replace.
 - **`pancakeBarcode` is not read at all.** A field name is not proof of a GTIN. Not selecting it is
   a stronger guard than selecting and ignoring it, because it removes the temptation later.
-- **No apparel facts.** `gender`, `age_group` and `condition` are owner-approved facts under **O3**.
-  A test asserts none of those words can appear in the audit output.
 
 ## Durability gate — the blocker
 
