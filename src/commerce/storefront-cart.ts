@@ -13,7 +13,10 @@ export type StorefrontCartItem = {
 };
 
 export type StorefrontCartVariant = {
+  /** Internal mutation/authorization identity. Never a vendor-facing external id. */
   id: string;
+  /** The external variation identity a buyer actually committed to. */
+  pancakeVariationId: string;
   isPresent: boolean;
   isActive: boolean;
   isCompositeComponentAvailable?: boolean;
@@ -27,6 +30,7 @@ export type StorefrontCartVariant = {
 
 export type StorefrontCartProduct = {
   slug: string;
+  pancakeProductId: string;
   name: string;
   isPresent: boolean;
   isActive: boolean;
@@ -41,7 +45,24 @@ export type StorefrontCartUnavailableReason =
   | "VARIANT_UNAVAILABLE";
 
 export type StorefrontCartLine = {
+  /**
+   * Internal mutation identity, echoed back for the requested item even when nothing resolved.
+   * `VariantMirror.id` stays the authorization key and is never substituted for external identity.
+   */
   variantId: string;
+  /**
+   * The purchased variation's external identity, or null when the line resolved to no real variant.
+   *
+   * Null means "not known", never "not applicable": a line that resolved to a real variant keeps its
+   * identity even when unavailable, because the buyer committed to that variation and order audit
+   * and Purchase both need it. A composite component keeps it too, despite a non-public owner.
+   */
+  pancakeVariationId: string | null;
+  /**
+   * Public product identity, withheld exactly where the public slug is: a private owner exposes no
+   * product-level identity, which is what keeps a composite component's parent out of vendor feeds.
+   */
+  pancakeProductId: string | null;
   productSlug: string | null;
   productName: string | null;
   color: string | null;
@@ -114,6 +135,8 @@ export function buildStorefrontCartLines({
     if (!product) {
       return {
         variantId: item.variantId,
+        pancakeVariationId: null,
+        pancakeProductId: null,
         productSlug: null,
         productName: null,
         color: null,
@@ -130,6 +153,10 @@ export function buildStorefrontCartLines({
     if (!variant) {
       return {
         variantId: item.variantId,
+        // The owner is known but this variant is not, so there is no variation identity to report
+        // and inventing one would put a fictional item into an analytics or order payload.
+        pancakeVariationId: null,
+        pancakeProductId: null,
         productSlug: isPublicOwner(product) ? product.slug : null,
         productName: product.name,
         color: null,
@@ -144,6 +171,8 @@ export function buildStorefrontCartLines({
 
     const base = {
       variantId: item.variantId,
+      pancakeVariationId: variant.pancakeVariationId,
+      pancakeProductId: isPublicOwner(product) ? product.pancakeProductId : null,
       productSlug: isPublicOwner(product) ? product.slug : null,
       productName: product.name,
       color: normalizedOptionValue(variant.color),
