@@ -17,6 +17,10 @@ can prove. The identifier lifetime evidence Merchant activation requires does no
 | Are composites excluded? | **Proven** — either side of the composite graph (a set, or a member of one) is classified `COMPOSITE_DEFERRED` |
 | Does the mirror reconcile rows by external id rather than slug/position/local id? | **Proven** — see below |
 | Do upstream objects keep those ids for their lifetime? | **BLOCKED** |
+| Does every emittable record have a price the website would publish? | **Runnable** — `PRICE_UNRESOLVED` counted |
+| Is stock status known? | **Runnable** — `IN_STOCK` / `OUT_OF_STOCK`; out-of-stock is a fact, not an exclusion |
+| Does every emittable record have a trusted image? | **Runnable** — `MISSING` / `UNTRUSTED` counted |
+| Is title and published description text serializable into a feed? | **Runnable** — `MALFORMED` counted |
 | Is a GTIN available? | **Not asserted, by design** |
 | Are `gender` / `age_group` / `condition` known? | **BLOCKED — owner gate O3** |
 
@@ -38,8 +42,30 @@ component's missing SKU never drags down the standalone MPN verdict.
 SKU is nullable and not database-unique, which is precisely why this needs measuring rather than
 assuming.
 
+### Catalog facts
+
+Beyond identity, the audit counts the facts an offer needs, for emittable records only:
+
+| Fact | Source of truth | Why it is not re-derived here |
+|---|---|---|
+| Price | `resolveStorefrontPrice` | An audit with its own definition of a usable price would report a readiness the storefront does not share. That rule is still equality-gated on the mirrored Pancake fields pending **W3**, so `PRICE_UNRESOLVED` is exactly the number that decides whether the gate can move. |
+| Media | `parseTrustedProductImageUrl` | An untrusted host is not a Merchant image, however well-formed the URL. |
+| Description | `ProductContent.status === "PUBLISHED"` | A Draft is work in progress; auditing it would overstate readiness. |
+| Availability | Summed `WarehouseStock.quantity` | Reported, never an exclusion: an out-of-stock offer is valid and simply carries `out_of_stock`. A non-finite or negative mirrored quantity is not evidence of stock. |
+| Title / description text | Serializability | `MALFORMED` means a control character or lone surrogate — text that cannot be escaped into valid XML, so one record would break every record after it. Not a style judgement. |
+
+`merchantFactsReady` counts emittable records with a publishable price, a trusted image, and
+serializable title and description. Availability is excluded from it on purpose.
+
+**No offending value is ever echoed.** The summary is counts and verdicts only, so it carries no
+catalog free text and no personal data, and can be pasted into an issue safely.
+
 ### What it deliberately does not do
 
+- **No apparel fact is inferred.** `gender`, `age_group` and `condition` are reported as
+  `OWNER_BLOCKED` constants. A product name, a category or a size chart is not evidence of who a
+  garment is for, and guessing puts wrong data in front of shoppers. They stay blocked until a human
+  supplies the approved source of truth (**O3**).
 - **No vendor format is asserted.** Which shape a Pancake identifier takes is an observation to
   record, not a rule to enforce. Encoding a guessed format would turn the audit into the assumption
   it exists to replace.

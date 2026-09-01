@@ -10,13 +10,17 @@
  *
  *   - infer a GTIN. `pancakeBarcode` is a field name, not proof of a GTIN, and the audit does not
  *     read it at all rather than tempt a later reader;
- *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3);
+ *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3), so
+ *     they are reported as an explicit blocked state rather than derived from a name or a category;
  *   - declare identifier durability. Current DB uniqueness and upsert behaviour are explicitly
  *     insufficient evidence, so the verdict stays blocked until upstream lifetime evidence exists.
  *
  * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`: a component sold through
  * a parent set has no proven durable Merchant family identity, and that is a separate design.
  */
+
+import { parseTrustedProductImageUrl } from "./product-media.ts";
+import { resolveStorefrontPrice } from "./storefront-product.ts";
 
 /** Matches the existing Pancake catalog audit bound so one contract governs identifier length. */
 export const MAX_EXTERNAL_IDENTIFIER_LENGTH = 512;
@@ -43,7 +47,37 @@ export type MerchantIdentityRow = Readonly<{
   sku: string | null;
   isComposite: boolean;
   isStorefrontVisible: boolean;
+  /** Mirrored money, audited through the live storefront price rule rather than re-derived here. */
+  retailPrice: number | null;
+  retailPriceAfterDiscount: number | null;
+  /** Summed across warehouses. Availability is a fact to report, not a reason to exclude a record. */
+  stockQuantity: number;
+  primaryImageUrl: string | null;
+  title: string | null;
+  /** Only what the storefront would actually publish; a Draft description is not a Merchant fact. */
+  publishedDescription: string | null;
 }>;
+
+/**
+ * Whether a record has a price the website would publish *today*.
+ *
+ * Deliberately the live `resolveStorefrontPrice` rule and not a second one: an audit that used a
+ * different definition of a usable price would report a readiness the storefront does not share.
+ * That rule is currently equality-gated on the mirrored Pancake fields pending W3 evidence, so this
+ * count moves when that gate does — which is the point of measuring it.
+ */
+export type PriceReadiness = "READY" | "PRICE_UNRESOLVED";
+
+export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK";
+
+/** Media trust is the storefront's own parser; an untrusted host is not a Merchant image. */
+export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
+
+/**
+ * `MALFORMED` is not a style judgement. It means text that cannot be serialized into a feed:
+ * control characters and lone surrogates break XML, and neither is recoverable by escaping.
+ */
+export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
 
 export type DuplicateIdentifier = Readonly<{ value: string; occurrences: number }>;
 
@@ -58,6 +92,27 @@ export type MerchantIdentitySummary = Readonly<{
   duplicateSkus: readonly DuplicateIdentifier[];
   /** True only when every emittable variation has a present, unique SKU. */
   mpnReady: boolean;
+  price: Readonly<Record<PriceReadiness, number>>;
+  availability: Readonly<Record<AvailabilityClass, number>>;
+  media: Readonly<Record<MediaReadiness, number>>;
+  title: Readonly<Record<TextReadiness, number>>;
+  description: Readonly<Record<TextReadiness, number>>;
+  /**
+   * Emittable variations with a publishable price, a trusted image and serializable title and
+   * description. Availability is excluded on purpose: an out-of-stock offer is still a valid
+   * Merchant record, it simply carries `out_of_stock`.
+   */
+  merchantFactsReady: number;
+  /**
+   * Owner-gated apparel attributes (O3). Constants, never derived: guessing `gender` from a product
+   * name is exactly the kind of invention that puts wrong data in front of shoppers.
+   */
+  apparelFacts: Readonly<{
+    gender: "OWNER_BLOCKED";
+    ageGroup: "OWNER_BLOCKED";
+    condition: "OWNER_BLOCKED";
+    verdict: "BLOCKED";
+  }>;
   durability: Readonly<{
     /** Proven here: the mirror reconciles rows by external id, not by slug, position or local id. */
     mirrorReconcilesByExternalId: boolean;
@@ -73,6 +128,38 @@ export function classifyExternalIdentifier(value: string | null): ExternalIdenti
   if (value.length > MAX_EXTERNAL_IDENTIFIER_LENGTH) return "TOO_LONG";
   if (value !== value.trim()) return "UNTRIMMED";
   return "PRESENT";
+}
+
+/** Control characters and lone surrogates: text a feed serializer cannot represent. */
+const UNSERIALIZABLE_TEXT =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+export function classifyMerchantText(value: string | null): TextReadiness {
+  if (value === null || value.trim().length === 0) return "MISSING";
+  if (UNSERIALIZABLE_TEXT.test(value)) return "MALFORMED";
+  return "READY";
+}
+
+export function classifyMerchantPrice(row: MerchantIdentityRow): PriceReadiness {
+  const price = resolveStorefrontPrice({
+    retailPrice: row.retailPrice,
+    retailPriceAfterDiscount: row.retailPriceAfterDiscount,
+  });
+  return price === null ? "PRICE_UNRESOLVED" : "READY";
+}
+
+export function classifyMerchantAvailability(stockQuantity: number): AvailabilityClass {
+  // Fail-safe: a non-finite or negative mirrored quantity is not evidence of stock.
+  return Number.isFinite(stockQuantity) && stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
+}
+
+export function classifyMerchantMedia(primaryImageUrl: string | null): MediaReadiness {
+  if (primaryImageUrl === null || primaryImageUrl.trim().length === 0) return "MISSING";
+  return parseTrustedProductImageUrl(primaryImageUrl) === null ? "UNTRUSTED" : "READY";
+}
+
+function countsFor<TClass extends string>(names: readonly TClass[]): Record<TClass, number> {
+  return Object.fromEntries(names.map((name) => [name, 0])) as Record<TClass, number>;
 }
 
 function emptyCounts(): Record<ExternalIdentifierClass, number> {
@@ -98,6 +185,13 @@ export function summarizeMerchantIdentity(
   const variationIdentifiers = emptyCounts();
   const productIdentifiers = emptyCounts();
   const sku = emptyCounts();
+
+  const price = countsFor<PriceReadiness>(["READY", "PRICE_UNRESOLVED"]);
+  const availability = countsFor<AvailabilityClass>(["IN_STOCK", "OUT_OF_STOCK"]);
+  const media = countsFor<MediaReadiness>(["READY", "MISSING", "UNTRUSTED"]);
+  const title = countsFor<TextReadiness>(["READY", "MISSING", "MALFORMED"]);
+  const description = countsFor<TextReadiness>(["READY", "MISSING", "MALFORMED"]);
+  let merchantFactsReady = 0;
 
   let compositeDeferred = 0;
   const emittableVariationIds: string[] = [];
@@ -130,6 +224,24 @@ export function summarizeMerchantIdentity(
     const skuClass = classifyExternalIdentifier(row.sku);
     sku[skuClass] += 1;
     if (skuClass === "PRESENT") emittableSkus.push(row.sku as string);
+
+    const priceClass = classifyMerchantPrice(row);
+    const mediaClass = classifyMerchantMedia(row.primaryImageUrl);
+    const titleClass = classifyMerchantText(row.title);
+    const descriptionClass = classifyMerchantText(row.publishedDescription);
+    price[priceClass] += 1;
+    availability[classifyMerchantAvailability(row.stockQuantity)] += 1;
+    media[mediaClass] += 1;
+    title[titleClass] += 1;
+    description[descriptionClass] += 1;
+    if (
+      priceClass === "READY"
+      && mediaClass === "READY"
+      && titleClass === "READY"
+      && descriptionClass === "READY"
+    ) {
+      merchantFactsReady += 1;
+    }
   }
 
   const duplicateVariationIds = duplicatesOf(emittableVariationIds);
@@ -145,6 +257,21 @@ export function summarizeMerchantIdentity(
     duplicateVariationIds: Object.freeze(duplicateVariationIds),
     duplicateSkus: Object.freeze(duplicateSkus),
     mpnReady: sku.PRESENT === emittableStandaloneVariations && duplicateSkus.length === 0,
+    price: Object.freeze(price),
+    availability: Object.freeze(availability),
+    media: Object.freeze(media),
+    title: Object.freeze(title),
+    description: Object.freeze(description),
+    merchantFactsReady,
+    apparelFacts: Object.freeze({
+      // O3 is an owner decision. Deriving these from a product name or category is precisely the
+      // invention the spec forbids, so they are constants that stay blocked until a human supplies
+      // the approved source of truth.
+      gender: "OWNER_BLOCKED" as const,
+      ageGroup: "OWNER_BLOCKED" as const,
+      condition: "OWNER_BLOCKED" as const,
+      verdict: "BLOCKED" as const,
+    }),
     durability: Object.freeze({
       mirrorReconcilesByExternalId: true,
       // Nothing this audit can read establishes that an upstream object keeps its id for its
