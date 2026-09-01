@@ -271,7 +271,7 @@ These do not block pure foundations; they block the affected live destination:
 
 - **O1 — Google Ads Purchase value:** owner chooses merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish. GA4 remains merchandise value with shipping separate.
 - **O2 — Merchant market:** confirm target market/language/currency before Merchant activation.
-- **O3 — Apparel facts:** confirm truthful `gender`/`age_group`/`condition` semantics for emitted standalone offers or add product-owned facts first.
+- **O3 — Apparel facts — policy decision resolved by ADR 0007:** Merchant v1 uses owner-approved shop defaults `gender=male`, `age_group=adult`, `condition=new`, with independent product-level overrides held in local website-owned data. Resolution is `explicit product override → approved shop default`; nothing may be inferred from Pancake fields or from product name/category/description/size/model output. **Runtime readiness remains blocked** until persistence, server validation, admin editing, effective-fact projection and fail-closed tests land before M3/U25 completion.
 - **O4 — Vendor configuration:** provide/review GTM container, GA4 Measurement ID, Ads conversion ID/label and TikTok Pixel ID through proper account owners.
 
 ## 9. Safe parallelization summary
@@ -313,7 +313,7 @@ Requires T1–T8 through U28, **O1 Ads Purchase value decision**, **O4 vendor co
 
 ### Gate M — Merchant activation
 
-**Pre-activation approval** requires M1–M4 through U9/U12/U25/U26, exact standalone variant URL, audited IDs/MPN, canonical pricing, bounded cache/single-flight/backoff/topology proof, **O2 market** and **O3 apparel-fact** approval, plus Merchant account/site/shipping/returns prerequisites. If promotions are active, Merchant monetary/cache behavior must be covered by U39/G1. **U41 executes M5** only after this approval; Gate M is complete only after U41 Scheduled Fetch + Diagnostics/crawler verification succeeds. Composite remains excluded.
+**Pre-activation approval** requires M1–M4 through U9/U12/U25/U26, exact standalone variant URL, audited IDs/MPN, canonical pricing, bounded cache/single-flight/backoff/topology proof, **O2 market** approval and verified **O3 apparel-fact runtime** implementation (ADR 0007 resolves the policy, not the runtime), plus Merchant account/site/shipping/returns prerequisites. If promotions are active, Merchant monetary/cache behavior must be covered by U39/G1. **U41 executes M5** only after this approval; Gate M is complete only after U41 Scheduled Fetch + Diagnostics/crawler verification succeeds. Composite remains excluded.
 
 ### Gate S — Organic indexing
 
