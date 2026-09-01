@@ -90,6 +90,18 @@ export function isPromotionActivationEnabled(
   return env.LA_PROMOTION_ACTIVATION_ENABLED === "true";
 }
 
+/**
+ * The pre-lookup bound on a browser-supplied campaign identifier.
+ *
+ * Separate from `validateDraftInput` because it applies to operations that carry no patch at all —
+ * disable, end-early, Copy — and because it must run before a transaction is opened, not inside one.
+ * An unbounded string that reaches a `FOR UPDATE` as a query parameter has already crossed the
+ * boundary this bound exists to hold.
+ */
+export function isBoundedPromotionIdentifier(value: string): boolean {
+  return value.length > 0 && value.length <= MAX_PROMOTION_IDENTIFIER_LENGTH;
+}
+
 export type DraftInputError =
   | "NAME_TOO_LONG"
   | "NAME_UNSTORABLE"

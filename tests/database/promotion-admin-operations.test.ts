@@ -579,3 +579,129 @@ test("P4 a Draft edit cannot land on a campaign a concurrent publish has enabled
     await rival.$disconnect();
   }
 });
+
+/* --------------------------------------------------- top-level identifier bound and lock ordering */
+
+/**
+ * `campaignId` is browser-supplied on every operation, and the 128-code-unit bound applies to it as
+ * much as to a target identifier — before any lookup. Otherwise an unbounded string reaches a
+ * transaction and a `FOR UPDATE` as a query parameter, which is exactly what the pre-lookup bound
+ * exists to prevent.
+ */
+test("P4 every operation bounds the campaign id before it reaches the database", async () => {
+  const oversized = "c".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH + 1);
+  const before = await revision();
+
+  const attempts = [
+    ["publish", () => publishPromotionCampaign({ campaignId: oversized, now: NOW, env: ON, session: ADMIN })],
+    ["disable", () => disablePromotionCampaign({ campaignId: oversized, now: NOW, session: ADMIN })],
+    ["end early", () => endPromotionCampaignEarly({ campaignId: oversized, now: NOW, session: ADMIN })],
+    ["scheduled edit", () => editScheduledPromotionCampaign({ campaignId: oversized, now: NOW, env: ON, session: ADMIN, patch: {} })],
+    ["draft edit", () => editDraftPromotionCampaign({ campaignId: oversized, now: NOW, session: ADMIN, patch: {} })],
+    ["copy", () => copyPromotionCampaign({ campaignId: oversized, session: ADMIN })],
+  ] as const;
+
+  for (const [label, attempt] of attempts) {
+    const result = await attempt();
+    assert.equal(result.ok, false, `${label} must refuse an oversized campaign id`);
+    assert.equal(
+      result.ok === false && result.failure.reason,
+      "INVALID_DRAFT_INPUT",
+      `${label} must refuse it as bounded input, not as a missing campaign`,
+    );
+  }
+
+  assert.equal(await revision(), before);
+});
+
+test("P4 a campaign id exactly at the bound is accepted and looked up normally", async () => {
+  const atBound = `${P}-${"c".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH - P.length - 1)}`;
+  assert.equal(atBound.length, MAX_PROMOTION_IDENTIFIER_LENGTH);
+
+  const result = await publishPromotionCampaign({
+    campaignId: atBound, now: NOW, env: ON, session: ADMIN,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.ok === false && result.failure.reason,
+    "CAMPAIGN_NOT_FOUND",
+    "the bound is inclusive: it reaches the lookup and simply does not exist",
+  );
+});
+
+/**
+ * `validateEffectiveState` documents that the caller has already locked the campaign row, and the
+ * Scheduled edit relies on that precondition to re-read the campaign it validates. Disable and
+ * end-early lock it too: the source contract puts the campaign-row lock after authorization for
+ * them as well, and it is what stops two rollbacks from interleaving on the same row.
+ *
+ * A competing writer is forced to commit first by holding the campaign row on its own connection and
+ * then disabling the campaign. Merely observing that the operation *finishes* after the holder
+ * commits proves nothing — the final UPDATE blocks on the row lock either way. What separates a
+ * locked implementation from an unlocked one is which state the *decision* was made on: without the
+ * lock, the plain read sees the pre-commit snapshot and the operation proceeds against a campaign
+ * that no longer exists in that state.
+ */
+for (const [label, window, run] of [
+  [
+    "scheduled edit",
+    { startsAt: new Date("2026-10-01T00:00:00.000Z"), endsAt: new Date("2026-10-05T00:00:00.000Z") },
+    (id: string) => editScheduledPromotionCampaign({
+      campaignId: id, now: NOW, env: ON, session: ADMIN, patch: { percentageValue: 25 },
+    }),
+  ],
+  [
+    "disable",
+    { endsAt: new Date("2026-12-01T00:00:00.000Z") },
+    (id: string) => disablePromotionCampaign({ campaignId: id, now: NOW, session: ADMIN }),
+  ],
+  [
+    "end early",
+    { endsAt: new Date("2026-12-01T00:00:00.000Z") },
+    (id: string) => endPromotionCampaignEarly({
+      campaignId: id, now: new Date(NOW.getTime() + 60_000), session: ADMIN,
+    }),
+  ],
+] as const) {
+  test(`P4 ${label} decides on campaign state read under the row lock`, async () => {
+    await seedProduct("prod", 1);
+    await draft("a", "prod", window);
+    assert.equal(
+      (await publishPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session: ADMIN })).ok,
+      true,
+    );
+
+    const rival = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+    let rivalCommitted = false;
+
+    try {
+      const disableFirst = rival.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "PromotionCampaign" WHERE "id" = ${`${P}-a`} FOR UPDATE`;
+        await tx.$queryRaw`SELECT pg_sleep(0.5)::text`;
+        await tx.promotionCampaign.update({
+          where: { id: `${P}-a` },
+          data: { isEnabled: false, disabledAt: NOW },
+        });
+        rivalCommitted = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const [, result] = await Promise.all([disableFirst, run(`${P}-a`)]);
+
+      assert.equal(rivalCommitted, true);
+      assert.equal(
+        result.ok,
+        false,
+        `${label} acted on a campaign state that was already gone when it committed`,
+      );
+      assert.equal(
+        result.ok === false && result.failure.reason,
+        "ILLEGAL_TRANSITION",
+        `${label} must observe the committed state, not the snapshot it read first`,
+      );
+    } finally {
+      await rival.$disconnect();
+    }
+  });
+}
