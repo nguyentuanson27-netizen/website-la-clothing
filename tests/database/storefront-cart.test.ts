@@ -119,6 +119,8 @@ test("storefront cart resolves current lines only from the configured shop and p
   assert.deepEqual(lines, [
     {
       variantId: available.id,
+      pancakeVariationId: "cart-storefront-available",
+      pancakeProductId: "cart-storefront-product",
       productSlug: "cart-storefront-product",
       productName: "Cart Storefront Product",
       color: "Black",
@@ -131,6 +133,9 @@ test("storefront cart resolves current lines only from the configured shop and p
     },
     {
       variantId: stale.id,
+      // The variant is stale but real, so its committed identity is still reported.
+      pancakeVariationId: "cart-storefront-stale",
+      pancakeProductId: "cart-storefront-product",
       productSlug: "cart-storefront-product",
       productName: "Cart Storefront Product",
       color: "Stone",
@@ -143,6 +148,9 @@ test("storefront cart resolves current lines only from the configured shop and p
     },
     {
       variantId: otherShopVariant.id,
+      // Out of the configured shop scope: nothing resolved, so nothing is invented.
+      pancakeVariationId: null,
+      pancakeProductId: null,
       productSlug: null,
       productName: null,
       color: null,

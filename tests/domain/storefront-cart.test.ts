@@ -5,12 +5,14 @@ import { buildStorefrontCartLines } from "../../src/commerce/storefront-cart.ts"
 
 const availableProduct = {
   slug: "relaxed-shirt",
+  pancakeProductId: "pancake-relaxed-shirt",
   name: "Relaxed Shirt",
   isPresent: true,
   isActive: true,
   variants: [
     {
       id: "available",
+      pancakeVariationId: "pancake-available",
       isPresent: true,
       isActive: true,
       color: "Black",
@@ -21,6 +23,7 @@ const availableProduct = {
     },
     {
       id: "sold-out",
+      pancakeVariationId: "pancake-sold-out",
       isPresent: true,
       isActive: true,
       color: "Black",
@@ -31,6 +34,7 @@ const availableProduct = {
     },
     {
       id: "inactive-variant",
+      pancakeVariationId: "pancake-inactive-variant",
       isPresent: true,
       isActive: false,
       color: "Stone",
@@ -55,6 +59,8 @@ test("cart lines expose current storefront price and availability without exact 
   assert.deepEqual(lines, [
     {
       variantId: "available",
+      pancakeVariationId: "pancake-available",
+      pancakeProductId: "pancake-relaxed-shirt",
       productSlug: "relaxed-shirt",
       productName: "Relaxed Shirt",
       color: "Black",
@@ -67,6 +73,8 @@ test("cart lines expose current storefront price and availability without exact 
     },
     {
       variantId: "sold-out",
+      pancakeVariationId: "pancake-sold-out",
+      pancakeProductId: "pancake-relaxed-shirt",
       productSlug: "relaxed-shirt",
       productName: "Relaxed Shirt",
       color: "Black",
@@ -79,6 +87,8 @@ test("cart lines expose current storefront price and availability without exact 
     },
     {
       variantId: "inactive-variant",
+      pancakeVariationId: "pancake-inactive-variant",
+      pancakeProductId: "pancake-relaxed-shirt",
       productSlug: "relaxed-shirt",
       productName: "Relaxed Shirt",
       color: "Stone",
@@ -104,6 +114,8 @@ test("cart line fails closed when its requested quantity exceeds current sellabl
 
   assert.deepEqual(line, {
     variantId: "available",
+    pancakeVariationId: "pancake-available",
+    pancakeProductId: "pancake-relaxed-shirt",
     productSlug: "relaxed-shirt",
     productName: "Relaxed Shirt",
     color: "Black",
@@ -126,12 +138,14 @@ test("cart lines fail closed without linking unavailable product owners to dead 
     products: [
       {
         slug: "archived-jacket",
+        pancakeProductId: "pancake-archived-jacket",
         name: "Archived Jacket",
         isPresent: false,
         isActive: false,
         variants: [
           {
             id: "inactive-product-variant",
+            pancakeVariationId: "pancake-inactive-product-variant",
             isPresent: true,
             isActive: true,
             color: "Olive",
@@ -147,6 +161,9 @@ test("cart lines fail closed without linking unavailable product owners to dead 
 
   assert.deepEqual(lines[0], {
     variantId: "inactive-product-variant",
+    pancakeVariationId: "pancake-inactive-product-variant",
+    // A private owner exposes no product-level identity, but the committed variation survives.
+    pancakeProductId: null,
     productSlug: null,
     productName: "Archived Jacket",
     color: "Olive",
@@ -159,6 +176,9 @@ test("cart lines fail closed without linking unavailable product owners to dead 
   });
   assert.deepEqual(lines[1], {
     variantId: "unknown-variant",
+    // Nothing resolved, so nothing is invented.
+    pancakeVariationId: null,
+    pancakeProductId: null,
     productSlug: null,
     productName: null,
     color: null,
@@ -174,6 +194,7 @@ test("cart lines fail closed without linking unavailable product owners to dead 
 test("cart lines resolve and expose trusted product media when present", () => {
   const productWithMedia = {
     slug: "linen-jacket",
+    pancakeProductId: "pancake-linen-jacket",
     name: "Linen Jacket",
     primaryImageUrl: "https://content.pancake.vn/images/1/2/3/jacket-main.jpg",
     isPresent: true,
@@ -181,6 +202,7 @@ test("cart lines resolve and expose trusted product media when present", () => {
     variants: [
       {
         id: "var-1",
+        pancakeVariationId: "pancake-var-1",
         isPresent: true,
         isActive: true,
         color: "Ink",
