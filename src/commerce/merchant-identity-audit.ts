@@ -50,7 +50,7 @@ export type MerchantIdentityRow = Readonly<{
   /** Mirrored money, audited through the live storefront price rule rather than re-derived here. */
   retailPrice: number | null;
   retailPriceAfterDiscount: number | null;
-  /** Summed across warehouses. Availability is a fact to report, not a reason to exclude a record. */
+  /** Valid summed stock, or NaN when any source warehouse quantity is unsafe/unresolved. */
   stockQuantity: number;
   primaryImageUrl: string | null;
   title: string | null;
@@ -68,7 +68,11 @@ export type MerchantIdentityRow = Readonly<{
  */
 export type PriceReadiness = "READY" | "PRICE_UNRESOLVED";
 
-export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK";
+/**
+ * A real zero is a valid Merchant availability fact (`out_of_stock`). Unsafe source data is not:
+ * M3 must exclude unresolved rows rather than publishing a fabricated zero-stock state.
+ */
+export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK" | "AVAILABILITY_UNRESOLVED";
 
 /** Media trust is the storefront's own parser; an untrusted host is not a Merchant image. */
 export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
@@ -98,9 +102,9 @@ export type MerchantIdentitySummary = Readonly<{
   title: Readonly<Record<TextReadiness, number>>;
   description: Readonly<Record<TextReadiness, number>>;
   /**
-   * Emittable variations with a publishable price, a trusted image and serializable title and
-   * description. Availability is excluded on purpose: an out-of-stock offer is still a valid
-   * Merchant record, it simply carries `out_of_stock`.
+   * Emittable variations with a publishable price, a trusted image, serializable title/description,
+   * and a resolved availability fact. A valid zero-stock row still counts: Merchant can publish it
+   * as `out_of_stock`; only unsafe/unresolved availability fails readiness closed.
    */
   merchantFactsReady: number;
   /**
@@ -165,8 +169,8 @@ export function classifyMerchantPrice(row: MerchantIdentityRow): PriceReadiness 
 }
 
 export function classifyMerchantAvailability(stockQuantity: number): AvailabilityClass {
-  // Fail-safe: a non-finite or negative mirrored quantity is not evidence of stock.
-  return Number.isFinite(stockQuantity) && stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
+  if (!Number.isFinite(stockQuantity) || stockQuantity < 0) return "AVAILABILITY_UNRESOLVED";
+  return stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
 }
 
 export function classifyMerchantMedia(primaryImageUrl: string | null): MediaReadiness {
@@ -203,7 +207,11 @@ export function summarizeMerchantIdentity(
   const sku = emptyCounts();
 
   const price = countsFor<PriceReadiness>(["READY", "PRICE_UNRESOLVED"]);
-  const availability = countsFor<AvailabilityClass>(["IN_STOCK", "OUT_OF_STOCK"]);
+  const availability = countsFor<AvailabilityClass>([
+    "IN_STOCK",
+    "OUT_OF_STOCK",
+    "AVAILABILITY_UNRESOLVED",
+  ]);
   const media = countsFor<MediaReadiness>(["READY", "MISSING", "UNTRUSTED"]);
   const title = countsFor<TextReadiness>(["READY", "MISSING", "MALFORMED"]);
   const description = countsFor<TextReadiness>(["READY", "MISSING", "MALFORMED"]);
@@ -242,16 +250,18 @@ export function summarizeMerchantIdentity(
     if (skuClass === "PRESENT") emittableSkus.push(row.sku as string);
 
     const priceClass = classifyMerchantPrice(row);
+    const availabilityClass = classifyMerchantAvailability(row.stockQuantity);
     const mediaClass = classifyMerchantMedia(row.primaryImageUrl);
     const titleClass = classifyMerchantText(row.title);
     const descriptionClass = classifyMerchantText(row.publishedDescription);
     price[priceClass] += 1;
-    availability[classifyMerchantAvailability(row.stockQuantity)] += 1;
+    availability[availabilityClass] += 1;
     media[mediaClass] += 1;
     title[titleClass] += 1;
     description[descriptionClass] += 1;
     if (
       priceClass === "READY"
+      && availabilityClass !== "AVAILABILITY_UNRESOLVED"
       && mediaClass === "READY"
       && titleClass === "READY"
       && descriptionClass === "READY"
