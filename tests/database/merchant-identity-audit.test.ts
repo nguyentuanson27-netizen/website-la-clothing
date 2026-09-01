@@ -289,7 +289,7 @@ test("M1 catalog facts are read from the real mirror, including stock, media and
   assert.deepEqual(summary.price, { READY: 1, PRICE_UNRESOLVED: 1 });
   assert.deepEqual(
     summary.availability,
-    { IN_STOCK: 1, OUT_OF_STOCK: 1 },
+    { IN_STOCK: 1, OUT_OF_STOCK: 1, AVAILABILITY_UNRESOLVED: 0 },
     "stock is summed across warehouses, and no rows means no stock",
   );
   assert.deepEqual(summary.media, { READY: 2, MISSING: 0, UNTRUSTED: 0 });
