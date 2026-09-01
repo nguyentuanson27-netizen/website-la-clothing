@@ -192,11 +192,11 @@ test("M1 price readiness follows the live storefront rule, including its discoun
   );
 });
 
-test("M1 availability is reported, and an unusable quantity is not evidence of stock", () => {
+test("M1 availability distinguishes valid stock facts from unresolved source data", () => {
   assert.equal(classifyMerchantAvailability(4), "IN_STOCK");
   assert.equal(classifyMerchantAvailability(0), "OUT_OF_STOCK");
-  assert.equal(classifyMerchantAvailability(-3), "OUT_OF_STOCK");
-  assert.equal(classifyMerchantAvailability(Number.NaN), "OUT_OF_STOCK");
+  assert.equal(classifyMerchantAvailability(-3), "AVAILABILITY_UNRESOLVED");
+  assert.equal(classifyMerchantAvailability(Number.NaN), "AVAILABILITY_UNRESOLVED");
 });
 
 test("M1 media readiness uses the storefront's own trust parser", () => {
@@ -251,7 +251,11 @@ test("M1 catalog facts are counted only for emittable records", () => {
   assert.equal(summary.totalVariations, 7);
   assert.equal(summary.emittableStandaloneVariations, 5);
   assert.deepEqual(summary.price, { READY: 4, PRICE_UNRESOLVED: 1 });
-  assert.deepEqual(summary.availability, { IN_STOCK: 4, OUT_OF_STOCK: 1 });
+  assert.deepEqual(summary.availability, {
+    IN_STOCK: 4,
+    OUT_OF_STOCK: 1,
+    AVAILABILITY_UNRESOLVED: 0,
+  });
   assert.deepEqual(summary.media, { READY: 4, MISSING: 0, UNTRUSTED: 1 });
   assert.deepEqual(summary.title, { READY: 4, MISSING: 0, MALFORMED: 1 });
   assert.deepEqual(summary.description, { READY: 5, MISSING: 0, MALFORMED: 0 });
