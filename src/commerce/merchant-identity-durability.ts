@@ -1,5 +1,56 @@
 import { createHash } from "node:crypto";
 
+export const ALLOWED_AUDIT_DATABASE_NAME = "la_clothing_durability_audit";
+export const CI_REFUSAL_MESSAGE = "Trusted Pancake durability evidence script refuses CI execution";
+
+function isEnvironmentFlagEnabled(value: string | undefined): boolean {
+  if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
+    return false;
+  }
+  return true;
+}
+
+export function extractDatabaseNameFromUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    const dbName = parsed.pathname.replace(/^\/+/, "").split("/")[0]?.split("?")[0] ?? "";
+    return decodeURIComponent(dbName);
+  } catch {
+    throw new Error("Invalid DATABASE_URL format");
+  }
+}
+
+export function assertAuditDatabaseUrl(databaseUrl: string | undefined): { databaseName: string } {
+  if (typeof databaseUrl !== "string" || databaseUrl.trim() === "") {
+    throw new Error("DATABASE_URL is required to run durability evidence");
+  }
+
+  let dbName: string;
+  try {
+    dbName = extractDatabaseNameFromUrl(databaseUrl);
+  } catch {
+    throw new Error("Refusing to run durability evidence: DATABASE_URL is malformed");
+  }
+
+  if (dbName !== ALLOWED_AUDIT_DATABASE_NAME) {
+    throw new Error(
+      `Refusing to run write-capable durability evidence on non-audit database: expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got '${dbName}'`,
+    );
+  }
+
+  return { databaseName: dbName };
+}
+
+export function assertDurabilityEvidenceEnvironment(
+  env: Record<string, string | undefined> = process.env,
+): { databaseName: string } {
+  if (isEnvironmentFlagEnabled(env.CI) || isEnvironmentFlagEnabled(env.GITHUB_ACTIONS)) {
+    throw new Error(CI_REFUSAL_MESSAGE);
+  }
+
+  return assertAuditDatabaseUrl(env.DATABASE_URL);
+}
+
 export type CatalogIdSnapshot = Readonly<{
   runIndex: number;
   timestamp: string;

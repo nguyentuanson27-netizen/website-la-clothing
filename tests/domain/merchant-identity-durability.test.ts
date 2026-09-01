@@ -3,6 +3,9 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+  ALLOWED_AUDIT_DATABASE_NAME,
+  assertAuditDatabaseUrl,
+  assertDurabilityEvidenceEnvironment,
   compareCatalogSnapshots,
   createCatalogIdSnapshot,
 } from "../../src/commerce/merchant-identity-durability.ts";
@@ -202,4 +205,100 @@ test("trusted durability evidence script refuses CI before reading credentials",
   );
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /durability evidence script refuses CI execution/i);
+});
+
+test("durability evidence refuses production database name", () => {
+  assert.throws(
+    () =>
+      assertAuditDatabaseUrl("postgresql://user:pass@localhost:5432/la_clothing"),
+    (err: unknown) => {
+      assert(err instanceof Error);
+      assert.match(err.message, new RegExp(`expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got 'la_clothing'`, "i"));
+      return true;
+    },
+  );
+});
+
+test("durability evidence allows exact approved audit database name", () => {
+  const result = assertAuditDatabaseUrl(
+    `postgresql://audit_user:secret@localhost:5432/${ALLOWED_AUDIT_DATABASE_NAME}?schema=public`,
+  );
+  assert.equal(result.databaseName, ALLOWED_AUDIT_DATABASE_NAME);
+});
+
+test("durability evidence refuses missing, empty, or malformed DATABASE_URL", () => {
+  assert.throws(
+    () => assertAuditDatabaseUrl(undefined),
+    /DATABASE_URL is required to run durability evidence/i,
+  );
+  assert.throws(
+    () => assertAuditDatabaseUrl("   "),
+    /DATABASE_URL is required to run durability evidence/i,
+  );
+  assert.throws(
+    () => assertAuditDatabaseUrl("not-a-valid-url"),
+    /DATABASE_URL is malformed/i,
+  );
+  assert.throws(
+    () => assertAuditDatabaseUrl("postgresql:///"),
+    /expected database 'la_clothing_durability_audit', got ''/i,
+  );
+});
+
+test("durability evidence environment validator refuses CI before database validation", () => {
+  assert.throws(
+    () =>
+      assertDurabilityEvidenceEnvironment({
+        CI: "true",
+        DATABASE_URL: `postgresql://user:pass@localhost:5432/${ALLOWED_AUDIT_DATABASE_NAME}`,
+      }),
+    /durability evidence script refuses CI execution/i,
+  );
+  assert.throws(
+    () =>
+      assertDurabilityEvidenceEnvironment({
+        GITHUB_ACTIONS: "true",
+        // Note: Even if DATABASE_URL is missing or invalid, CI check must trigger first!
+        DATABASE_URL: undefined,
+      }),
+    /durability evidence script refuses CI execution/i,
+  );
+});
+
+test("durability evidence error messages never leak passwords, hosts, or full URL secrets", () => {
+  const sensitiveUrl =
+    "postgresql://secret_user:super_secret_password_xyz987@prod-internal-db.example.com:5432/la_clothing?sslmode=require";
+
+  try {
+    assertAuditDatabaseUrl(sensitiveUrl);
+    assert.fail("assertAuditDatabaseUrl should have thrown");
+  } catch (error) {
+    assert(error instanceof Error);
+    assert.doesNotMatch(error.message, /secret_user/);
+    assert.doesNotMatch(error.message, /super_secret_password_xyz987/);
+    assert.doesNotMatch(error.message, /prod-internal-db\.example\.com/);
+    assert.doesNotMatch(error.message, /sslmode/);
+    assert.match(error.message, /la_clothing/);
+  }
+
+  // Also verify CLI stderr does not leak secrets when rejecting a production database
+  const cliResult = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "scripts/pancake-durability-evidence.ts"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        CI: "false",
+        GITHUB_ACTIONS: "false",
+        DATABASE_URL: sensitiveUrl,
+      },
+    },
+  );
+  assert.notEqual(cliResult.status, 0);
+  assert.match(cliResult.stderr, /expected database 'la_clothing_durability_audit', got 'la_clothing'/);
+  assert.doesNotMatch(cliResult.stderr, /secret_user/);
+  assert.doesNotMatch(cliResult.stderr, /super_secret_password_xyz987/);
+  assert.doesNotMatch(cliResult.stderr, /prod-internal-db\.example\.com/);
 });

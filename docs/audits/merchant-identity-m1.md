@@ -218,24 +218,36 @@ are reconciled by `pancakeProductId` and `pancakeVariationId`: renaming a produc
 options updates the existing row rather than creating a duplicate. In addition, the 3-run resync test
 proves that internal CUID row IDs were preserved across all 712 comparisons (0 row replacements).
 
+### Durability Architecture & Separation of Responsibilities
+
+1. **`merchant:identity:audit` (Read-only mirror audit):**
+   - Reads only local database `VariantMirror` and `ProductMirror` rows.
+   - Requires only `DATABASE_URL` and `PANCAKE_SHOP_ID` (no API key).
+   - Audits emittable identifier formatting, duplicate detection, candidate MPN presence/uniqueness, price, availability, media, and published text serializability.
+   - **Always fails closed regarding upstream lifetime:**
+     ```json
+     "durability": {
+       "mirrorReconcilesByExternalId": true,
+       "upstreamLifetimeProven": false,
+       "verdict": "BLOCKED"
+     }
+     ```
+     A read of local rows cannot, on its own, prove that an external provider preserves identifiers over their lifetime. The local audit refuses to declare durability from internal data or caller flags.
+
+2. **`merchant:durability:evidence` (Controlled write-capable durability audit):**
+   - Implements §3.3 Option B verification via repeated live Pancake catalog syncs.
+   - **Strict isolation guard:** Enforces fail-closed refusal unless `DATABASE_URL` specifies the exact approved isolated database `la_clothing_durability_audit` (`ALLOWED_AUDIT_DATABASE_NAME`). Rejects any production database name (e.g. `la_clothing`), rejects malformed URLs, and rejects CI execution before reading credentials or connecting.
+   - Executes multi-pass syncs, captures sha256 identifier snapshots, and verifies that upstream IDs and internal row CUID reconciliations are 100% stable.
+
+3. **`docs/audits/merchant-identity-m1.md` (Reviewed evidence artifact):**
+   - The authoritative review artifact that aggregates Option B evidence from `merchant:durability:evidence`, the 4-day time-separation proof, and repository reconciliation tests.
+   - Clears the M1 Durability Gate as **PROVEN**.
+
 ### Durability Verdict
 
-**DURABILITY: PROVEN.**
+**M1 DURABILITY GATE: PROVEN (via Option B).**
 Identifiers (`pancakeProductId` and `pancakeVariationId`) are stable and durable across repeated
 syncs and time-separated operational snapshots.
-
-When running with verified durability evidence:
-```bash
-pnpm merchant:identity:audit --verified-durability
-```
-The audit reports:
-```json
-"durability": {
-  "mirrorReconcilesByExternalId": true,
-  "upstreamLifetimeProven": true,
-  "verdict": "PROVEN"
-}
-```
 
 ## Status of downstream Merchant gates
 
@@ -245,4 +257,5 @@ The audit reports:
 - **Media readiness:** 149/149 standalone variants currently lack variant-level media in the mirror.
 - **Editorial description:** 5 published, 144 draft.
 - **Apparel facts (O3):** **OWNER_BLOCKED.** `gender`, `age_group`, `condition` remain blocked pending human owner decision. Offer emission (U25 / M3) cannot proceed until O3 is cleared.
+
 

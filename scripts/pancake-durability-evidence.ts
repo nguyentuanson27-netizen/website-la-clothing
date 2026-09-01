@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { createCatalogMirrorRepository } from "../src/commerce/catalog-mirror-repository.ts";
 import { syncPancakeCatalog } from "../src/commerce/catalog-sync.ts";
 import {
+  assertDurabilityEvidenceEnvironment,
   compareCatalogSnapshots,
   createCatalogIdSnapshot,
   type CatalogIdSnapshot,
@@ -10,27 +11,14 @@ import {
 import { PancakeClient } from "../src/integrations/pancake/client.ts";
 import { readPancakeConfig } from "../src/integrations/pancake/config.ts";
 
-const CI_REFUSAL_MESSAGE = "Trusted Pancake durability evidence script refuses CI execution";
 const RUNS_COUNT = 3;
-
-function environmentFlagIsEnabled(value: string | undefined): boolean {
-  if (value === undefined || value === "" || value === "0" || value.toLowerCase() === "false") {
-    return false;
-  }
-  return true;
-}
-
-export function assertTrustedDurabilityEnvironment(env: NodeJS.ProcessEnv = process.env): void {
-  if (environmentFlagIsEnabled(env.CI) || environmentFlagIsEnabled(env.GITHUB_ACTIONS)) {
-    throw new Error(CI_REFUSAL_MESSAGE);
-  }
-}
 
 export async function runDurabilityEvidence(options: {
   runs?: number;
   delayMs?: number;
 } = {}): Promise<ReturnType<typeof compareCatalogSnapshots>> {
-  assertTrustedDurabilityEnvironment();
+  // Fail closed: enforce CI refusal and approved isolated audit database BEFORE reading config or Prisma
+  assertDurabilityEvidenceEnvironment();
 
   const config = readPancakeConfig();
   const pancake = new PancakeClient({ apiKey: config.apiKey });
@@ -96,6 +84,7 @@ function isDirectExecution(): boolean {
 
 if (isDirectExecution()) {
   try {
+    assertDurabilityEvidenceEnvironment();
     const result = await runDurabilityEvidence();
     console.log("PANCAKE_DURABILITY_EVIDENCE_BEGIN");
     console.log(JSON.stringify(result, null, 2));
