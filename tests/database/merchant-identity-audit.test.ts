@@ -218,12 +218,18 @@ test("M1 the audit rejects a malformed shop scope before touching the database",
  * process requires.
  */
 test("M1 the mirror-only identity audit runs with a database and a shop id, and no API key", () => {
-  const { PANCAKE_API_KEY: _removed, ...env } = process.env;
+  // The documented environment is constructed here rather than inherited: the point is to prove what
+  // the contract says is sufficient, which an ambient shop id from some outer config would obscure.
+  const { PANCAKE_API_KEY: _removed, ...inherited } = process.env;
 
   const audit = spawnSync(
     process.execPath,
     ["--experimental-strip-types", "scripts/merchant-identity-audit.ts"],
-    { env, encoding: "utf8", cwd: process.cwd() },
+    {
+      env: { ...inherited, PANCAKE_SHOP_ID: "920007" },
+      encoding: "utf8",
+      cwd: process.cwd(),
+    },
   );
 
   assert.equal(
