@@ -181,10 +181,11 @@ The gate is now **PROVEN via §3.3 Option B**, backed by a controlled live exper
 
 ### 1. Controlled live experiment on production product `a132`
 
-- **Execution provenance:** Production VPS (Node.js v22.23.2, Pancake shop `1635185058`, commit `847b4d4`).
-- **Executed at:** `2026-09-02T12:27:49Z` – `2026-09-02T12:27:56Z`.
+- **Execution provenance:** Production VPS (Node.js v22.23.2, Pancake shop `1635185058`).
+- **Exact experiment execution SHA:** `847b4d49d76edd2939803002b27fc19d223e7236`
+- **Executed at:** `2026-09-02T13:34:15Z` – `2026-09-02T13:34:28Z`.
 - **Command:** `M1_EXPERIMENT_APPROVED=a132 node --env-file=.env.local --experimental-strip-types scripts/pancake-m1-durability-experiment.ts`
-- **Run ID:** `9ab0ce71`
+- **Run ID:** `310af19f`
 - **Target resolution:** Target `a132` was queried directly from the Pancake API (`/shops/1635185058/products?search=a132`). Exactly 1 upstream product matched:
   - `pancakeProductId`: `4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`
   - Name: `"ÁO A132"`
@@ -200,8 +201,8 @@ The gate is now **PROVEN via §3.3 Option B**, backed by a controlled live exper
   - Fresh GET verification confirmed exact restoration of: product name, product `custom_id`, `note_product`, variation count, variation IDs, variation `display_id`, and variation `custom_id: null` (`productionProductRestored: true`, `verifiedFieldsMatch: true`).
 - **Independent correlate design without tested ID fallback:**
   - Zero proof-path fallback to `GET /products/${productId}`.
-  - Option B correlation: Parent product is correlated strictly through the COMPLETE set of 5 child variation markers (`M1-A132-V-{size}-9ab0ce71`), all sharing exactly one upstream `product_id`.
-  - Option A verification: Upstream product `note_product` was verified against the expected phase product marker (`M1-A132-P-9ab0ce71`, `...|MUT1`, `...|MUT2`).
+  - Option B correlation: Parent product is correlated strictly through the COMPLETE set of 5 child variation markers (`M1-A132-V-{size}-310af19f`), all sharing exactly one upstream `product_id`.
+  - Option A verification: Upstream product `note_product` was verified against the expected phase product marker (`M1-A132-P-310af19f`, `...|MUT1`, `...|MUT2`).
 - **Expected markers validation from T0 onward:**
   - `compareCorrelatedObservations` receives `{ expectedProductMarker, expectedVariationMarkers, runs }`.
   - Every single run (including T0 baseline) strictly asserts that the observed marker set exactly matches the expected marker set with zero missing, duplicate, or unexpected markers.
@@ -211,11 +212,11 @@ The gate is now **PROVEN via §3.3 Option B**, backed by a controlled live exper
 
 | Variation Size | Pancake Variation ID | Original (`custom_id` / `display_id`) | Temporary Marker (`custom_id` in PUT $\rightarrow$ `display_id` in GET) | Restored State (`custom_id` / `display_id`) |
 | :--- | :--- | :--- | :--- | :--- |
-| **S** | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `null` / `"A132-S"` | `M1-A132-V-S-9ab0ce71` | `null` / `"A132-S"` (Verified) |
-| **M** | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `null` / `"A132-M"` | `M1-A132-V-M-9ab0ce71` | `null` / `"A132-M"` (Verified) |
-| **L** | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `null` / `"A132-L"` | `M1-A132-V-L-9ab0ce71` | `null` / `"A132-L"` (Verified) |
-| **XL** | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `null` / `"A132-XL"` | `M1-A132-V-XL-9ab0ce71` | `null` / `"A132-XL"` (Verified) |
-| **XXL** | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `null` / `"A132-XXL"` | `M1-A132-V-XXL-9ab0ce71` | `null` / `"A132-XXL"` (Verified) |
+| **S** | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `null` / `"A132-S"` | `M1-A132-V-S-310af19f` | `null` / `"A132-S"` (Verified) |
+| **M** | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `null` / `"A132-M"` | `M1-A132-V-M-310af19f` | `null` / `"A132-M"` (Verified) |
+| **L** | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `null` / `"A132-L"` | `M1-A132-V-L-310af19f` | `null` / `"A132-L"` (Verified) |
+| **XL** | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `null` / `"A132-XL"` | `M1-A132-V-XL-310af19f` | `null` / `"A132-XL"` (Verified) |
+| **XXL** | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `null` / `"A132-XXL"` | `M1-A132-V-XXL-310af19f` | `null` / `"A132-XXL"` (Verified) |
 
 - **Comparison evaluation:**
   - Evaluated via `compareCorrelatedObservations`:
@@ -233,7 +234,7 @@ The gate is now **PROVEN via §3.3 Option B**, backed by a controlled live exper
 ```json
 {
   "runsObserved": 3,
-  "productMarker": "M1-A132-P-9ab0ce71",
+  "productMarker": "M1-A132-P-310af19f",
   "productMarkerStable": true,
   "observedProductIds": [
     "4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d",
@@ -243,11 +244,11 @@ The gate is now **PROVEN via §3.3 Option B**, backed by a controlled live exper
   "stableProductId": "4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d",
   "variationMarkersStable": true,
   "variationResults": [
-    { "variationMarker": "M1-A132-V-M-9ab0ce71", "stableVariationId": "9ea76227-51f0-45a2-b5cc-f6b42e5ec3da", "isStable": true },
-    { "variationMarker": "M1-A132-V-L-9ab0ce71", "stableVariationId": "fc45eab8-ed4e-4f25-87d1-70944026d655", "isStable": true },
-    { "variationMarker": "M1-A132-V-XL-9ab0ce71", "stableVariationId": "b185e908-caf3-4394-8c6a-692e5cf4c51a", "isStable": true },
-    { "variationMarker": "M1-A132-V-XXL-9ab0ce71", "stableVariationId": "9c2657ae-1de0-4037-86a0-26cc5d4949b9", "isStable": true },
-    { "variationMarker": "M1-A132-V-S-9ab0ce71", "stableVariationId": "5fb045fa-af8a-4fc9-95f8-8c30d02027b4", "isStable": true }
+    { "variationMarker": "M1-A132-V-M-310af19f", "stableVariationId": "9ea76227-51f0-45a2-b5cc-f6b42e5ec3da", "isStable": true },
+    { "variationMarker": "M1-A132-V-L-310af19f", "stableVariationId": "fc45eab8-ed4e-4f25-87d1-70944026d655", "isStable": true },
+    { "variationMarker": "M1-A132-V-XL-310af19f", "stableVariationId": "b185e908-caf3-4394-8c6a-692e5cf4c51a", "isStable": true },
+    { "variationMarker": "M1-A132-V-XXL-310af19f", "stableVariationId": "9c2657ae-1de0-4037-86a0-26cc5d4949b9", "isStable": true },
+    { "variationMarker": "M1-A132-V-S-310af19f", "stableVariationId": "5fb045fa-af8a-4fc9-95f8-8c30d02027b4", "isStable": true }
   ],
   "allMarkersRetainedSameIds": true,
   "remapDetected": false,
