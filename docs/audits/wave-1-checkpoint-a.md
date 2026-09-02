@@ -133,6 +133,10 @@ Removal of the `retailPrice === retailPriceAfterDiscount` availability gate in
   identifier (`MAX_PROMOTION_IDENTIFIER_LENGTH = 128`) bounds on **every** write including Draft, and
   `refuseUnboundedCampaignId` bounds the campaign identifier before it reaches the database as a query
   parameter.
+  Two bounds the spec names, `MAX_ADMIN_PROMOTION_PAGE_SIZE = 50` and `ADMIN_TARGET_SEARCH_LIMIT = 50`,
+  are deliberately absent: they govern admin listing and search, there is no such operation in the
+  service yet, and `tasks/promotions-flash-sale-v1-todo.md` assigns "List/search bounded 50" to
+  **P5**. Their max/max+1 tests belong to U14 with the operations they bound.
 - **Activation gate:** `isPromotionActivationEnabled` defaults **off** and matches
   `LA_PROMOTION_ACTIVATION_ENABLED === "true"` exactly, so no `NEXT_PUBLIC_` value, header or casual
   `1`/`TRUE` can switch real discounted pricing on. While off, publish, re-enable and Scheduled material
@@ -179,11 +183,18 @@ deployed.
 | `pnpm prisma:validate` | pass — schema valid |
 | `pnpm prisma:generate` | pass |
 | `pnpm prisma:migrate:deploy` | pass — all migrations applied, revision singleton seeded |
-| `pnpm lint` | pass — 0 errors (6 pre-existing unused-variable warnings, none in Wave 1 code) |
+| `pnpm lint` | pass — 0 errors, 6 warnings (see note below) |
 | `pnpm typecheck` | pass |
 | `pnpm test` | pass — 752/752 |
 | `pnpm test:db` | pass — 292/292 |
 | `pnpm build` | pass |
+
+Lint warnings, stated precisely: all six are advisory, none is an error, and none is a defect.
+Five predate Wave 1. **One is Wave 1 code** — `tests/database/mirrored-money-audit.test.ts:169`,
+added by PR #163 (U7 part 2), where `const { PANCAKE_API_KEY: _removed, ...inherited } = process.env`
+deliberately omits the key to prove the mirror-only audit needs no API key. The `_`-prefixed
+rest-destructuring omit is the idiomatic way to express that and the warning is the linter's
+standing opinion of the pattern, not a finding against the test.
 
 `pnpm release:check` requires a configured `PANCAKE_API_KEY` and is not runnable outside an approved
 credential context; it is covered at exact head by the CI **Release environment preflight** step.
