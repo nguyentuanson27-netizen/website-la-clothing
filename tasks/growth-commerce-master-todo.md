@@ -41,7 +41,7 @@ not resolve downstream owner or launch gates.
 
 - [ ] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence.
 - [ ] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only.
-- [ ] **U9** #153 M1 + #152 W4a — read-only identity/durability/SKU-MPN audit; may run in parallel with U8; no GTIN inference; composites deferred.
+- [x] **U9** #153 M1 + #152 W4a — read-only identity/durability/SKU-MPN audit (PR #175); M1 durability **PROVEN via §3.3 Option B** (controlled repeated upstream-object correlation evidence on `a132`); SKU-as-MPN and runtime apparel facts remain pending downstream decisions; no GTIN inference; composites deferred.
 - [ ] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery.
 - [ ] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision.
 
