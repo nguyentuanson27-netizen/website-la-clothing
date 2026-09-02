@@ -189,6 +189,14 @@ test("M1 the durability verdict is never satisfied by this audit alone", () => {
   assert.equal(summary.durability.verdict, "BLOCKED");
 });
 
+test("M1 local mirror audit always remains fail-closed and cannot declare upstream durability", () => {
+  const summary = summarizeMerchantIdentity([row()]);
+
+  assert.equal(summary.durability.mirrorReconcilesByExternalId, true);
+  assert.equal(summary.durability.upstreamLifetimeProven, false);
+  assert.equal(summary.durability.verdict, "BLOCKED");
+});
+
 /* -------------------------------------------------------------- catalog facts beyond identity */
 
 /**
