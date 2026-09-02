@@ -240,11 +240,16 @@ Variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` (`A132-S`) was selected as the 
 ### 4. Controlled Promotion Lifecycle & Observed Phases
 
 - **Test name:** `W3-SEMANTIC-A132-20260902`
-- **Promotion ID:** `fcd212d0-bc00-4a52-8c9d-94f212abf76a`
+- **Promotion ID:** `8b06e93e-3995-4713-b370-06973a04dc82`
 - **Promotion type:** `discount_by_product` (scoped to variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4`, discount `42900` VND / ~10%)
-- **Executed via:** `scripts/pancake-w3-experiment.ts` on Production VPS
+- **Executed via:** `scripts/pancake-w3-experiment.ts` on Production VPS (`156.67.214.197`) with mandatory operator approval `W3_EXPERIMENT_APPROVED=a132` and approved shop guard `1635185058`.
 
-#### BEFORE Baseline (2026-09-02T01:46:44.628Z)
+#### Preflight & Collision Checks
+- **Target variation revalidation:** Confirmed product `4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`, variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` (`A132-S`), `remain_quantity: 0`, no composite dependency, not locked, not hidden.
+- **Existing promotion collision check:** Bounded pagination traversal verified 0 collisions with deterministic test name `W3-SEMANTIC-A132-20260902` and 0 active promotions affecting `A132-S`.
+- **Created scope verification:** Verified authoritative promotion object scope before semantic probes: `is_activated: true`, `is_variation: true`, `items` length 1, scoped strictly to `5fb045fa-af8a-4fc9-95f8-8c30d02027b4`, peer variation not in scope.
+
+#### BEFORE Baseline (2026-09-02T02:37:20.133Z)
 ```json
 {
   "phase": "BEFORE",
@@ -252,11 +257,11 @@ Variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` (`A132-S`) was selected as the 
   "retailPrice": 429000,
   "retailPriceAfterDiscount": 429000,
   "existingPromotionsCount": 0,
-  "observedAt": "2026-09-02T01:46:44.628Z"
+  "observedAt": "2026-09-02T02:37:20.133Z"
 }
 ```
 
-#### ACTIVE Phase (2026-09-02T01:46:45.023Z)
+#### ACTIVE Phase (2026-09-02T02:37:20.703Z)
 ```json
 {
   "phase": "ACTIVE",
@@ -265,11 +270,37 @@ Variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` (`A132-S`) was selected as the 
   "retailPriceAfterDiscount": 429000,
   "activePromotionsCount": 1,
   "collateralVariationsUnchanged": true,
-  "observedAt": "2026-09-02T01:46:45.023Z"
+  "observedAt": "2026-09-02T02:37:20.703Z"
 }
 ```
 
-#### AFTER_REVERT Phase (2026-09-02T01:46:45.288Z)
+#### Order-Promotion Applicability Probes (Read-Only POST /shops/{SHOP_ID}/orders/get_promotion_advance_active)
+
+- **Target Variation (`A132-S` / `5fb045fa-af8a-4fc9-95f8-8c30d02027b4`):**
+  ```json
+  {
+    "phase": "PROMOTION_APPLICABILITY_TARGET",
+    "variationId": "5fb045fa-af8a-4fc9-95f8-8c30d02027b4",
+    "matchedPromotionId": "8b06e93e-3995-4713-b370-06973a04dc82",
+    "applicable": true,
+    "observedAt": "2026-09-02T02:37:20.547Z"
+  }
+  ```
+  *Observed Fact:* The provider order-evaluation endpoint explicitly evaluated and returned promotion `8b06e93e-3995-4713-b370-06973a04dc82` as applicable to `A132-S`.
+
+- **Peer Variation Negative Probe (`A132-M` / `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da`):**
+  ```json
+  {
+    "phase": "PROMOTION_APPLICABILITY_PEER_NEGATIVE",
+    "variationId": "9ea76227-51f0-45a2-b5cc-f6b42e5ec3da",
+    "matchedPromotionId": null,
+    "applicable": false,
+    "observedAt": "2026-09-02T02:37:20.618Z"
+  }
+  ```
+  *Observed Fact:* The same provider order-evaluation endpoint evaluated the exact same promotion on peer variation `A132-M` and returned `null` (not applicable), proving exact promotion targeting and zero promotion collateral.
+
+#### AFTER_REVERT Phase (2026-09-02T02:37:21.050Z)
 ```json
 {
   "phase": "AFTER_REVERT",
@@ -278,32 +309,56 @@ Variation `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` (`A132-S`) was selected as the 
   "retailPriceAfterDiscount": 429000,
   "remainingPromotionsCount": 0,
   "reversibilityVerified": true,
-  "observedAt": "2026-09-02T01:46:45.288Z"
+  "observedAt": "2026-09-02T02:37:21.050Z"
+}
+```
+
+#### Post-Rollback Applicability Verification (2026-09-02T02:37:20.959Z)
+```json
+{
+  "phase": "POST_ROLLBACK_APPLICABILITY_TARGET",
+  "variationId": "5fb045fa-af8a-4fc9-95f8-8c30d02027b4",
+  "matchedPromotionId": null,
+  "applicable": false,
+  "observedAt": "2026-09-02T02:37:20.959Z"
 }
 ```
 
 #### Rollback Execution & Verification
-- **Action:** `POST /shops/1635185058/promotion_advance/delete_multi` with `type_action: "DELETE_PROMOTIONS"` for `ids: ["fcd212d0-bc00-4a52-8c9d-94f212abf76a"]`.
-- **Status:** **PASS**. Promotion was completely removed (`is_removed: true`).
-- **Post-revert verification:** Promotion list returned 0 promotions (`remainingPromotionsCount: 0`). Target variation base price and discount price returned exactly to baseline (`429000` / `429000`).
+- **Action:** `POST /shops/1635185058/promotion_advance/delete_multi` with `type_action: "DELETE_PROMOTIONS"` for `ids: ["8b06e93e-3995-4713-b370-06973a04dc82"]`.
+- **Status:** **PASS** (fatal check: throws `ROLLBACK_FAILED` if delete fails or state is inconsistent).
+- **Post-revert verifications:**
+  1. Deletion API reported `success: true`.
+  2. Bounded pagination traversal verified 0 remaining promotions in the shop (`remainingPromotionsCount: 0`).
+  3. Target variation applicability probe returned `applicable: false` (no test promotion active).
+  4. Target variation catalog prices returned identically to baseline (`429000` / `429000`).
+  5. Peer variations remained identical and unaffected throughout.
 
 ---
 
 ## Semantic Analysis & Success Criteria Evaluation
 
-| Criterion | Requirement | Result | Evidence |
+All five criteria are derived directly from observed response data (never hard-coded):
+
+| Criterion | Requirement | Result | Derived Evidence Fact |
 |---|---|---|---|
 | **C1: Retail price invariant** | Base price unchanged during active promotion and after rollback | **PASS** | `retail_price` remained `429000` across BEFORE, ACTIVE, and AFTER_REVERT phases. |
-| **C2: Semantic responsiveness** | Field responsiveness or proof via OpenAPI + experiment how Pancake exposes it | **PASS** | Pancake POS handles `promotion_advance` as dynamic order/cart promotions evaluated at checkout time, leaving catalog `/products` endpoints at base retail price. |
-| **C3: Reversibility** | After rollback, values equal baseline | **PASS** | `retailPrice: 429000`, `retailPriceAfterDiscount: 429000`, matching baseline identically. |
-| **C4: Provider OpenAPI alignment** | Documented promotion objects and structures match observed facts | **PASS** | Aligned with `Pancake POS Open API` v1.0.0 promotion schema and deletion contracts. |
-| **C5: Zero collateral damage** | Other variations/products unaffected | **PASS** | All 4 peer variations of `a132` (L, M, XL, XXL) remained identical throughout. |
+| **C2: Semantic responsiveness** | Direct proof that Pancake evaluates promotion for order context | **PASS** | `POST /orders/get_promotion_advance_active` returned `applicable: true` with `matchedPromotionId === "8b06e93e-3995-4713-b370-06973a04dc82"`. |
+| **C3: Reversibility** | After rollback, values equal baseline & promo not applicable | **PASS** | `retailPrice: 429000`, `retailPriceAfterDiscount: 429000`, remaining promotions count 0, and post-rollback applicability probe returned `applicable: false`. |
+| **C4: Provider OpenAPI alignment** | Documented promotion objects and structures match observed facts | **PASS** | Verified promotion object scope (`is_activated: true`, `is_variation: true`, `level_info`) and `get_promotion_advance_active` response shape. |
+| **C5: Zero collateral damage** | Scope exact, peer variation unaffected and non-promoted | **PASS** | Authoritative scope contained only `A132-S`; peer variation `A132-M` applicability returned `false`; peer catalog prices remained identical throughout. |
 
 ### Upstream Semantic Conclusion
-1. In Pancake POS, `promotion_advance` promotions are dynamic order-level / cart-level promotional rules evaluated during order calculation (e.g. `POST /shops/{SHOP_ID}/orders/get_promotion_advance_active`), NOT static catalog-level mutations to variation entities.
-2. In Pancake POS catalog endpoints (`/products`, `/products/variations`), `retail_price_after_discount` mirrors `retail_price` for standard catalog products.
-3. This explains why 356/356 variations across the entire live catalog have `retail_price === retail_price_after_discount`.
-4. The website's pricing policy—taking `pancakeRetailPrice` as the authoritative base price and applying website-owned promotions—is completely sound and aligns with Pancake's architecture.
+
+The controlled experiment on `a132` establishes three distinct facts:
+
+1. **Catalog fact:** During active promotion, `retail_price` and `retail_price_after_discount` remained completely unchanged (`429000` / `429000`) in the Pancake catalog endpoints (`/products/{PRODUCT_ID}`).
+2. **Promotion applicability fact:** The provider's order-promotion evaluation endpoint (`POST /shops/{SHOP_ID}/orders/get_promotion_advance_active`) explicitly returned the controlled promotion as applicable to target variation `A132-S` while ACTIVE.
+3. **Isolation fact:** The same controlled promotion was explicitly NOT applicable to selected peer variation `A132-M` under the same provider endpoint, and peer catalog prices were untouched.
+
+This proves that for the tested promotion path, Pancake POS implements `promotion_advance` promotions as dynamically evaluated order/cart rules, rather than static mutations to catalog variation price fields. Consequently, across the entire catalog snapshot, 356/356 variations have `retail_price === retail_price_after_discount`.
+
+The website's pricing policy—taking `pancakeRetailPrice` as the authoritative base price and applying website-owned promotions—is completely sound and aligns with Pancake's architecture.
 
 ---
 
