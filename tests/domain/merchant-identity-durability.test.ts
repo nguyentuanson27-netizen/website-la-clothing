@@ -319,10 +319,17 @@ test("a refused durability run constructs no Prisma client", async () => {
   const previous = globalForPrisma.prisma;
   delete globalForPrisma.prisma;
 
-  const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalCi = process.env.CI;
+  // Both CI flags are cleared, not just one. The guard refuses CI *before* it looks at the database
+  // name, so leaving GITHUB_ACTIONS set makes this assert the CI refusal instead of the one it is
+  // about — which is exactly how it passed locally and failed on the runner.
+  const saved = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    CI: process.env.CI,
+    GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+  };
   process.env.DATABASE_URL = "postgresql://postgres@127.0.0.1:5432/la_clothing";
   delete process.env.CI;
+  delete process.env.GITHUB_ACTIONS;
 
   try {
     const { runDurabilityEvidence } = await import("../../scripts/pancake-durability-evidence.ts");
@@ -339,10 +346,10 @@ test("a refused durability run constructs no Prisma client", async () => {
       "the refused run reached a Prisma client anyway",
     );
   } finally {
-    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
-    else process.env.DATABASE_URL = originalDatabaseUrl;
-    if (originalCi === undefined) delete process.env.CI;
-    else process.env.CI = originalCi;
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     if (previous === undefined) delete globalForPrisma.prisma;
     else globalForPrisma.prisma = previous;
   }
