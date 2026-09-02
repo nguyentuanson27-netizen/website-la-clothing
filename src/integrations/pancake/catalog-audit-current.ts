@@ -33,6 +33,7 @@ export type CurrentPancakeCatalogAuditReport = {
     };
     images: PancakeCatalogAuditReport["images"];
     categories: PancakeCatalogAuditReport["categories"];
+    pricing: PancakeCatalogAuditReport["pricing"];
   };
 };
 
@@ -232,6 +233,7 @@ export async function runCurrentPancakeCatalogAudit({
       },
       images: current.images,
       categories: current.categories,
+      pricing: current.pricing,
     },
   };
 }
