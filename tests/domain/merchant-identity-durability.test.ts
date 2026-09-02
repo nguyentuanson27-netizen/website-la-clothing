@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -301,4 +302,87 @@ test("durability evidence error messages never leak passwords, hosts, or full UR
   assert.doesNotMatch(cliResult.stderr, /secret_user/);
   assert.doesNotMatch(cliResult.stderr, /super_secret_password_xyz987/);
   assert.doesNotMatch(cliResult.stderr, /prod-internal-db\.example\.com/);
+});
+
+/**
+ * The guard exists to stop a write-capable client from ever pointing at a database this run is not
+ * allowed to touch. Refusing and *then* constructing one against that same `DATABASE_URL` gives away
+ * most of what the refusal was for — a Prisma client is built from the connection string the guard
+ * just rejected.
+ *
+ * `src/db/prisma.ts` builds its singleton at module scope and parks it on `globalThis` outside
+ * production, so the absence of that global is a direct observation that no client was constructed,
+ * rather than a proxy for it.
+ */
+test("a refused durability run constructs no Prisma client", async () => {
+  const globalForPrisma = globalThis as { prisma?: unknown };
+  const previous = globalForPrisma.prisma;
+  delete globalForPrisma.prisma;
+
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalCi = process.env.CI;
+  process.env.DATABASE_URL = "postgresql://postgres@127.0.0.1:5432/la_clothing";
+  delete process.env.CI;
+
+  try {
+    const { runDurabilityEvidence } = await import("../../scripts/pancake-durability-evidence.ts");
+
+    await assert.rejects(
+      () => runDurabilityEvidence({ runs: 1, delayMs: 0 }),
+      /audit database/i,
+      "a production database name must be refused",
+    );
+
+    assert.equal(
+      globalForPrisma.prisma,
+      undefined,
+      "the refused run reached a Prisma client anyway",
+    );
+  } finally {
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = originalDatabaseUrl;
+    if (originalCi === undefined) delete process.env.CI;
+    else process.env.CI = originalCi;
+    if (previous === undefined) delete globalForPrisma.prisma;
+    else globalForPrisma.prisma = previous;
+  }
+});
+
+/**
+ * The behavioural test above cannot reach the CLI wrapper: its body only runs on direct execution,
+ * and from outside the process a refusal that imports Prisma and one that does not are
+ * indistinguishable — the client is built lazily, and the wrapper swallows the failure either way.
+ *
+ * So this half is deliberately structural. The property is structural too: the wrapper must not
+ * import Prisma to clean up something the guard may have stopped from ever existing. Prisma's
+ * lifecycle belongs inside the function, after the guard passes.
+ */
+test("the durability CLI wrapper does not import Prisma to clean up after a refusal", async () => {
+  const source = await readFile(
+    new URL("../../scripts/pancake-durability-evidence.ts", import.meta.url),
+    "utf8",
+  );
+
+  const directExecutionBlock = source.slice(source.indexOf("if (isDirectExecution())"));
+  assert.notEqual(directExecutionBlock, "", "the direct-execution block should still exist");
+  assert.equal(
+    directExecutionBlock.includes("db/prisma"),
+    false,
+    "the CLI wrapper must not import Prisma; the client's lifetime belongs to the guarded function",
+  );
+
+  const guardedFunction = source.slice(
+    source.indexOf("export async function runDurabilityEvidence"),
+    source.indexOf("function isDirectExecution"),
+  );
+  assert.equal(
+    guardedFunction.includes("db/prisma"),
+    true,
+    "the guarded function owns the client it creates",
+  );
+  assert.equal(
+    guardedFunction.includes("$disconnect"),
+    true,
+    "and disconnects it",
+  );
 });

@@ -22,7 +22,30 @@ export async function runDurabilityEvidence(options: {
 
   const config = readPancakeConfig();
   const pancake = new PancakeClient({ apiKey: config.apiKey });
+
+  // Imported only once the guard has passed, and owned from here on. A client built after a refusal
+  // is built from the very connection string the guard rejected, so its lifetime belongs inside the
+  // guarded path rather than to a caller that cannot know whether the guard ran.
   const { prisma } = await import("../src/db/prisma.ts");
+
+  try {
+    return await collectDurabilityEvidence({ prisma, pancake, config, options });
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+async function collectDurabilityEvidence({
+  prisma,
+  pancake,
+  config,
+  options,
+}: {
+  prisma: Awaited<typeof import("../src/db/prisma.ts")>["prisma"];
+  pancake: PancakeClient;
+  config: ReturnType<typeof readPancakeConfig>;
+  options: { runs?: number; delayMs?: number };
+}): Promise<ReturnType<typeof compareCatalogSnapshots>> {
   const repository = createCatalogMirrorRepository(prisma);
   const runs = options.runs ?? RUNS_COUNT;
   const delayMs = options.delayMs ?? 1000;
@@ -92,12 +115,8 @@ if (isDirectExecution()) {
   } catch (error) {
     console.error(`Durability evidence failed: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
-  } finally {
-    try {
-      const { prisma } = await import("../src/db/prisma.ts");
-      await prisma.$disconnect();
-    } catch {
-      // Ignore cleanup error if prisma was never initialized
-    }
   }
+  // No cleanup here on purpose. The wrapper cannot know whether the guard ever passed, so importing
+  // Prisma to disconnect would construct a client against the refused database — undoing most of
+  // what the refusal was for. Whatever creates the client also closes it.
 }
