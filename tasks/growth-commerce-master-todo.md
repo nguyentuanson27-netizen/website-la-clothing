@@ -50,6 +50,10 @@ not resolve downstream owner or launch gates.
 **PASS** — integrated evidence recorded in `docs/audits/wave-1-checkpoint-a.md`, verified at exact head
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`.
 
+The owning source checklists are reconciled to the same truth, so there is one execution reality rather than two:
+`tasks/promotions-flash-sale-v1-todo.md` records P1–P4 + Checkpoint A as delivered with P5 onward open, and
+`tasks/marketing-analytics-shopping-todo.md` records T1–T3 + T4 as delivered with T5 onward open.
+
 - [x] #151 P1–P4 verification green; price evidence accepted; activation gate off. `pnpm lint`,
       `pnpm typecheck`, `pnpm test` (752/752), `pnpm test:db` (292/292) and `pnpm build` all pass;
       migrations deploy clean. Exact-head CI `verify` + `admin-a11y-runtime`, VPS container

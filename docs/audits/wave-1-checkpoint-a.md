@@ -279,6 +279,23 @@ Observations carried forward, none blocking:
 - Security review green for authz, bounds, concurrency, external-data handling, money correctness and
   secret/PII logging: **0 Critical / 0 Required**.
 
+## 5b. Source-checklist reconciliation
+
+The master checklist states that detailed acceptance criteria live in the source artifacts, so recording
+Checkpoint A only in the master would leave two contradictory execution truths — a passed checkpoint in one file
+and unstarted prerequisites in the other. Both owning checklists are therefore reconciled to current merged truth:
+
+- `tasks/promotions-flash-sale-v1-todo.md` — P1, P2, P3, P4 and Checkpoint A recorded as delivered, with per-slice
+  PR provenance. **P5 onward stay open.** Three P0 planning gates (fresh review, exact-head CI, human plan
+  approval) are deliberately left unticked: the repository carries no verifiable evidence of them, and P1–P4
+  having been built is not proof they were recorded.
+- `tasks/marketing-analytics-shopping-todo.md` — T1–T3 (U2, PR #157) and T4 (U8, PR #164/#165) recorded as
+  delivered, and the stale "PR #153 remains docs-only" / "do not start `/build`" header qualified. **T5, T6, T7,
+  T8, M2–M5 and V1 stay open**, and M1 keeps its existing partial state: durability proven, SKU-as-MPN and
+  runtime apparel facts still pending.
+
+Nothing was ticked that this record does not evidence, and no historical approval was invented.
+
 ## 6. Explicitly not done in Wave 1
 
 U12 variant deep link; U13 SEO runtime additions; U14 promotion admin UX; U15 PDP sale UI; U16 `/shop`
