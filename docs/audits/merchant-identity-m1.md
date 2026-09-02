@@ -22,7 +22,7 @@ can prove. The identifier lifetime evidence Merchant activation requires does no
 | Does every emittable record have a trusted image? | **Runnable** — `MISSING` / `UNTRUSTED` counted |
 | Is title and published description text serializable into a feed? | **Runnable** — `MALFORMED` counted |
 | Is a GTIN available? | **Not asserted, by design** |
-| Are `gender` / `age_group` / `condition` known? | **BLOCKED — owner gate O3**, reported as `OWNER_BLOCKED` rather than omitted |
+| Are `gender` / `age_group` / `condition` ready? | **Policy RESOLVED** by ADR 0007; **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists yet |
 
 ## What the audit does
 
@@ -74,10 +74,12 @@ as by one that echoes too much.
 
 ### What it deliberately does not do
 
-- **No apparel fact is inferred.** `gender`, `age_group` and `condition` are reported as
-  `OWNER_BLOCKED` constants. A product name, a category or a size chart is not evidence of who a
-  garment is for, and guessing puts wrong data in front of shoppers. They stay blocked until a human
-  supplies the approved source of truth (**O3**).
+- **No apparel value is produced, derived or restated.** ADR 0007 settled the O3 *policy* — approved
+  shop defaults plus local product-owned overrides — so the audit reports `policy: RESOLVED` with
+  `productOverrides: NOT_IMPLEMENTED` and a verdict still `BLOCKED`, now by the missing runtime
+  rather than by an open owner decision. It emits no value either way: a product name, a category or
+  a size chart is not evidence of who a garment is for, and restating the approved defaults here
+  would make this a second authority for a value the feed publishes. M3 applies them.
 - **No vendor format is asserted.** Which shape a Pancake identifier takes is an observation to
   record, not a rule to enforce. Encoding a guessed format would turn the audit into the assumption
   it exists to replace.

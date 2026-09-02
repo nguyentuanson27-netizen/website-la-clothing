@@ -136,28 +136,47 @@ test("M1 the audit never asserts a GTIN", () => {
 });
 
 /**
- * The apparel attributes are *reported*, because M1 has to say where they stand — but only ever as
- * a blocked state. What must never appear is a value: a name, a category or a size chart is not
- * evidence of who a garment is for, and guessing puts wrong data in front of shoppers.
+ * ADR 0007 settled the O3 *policy*: approved shop defaults plus local product-owned overrides. What
+ * does not exist yet is the runtime — no persistence, validation, admin editing or effective-fact
+ * projection — so the audit still reports BLOCKED, but for the honest reason.
+ *
+ * Reporting `OWNER_BLOCKED` after that decision would state that a resolved owner gate is still
+ * open, in a report whose whole job is to say where readiness stands.
  */
-test("M1 apparel facts are reported as owner-blocked and never carry a derived value", () => {
+test("M1 apparel readiness separates the settled policy from the missing runtime", () => {
   const summary = summarizeMerchantIdentity([
     row({ title: "Áo sơ mi nam người lớn", publishedDescription: "Dành cho nam giới trưởng thành." }),
   ]);
 
   assert.deepEqual(summary.apparelFacts, {
-    gender: "OWNER_BLOCKED",
-    ageGroup: "OWNER_BLOCKED",
-    condition: "OWNER_BLOCKED",
+    policy: "RESOLVED",
+    productOverrides: "NOT_IMPLEMENTED",
     verdict: "BLOCKED",
   });
+});
 
-  const values = JSON.stringify(Object.values(summary.apparelFacts)).toLowerCase();
-  for (const derived of ["male", "female", "unisex", "adult", "kids", "infant", "new", "used"]) {
+/**
+ * The no-inference rule is untouched by ADR 0007 and is the half that must never relax: the ADR
+ * forbids deriving a value from name, category, description, size or model output just as firmly.
+ *
+ * The audit also does not restate the approved shop defaults. They are M3's to apply, and a second
+ * copy here would be a second authority for a value a feed publishes.
+ */
+test("M1 the audit never produces an apparel value, derived or restated", () => {
+  const summary = summarizeMerchantIdentity([
+    row({ title: "Áo sơ mi nam người lớn", publishedDescription: "Dành cho nam giới trưởng thành." }),
+  ]);
+
+  const serialized = JSON.stringify(summary).toLowerCase();
+  for (const value of [
+    "male", "female", "unisex",
+    "newborn", "infant", "toddler", "kids", "adult",
+    "refurbished", "used",
+  ]) {
     assert.equal(
-      values.includes(derived),
+      serialized.includes(value),
       false,
-      `${derived} must never be produced: O3 is an owner decision, not an inference`,
+      `${value} must never appear: it is either an inference or M3's to apply, not M1's to report`,
     );
   }
 });
