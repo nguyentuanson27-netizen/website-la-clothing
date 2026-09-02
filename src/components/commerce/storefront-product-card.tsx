@@ -5,6 +5,7 @@ import type { StorefrontProductMedia } from "@/commerce/product-media";
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
+  type StorefrontPricingRule,
   type StorefrontVariantFacts,
   type StorefrontVariantOption,
 } from "@/commerce/storefront-product";
@@ -21,6 +22,11 @@ type StorefrontProductCardProps = {
   variants: StorefrontVariantFacts[];
   tone: "stone" | "olive" | "ink" | "sand";
   media?: StorefrontProductMedia | null;
+  /**
+   * Supplied by the listing that produced this card, so its price matches the projection that
+   * filtered and ordered it. Absent on surfaces that have not switched, which keeps the default.
+   */
+  pricingRule?: StorefrontPricingRule;
 };
 
 function describePrice(options: readonly StorefrontVariantOption[]): string {
@@ -37,8 +43,11 @@ export function StorefrontProductCard({
   variants,
   tone,
   media,
+  pricingRule,
 }: StorefrontProductCardProps) {
-  const options = buildStorefrontVariantOptions(variants);
+  // The rule is supplied by whoever listed these products, so the card shows the same price the
+  // listing filtered and ordered by. Omitted elsewhere, which keeps the default behaviour.
+  const options = buildStorefrontVariantOptions(variants, pricingRule);
   const primaryImage = media?.primary ?? null;
   const secondaryImage =
     media?.gallery && media.gallery.length > 1 && media.gallery[1]?.url !== primaryImage?.url

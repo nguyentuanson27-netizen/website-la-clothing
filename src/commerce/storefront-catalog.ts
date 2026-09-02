@@ -1,3 +1,5 @@
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { readApplicablePromotionCampaigns } from "./promotion-candidate-repository.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import {
@@ -194,24 +196,50 @@ function visibleProductWhere(shopId: number) {
   } satisfies Prisma.ProductMirrorWhereInput;
 }
 
-const variantStockCte = Prisma.sql`
-  WITH "variant_stock" AS (
+/**
+ * The sanctioned SQL pricing projection.
+ *
+ * #151 permits exactly one SQL mirror of the pricing contract, and only because `/shop` must filter
+ * and order by effective price *before* it paginates — a TypeScript pass over one page cannot do
+ * that, and paging first would show the wrong products. It is a projection of the central rule, not
+ * a second rule: every branch below has a named counterpart in `promotion-pricing.ts`, and the
+ * parity suite pins them together on the same fixtures, including the mandated rounding cases.
+ *
+ * Money never touches floating point here. The mirrored column is `double precision`, so the base
+ * is validated as a positive safe integer and then cast to `numeric` before any arithmetic; the
+ * percentage is exact decimal division floored half-up, which is the same value the `BigInt`
+ * expression produces because both operands are non-negative.
+ *
+ * `now` is the caller's request clock, so the count, the ordering and the page all decide window
+ * membership against one instant.
+ */
+export function buildVariantStockCte(now: Date) {
+  return Prisma.sql`
+  WITH "variant_base" AS (
     SELECT
       v."id",
       v."productId",
       v."color",
       v."size",
+      -- isUsableBasePriceVnd: positive, finite, integral and inside the JS safe-integer range.
+      -- The Pancake after-discount column is deliberately absent: W3 established it is not
+      -- authoritative for website pricing.
+      --
+      -- The cast goes through int8, never straight to numeric. PostgreSQL's float8 -> numeric cast
+      -- routes via the float's *text* form and rounds to 15 significant digits, so a base of
+      -- 9007199254740989 would silently become ...990 and the final price would be off by one.
+      -- The value is already proven integral and in range by the guard above, so int8 is exact.
       CASE
         WHEN v."pancakeRetailPrice" IS NOT NULL
-          AND v."pancakeRetailPriceAfterDiscount" IS NOT NULL
-          AND v."pancakeRetailPrice" = v."pancakeRetailPriceAfterDiscount"
-          AND v."pancakeRetailPrice" >= 0
+          AND v."pancakeRetailPrice" > 0
           AND v."pancakeRetailPrice" <> 'NaN'::float8
           AND v."pancakeRetailPrice" <> 'Infinity'::float8
           AND v."pancakeRetailPrice" <> '-Infinity'::float8
-        THEN v."pancakeRetailPrice"
+          AND v."pancakeRetailPrice" <= 9007199254740991::float8
+          AND FLOOR(v."pancakeRetailPrice") = v."pancakeRetailPrice"
+        THEN v."pancakeRetailPrice"::int8::numeric
         ELSE NULL
-      END AS "resolvedPrice",
+      END AS "basePrice",
       CASE
         WHEN COUNT(ws."id") = 0 THEN 0::float8
         WHEN BOOL_AND(
@@ -229,10 +257,79 @@ const variantStockCte = Prisma.sql`
       v."productId",
       v."color",
       v."size",
-      v."pancakeRetailPrice",
-      v."pancakeRetailPriceAfterDiscount"
+      v."pancakeRetailPrice"
+  ),
+  "variant_campaign" AS (
+    -- One row per (variant, campaign) pair, whatever route reached it. A campaign that targets both
+    -- a product and one of its variants reaches twice; counting target rows would read that as a
+    -- conflict and silently drop a legitimate discount, so the pair is deduped by GROUP BY first.
+    -- A variant is reached through "productId", its real owner, so a composite component follows
+    -- its own product rather than any presentation parent.
+    SELECT
+      vb."id" AS "variantId",
+      c."id" AS "campaignId",
+      c."discountType"::text AS "discountType",
+      c."percentageValue" AS "percentageValue",
+      c."fixedPriceVnd" AS "fixedPriceVnd"
+    FROM "variant_base" vb
+    JOIN "PromotionTarget" t
+      ON t."variantId" = vb."id" OR t."productId" = vb."productId"
+    JOIN "PromotionCampaign" c ON c."id" = t."campaignId"
+    WHERE c."isEnabled" = TRUE
+      -- Half-open [startsAt, endsAt): start inclusive, end exclusive, matching isActiveAt().
+      AND (c."startsAt" IS NULL OR c."startsAt" <= ${now})
+      AND (c."endsAt" IS NULL OR c."endsAt" > ${now})
+    GROUP BY vb."id", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
+  ),
+  "variant_candidate" AS (
+    SELECT
+      vb."id",
+      vb."productId",
+      vb."color",
+      vb."size",
+      vb."basePrice",
+      vb."sellableStock",
+      -- Campaigns never stack. Two distinct applicable campaigns is a conflict, and a conflicted
+      -- variant gets no website promotion rather than an arbitrary winner.
+      COUNT(vc."campaignId") AS "candidateCount",
+      MIN(vc."discountType") AS "discountType",
+      MIN(vc."percentageValue") AS "percentageValue",
+      MIN(vc."fixedPriceVnd") AS "fixedPriceVnd"
+    FROM "variant_base" vb
+    LEFT JOIN "variant_campaign" vc ON vc."variantId" = vb."id"
+    GROUP BY vb."id", vb."productId", vb."color", vb."size", vb."basePrice", vb."sellableStock"
+  ),
+  "variant_stock" AS (
+    SELECT
+      vc."id",
+      vc."productId",
+      vc."color",
+      vc."size",
+      vc."sellableStock",
+      CASE
+        WHEN vc."basePrice" IS NULL THEN NULL
+        WHEN vc."candidateCount" <> 1 THEN vc."basePrice"
+        WHEN vc."discountType" = 'PERCENTAGE'
+          AND vc."percentageValue" BETWEEN 1 AND 99
+          -- Exact decimal, floored after adding a half, which is the integer-division result the
+          -- BigInt expression produces for non-negative operands.
+          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) > 0
+          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) < vc."basePrice"
+        THEN FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100)
+        WHEN vc."discountType" = 'FIXED_PRICE'
+          AND vc."fixedPriceVnd" IS NOT NULL
+          AND vc."fixedPriceVnd"::numeric > 0
+          AND vc."fixedPriceVnd"::numeric < vc."basePrice"
+        THEN vc."fixedPriceVnd"::numeric
+        -- Any promotion that cannot produce a strict discount for this variant leaves it at base:
+        -- PROMOTION_INVALID affects the variant, never the campaign's healthy siblings.
+        ELSE vc."basePrice"
+      END::float8 AS "resolvedPrice"
+    FROM "variant_candidate" vc
   )
 `;
+}
+
 
 function buildVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   const filters: Prisma.Sql[] = [];
@@ -388,16 +485,24 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     shopId,
     pageSize,
     discovery,
+    now = new Date(),
   }: {
     shopId: number;
     pageSize: number;
     discovery: StorefrontDiscoveryQuery;
+    /**
+     * One request clock. The count, the ordering and the page are all evaluated against this same
+     * instant, so a window that opens mid-request cannot make a product appear in the total but
+     * not in the page — or land twice across a pagination boundary.
+     */
+    now?: Date;
   }) {
     const safePageSize = parseListLimit(pageSize);
     const offset = parsePageOffset(discovery.page, safePageSize);
     const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery);
     const sortPrice = buildSortPrice(variantFilters);
     const orderBy = buildDiscoveryOrder(discovery.sort);
+    const variantStockCte = buildVariantStockCte(now);
 
     const [countRows, idRows] = await Promise.all([
       client.$queryRaw<DiscoveryCountRow[]>(Prisma.sql`
@@ -440,6 +545,16 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       return toStorefrontProduct(product, collectionMap);
     });
 
+    // Card prices are hydrated through the same contract the SQL just filtered and ordered by, and
+    // against the same instant. Building them from the default rule instead would let a card show
+    // one price while the sort that placed it there used another.
+    const pageVariantIds = orderedProducts.flatMap((product) =>
+      product.variants.map((variant) => variant.id),
+    );
+    const { campaignsByVariantId } = await readApplicablePromotionCampaigns({
+      variantIds: pageVariantIds,
+    });
+
     return {
       products: orderedProducts,
       page: discovery.page,
@@ -448,6 +563,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       totalPages: Math.ceil(totalCount / safePageSize),
       hasPrevious: discovery.page > 1,
       hasNext: offset + orderedProducts.length < totalCount,
+      /** Apply to a card's variants so its displayed price matches the projection that ranked it. */
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     };
   }
 

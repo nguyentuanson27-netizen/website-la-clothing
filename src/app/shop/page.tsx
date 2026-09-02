@@ -63,13 +63,18 @@ function collectionLabel(slug: string): string {
 export default async function ShopPage({ searchParams }: ShopPageProps) {
   await connection();
 
+  // One instant for the whole request: the count, the ordering, the SQL projection and the card
+  // prices all agree, so a window opening mid-request cannot rank a product by one price and then
+  // display another.
+  const requestNow = new Date();
+
   let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
   let catalogPage: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;
   let facets: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryFacets>>;
   try {
     discovery = parseStorefrontDiscoverySearchParams(await searchParams);
     [catalogPage, facets] = await Promise.all([
-      listConfiguredStorefrontDiscoveryPage({ discovery, pageSize: PAGE_SIZE }),
+      listConfiguredStorefrontDiscoveryPage({ discovery, pageSize: PAGE_SIZE, now: requestNow }),
       listConfiguredStorefrontDiscoveryFacets(),
     ]);
   } catch (error) {
@@ -77,7 +82,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     throw error;
   }
 
-  const { page, products, totalCount, totalPages } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
   const filtered = hasActiveDiscovery(discovery);
 
@@ -260,6 +265,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
             ))}
