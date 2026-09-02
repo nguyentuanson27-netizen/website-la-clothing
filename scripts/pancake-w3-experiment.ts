@@ -64,24 +64,18 @@ export function validateTargetVariationPreflight(
     throw new Error("Target product preflight failed: invalid product payload");
   }
 
-  const raw = productPayload as {
-    id?: unknown;
-    variations?: unknown;
-  };
-
+  const raw = productPayload as { id?: unknown; variations?: unknown };
   if (raw.id !== targetProductId) {
     throw new Error(
       `Target product preflight failed: product ID ${String(raw.id)} does not match expected ${targetProductId}`,
     );
   }
-
   if (!Array.isArray(raw.variations)) {
     throw new Error("Target product preflight failed: variations array missing");
   }
 
   const variations = raw.variations as Array<Record<string, unknown>>;
-  const targetVar = variations.find((v) => v.id === targetVariationId);
-
+  const targetVar = variations.find((variation) => variation.id === targetVariationId);
   if (!targetVar) {
     throw new Error(
       `Target variation preflight failed: variation ${targetVariationId} not found under product ${targetProductId}`,
@@ -94,29 +88,65 @@ export function validateTargetVariationPreflight(
     );
   }
 
-  const remainQuantity = typeof targetVar.remain_quantity === "number" ? targetVar.remain_quantity : 0;
-  if (remainQuantity > 0) {
+  const rawRemainQuantity = targetVar.remain_quantity;
+  if (
+    typeof rawRemainQuantity !== "number" ||
+    !Number.isSafeInteger(rawRemainQuantity) ||
+    rawRemainQuantity < 0 ||
+    rawRemainQuantity % 1 !== 0
+  ) {
     throw new Error(
-      `Target variation preflight failed: variation ${targetVariationId} has stock ${remainQuantity} > 0`,
+      `Target variation preflight failed: remain_quantity must be the safe integer 0 for ${targetVariationId}`,
+    );
+  }
+  if (rawRemainQuantity > 0) {
+    throw new Error(
+      `Target variation preflight failed: variation ${targetVariationId} has stock ${rawRemainQuantity} > 0`,
     );
   }
 
-  if (Array.isArray(targetVar.variations_warehouses) && targetVar.variations_warehouses.length > 0) {
-    const warehouseStockSum = (targetVar.variations_warehouses as Array<{ remain_quantity?: unknown }>).reduce(
-      (acc, w) => acc + (typeof w.remain_quantity === "number" ? w.remain_quantity : 0),
-      0,
-    );
+  const warehouses = targetVar.variations_warehouses;
+  if (warehouses !== undefined) {
+    if (!Array.isArray(warehouses)) {
+      throw new Error(
+        `Target variation preflight failed: variations_warehouses must be an array when present for ${targetVariationId}`,
+      );
+    }
+
+    let warehouseStockSum = 0;
+    for (const [index, warehouse] of warehouses.entries()) {
+      if (typeof warehouse !== "object" || warehouse === null) {
+        throw new Error(
+          `Target variation preflight failed: warehouse remain_quantity must be the safe integer 0 at index ${index}`,
+        );
+      }
+      const warehouseRemain = (warehouse as { remain_quantity?: unknown }).remain_quantity;
+      if (
+        typeof warehouseRemain !== "number" ||
+        !Number.isSafeInteger(warehouseRemain) ||
+        warehouseRemain < 0 ||
+        warehouseRemain % 1 !== 0
+      ) {
+        throw new Error(
+          `Target variation preflight failed: warehouse remain_quantity must be the safe integer 0 at index ${index}`,
+        );
+      }
+      warehouseStockSum += warehouseRemain;
+    }
+
     if (warehouseStockSum > 0) {
       throw new Error(
-        `Target variation preflight failed: warehouse stock sum ${warehouseStockSum} > 0 for ${targetVariationId}`,
+        `Target variation preflight failed: warehouse remain_quantity must be the safe integer 0; warehouse stock sum ${warehouseStockSum} > 0 for ${targetVariationId}`,
       );
     }
   }
 
-  if (targetVar.is_composite === true || (Array.isArray(targetVar.composite_products) && targetVar.composite_products.length > 0)) {
+  if (
+    targetVar.is_composite === true ||
+    (Array.isArray(targetVar.composite_products) && targetVar.composite_products.length > 0)
+  ) {
     throw new Error(`Target variation preflight failed: variation ${targetVariationId} is composite`);
   }
-
   if (targetVar.is_locked === true) {
     throw new Error(`Target variation preflight failed: variation ${targetVariationId} is locked`);
   }
@@ -131,12 +161,12 @@ export function validateTargetVariationPreflight(
     productId: targetProductId,
     retailPrice,
     retailPriceAfterDiscount,
-    remainQuantity,
+    remainQuantity: rawRemainQuantity,
     isHidden: Boolean(targetVar.is_hidden),
     isLocked: Boolean(targetVar.is_locked),
     isComposite: Boolean(targetVar.is_composite),
     whySafe:
-      "Variation A132-S has verified 0 stock, is non-purchasable by buyers, not part of any composite, had no active promotions, and was isolated to a single variation mutation.",
+      "Variation A132-S has verified aggregate stock 0, any present warehouse stock facts are valid and zero, it is not part of any composite, had no active promotions, and was isolated to a single variation mutation.",
   };
 }
 
@@ -159,6 +189,14 @@ export function validatePaginationBounds(
   }
 }
 
+function readOptionalPaginationInteger(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Invalid promotion pagination metadata: ${field} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
 export function checkExistingPromotionCollisions(
   promotions: unknown[],
   promoName: string = PROMO_NAME,
@@ -169,27 +207,34 @@ export function checkExistingPromotionCollisions(
   }
 
   for (const item of promotions) {
-    if (typeof item !== "object" || item === null) continue;
-    const p = item as {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("Invalid promotion entry in collision check");
+    }
+    const promotion = item as {
       id?: unknown;
       name?: unknown;
       is_activated?: unknown;
       items?: unknown;
     };
 
-    if (p.name === promoName) {
+    if (promotion.name === promoName) {
       throw new Error(
-        `Existing test promotion collision detected: promotion with name "${promoName}" already exists (id: ${String(p.id)})`,
+        `Existing test promotion collision detected: promotion with name "${promoName}" already exists (id: ${String(promotion.id)})`,
       );
     }
 
-    if (p.is_activated === true && Array.isArray(p.items)) {
-      const targetsTarget = (p.items as Array<{ variation_id?: unknown }>).some(
-        (it) => it.variation_id === targetVariationId,
+    if (promotion.is_activated === true) {
+      if (!Array.isArray(promotion.items)) {
+        throw new Error(
+          `Existing active promotion ${String(promotion.id)} has malformed items; refusing target-collision inference`,
+        );
+      }
+      const targetsTarget = (promotion.items as Array<{ variation_id?: unknown }>).some(
+        (entry) => entry.variation_id === targetVariationId,
       );
       if (targetsTarget) {
         throw new Error(
-          `Existing active promotion collision on target variation ${targetVariationId} (promotion id: ${String(p.id)}, name: ${String(p.name)})`,
+          `Existing active promotion collision on target variation ${targetVariationId} (promotion id: ${String(promotion.id)}, name: ${String(promotion.name)})`,
         );
       }
     }
@@ -209,7 +254,7 @@ export function validateCreatedPromotionScope(
     throw new Error("Created promotion validation failed: invalid promotion payload");
   }
 
-  const p = promo as {
+  const promotion = promo as {
     id?: unknown;
     name?: unknown;
     type?: unknown;
@@ -218,51 +263,44 @@ export function validateCreatedPromotionScope(
     items?: unknown;
   };
 
-  if (p.id !== expectedPromoId) {
+  if (promotion.id !== expectedPromoId) {
     throw new Error(
-      `Created promotion scope validation failed: ID ${String(p.id)} does not match expected ${expectedPromoId}`,
+      `Created promotion scope validation failed: ID ${String(promotion.id)} does not match expected ${expectedPromoId}`,
     );
   }
-
-  if (p.name !== expectedPromoName) {
+  if (promotion.name !== expectedPromoName) {
     throw new Error(
-      `Created promotion scope validation failed: name ${String(p.name)} does not match expected ${expectedPromoName}`,
+      `Created promotion scope validation failed: name ${String(promotion.name)} does not match expected ${expectedPromoName}`,
     );
   }
-
-  if (p.type !== expectedType) {
+  if (promotion.type !== expectedType) {
     throw new Error(
-      `Created promotion scope validation failed: type ${String(p.type)} does not match expected ${expectedType}`,
+      `Created promotion scope validation failed: type ${String(promotion.type)} does not match expected ${expectedType}`,
     );
   }
-
-  if (p.is_activated !== true) {
+  if (promotion.is_activated !== true) {
     throw new Error("Created promotion scope validation failed: is_activated is not true");
   }
-
-  if (p.is_variation !== true) {
+  if (promotion.is_variation !== true) {
     throw new Error("Created promotion scope validation failed: is_variation is not true");
   }
-
-  if (!Array.isArray(p.items) || p.items.length !== 1) {
+  if (!Array.isArray(promotion.items) || promotion.items.length !== 1) {
     throw new Error(
-      `Created promotion scope validation failed: items length is ${Array.isArray(p.items) ? p.items.length : 0}, expected 1`,
+      `Created promotion scope validation failed: items length is ${Array.isArray(promotion.items) ? promotion.items.length : 0}, expected 1`,
     );
   }
 
-  const item = p.items[0] as { product_id?: unknown; variation_id?: unknown };
+  const item = promotion.items[0] as { product_id?: unknown; variation_id?: unknown };
   if (item.product_id !== expectedProductId) {
     throw new Error(
       `Created promotion scope validation failed: item product_id ${String(item.product_id)} does not match expected ${expectedProductId}`,
     );
   }
-
   if (item.variation_id !== expectedVariationId) {
     throw new Error(
       `Created promotion scope validation failed: item variation_id ${String(item.variation_id)} does not match expected ${expectedVariationId}`,
     );
   }
-
   if (item.variation_id === peerVariationId) {
     throw new Error(
       `Created promotion scope validation failed: item targets peer variation ${peerVariationId}`,
@@ -288,11 +326,7 @@ export function parsePromotionApplicabilityResponse(
     throw new Error("Invalid promotion applicability response payload");
   }
 
-  const raw = response as {
-    success?: unknown;
-    data?: unknown;
-  };
-
+  const raw = response as { success?: unknown; data?: unknown };
   if (raw.success !== true) {
     throw new Error("Promotion applicability request returned success: false");
   }
@@ -306,29 +340,30 @@ export function parsePromotionApplicabilityResponse(
     };
   }
 
-  if (Array.isArray(raw.data)) {
-    for (const item of raw.data as Array<Record<string, unknown>>) {
-      const itemPromoId =
-        typeof item.promotion_advance_id === "string"
-          ? item.promotion_advance_id
-          : typeof item.id === "string"
-            ? item.id
-            : null;
+  if (!Array.isArray(raw.data)) {
+    throw new Error("Invalid promotion applicability response data: expected array or null");
+  }
 
-      const info = typeof item.promotion_advance_info === "object" && item.promotion_advance_info !== null
+  for (const item of raw.data as Array<Record<string, unknown>>) {
+    const itemPromoId =
+      typeof item.promotion_advance_id === "string"
+        ? item.promotion_advance_id
+        : typeof item.id === "string"
+          ? item.id
+          : null;
+    const info =
+      typeof item.promotion_advance_info === "object" && item.promotion_advance_info !== null
         ? (item.promotion_advance_info as Record<string, unknown>)
         : null;
+    const infoPromoId = info && typeof info.id === "string" ? info.id : null;
 
-      const infoPromoId = info && typeof info.id === "string" ? info.id : null;
-
-      if (itemPromoId === expectedPromoId || infoPromoId === expectedPromoId) {
-        return {
-          variationId: targetVariationId,
-          matchedPromotionId: expectedPromoId,
-          applicable: true,
-          observedAt: new Date().toISOString(),
-        };
-      }
+    if (itemPromoId === expectedPromoId || infoPromoId === expectedPromoId) {
+      return {
+        variationId: targetVariationId,
+        matchedPromotionId: expectedPromoId,
+        applicable: true,
+        observedAt: new Date().toISOString(),
+      };
     }
   }
 
@@ -340,9 +375,18 @@ export function parsePromotionApplicabilityResponse(
   };
 }
 
+export interface ExperimentCriteria {
+  c1RetailPriceInvariant: boolean;
+  c2SemanticsProven: boolean;
+  c3ReversibilityVerified: boolean;
+  c4ProviderOpenApiAlignment: boolean;
+  c5ZeroCollateral: boolean;
+}
+
 export function deriveExperimentCriteria(params: {
   beforeRetailPrice: number | null;
   beforeRetailPriceAfterDiscount: number | null;
+  beforePromotionsCount?: number;
   activeRetailPrice: number | null;
   activeRetailPriceAfterDiscount: number | null;
   activeCollateralUnchanged: boolean;
@@ -354,31 +398,22 @@ export function deriveExperimentCriteria(params: {
   revertRetailPrice: number | null;
   revertRetailPriceAfterDiscount: number | null;
   revertPromotionsCount: number;
-}): {
-  c1RetailPriceInvariant: boolean;
-  c2SemanticsProven: boolean;
-  c3ReversibilityVerified: boolean;
-  c4ProviderOpenApiAlignment: boolean;
-  c5ZeroCollateral: boolean;
-} {
+}): ExperimentCriteria {
   const c1RetailPriceInvariant =
     params.activeRetailPrice === params.beforeRetailPrice &&
     params.activeRetailPriceAfterDiscount === params.beforeRetailPriceAfterDiscount;
-
   const c2SemanticsProven =
     params.targetApplicability.applicable === true &&
     params.targetApplicability.matchedPromotionId === params.promoId;
-
   const c3ReversibilityVerified =
     params.revertRetailPrice === params.beforeRetailPrice &&
     params.revertRetailPriceAfterDiscount === params.beforeRetailPriceAfterDiscount &&
-    params.revertPromotionsCount === 0 &&
+    params.revertPromotionsCount === (params.beforePromotionsCount ?? 0) &&
     params.postRollbackApplicability.applicable === false;
-
   const c4ProviderOpenApiAlignment =
     params.createdPromoScopeValid === true &&
-    params.targetApplicability.applicable === true;
-
+    params.targetApplicability.applicable === true &&
+    params.targetApplicability.matchedPromotionId === params.promoId;
   const c5ZeroCollateral =
     params.createdPromoScopeValid === true &&
     params.peerApplicability.applicable === false &&
@@ -391,6 +426,15 @@ export function deriveExperimentCriteria(params: {
     c4ProviderOpenApiAlignment,
     c5ZeroCollateral,
   };
+}
+
+export function assertExperimentCriteriaSatisfied(criteria: ExperimentCriteria): void {
+  const failedCriteria = Object.entries(criteria)
+    .filter(([, passed]) => passed !== true)
+    .map(([name]) => name);
+  if (failedCriteria.length > 0) {
+    throw new Error(`W3_EXPERIMENT_CRITERIA_FAILED: ${failedCriteria.join(", ")}`);
+  }
 }
 
 export function verifyRollbackState(params: {
@@ -412,13 +456,11 @@ export function verifyRollbackState(params: {
     }
     return false;
   });
-
   if (stillPresent) {
     throw new Error(
       `ROLLBACK_FAILED: Promotion ${params.promoId} is still present in active promotions list after deletion`,
     );
   }
-
   if (params.postRollbackTargetApplicability.applicable) {
     throw new Error(
       `ROLLBACK_FAILED: Test promotion ${params.promoId} is still applicable to target variation after deletion`,
@@ -428,28 +470,26 @@ export function verifyRollbackState(params: {
   const priceMatches =
     params.afterVar.retail_price === params.beforeBaseline.retailPrice &&
     params.afterVar.retail_price_after_discount === params.beforeBaseline.retailPriceAfterDiscount;
-
   if (!priceMatches) {
     throw new Error("ROLLBACK_FAILED: Target catalog price facts do not match baseline after rollback");
   }
-
   if (!params.collateralUnchanged) {
     throw new Error("ROLLBACK_FAILED: Peer variations were altered after rollback");
   }
 }
 
 export function sanitizeErrorMessage(error: unknown, sensitivePatterns: string[] = []): string {
-  let msg = error instanceof Error ? error.message : String(error);
+  let message = error instanceof Error ? error.message : String(error);
   for (const pattern of sensitivePatterns) {
     if (pattern.length > 0) {
-      msg = msg.replaceAll(pattern, "[REDACTED]");
+      message = message.replaceAll(pattern, "[REDACTED]");
     }
   }
-  msg = msg.replace(/[a-zA-Z0-9_-]{20,}/g, (match) => {
-    if (match.includes("-") && match.length === 36) return match; // keep UUIDs
-    return match.slice(0, 4) + "...[REDACTED]";
+  message = message.replace(/[a-zA-Z0-9_-]{20,}/g, (match) => {
+    if (match.includes("-") && match.length === 36) return match;
+    return `${match.slice(0, 4)}...[REDACTED]`;
   });
-  return msg;
+  return message;
 }
 
 export async function fetchBoundedPromotions(
@@ -459,41 +499,96 @@ export async function fetchBoundedPromotions(
 ): Promise<Array<Record<string, unknown>>> {
   const maxPages = options.maxPages ?? MAX_PAGINATION_PAGES;
   const pageSize = options.pageSize ?? PAGINATION_PAGE_SIZE;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1) {
+    throw new Error("Promotion pagination safety bounds must be positive safe integers");
+  }
 
   const allPromotions: Array<Record<string, unknown>> = [];
+  let declaredTotalPages: number | null = null;
+  let declaredTotalEntries: number | null = null;
 
-  for (let page = 1; page <= maxPages; page++) {
-    const res = (await client.getJson(`/shops/${shopId}/promotion_advance`, {
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = (await client.getJson(`/shops/${shopId}/promotion_advance`, {
       page,
       page_size: pageSize,
     })) as {
-      success?: boolean;
-      data?: unknown[];
-      total_pages?: number;
-      total_entries?: number;
+      success?: unknown;
+      data?: unknown;
+      total_pages?: unknown;
+      total_entries?: unknown;
     };
 
-    if (res.success !== true || !Array.isArray(res.data)) {
+    if (response.success !== true || !Array.isArray(response.data)) {
       throw new Error(`Failed to fetch promotions at page ${page}`);
     }
 
-    const totalPages = typeof res.total_pages === "number" ? res.total_pages : 1;
-    const totalEntries = typeof res.total_entries === "number" ? res.total_entries : res.data.length;
+    const currentTotalPages = readOptionalPaginationInteger(response.total_pages, "total_pages");
+    const currentTotalEntries = readOptionalPaginationInteger(response.total_entries, "total_entries");
 
-    validatePaginationBounds(page, totalPages, totalEntries, maxPages, pageSize);
-
-    for (const item of res.data) {
-      if (typeof item === "object" && item !== null) {
-        allPromotions.push(item as Record<string, unknown>);
+    if (currentTotalPages !== null) {
+      if (declaredTotalPages !== null && currentTotalPages !== declaredTotalPages) {
+        throw new Error("Promotion pagination metadata changed total_pages during traversal");
       }
+      declaredTotalPages = currentTotalPages;
+    }
+    if (currentTotalEntries !== null) {
+      if (declaredTotalEntries !== null && currentTotalEntries !== declaredTotalEntries) {
+        throw new Error("Promotion pagination metadata changed total_entries during traversal");
+      }
+      declaredTotalEntries = currentTotalEntries;
     }
 
-    if (page >= totalPages || res.data.length < pageSize) {
-      break;
+    const pagesFromEntries =
+      declaredTotalEntries === null ? null : Math.max(1, Math.ceil(declaredTotalEntries / pageSize));
+    if (
+      declaredTotalPages !== null &&
+      pagesFromEntries !== null &&
+      declaredTotalPages < pagesFromEntries
+    ) {
+      throw new Error("Promotion pagination metadata is inconsistent and could truncate results");
+    }
+
+    const expectedPages = declaredTotalPages ?? pagesFromEntries;
+    if (expectedPages !== null) {
+      validatePaginationBounds(
+        page,
+        expectedPages,
+        declaredTotalEntries ?? allPromotions.length + response.data.length,
+        maxPages,
+        pageSize,
+      );
+    }
+
+    for (const [index, item] of response.data.entries()) {
+      if (typeof item !== "object" || item === null) {
+        throw new Error(`Invalid promotion entry at page ${page}, index ${index}`);
+      }
+      allPromotions.push(item as Record<string, unknown>);
+    }
+
+    if (expectedPages !== null) {
+      if (page >= expectedPages) {
+        if (declaredTotalEntries !== null && allPromotions.length !== declaredTotalEntries) {
+          throw new Error(
+            `Promotion pagination entry count mismatch: fetched ${allPromotions.length}, expected ${declaredTotalEntries}`,
+          );
+        }
+        return allPromotions;
+      }
+      continue;
+    }
+
+    if (response.data.length < pageSize) {
+      return allPromotions;
+    }
+    if (page === maxPages) {
+      throw new Error(
+        "Promotion pagination reached max pages with a full final page and no usable pagination metadata; refusing truncation",
+      );
     }
   }
 
-  return allPromotions;
+  throw new Error("Promotion pagination traversal ended without proving completion");
 }
 
 export interface W3ExperimentResult {
@@ -550,17 +645,55 @@ export interface W3ExperimentResult {
     reversibilityVerified: boolean;
     observedAt: string;
   };
-  criteria: {
-    c1RetailPriceInvariant: boolean;
-    c2SemanticsProven: boolean;
-    c3ReversibilityVerified: boolean;
-    c4ProviderOpenApiAlignment: boolean;
-    c5ZeroCollateral: boolean;
-  };
+  criteria: ExperimentCriteria;
   rollback: {
     status: "PASS" | "FAIL";
     action: string;
     verifiedAt: string;
+  };
+}
+
+type CatalogVariation = {
+  id: string;
+  display_id?: string | null;
+  retail_price?: number | null;
+  retail_price_after_discount?: number | null;
+};
+
+function readCatalogVariations(payload: unknown): CatalogVariation[] {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error("Invalid product data while reading catalog variations");
+  }
+  const variations = (payload as { variations?: unknown }).variations;
+  if (!Array.isArray(variations)) {
+    throw new Error("Invalid product data: variations array missing");
+  }
+  return variations as CatalogVariation[];
+}
+
+function collateralPricesUnchanged(before: CatalogVariation[], after: CatalogVariation[]): boolean {
+  return before.every((baseline) => {
+    const current = after.find((variation) => variation.id === baseline.id);
+    return (
+      current !== undefined &&
+      current.retail_price === baseline.retail_price &&
+      current.retail_price_after_discount === baseline.retail_price_after_discount
+    );
+  });
+}
+
+function makeApplicabilityPayload(shopId: number, variationId: string) {
+  return {
+    order: {
+      shop_id: shopId,
+      items: [
+        {
+          product_id: EXPECTED_TARGET_PRODUCT_ID,
+          variation_id: variationId,
+          quantity: 1,
+        },
+      ],
+    },
   };
 }
 
@@ -569,32 +702,22 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
 
   const config = readPancakeConfig();
   assertApprovedShopId(config.shopId);
-
   const client = new PancakeClient({ apiKey: config.apiKey });
 
-  // 1. Target Resolution & Immediate Preflight Revalidation
-  const prodRes = (await client.getJson(`/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`)) as {
-    success?: boolean;
-    data?: unknown;
-  };
-
-  if (!prodRes.success || !prodRes.data) {
+  const productResponse = (await client.getJson(
+    `/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`,
+  )) as { success?: unknown; data?: unknown };
+  if (productResponse.success !== true || !productResponse.data) {
     throw new Error("Failed to fetch target product from Pancake API");
   }
 
-  const preflightTarget = validateTargetVariationPreflight(
-    prodRes.data,
-    EXPECTED_TARGET_PRODUCT_ID,
-    EXPECTED_TARGET_VARIATION_ID,
-  );
+  const preflightTarget = validateTargetVariationPreflight(productResponse.data);
+  const variations = readCatalogVariations(productResponse.data);
+  const otherVarsBefore = variations.filter((variation) => variation.id !== EXPECTED_TARGET_VARIATION_ID);
 
-  const variations = (prodRes.data as { variations: Array<{ id: string; display_id?: string | null; retail_price?: number | null; retail_price_after_discount?: number | null }> }).variations;
-
-  // 2. Existing promotion collision checks using bounded pagination
   const existingPromotions = await fetchBoundedPromotions(client, config.shopId);
-  checkExistingPromotionCollisions(existingPromotions, PROMO_NAME, EXPECTED_TARGET_VARIATION_ID);
+  checkExistingPromotionCollisions(existingPromotions);
 
-  // 3. Baseline capture
   const beforeBaseline = {
     phase: "BEFORE" as const,
     variationId: preflightTarget.variationId,
@@ -604,10 +727,8 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
     observedAt: new Date().toISOString(),
   };
 
-  // 4. Controlled promotion creation
   const now = new Date();
   const tomorrow = new Date(Date.now() + 86_400_000);
-
   const createPayload = {
     promotion_advance: {
       name: PROMO_NAME,
@@ -634,261 +755,185 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
   };
 
   let promoId: string | undefined;
-  const otherVarsBefore = variations.filter((v) => v.id !== EXPECTED_TARGET_VARIATION_ID);
   let targetApplicabilityObs: PromotionApplicabilityObservation | undefined;
   let peerApplicabilityObs: PromotionApplicabilityObservation | undefined;
   let postRollbackApplicabilityObs: PromotionApplicabilityObservation | undefined;
   let createdPromoScopeValid = false;
-
-  let activeSnapshot: {
-    retailPrice: number | null;
-    retailPriceAfterDiscount: number | null;
-    activePromotionsCount: number;
-    collateralUnchanged: boolean;
-    observedAt: string;
-  } | undefined;
-
-  let revertSnapshot: {
-    retailPrice: number | null;
-    retailPriceAfterDiscount: number | null;
-    remainingPromotionsCount: number;
-    reversibilityVerified: boolean;
-    observedAt: string;
-  } | undefined;
-
   let rollbackVerified = false;
+  let activeSnapshot:
+    | {
+        retailPrice: number | null;
+        retailPriceAfterDiscount: number | null;
+        activePromotionsCount: number;
+        collateralUnchanged: boolean;
+        observedAt: string;
+      }
+    | undefined;
+  let revertSnapshot:
+    | {
+        retailPrice: number | null;
+        retailPriceAfterDiscount: number | null;
+        remainingPromotionsCount: number;
+        reversibilityVerified: boolean;
+        observedAt: string;
+      }
+    | undefined;
 
   try {
-    const createRes = (await client.postJson(
+    const createResponse = (await client.postJson(
       `/shops/${config.shopId}/promotion_advance`,
       createPayload,
-    )) as { success?: boolean; data?: { id?: string } };
-
-    if (createRes.success !== true) {
+    )) as { success?: unknown; data?: { id?: unknown } };
+    if (createResponse.success !== true) {
       throw new Error("Promotion creation API response reported success: false");
     }
 
-    promoId = typeof createRes.data?.id === "string" && createRes.data.id.length > 0 ? createRes.data.id : undefined;
+    promoId =
+      typeof createResponse.data?.id === "string" && createResponse.data.id.length > 0
+        ? createResponse.data.id
+        : undefined;
 
-    // Authoritative fetch of created promotion
-    const currentPromos = await fetchBoundedPromotions(client, config.shopId);
-    let authoritativePromo: Record<string, unknown> | undefined;
-
+    const currentPromotions = await fetchBoundedPromotions(client, config.shopId);
+    let authoritativePromotion: Record<string, unknown> | undefined;
     if (promoId) {
-      authoritativePromo = currentPromos.find((p) => p.id === promoId);
+      authoritativePromotion = currentPromotions.find((promotion) => promotion.id === promoId);
     }
-
-    if (!authoritativePromo) {
-      const matches = currentPromos.filter((p) => p.name === PROMO_NAME);
-      if (matches.length === 1) {
-        authoritativePromo = matches[0];
-        promoId = String(authoritativePromo.id);
+    if (!authoritativePromotion) {
+      const matches = currentPromotions.filter((promotion) => promotion.name === PROMO_NAME);
+      if (matches.length === 1 && typeof matches[0]?.id === "string") {
+        authoritativePromotion = matches[0];
+        promoId = matches[0].id as string;
       } else if (matches.length > 1) {
         throw new Error(`Ambiguous created promotion: found ${matches.length} promotions with name ${PROMO_NAME}`);
       }
     }
-
-    if (!promoId || !authoritativePromo) {
+    if (!promoId || !authoritativePromotion) {
       throw new Error("Promotion creation verification failed: created promotion could not be uniquely retrieved");
     }
 
-    // 5. Verify created promotion scope before any semantic probe
-    createdPromoScopeValid = validateCreatedPromotionScope(
-      authoritativePromo,
-      promoId,
-      PROMO_NAME,
-      PROMO_TYPE,
-      EXPECTED_TARGET_PRODUCT_ID,
-      EXPECTED_TARGET_VARIATION_ID,
-      EXPECTED_PEER_VARIATION_ID,
-    );
-
-    // 6. Semantic Applicability Probe: Target Variation (Read-only evaluation)
-    const targetProbePayload = {
-      order: {
-        shop_id: config.shopId,
-        items: [
-          {
-            product_id: EXPECTED_TARGET_PRODUCT_ID,
-            variation_id: EXPECTED_TARGET_VARIATION_ID,
-            quantity: 1,
-          },
-        ],
-      },
-    };
-
-    const targetProbeRes = await client.postJson(
-      `/shops/${config.shopId}/orders/get_promotion_advance_active`,
-      targetProbePayload,
-    );
+    createdPromoScopeValid = validateCreatedPromotionScope(authoritativePromotion, promoId);
 
     targetApplicabilityObs = parsePromotionApplicabilityResponse(
-      targetProbeRes,
+      await client.postJson(
+        `/shops/${config.shopId}/orders/get_promotion_advance_active`,
+        makeApplicabilityPayload(config.shopId, EXPECTED_TARGET_VARIATION_ID),
+      ),
       promoId,
       EXPECTED_TARGET_VARIATION_ID,
-    );
-
-    // 7. Negative Collateral Applicability Probe: Peer Variation (Read-only evaluation)
-    const peerProbePayload = {
-      order: {
-        shop_id: config.shopId,
-        items: [
-          {
-            product_id: EXPECTED_TARGET_PRODUCT_ID,
-            variation_id: EXPECTED_PEER_VARIATION_ID,
-            quantity: 1,
-          },
-        ],
-      },
-    };
-
-    const peerProbeRes = await client.postJson(
-      `/shops/${config.shopId}/orders/get_promotion_advance_active`,
-      peerProbePayload,
     );
 
     peerApplicabilityObs = parsePromotionApplicabilityResponse(
-      peerProbeRes,
+      await client.postJson(
+        `/shops/${config.shopId}/orders/get_promotion_advance_active`,
+        makeApplicabilityPayload(config.shopId, EXPECTED_PEER_VARIATION_ID),
+      ),
       promoId,
       EXPECTED_PEER_VARIATION_ID,
     );
 
-    // 8. Observe ACTIVE catalog phase
-    const activeProdRes = (await client.getJson(`/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`)) as {
-      success?: boolean;
-      data?: {
-        variations: Array<{
-          id: string;
-          retail_price?: number | null;
-          retail_price_after_discount?: number | null;
-        }>;
-      };
-    };
-
-    const activeVars = activeProdRes.data?.variations ?? [];
-    const activeVar = activeVars.find((v) => v.id === EXPECTED_TARGET_VARIATION_ID);
-
-    const otherVarsBefore = variations.filter((v) => v.id !== EXPECTED_TARGET_VARIATION_ID);
-    const otherVarsActive = activeVars.filter((v) => v.id !== EXPECTED_TARGET_VARIATION_ID);
-    const collateralUnchanged = otherVarsBefore.every((b) => {
-      const a = otherVarsActive.find((v) => v.id === b.id);
-      return (
-        a !== undefined &&
-        a.retail_price === b.retail_price &&
-        a.retail_price_after_discount === b.retail_price_after_discount
-      );
-    });
+    const activeProductResponse = (await client.getJson(
+      `/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`,
+    )) as { success?: unknown; data?: unknown };
+    if (activeProductResponse.success !== true || !activeProductResponse.data) {
+      throw new Error("Failed to fetch target product during ACTIVE phase");
+    }
+    const activeVariations = readCatalogVariations(activeProductResponse.data);
+    const activeVariation = activeVariations.find(
+      (variation) => variation.id === EXPECTED_TARGET_VARIATION_ID,
+    );
+    if (!activeVariation) {
+      throw new Error("Target variation disappeared during ACTIVE phase");
+    }
 
     activeSnapshot = {
-      retailPrice: activeVar?.retail_price ?? null,
-      retailPriceAfterDiscount: activeVar?.retail_price_after_discount ?? null,
-      activePromotionsCount: currentPromos.length,
-      collateralUnchanged,
+      retailPrice: activeVariation.retail_price ?? null,
+      retailPriceAfterDiscount: activeVariation.retail_price_after_discount ?? null,
+      activePromotionsCount: currentPromotions.length,
+      collateralUnchanged: collateralPricesUnchanged(otherVarsBefore, activeVariations),
       observedAt: new Date().toISOString(),
     };
   } finally {
-    // 9. Mandatory Rollback (Guaranteed & Fatal on failure)
     let promoToRollback = promoId;
+    let recoveryLookupError: unknown;
 
     if (!promoToRollback) {
       try {
-        const checkPromos = await fetchBoundedPromotions(client, config.shopId);
-        const match = checkPromos.find((p) => p.name === PROMO_NAME);
-        if (match && typeof match.id === "string") {
-          promoToRollback = match.id;
+        const recoveryPromotions = await fetchBoundedPromotions(client, config.shopId);
+        const matches = recoveryPromotions.filter((promotion) => promotion.name === PROMO_NAME);
+        if (matches.length > 1) {
+          throw new Error(`Ambiguous rollback recovery: found ${matches.length} matching test promotions`);
         }
-      } catch {
-        // Continue to check if deletion can be attempted
+        if (matches.length === 1 && typeof matches[0]?.id === "string") {
+          promoToRollback = matches[0].id as string;
+        }
+      } catch (error) {
+        recoveryLookupError = error;
       }
+    }
+
+    if (!promoToRollback && recoveryLookupError) {
+      const sanitizedError = sanitizeErrorMessage(recoveryLookupError, [config.apiKey]);
+      throw new Error(
+        `ROLLBACK_FAILED: Could not establish whether the test promotion exists after an uncertain mutation state. Error: ${sanitizedError}`,
+      );
     }
 
     if (promoToRollback) {
       try {
-        const deleteRes = (await client.postJson(
+        const deleteResponse = (await client.postJson(
           `/shops/${config.shopId}/promotion_advance/delete_multi`,
-          {
-            ids: [promoToRollback],
-            type_action: "DELETE_PROMOTIONS",
-          },
-        )) as { success?: boolean };
-
-        const postRollbackPromos = await fetchBoundedPromotions(client, config.shopId);
-
-        // Re-run applicability probe post-rollback to verify removal
-        const postRollbackProbeRes = await client.postJson(
-          `/shops/${config.shopId}/orders/get_promotion_advance_active`,
-          {
-            order: {
-              shop_id: config.shopId,
-              items: [
-                {
-                  product_id: EXPECTED_TARGET_PRODUCT_ID,
-                  variation_id: EXPECTED_TARGET_VARIATION_ID,
-                  quantity: 1,
-                },
-              ],
-            },
-          },
-        );
+          { ids: [promoToRollback], type_action: "DELETE_PROMOTIONS" },
+        )) as { success?: unknown };
+        const postRollbackPromotions = await fetchBoundedPromotions(client, config.shopId);
 
         postRollbackApplicabilityObs = parsePromotionApplicabilityResponse(
-          postRollbackProbeRes,
+          await client.postJson(
+            `/shops/${config.shopId}/orders/get_promotion_advance_active`,
+            makeApplicabilityPayload(config.shopId, EXPECTED_TARGET_VARIATION_ID),
+          ),
           promoToRollback,
           EXPECTED_TARGET_VARIATION_ID,
         );
 
-        // Re-read catalog
-        const afterProdRes = (await client.getJson(`/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`)) as {
-          success?: boolean;
-          data?: {
-            variations: Array<{
-              id: string;
-              retail_price?: number | null;
-              retail_price_after_discount?: number | null;
-            }>;
-          };
-        };
-
-        const afterVars = afterProdRes.data?.variations ?? [];
-        const afterVarFound = afterVars.find((v) => v.id === EXPECTED_TARGET_VARIATION_ID);
-        const afterVar = {
-          retail_price: afterVarFound?.retail_price ?? null,
-          retail_price_after_discount: afterVarFound?.retail_price_after_discount ?? null,
-        };
-
-        const otherVarsAfter = afterVars.filter((v) => v.id !== EXPECTED_TARGET_VARIATION_ID);
-        const collateralUnchangedAfter = otherVarsBefore.every((b) => {
-          const a = otherVarsAfter.find((v) => v.id === b.id);
-          return (
-            a !== undefined &&
-            a.retail_price === b.retail_price &&
-            a.retail_price_after_discount === b.retail_price_after_discount
-          );
-        });
+        const afterProductResponse = (await client.getJson(
+          `/shops/${config.shopId}/products/${EXPECTED_TARGET_PRODUCT_ID}`,
+        )) as { success?: unknown; data?: unknown };
+        if (afterProductResponse.success !== true || !afterProductResponse.data) {
+          throw new Error("ROLLBACK_FAILED: Failed to fetch target product after rollback");
+        }
+        const afterVariations = readCatalogVariations(afterProductResponse.data);
+        const afterVariation = afterVariations.find(
+          (variation) => variation.id === EXPECTED_TARGET_VARIATION_ID,
+        );
+        if (!afterVariation) {
+          throw new Error("ROLLBACK_FAILED: Target variation missing after rollback");
+        }
 
         verifyRollbackState({
-          deleteSuccess: deleteRes.success === true,
-          remainingPromotions: postRollbackPromos,
+          deleteSuccess: deleteResponse.success === true,
+          remainingPromotions: postRollbackPromotions,
           promoId: promoToRollback,
           postRollbackTargetApplicability: postRollbackApplicabilityObs,
           beforeBaseline,
-          afterVar,
-          collateralUnchanged: collateralUnchangedAfter,
+          afterVar: {
+            retail_price: afterVariation.retail_price ?? null,
+            retail_price_after_discount: afterVariation.retail_price_after_discount ?? null,
+          },
+          collateralUnchanged: collateralPricesUnchanged(otherVarsBefore, afterVariations),
         });
 
         rollbackVerified = true;
-
         revertSnapshot = {
-          retailPrice: afterVar.retail_price,
-          retailPriceAfterDiscount: afterVar.retail_price_after_discount,
-          remainingPromotionsCount: postRollbackPromos.length,
+          retailPrice: afterVariation.retail_price ?? null,
+          retailPriceAfterDiscount: afterVariation.retail_price_after_discount ?? null,
+          remainingPromotionsCount: postRollbackPromotions.length,
           reversibilityVerified: true,
           observedAt: new Date().toISOString(),
         };
       } catch (rollbackError) {
-        const sanitizedErr = sanitizeErrorMessage(rollbackError, [config.apiKey]);
+        const sanitizedError = sanitizeErrorMessage(rollbackError, [config.apiKey]);
         throw new Error(
-          `ROLLBACK_FAILED: Promotion ${promoToRollback} could not be completely reverted. Bounded recovery required: call POST /shops/${config.shopId}/promotion_advance/delete_multi with ids: ["${promoToRollback}"]. Error: ${sanitizedErr}`,
+          `ROLLBACK_FAILED: Promotion ${promoToRollback} could not be completely reverted. Bounded recovery required: call POST /shops/${config.shopId}/promotion_advance/delete_multi with ids: ["${promoToRollback}"]. Error: ${sanitizedError}`,
         );
       }
     }
@@ -909,6 +954,7 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
   const criteria = deriveExperimentCriteria({
     beforeRetailPrice: beforeBaseline.retailPrice,
     beforeRetailPriceAfterDiscount: beforeBaseline.retailPriceAfterDiscount,
+    beforePromotionsCount: beforeBaseline.existingPromotionsCount,
     activeRetailPrice: activeSnapshot.retailPrice,
     activeRetailPriceAfterDiscount: activeSnapshot.retailPriceAfterDiscount,
     activeCollateralUnchanged: activeSnapshot.collateralUnchanged,
@@ -921,14 +967,17 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
     revertRetailPriceAfterDiscount: revertSnapshot.retailPriceAfterDiscount,
     revertPromotionsCount: revertSnapshot.remainingPromotionsCount,
   });
+  assertExperimentCriteriaSatisfied(criteria);
 
   return {
     targetResolution: {
       input: EXPECTED_TARGET_INPUT,
       resolvedProductId: EXPECTED_TARGET_PRODUCT_ID,
-      resolvedProductName: (prodRes.data as { name?: string })?.name ?? "ÁO A132",
-      resolvedVariationIds: variations.map((v) => v.id),
-      sourceFieldMatched: "name ILIKE '%a132%' ('ÁO A132') and slug ILIKE '%a132%' ('ao-a132-4d57c085da6689c1840c')",
+      resolvedProductName:
+        (productResponse.data as { name?: string }).name ?? "ÁO A132",
+      resolvedVariationIds: variations.map((variation) => variation.id),
+      sourceFieldMatched:
+        "name ILIKE '%a132%' ('ÁO A132') and slug ILIKE '%a132%' ('ao-a132-4d57c085da6689c1840c')",
     },
     selectedVariation: {
       variationId: preflightTarget.variationId,
@@ -936,7 +985,7 @@ export async function runW3PricingExperiment(): Promise<W3ExperimentResult> {
       productId: preflightTarget.productId,
       is_hidden: preflightTarget.isHidden,
       is_locked: preflightTarget.isLocked,
-      stockFacts: `remain_quantity=${preflightTarget.remainQuantity} (out of stock on Pancake POS, zero stock in all warehouses)`,
+      stockFacts: `remain_quantity=${preflightTarget.remainQuantity} (verified aggregate zero; any present warehouse stock facts were also zero)`,
       whySafe: preflightTarget.whySafe,
     },
     before: beforeBaseline,
