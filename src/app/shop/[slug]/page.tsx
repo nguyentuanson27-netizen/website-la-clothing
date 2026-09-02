@@ -9,6 +9,10 @@ import {
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import {
+  VARIANT_QUERY_PARAM,
+  resolveDeepLinkedVariantSelection,
+} from "@/commerce/storefront-variant-deep-link";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { serializeJsonLd } from "@/seo/structured-data";
 import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-structured-data";
@@ -17,11 +21,13 @@ const relatedTones = ["stone", "olive", "ink", "sand"] as const;
 
 type ProductPageProps = {
   params: Promise<{ slug: string }>;
+  // Next 16 delivers search params as a promise, the same as route params.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function ProductPage({ params }: ProductPageProps) {
+export default async function ProductPage({ params, searchParams }: ProductPageProps) {
   await connection();
-  const { slug } = await params;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
 
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
   try {
@@ -35,6 +41,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
   const options = product.projection.options;
+  // Resolved on the server against this product's own authorized projection, so an unusable value
+  // never reaches the browser as a selection. Canonical/indexing policy is untouched: the query
+  // string already makes the URL noindex under the existing search-exposure rule, and the base
+  // product URL remains the canonical one because it is generated in the layout, which receives no
+  // search params at all.
+  const deepLinkedSelection = resolveDeepLinkedVariantSelection({
+    projection: product.projection,
+    variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
+  });
   const structuredData = buildStorefrontProductStructuredData({
     origin: readSearchExposure().origin,
     product,
@@ -100,7 +115,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <div className="mt-10">
-            <ProductPurchasePanel slug={product.slug} productName={product.name} options={options} />
+            <ProductPurchasePanel
+              slug={product.slug}
+              productName={product.name}
+              options={options}
+              initialSelection={deepLinkedSelection}
+            />
           </div>
 
           {(product.sizeGuide || product.careInstructions) && (

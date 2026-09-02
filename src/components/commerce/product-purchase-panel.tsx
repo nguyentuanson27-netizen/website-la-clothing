@@ -9,6 +9,7 @@ import {
   type StorefrontProjectionOption,
 } from "@/commerce/storefront-projection";
 import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
+import type { DeepLinkedVariantSelection } from "@/commerce/storefront-variant-deep-link";
 
 const currency = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -20,6 +21,12 @@ type ProductPurchasePanelProps = {
   slug: string;
   productName: string;
   options: StorefrontProjectionOption[];
+  /**
+   * Server-resolved preselection from the `?variant=` deep link, or `null` for an ordinary product
+   * page. It is a plain initial value, not a controlled prop: once the shopper touches a control,
+   * their choice owns the state and the URL no longer overrides it.
+   */
+  initialSelection?: DeepLinkedVariantSelection | null;
 };
 
 function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
@@ -34,10 +41,14 @@ export function ProductPurchasePanel({
   slug,
   productName,
   options,
+  initialSelection = null,
 }: ProductPurchasePanelProps) {
-  const [kindKey, setKindKey] = useState<string | null>(null);
-  const [color, setColor] = useState<string | null>(null);
-  const [size, setSize] = useState<string | null>(null);
+  // Seeded once from the server-resolved deep link. The server has already refused anything it
+  // could not match to a purchasable option on this product, so an unresolvable `?variant=` arrives
+  // here as `null` and the page simply renders as it always did.
+  const [kindKey, setKindKey] = useState<string | null>(initialSelection?.kindKey ?? null);
+  const [color, setColor] = useState<string | null>(initialSelection?.color ?? null);
+  const [size, setSize] = useState<string | null>(initialSelection?.size ?? null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
