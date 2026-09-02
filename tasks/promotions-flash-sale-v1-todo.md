@@ -143,9 +143,18 @@ Verification:
 - [ ] Keyboard/Axe/mobile + non-admin rejection.
 
 ## #153 T4 identity prerequisite
-- [ ] Product/list/PDP upper-funnel facts propagate `pancakeProductId`.
-- [ ] Concrete options/cart facts propagate real `pancakeVariationId`.
-- [ ] Local variant CUID never becomes vendor item ID.
+
+**Delivered — U8, PR #164 (resolved cart lines) + PR #165 (product/option facts).** Merged on
+`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; per-item state in
+`tasks/marketing-analytics-shopping-todo.md` and the T4 record in `docs/audits/wave-1-checkpoint-a.md`.
+This prerequisite is satisfied for P6; **P6 itself remains unimplemented.**
+
+- [x] Product/list/PDP upper-funnel facts propagate `pancakeProductId`. *(U8, PR #165)*
+- [x] Concrete options/cart facts propagate real `pancakeVariationId`. *(U8, PR #164 + #165; composite
+      component lines carry the actual purchased component variation ID, and unresolvable/private lines
+      fail closed to no external identity.)*
+- [x] Local variant CUID never becomes vendor item ID. *(U8, PR #164 + #165; `VariantMirror.id` stays the
+      authorization/mutation key and presentation `kindKey` never stands in for external identity.)*
 
 ## P6 — PDP/composite promotion projection
 - [ ] Remove equality gate only after P2 evidence acceptance.
