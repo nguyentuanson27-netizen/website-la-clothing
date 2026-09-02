@@ -44,6 +44,28 @@ export async function listConfiguredStorefrontDiscoveryPage({
   });
 }
 
+export async function listConfiguredFlashSalePage({
+  discovery,
+  pageSize,
+  now,
+}: {
+  discovery: StorefrontDiscoveryQuery;
+  pageSize: number;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  return createStorefrontCatalogRepository(prisma).listFlashSalePage({
+    shopId,
+    discovery,
+    pageSize,
+    now,
+  });
+}
+
+export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
+  return createStorefrontCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
+}
+
 export async function listConfiguredStorefrontDiscoveryFacets() {
   const shopId = readPancakeShopId();
   return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({ shopId });

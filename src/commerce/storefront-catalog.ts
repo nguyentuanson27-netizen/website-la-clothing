@@ -268,6 +268,7 @@ export function buildVariantStockCte(now: Date) {
     SELECT
       vb."id" AS "variantId",
       c."id" AS "campaignId",
+      c."kind"::text AS "kind",
       c."discountType"::text AS "discountType",
       c."percentageValue" AS "percentageValue",
       c."fixedPriceVnd" AS "fixedPriceVnd"
@@ -279,7 +280,7 @@ export function buildVariantStockCte(now: Date) {
       -- Half-open [startsAt, endsAt): start inclusive, end exclusive, matching isActiveAt().
       AND (c."startsAt" IS NULL OR c."startsAt" <= ${now})
       AND (c."endsAt" IS NULL OR c."endsAt" > ${now})
-    GROUP BY vb."id", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
+    GROUP BY vb."id", c."id", c."kind", c."discountType", c."percentageValue", c."fixedPriceVnd"
   ),
   "variant_candidate" AS (
     SELECT
@@ -292,6 +293,7 @@ export function buildVariantStockCte(now: Date) {
       -- Campaigns never stack. Two distinct applicable campaigns is a conflict, and a conflicted
       -- variant gets no website promotion rather than an arbitrary winner.
       COUNT(vc."campaignId") AS "candidateCount",
+      MIN(vc."kind") AS "kind",
       MIN(vc."discountType") AS "discountType",
       MIN(vc."percentageValue") AS "percentageValue",
       MIN(vc."fixedPriceVnd") AS "fixedPriceVnd"
@@ -324,7 +326,30 @@ export function buildVariantStockCte(now: Date) {
         -- Any promotion that cannot produce a strict discount for this variant leaves it at base:
         -- PROMOTION_INVALID affects the variant, never the campaign's healthy siblings.
         ELSE vc."basePrice"
-      END::float8 AS "resolvedPrice"
+      END::float8 AS "resolvedPrice",
+      -- Flash membership is derived from the very same decision that produced the price: one
+      -- campaign applied, it is a FLASH_SALE, and it actually discounted this variant. Deriving it
+      -- anywhere else would be the second promotion predicate P7b forbids.
+      (
+        vc."basePrice" IS NOT NULL
+        AND vc."candidateCount" = 1
+        AND vc."kind" = 'FLASH_SALE'
+        AND (
+          CASE
+            WHEN vc."discountType" = 'PERCENTAGE'
+              AND vc."percentageValue" BETWEEN 1 AND 99
+              AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) > 0
+              AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) < vc."basePrice"
+            THEN TRUE
+            WHEN vc."discountType" = 'FIXED_PRICE'
+              AND vc."fixedPriceVnd" IS NOT NULL
+              AND vc."fixedPriceVnd"::numeric > 0
+              AND vc."fixedPriceVnd"::numeric < vc."basePrice"
+            THEN TRUE
+            ELSE FALSE
+          END
+        )
+      ) AS "isFlashSale"
     FROM "variant_candidate" vc
   )
 `;
@@ -568,6 +593,128 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     };
   }
 
+  /**
+   * The Flash Sale listing.
+   *
+   * Membership is a filter over the same projection `/shop` uses, never a second predicate: a
+   * product qualifies when one of its variants comes out of `variant_stock` flagged `isFlashSale`,
+   * which is derived from the same decision that produced the price. Pagination reuses the shared
+   * page/offset bounds, so the catalog window is one contract rather than two.
+   */
+  async function listFlashSalePage({
+    shopId,
+    pageSize,
+    discovery,
+    now = new Date(),
+  }: {
+    shopId: number;
+    pageSize: number;
+    discovery: StorefrontDiscoveryQuery;
+    now?: Date;
+  }) {
+    const safePageSize = parseListLimit(pageSize);
+    // Bounds first: an out-of-window page is refused before any listing work happens.
+    const offset = parsePageOffset(discovery.page, safePageSize);
+    const safeShopId = parseShopId(shopId);
+    const variantStockCte = buildVariantStockCte(now);
+
+    const flashPredicate = Prisma.sql`
+      p."pancakeShopId" = ${safeShopId}
+      AND p."isPresent" = TRUE
+      AND p."isActive" = TRUE
+      AND EXISTS (
+        SELECT 1 FROM "variant_stock" vf
+        WHERE vf."productId" = p."id" AND vf."isFlashSale" = TRUE
+      )
+    `;
+    const sortPrice = Prisma.sql`
+      (
+        SELECT MIN(vf."resolvedPrice")
+        FROM "variant_stock" vf
+        WHERE vf."productId" = p."id" AND vf."isFlashSale" = TRUE
+      )
+    `;
+
+    const [countRows, idRows] = await Promise.all([
+      client.$queryRaw<DiscoveryCountRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "ProductMirror" p
+        WHERE ${flashPredicate}
+      `),
+      client.$queryRaw<DiscoveryIdRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT p."id", ${sortPrice} AS "sortPrice"
+        FROM "ProductMirror" p
+        WHERE ${flashPredicate}
+        ORDER BY "sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
+        LIMIT ${safePageSize}
+        OFFSET ${offset}
+      `),
+    ]);
+
+    const totalCount = countRows[0] ? bigintToSafeNumber(countRows[0].count) : 0;
+    const ids = idRows.map(({ id }) => id);
+    const products =
+      ids.length === 0
+        ? []
+        : await client.productMirror.findMany({
+            where: { ...visibleProductWhere(safeShopId), id: { in: ids } },
+            select: productSelection,
+          });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const allSlugs = products.flatMap((product) =>
+      product.content ? parseJsonStringArray(product.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const orderedProducts = ids.map((id) => {
+      const product = byId.get(id);
+      if (!product) throw new Error("Flash sale result changed during read");
+      return toStorefrontProduct(product, collectionMap);
+    });
+
+    const { campaignsByVariantId } = await readApplicablePromotionCampaigns({
+      variantIds: orderedProducts.flatMap((product) =>
+        product.variants.map((variant) => variant.id),
+      ),
+    });
+
+    return {
+      products: orderedProducts,
+      page: discovery.page,
+      pageSize: safePageSize,
+      totalCount,
+      totalPages: Math.ceil(totalCount / safePageSize),
+      hasPrevious: discovery.page > 1,
+      hasNext: offset + orderedProducts.length < totalCount,
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+    };
+  }
+
+  /**
+   * The next instant at which Flash membership could change, server-side.
+   *
+   * Covers both directions: a scheduled campaign opening and a running one closing. The route uses
+   * it to tell the browser when to come back, so an empty page still knows when it stops being
+   * empty and a running one knows when it ends.
+   */
+  async function readNextFlashSaleBoundary({
+    now = new Date(),
+  }: { now?: Date } = {}): Promise<Date | null> {
+    const rows = await client.$queryRaw<Array<{ boundary: Date | null }>>(Prisma.sql`
+      SELECT MIN("boundary") AS "boundary" FROM (
+        SELECT "startsAt" AS "boundary" FROM "PromotionCampaign"
+        WHERE "isEnabled" = TRUE AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
+          AND "startsAt" IS NOT NULL AND "startsAt" > ${now}
+        UNION ALL
+        SELECT "endsAt" AS "boundary" FROM "PromotionCampaign"
+        WHERE "isEnabled" = TRUE AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
+          AND "endsAt" IS NOT NULL AND "endsAt" > ${now}
+      ) AS "boundaries"
+    `);
+    return rows[0]?.boundary ?? null;
+  }
+
   async function listDiscoveryFacets({ shopId }: { shopId: number }) {
     const safeShopId = parseShopId(shopId);
     const [colorRows, sizeRows, collectionRows] = await Promise.all([
@@ -640,6 +787,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     listProducts,
     listProductPage,
     listDiscoveryPage,
+    listFlashSalePage,
+    readNextFlashSaleBoundary,
     listDiscoveryFacets,
     getProductBySlug,
   };
