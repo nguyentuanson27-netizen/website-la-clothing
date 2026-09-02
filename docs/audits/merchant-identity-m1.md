@@ -153,9 +153,8 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
   },
   "merchantFactsReady": 0,
   "apparelFacts": {
-    "gender": "OWNER_BLOCKED",
-    "ageGroup": "OWNER_BLOCKED",
-    "condition": "OWNER_BLOCKED",
+    "policy": "RESOLVED",
+    "productOverrides": "NOT_IMPLEMENTED",
     "verdict": "BLOCKED"
   },
   "durability": {
