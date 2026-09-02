@@ -294,6 +294,13 @@ and unstarted prerequisites in the other. Both owning checklists are therefore r
   T8, M2–M5 and V1 stay open**, and M1 keeps its existing partial state: durability proven, SKU-as-MPN and
   runtime apparel facts still pending.
 
+The same staleness existed in the plan and spec headers beside those checklists, so they are qualified too:
+`tasks/promotions-flash-sale-v1-plan.md` no longer says "implementation has not started",
+`tasks/marketing-analytics-shopping-plan.md` no longer says "planning artifact only", and
+`docs/specs/marketing-analytics-shopping.md` names the delivered slices. Each keeps its unbuilt scope explicitly
+proposed. `tasks/growth-commerce-master-plan.md` is deliberately untouched: its "no runtime implementation is
+included in this PR" is scoped to the planning PR that introduced it and remains accurate.
+
 Nothing was ticked that this record does not evidence, and no historical approval was invented.
 
 ## 6. Explicitly not done in Wave 1

@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: Proposed — self-reviewed; implementation plan added; ready for human review before `/build`
+Status: T1–T4 implemented and merged (PR #157, #164, #165); M1 partially delivered (PR #175). T5 onward remain proposed and self-reviewed, with the implementation plan added and human review required before `/build`
 
 This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 
