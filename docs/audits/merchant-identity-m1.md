@@ -7,10 +7,12 @@ Consumers: **U12 / M2**, **U25 / M3**, **Gate M**.
 Status: **DURABILITY BLOCKED.** A controlled experiment was run — repeated full-catalog resyncs in
 an isolated database on the production VPS, plus a 4-day time-separated comparison against the live
 Pancake API — and it showed a completely stable identifier set. That is a real result, but it is not
-§3.3 Option B evidence: it is measured downstream of a mirror that reconciles by the very
-identifiers under test, so it cannot distinguish "the same object kept its id" from "an id was
-reused for a different object". See **Durability gate** below for what would settle it. Emitted
-offers additionally remain blocked on owner apparel runtime (**O3**) and catalog fact readiness.
+§3.3 Option B evidence, for two different reasons worth keeping apart: the repeated resyncs are
+measured downstream of a mirror keyed by the identifiers under test, and the time-separated
+comparison, while not circular, is still identifier-set equality with no correlate independent of
+the identifier. Neither can distinguish "the same object kept its id" from "an id was reused for a
+different object". See **Durability gate** below for what would settle it. Emitted offers
+additionally remain blocked on owner apparel runtime (**O3**) and catalog fact readiness.
 
 ## Verdict summary
 
@@ -175,9 +177,9 @@ upstream objects retain the same IDs**, combined with repository tests proving m
 reconciled by those IDs. The second half is satisfied. The first is not, and the experiment below
 cannot satisfy it as it is built.
 
-### Why the run below is not Option B evidence
+### Why the runs below are not Option B evidence
 
-The snapshots are read back from the catalog mirror, and the mirror reconciles products by
+**The repeated resyncs are circular.** The snapshots are read back from the catalog mirror, and the mirror reconciles products by
 `pancakeProductId` and variations by `pancakeVariationId` — the identifiers under test. So a stable
 identifier set and a preserved internal row id for a given external id both follow from the upsert
 itself, and `internalRowIdPreservedCount: 712` re-confirms only that the repository reconciles by
@@ -187,6 +189,12 @@ The blind spot is concrete: if the provider recycles or remaps an identifier ont
 object, the identifier set is unchanged, the mirror writes the new data into the same row, and every
 number below still reads as perfect stability. Nothing here can tell that apart from genuine
 persistence, so raising the gate on it would be circular.
+
+**The 4-day comparison is not circular, but it is still insufficient.** It compares a live Pancake
+API fetch against a mirror synced four days earlier, so the live side never passed through the
+upsert. What it establishes is that the API returned the same identifier set on both dates. That is
+worth having, and it is still set equality: with no correlate independent of the identifier, an
+identifier reused for a different object looks identical to one that persisted.
 
 The comparison therefore reports `identifierSetStableAcrossRuns` and a constant
 `provesUpstreamLifetimeDurability: false`, and a test pins that no arrangement of inputs can flip it.
@@ -250,12 +258,18 @@ against the live Pancake API fetched on `2026-09-01T17:16:42.377Z`:
 - Disappeared variation IDs: **0**.
 - Appeared variation IDs: **0**.
 
+The live side of this comparison never passed through the mirror upsert, so unlike the repeated
+resyncs it is not circular. It remains identifier-set equality, which cannot separate persistence
+from reuse — see **Durability gate** above.
+
 ### 3. Mirror reconciliation by external ID (proven in test)
 
 `tests/database/merchant-identity-audit.test.ts` proves that `ProductMirror` and `VariantMirror` rows
 are reconciled by `pancakeProductId` and `pancakeVariationId`: renaming a product or altering color/size
-options updates the existing row rather than creating a duplicate. In addition, the 3-run resync test
-proves that internal CUID row IDs were preserved across all 712 comparisons (0 row replacements).
+options updates the existing row rather than creating a duplicate. The 3-run resync observed 712
+preserved internal CUID row ids with 0 replacements, which re-confirms the same reconciliation
+behaviour from live data — it is a consequence of an upsert keyed by external id, not additional
+evidence about upstream lifetime.
 
 ### Durability Architecture & Separation of Responsibilities
 
