@@ -63,7 +63,7 @@ test("bounded promotion traversal continues across full pages when metadata is o
       }
       return { success: true, data: [{ id: "p3" }] };
     },
-  } as Parameters<typeof fetchBoundedPromotions>[0];
+  } as unknown as Parameters<typeof fetchBoundedPromotions>[0];
 
   const promotions = await fetchBoundedPromotions(client, 1635185058, { maxPages: 3, pageSize: 2 });
 
@@ -74,7 +74,7 @@ test("bounded promotion traversal continues across full pages when metadata is o
 test("bounded promotion traversal refuses silent truncation when every metadata-free page is full", async () => {
   const client = {
     getJson: async () => ({ success: true, data: [{ id: "p1" }, { id: "p2" }] }),
-  } as Parameters<typeof fetchBoundedPromotions>[0];
+  } as unknown as Parameters<typeof fetchBoundedPromotions>[0];
 
   await assert.rejects(
     () => fetchBoundedPromotions(client, 1635185058, { maxPages: 2, pageSize: 2 }),
