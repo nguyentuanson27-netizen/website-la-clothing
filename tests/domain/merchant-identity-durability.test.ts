@@ -129,7 +129,7 @@ test("repeated identical runs prove stability with 100% match", () => {
   const comparison = compareCatalogSnapshots([snap1, snap2, snap3]);
 
   assert.equal(comparison.runsAudited, 3);
-  assert.equal(comparison.isDurable, true);
+  assert.equal(comparison.identifierSetStableAcrossRuns, true);
   assert.equal(comparison.productStabilityPercent, 100);
   assert.equal(comparison.variationStabilityPercent, 100);
   assert.equal(comparison.disappearedProductIds.length, 0);
@@ -162,7 +162,7 @@ test("changing or disappearing upstream IDs are detected and fail durability", (
 
   const comparison = compareCatalogSnapshots([snap1, snap2]);
 
-  assert.equal(comparison.isDurable, false);
+  assert.equal(comparison.identifierSetStableAcrossRuns, false);
   assert.deepEqual(comparison.disappearedVariationIds, ["v2"]);
   assert.deepEqual(comparison.appearedVariationIds, ["v3"]);
   assert.equal(comparison.variationStabilityPercent, 50);
@@ -190,7 +190,7 @@ test("internal row ID replacement fails durability", () => {
 
   const comparison = compareCatalogSnapshots([snap1, snap2]);
 
-  assert.equal(comparison.isDurable, false);
+  assert.equal(comparison.identifierSetStableAcrossRuns, false);
   assert.equal(comparison.internalRowIdReplacedCount, 1);
 });
 
@@ -392,4 +392,77 @@ test("the durability CLI wrapper does not import Prisma to clean up after a refu
     true,
     "and disconnects it",
   );
+});
+
+/**
+ * The comparison reads snapshots back from a mirror that reconciles products by `pancakeProductId`
+ * and variations by `pancakeVariationId`. A stable identifier set, and a preserved internal row id
+ * for a given external id, therefore follow from the upsert itself — they say the repository
+ * reconciles by external id, which repository tests already establish.
+ *
+ * This fixture is the case the measurement is blind to: the provider remaps an identifier onto a
+ * different object. The identifier set is untouched, the mirror writes the new data into the same
+ * row, and every stability number still reads as perfect. Nothing in the result may call that proof
+ * of upstream lifetime.
+ */
+test("identifier-set stability is never reported as proof of upstream lifetime", () => {
+  const stable = compareCatalogSnapshots([
+    createCatalogIdSnapshot({
+      runIndex: 0,
+      timestamp: "2026-09-01T00:00:00.000Z",
+      shopId: 920_007,
+      productExternalIds: ["p-1"],
+      variationExternalIds: ["v-1"],
+      internalVariantIdMap: { "v-1": "cuid-1" },
+    }),
+    createCatalogIdSnapshot({
+      runIndex: 1,
+      timestamp: "2026-09-01T00:00:01.000Z",
+      shopId: 920_007,
+      productExternalIds: ["p-1"],
+      variationExternalIds: ["v-1"],
+      // Same identifier, same mirror row — which is exactly what an upsert keyed by that identifier
+      // guarantees, whether or not "v-1" still denotes the object it denoted a moment ago.
+      internalVariantIdMap: { "v-1": "cuid-1" },
+    }),
+  ]);
+
+  assert.equal(stable.identifierSetStableAcrossRuns, true, "the sets did hold across runs");
+  assert.equal(
+    stable.provesUpstreamLifetimeDurability,
+    false,
+    "and that is not evidence about upstream object lifetime",
+  );
+  assert.equal(
+    Object.hasOwn(stable, "isDurable"),
+    false,
+    "no field may name this durability; the word is what caused the gate to be raised early",
+  );
+});
+
+test("no arrangement of inputs can make the comparison claim upstream durability", () => {
+  const snapshot = (runIndex: number, variationExternalIds: readonly string[]) =>
+    createCatalogIdSnapshot({
+      runIndex,
+      timestamp: `2026-09-01T00:00:0${runIndex}.000Z`,
+      shopId: 920_007,
+      productExternalIds: ["p-1"],
+      variationExternalIds: [...variationExternalIds],
+      internalVariantIdMap: Object.fromEntries(
+        variationExternalIds.map((id) => [id, `cuid-${id}`]),
+      ),
+    });
+
+  for (const [label, second] of [
+    ["identical runs", snapshot(1, ["v-1"])],
+    ["a disappeared identifier", snapshot(1, [])],
+    ["an appeared identifier", snapshot(1, ["v-1", "v-2"])],
+  ] as const) {
+    const comparison = compareCatalogSnapshots([snapshot(0, ["v-1"]), second]);
+    assert.equal(
+      comparison.provesUpstreamLifetimeDurability,
+      false,
+      `${label} must not flip the constant`,
+    );
+  }
 });

@@ -4,10 +4,13 @@ Owning sources: `docs/specs/marketing-analytics-shopping.md` §6.2, `tasks/marke
 §3.3 and M1, `docs/audits/seo-geo-audit.md` finding **W4a**. Master-plan unit: **U9**.
 Consumers: **U12 / M2**, **U25 / M3**, **Gate M**.
 
-Status: **DURABILITY PROVEN.** The identifier durability requirement is proven via controlled
-repeated full-catalog resyncs in an isolated database on the production VPS, 4-day time-separated
-stability comparison against live Pancake API, and existing repository reconciliation tests. Emitted
-offers remain blocked on owner apparel facts (**O3**) and catalog fact readiness (SKU / media).
+Status: **DURABILITY BLOCKED.** A controlled experiment was run — repeated full-catalog resyncs in
+an isolated database on the production VPS, plus a 4-day time-separated comparison against the live
+Pancake API — and it showed a completely stable identifier set. That is a real result, but it is not
+§3.3 Option B evidence: it is measured downstream of a mirror that reconciles by the very
+identifiers under test, so it cannot distinguish "the same object kept its id" from "an id was
+reused for a different object". See **Durability gate** below for what would settle it. Emitted
+offers additionally remain blocked on owner apparel runtime (**O3**) and catalog fact readiness.
 
 ## Verdict summary
 
@@ -17,8 +20,8 @@ offers remain blocked on owner apparel facts (**O3**) and catalog fact readiness
 | Are emitted variation ids unique? | **PROVEN** — 0 duplicate variation IDs across the catalog |
 | Is SKU usable as MPN (present, unique across emitted variations)? | **NOT READY** — 149/149 standalone variations missing SKU in Pancake |
 | Are composites excluded? | **PROVEN** — 116 composite members classified `COMPOSITE_DEFERRED` and excluded |
-| Does the mirror reconcile rows by external id rather than slug/position/local id? | **PROVEN** — repository tests + 712/712 internal row reconciliations preserved |
-| Do upstream objects keep those ids for their lifetime? | **PROVEN** — 100% stability across 3 repeated full-catalog resyncs + 4-day time separation |
+| Does the mirror reconcile rows by external id rather than slug/position/local id? | **PROVEN** — repository tests. The 712/712 preserved internal row ids re-confirm this and nothing beyond it: an upsert keyed by external id returns the same row by construction |
+| Do upstream objects keep those ids for their lifetime? | **BLOCKED** — the identifier set was 100% stable across 3 resyncs and a 4-day separation, but that is measured through a mirror keyed by those identifiers and cannot detect an id reused for a different object |
 | Does every emittable record have a price the website would publish? | **READY** — 149/149 emittable prices resolved (`PRICE_UNRESOLVED: 0`) |
 | Is stock status known? | **READY** — 77 `IN_STOCK`, 71 `OUT_OF_STOCK`, 1 `AVAILABILITY_UNRESOLVED` |
 | Does every emittable record have a trusted image? | **NOT READY** — 149/149 missing variant-level media |
@@ -165,17 +168,53 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
 }
 ```
 
-## Durability gate — PROVEN via Option B
+## Durability gate — still BLOCKED
 
-§3.3 Option B requires: **controlled repeated full-catalog resync evidence** showing the same upstream
-objects retain the same IDs, **combined with repository tests proving mirror rows are reconciled by
-those IDs**.
+§3.3 Option B requires **controlled repeated full-catalog resync evidence showing that the same
+upstream objects retain the same IDs**, combined with repository tests proving mirror rows are
+reconciled by those IDs. The second half is satisfied. The first is not, and the experiment below
+cannot satisfy it as it is built.
+
+### Why the run below is not Option B evidence
+
+The snapshots are read back from the catalog mirror, and the mirror reconciles products by
+`pancakeProductId` and variations by `pancakeVariationId` — the identifiers under test. So a stable
+identifier set and a preserved internal row id for a given external id both follow from the upsert
+itself, and `internalRowIdPreservedCount: 712` re-confirms only that the repository reconciles by
+external id.
+
+The blind spot is concrete: if the provider recycles or remaps an identifier onto a different
+object, the identifier set is unchanged, the mirror writes the new data into the same row, and every
+number below still reads as perfect stability. Nothing here can tell that apart from genuine
+persistence, so raising the gate on it would be circular.
+
+The comparison therefore reports `identifierSetStableAcrossRuns` and a constant
+`provesUpstreamLifetimeDurability: false`, and a test pins that no arrangement of inputs can flip it.
+
+### What would settle it
+
+One of:
+
+1. **Provider/API contract evidence** that Pancake identifiers are stable for the upstream object's
+   lifetime — the cleanest path, because it removes the need to infer anything;
+2. **A resync experiment that correlates the same upstream object independently of the identifier
+   under test**, captured at the live Pancake boundary *before* any mirror write. That needs a
+   correlate Pancake exposes which is not derived from the id being tested; if no sufficiently
+   strong one exists, this path cannot be made to work and option 1 or 3 applies;
+3. **Historical evidence explicitly reviewed and approved** as equivalent.
+
+The tooling below is kept because it is a genuine input to option 2 and a useful catalog check on
+its own — but it is not, by itself, the proof.
+
+### The run that was performed
 
 ### 1. Controlled repeated resyncs on isolated database (`scripts/pancake-durability-evidence.ts`)
 
 - **Database environment:** Isolated PostgreSQL database `la_clothing_durability_audit` on the production VPS, migrated with all 20 migrations from `prisma/migrations`.
 - **Isolation guarantee:** Completely independent database. Zero production writes, zero production traffic.
 - **Execution:** 3 consecutive full-catalog sync passes against the live Pancake POS API.
+- **Reading:** the identifier set was completely stable. Read as a catalog-health check this is a
+  good result; read as durability proof it is circular, per the section above.
 
 ```json
 {
@@ -194,7 +233,8 @@ those IDs**.
   "duplicateVariationIds": [],
   "internalRowIdPreservedCount": 712,
   "internalRowIdReplacedCount": 0,
-  "isDurable": true
+  "identifierSetStableAcrossRuns": true,
+  "provesUpstreamLifetimeDurability": false
 }
 ```
 
@@ -234,27 +274,34 @@ proves that internal CUID row IDs were preserved across all 712 comparisons (0 r
      A read of local rows cannot, on its own, prove that an external provider preserves identifiers over their lifetime. The local audit refuses to declare durability from internal data or caller flags.
 
 2. **`merchant:durability:evidence` (Controlled write-capable durability audit):**
-   - Implements §3.3 Option B verification via repeated live Pancake catalog syncs.
+   - Runs repeated live Pancake catalog syncs and measures identifier-set stability. It is an input toward §3.3 Option B, not the verification itself: the snapshots are read back through a mirror keyed by the identifiers under test.
    - **Strict isolation guard:** Enforces fail-closed refusal unless `DATABASE_URL` specifies the exact approved isolated database `la_clothing_durability_audit` (`ALLOWED_AUDIT_DATABASE_NAME`). Rejects any production database name (e.g. `la_clothing`), rejects malformed URLs, and rejects CI execution before reading credentials or connecting.
-   - Executes multi-pass syncs, captures sha256 identifier snapshots, and verifies that upstream IDs and internal row CUID reconciliations are 100% stable.
+   - Executes multi-pass syncs and captures sha256 identifier snapshots. It reports `identifierSetStableAcrossRuns` and a constant `provesUpstreamLifetimeDurability: false`.
 
 3. **`docs/audits/merchant-identity-m1.md` (Reviewed evidence artifact):**
-   - The authoritative review artifact that aggregates Option B evidence from `merchant:durability:evidence`, the 4-day time-separation proof, and repository reconciliation tests.
-   - Clears the M1 Durability Gate as **PROVEN**.
+   - The authoritative review artifact. It records what the controlled runs measured, and why that measurement does not by itself clear the gate.
+   - Keeps the M1 Durability Gate **BLOCKED**.
 
 ### Durability Verdict
 
-**M1 DURABILITY GATE: PROVEN (via Option B).**
-Identifiers (`pancakeProductId` and `pancakeVariationId`) are stable and durable across repeated
-syncs and time-separated operational snapshots.
+**M1 DURABILITY GATE: BLOCKED.**
+
+What is established: `pancakeProductId` and `pancakeVariationId` are present, unique and well-formed;
+the mirror reconciles rows by them; and the identifier set was completely stable across three
+repeated resyncs and a 4-day separation.
+
+What is not established: that an upstream object keeps its identifier for its lifetime. The
+stability above was measured through a mirror keyed by those identifiers, so it cannot distinguish
+persistence from an identifier reused for a different object. See **Durability gate** above for the
+three paths that would settle it.
 
 ## Status of downstream Merchant gates
 
-- **Identifier Durability (M1):** **PASS (PROVEN)**.
+- **Identifier Durability (M1):** **BLOCKED.** Identifier set stability is measured and good; upstream lifetime is not established. Merchant activation stays gated on it.
 - **MPN (SKU readiness):** **NOT READY.** 149/149 standalone variants currently have no SKU in Pancake.
   **Owner decision required:** omit MPN from emitted offers rather than inventing an MPN, or populate SKUs upstream in Pancake.
 - **Media readiness:** 149/149 standalone variants currently lack variant-level media in the mirror.
 - **Editorial description:** 5 published, 144 draft.
-- **Apparel facts (O3):** **OWNER_BLOCKED.** `gender`, `age_group`, `condition` remain blocked pending human owner decision. Offer emission (U25 / M3) cannot proceed until O3 is cleared.
+- **Apparel facts (O3):** **Policy RESOLVED** by ADR 0007 (`male` / `adult` / `new` shop defaults with local product overrides); **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists. Offer emission (U25 / M3) cannot proceed until that runtime lands.
 
 

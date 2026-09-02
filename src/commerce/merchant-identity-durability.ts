@@ -1,3 +1,23 @@
+/**
+ * Tooling for the M1 identifier-durability experiment.
+ *
+ * What this measures, and the limit that matters: the comparison runs on snapshots read back from
+ * the catalog mirror, and the mirror reconciles products by `pancakeProductId` and variations by
+ * `pancakeVariationId` — the very keys whose durability is in question. So a stable identifier set
+ * across runs, and a preserved internal row id for a given external id, follow from the upsert
+ * itself. They confirm the repository reconciles by external id, which repository tests already
+ * establish; they cannot establish that the upstream object behind an identifier is still the same
+ * object.
+ *
+ * The case this is blind to is concrete: if a provider recycles or remaps an identifier onto a
+ * different object, the identifier set is unchanged, the mirror writes the new data into the same
+ * row, and every number here still reads as perfect stability.
+ *
+ * Nothing in this module may therefore report upstream lifetime durability as proven. Establishing
+ * that needs a correlate captured at the live provider boundary, independent of the identifier being
+ * tested — or a provider contract, or approved historical evidence.
+ */
+
 import { createHash } from "node:crypto";
 
 export const ALLOWED_AUDIT_DATABASE_NAME = "la_clothing_durability_audit";
@@ -78,7 +98,18 @@ export type DurabilityComparisonResult = Readonly<{
   duplicateVariationIds: readonly string[];
   internalRowIdPreservedCount: number;
   internalRowIdReplacedCount: number;
-  isDurable: boolean;
+  /**
+   * The identifier set and the mirror's internal row ids held across the compared runs.
+   *
+   * Deliberately not called durable: this is set stability measured downstream of a mirror keyed by
+   * the same identifiers, not evidence about upstream object lifetime.
+   */
+  identifierSetStableAcrossRuns: boolean;
+  /**
+   * Always false, and constant for the same reason the M1 audit's own durability verdict is: no
+   * arrangement of the inputs this comparison receives can establish upstream lifetime.
+   */
+  provesUpstreamLifetimeDurability: false;
 }>;
 
 function hashIdList(ids: readonly string[]): string {
@@ -217,7 +248,7 @@ export function compareCatalogSnapshots(
     ? 0
     : Math.round((stableVariations / baseVariationSet.size) * 10_000) / 100;
 
-  const isDurable =
+  const identifierSetStableAcrossRuns =
     disappearedProductIds.size === 0 &&
     appearedProductIds.size === 0 &&
     disappearedVariationIds.size === 0 &&
@@ -243,6 +274,9 @@ export function compareCatalogSnapshots(
     duplicateVariationIds: Object.freeze([...allDuplicateVariationIds].sort()),
     internalRowIdPreservedCount: internalRowIdPreserved,
     internalRowIdReplacedCount: internalRowIdReplaced,
-    isDurable,
+    identifierSetStableAcrossRuns,
+    // Constant. A comparison of identifier sets read back through a mirror keyed by those same
+    // identifiers cannot prove upstream lifetime, however stable the sets look.
+    provesUpstreamLifetimeDurability: false as const,
   });
 }

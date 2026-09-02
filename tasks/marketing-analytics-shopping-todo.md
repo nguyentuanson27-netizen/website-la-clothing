@@ -145,7 +145,7 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 
 ### M1 Merchant read-only identity/durability audit
 - [ ] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits.
-- [x] Prove external-ID durability — **§3.3 Option B satisfied**: three repeated full-catalog resyncs with 100% identifier stability, a 4-day time-separated comparison, 712/712 internal row reconciliations preserved, plus the repository tests proving rows reconcile by external id. Recorded in `docs/audits/merchant-identity-m1.md`. The local mirror audit stays fail-closed and still reports `upstreamLifetimeProven: false` — the proof is the reviewed evidence artifact, not something that audit can assert.
+- [ ] Prove external-ID durability by provider contract, controlled repeated full-catalog resync evidence + repository reconciliation tests, or equivalent approved history. **Still open.** A controlled run measured a completely stable identifier set across three resyncs and a 4-day separation, but it reads snapshots back through a mirror keyed by the identifiers under test, so it cannot distinguish persistence from an identifier reused for a different object. `docs/audits/merchant-identity-m1.md` records the run and the three paths that would settle it.
 - [ ] Audit SKU-as-MPN presence/uniqueness/stability.
 - [ ] Every composite projection becomes `COMPOSITE_DEFERRED` in v1.
 - [ ] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready.
