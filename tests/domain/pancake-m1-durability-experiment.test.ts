@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   APPROVAL_REQUIRED_MESSAGE,
   assertM1ExperimentEnvironment,
+  assertSetupPreservedIds,
   CI_REFUSAL_MESSAGE,
   EXPECTED_A132_PRODUCT_ID,
   EXPECTED_SHOP_ID,
@@ -247,6 +248,111 @@ test("restoreA132Product fails closed when fresh GET returns wrong custom_id", a
   await assert.rejects(
     () => restoreA132Product(client, EXPECTED_SHOP_ID, snapshot),
     /FATAL: Restoration verification failed/i,
+  );
+});
+
+test("restoreA132Product verifies original null custom_id exactly", async () => {
+  const snapshot: ProductA132Snapshot = {
+    id: EXPECTED_A132_PRODUCT_ID,
+    name: "ÁO A132",
+    custom_id: "A132",
+    display_id: "145",
+    note_product: "",
+    categoryIds: [1],
+    tags: [2],
+    productAttributes: [],
+    variations: [
+      {
+        id: "var-1",
+        custom_id: null,
+        display_id: "A132-S",
+        barcode: null,
+        retail_price: 429000,
+        is_hidden: false,
+        fields: [{ name: "Size", value: "S" }],
+      },
+    ],
+  };
+
+  const mismatchFetcher: typeof fetch = async (input, init) => {
+    if (init?.method === "PUT") {
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    return new Response(
+      JSON.stringify({
+        data: {
+          id: EXPECTED_A132_PRODUCT_ID,
+          name: "ÁO A132",
+          custom_id: "A132",
+          note_product: "",
+          variations: [
+            {
+              id: "var-1",
+              custom_id: "LEFTOVER-MARKER",
+              display_id: "A132-S",
+            },
+          ],
+        },
+      }),
+      { status: 200 },
+    );
+  };
+
+  const client = new PancakeClient({ apiKey: "test-key", fetcher: mismatchFetcher });
+  await assert.rejects(
+    () => restoreA132Product(client, EXPECTED_SHOP_ID, snapshot),
+    /FATAL: Restoration verification failed/i,
+  );
+});
+
+test("assertSetupPreservedIds rejects a variation remap during marker setup", () => {
+  const snapshot: ProductA132Snapshot = {
+    id: EXPECTED_A132_PRODUCT_ID,
+    name: "ÁO A132",
+    custom_id: "A132",
+    display_id: "145",
+    note_product: "",
+    categoryIds: [],
+    tags: [],
+    productAttributes: [],
+    variations: [
+      {
+        id: "var-original",
+        custom_id: null,
+        display_id: "A132-S",
+        barcode: null,
+        retail_price: 429000,
+        is_hidden: false,
+        fields: [{ name: "Size", value: "S" }],
+      },
+    ],
+  };
+
+  assert.throws(
+    () =>
+      assertSetupPreservedIds({
+        snapshot,
+        variationMarkers: { "var-original": "M1-A132-V-S-test" },
+        observation: {
+          runIndex: 0,
+          phase: "T0_BASELINE",
+          timestamp: "2026-09-02T00:00:00.000Z",
+          totalCatalogEntries: 356,
+          totalCatalogPages: 4,
+          auditProduct: {
+            productMarker: "M1-A132-P-test",
+            pancakeProductId: EXPECTED_A132_PRODUCT_ID,
+            productName: "ÁO A132",
+            variations: [
+              {
+                variationMarker: "M1-A132-V-S-test",
+                pancakeVariationId: "var-recreated",
+              },
+            ],
+          },
+        },
+      }),
+    /Setup mutation changed variation ID/i,
   );
 });
 
