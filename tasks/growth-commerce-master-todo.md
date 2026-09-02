@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 0 COMPLETE — U0–U6 merged and integrated on `main@fe05184518a55e00ba24049fa895c6a4fdc3639c`; Wave 1 onward planned**
+Status: **WAVE 1 COMPLETE — U7–U11 merged and integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint A PASS; Wave 2 onward planned**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -39,18 +39,33 @@ not resolve downstream owner or launch gates.
 
 ## Wave 1 — commerce truth and identity
 
-- [ ] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence.
-- [ ] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only.
+- [x] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence. *(PR #162 resolver, PR #163 mirrored-money audit, PR #174 W3 evidence; merged)* W3 verdict **PASS** — real-catalog evidence does not contradict the approved `retailPrice` ownership assumption, so the U7 stop rule was not triggered. The `retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place and remains U15/P6 work.
+- [x] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only. *(PR #164 cart lines, PR #165 product/option facts; merged)* Composite lines carry the actual purchased component variation ID; unresolvable/private lines fail closed to no external identity.
 - [x] **U9** #153 M1 + #152 W4a — read-only identity/durability/SKU-MPN audit (PR #175); M1 durability **PROVEN via §3.3 Option B** (controlled repeated upstream-object correlation evidence on `a132`); SKU-as-MPN and runtime apparel facts remain pending downstream decisions; no GTIN inference; composites deferred.
-- [ ] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery.
-- [ ] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision.
+- [x] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery. *(PR #167 lifecycle, PR #168 candidate repository, PR #169 runtime health; merged)* Candidate lookup is two bounded queries with an N+1 guard; lifecycle is derived, so it stays correct across restart and zero traffic.
+- [x] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision. *(PR #170 activation validation, PR #171 activation service, PR #172 admin operations; merged)* Activation gate remains **off**; disable/end-early stay campaign-row bounded so rollback survives coverage above 2000.
 
 ### Checkpoint A
 
-- [ ] #151 P1–P4 verification green; price evidence accepted; activation gate off.
-- [ ] Identity ready before consumers depend on it.
-- [ ] Authz/bounds/concurrency/external-data security review green.
-- [ ] Fresh review 0 Critical / 0 Required.
+**PASS** — integrated evidence recorded in `docs/audits/wave-1-checkpoint-a.md`, verified at exact head
+`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`.
+
+The owning source checklists are reconciled to the same truth, so there is one execution reality rather than two:
+`tasks/promotions-flash-sale-v1-todo.md` records P1–P4 + Checkpoint A as delivered with P5 onward open, and
+`tasks/marketing-analytics-shopping-todo.md` records T1–T3 + T4 as delivered with T5 onward open.
+
+- [x] #151 P1–P4 verification green; price evidence accepted; activation gate off. `pnpm lint`,
+      `pnpm typecheck`, `pnpm test` (752/752), `pnpm test:db` (292/292) and `pnpm build` all pass;
+      migrations deploy clean. Exact-head CI `verify` + `admin-a11y-runtime`, VPS container
+      verification and Catalog indexation runtime all succeeded.
+- [x] Identity ready before consumers depend on it. No storefront, cart, checkout, analytics,
+      Merchant or structured-data consumer reads the promotion resolver yet; those switches belong to
+      Wave 2 onward.
+- [x] Authz/bounds/concurrency/external-data security review green. Admin session required on every
+      write before the gate and before any transaction; deterministic revision → campaign → product →
+      variant lock order with re-read before commit; mirrored Pancake money treated as untrusted and
+      failed closed; no logging of secrets, PII or raw external payloads.
+- [x] Fresh review 0 Critical / 0 Required. Three non-blocking observations are carried to U14/P5.
 
 ## Wave 2 — addressability and storefront
 

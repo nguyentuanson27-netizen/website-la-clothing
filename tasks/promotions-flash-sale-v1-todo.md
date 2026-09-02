@@ -1,6 +1,15 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **PLANNED / NOT IMPLEMENTED**
+Status: **P1–P4 IMPLEMENTED AND MERGED; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. P5 onward remain planned.**
+
+Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
+real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172). Integrated Checkpoint A
+evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; the W3 pricing evidence is in
+`docs/audits/pricing-evidence-w3.md`.
+
+The promotion activation gate remains **default-off**, and the storefront
+`retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place — its removal is P6
+work. Nothing from P5 onward is implemented.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -29,90 +38,100 @@ PR #153 owns canonical analytics/Merchant identity/cart contracts; PR #152 owns 
 - [ ] Exact-head CI green.
 - [ ] Human plan approval before `/build`.
 
+These three P0 gates are left unticked deliberately. They belong to the planning PR's own approval, and the
+repository carries no evidence of them that a later reader could verify; P1–P4 subsequently being built and merged
+is not itself proof that they were recorded. They are not a statement that implementation is missing.
+
 ## P1 — persistence + additive order audit + durable pricing revision
-- [ ] Add campaign/target persistence with DB/server shape and uniqueness guards.
-- [ ] Website money uses integer/BigInt VND; Pancake mirrors stay `Float?`.
-- [ ] Add base/final/promotion audit fields to `OrderLineSnapshot`.
-- [ ] Preserve purchased `pancakeVariationId`, name/options/quantity facts used by #153 Purchase.
-- [ ] Add one durable singleton/equivalent server-owned promotion-pricing revision record using non-negative `BigInt`/equivalent monotonic integer semantics; bounded cardinality, monotonic effective-mutation ordering, cheap read for Merchant cache validation.
-- [ ] Migration additive; historical rows readable; no campaign delete.
+- [x] Add campaign/target persistence with DB/server shape and uniqueness guards.
+- [x] Website money uses integer/BigInt VND; Pancake mirrors stay `Float?`.
+- [x] Add base/final/promotion audit fields to `OrderLineSnapshot`.
+- [x] Preserve purchased `pancakeVariationId`, name/options/quantity facts used by #153 Purchase.
+- [x] Add one durable singleton/equivalent server-owned promotion-pricing revision record using non-negative `BigInt`/equivalent monotonic integer semantics; bounded cardinality, monotonic effective-mutation ordering, cheap read for Merchant cache validation.
+- [x] Migration additive; historical rows readable; no campaign delete.
 
 Verification:
-- [ ] RED/GREEN DB tests.
-- [ ] Prisma validate/generate/migration deploy.
-- [ ] Historical compatibility.
-- [ ] Revision initialization + transaction lock/increment behavior.
+- [x] RED/GREEN DB tests.
+- [x] Prisma validate/generate/migration deploy.
+- [x] Historical compatibility.
+- [x] Revision initialization + transaction lock/increment behavior.
 
 ## P2 — central pricing + evidence
-- [ ] Pure explicit-`now` resolver is the only semantic pricing authority.
-- [ ] Positive safe-integer base boundary.
-- [ ] Percentage uses exact BigInt rational arithmetic.
-- [ ] Fixed price is final customer unit price and `0 < fixed < base`.
-- [ ] Resolver returns base/effective price, promotion snapshot, discounted flag, typed invalid/conflict reason and transition fact.
-- [ ] >1 applicable campaign => conflict/no promotion; never arbitrary winner.
-- [ ] Affected-variant invalid fallback when base remains usable.
-- [ ] Unusable base => non-purchasable.
-- [ ] Run mirrored-money audit.
-- [ ] Run approved real-catalog `pnpm pancake:catalog:audit` before equality-gate removal.
-- [ ] Record sanitized retail vs after-discount mismatch evidence.
-- [ ] Materially contradictory evidence => stop for product review.
+- [x] Pure explicit-`now` resolver is the only semantic pricing authority.
+- [x] Positive safe-integer base boundary.
+- [x] Percentage uses exact BigInt rational arithmetic.
+- [x] Fixed price is final customer unit price and `0 < fixed < base`.
+- [x] Resolver returns base/effective price, promotion snapshot, discounted flag, typed invalid/conflict reason and transition fact.
+- [x] >1 applicable campaign => conflict/no promotion; never arbitrary winner.
+- [x] Affected-variant invalid fallback when base remains usable.
+- [x] Unusable base => non-purchasable.
+- [x] Run mirrored-money audit.
+- [x] Run approved real-catalog `pnpm pancake:catalog:audit` before equality-gate removal.
+- [x] Record sanitized retail vs after-discount mismatch evidence.
+- [x] Materially contradictory evidence => stop for product review.
 
 Mandatory fixtures:
-- [ ] `150 @ 1% -> 149`.
-- [ ] `350 @ 1% -> 347`.
-- [ ] `110 @ 5% -> 105`.
-- [ ] `9007199254740989 @ 1% -> 8917127262193579`.
-- [ ] low-price invalidation such as `50 @ 1%`.
-- [ ] fixed valid/invalid + fresher-base drift/recovery.
-- [ ] malformed external values + conflict.
+- [x] `150 @ 1% -> 149`.
+- [x] `350 @ 1% -> 347`.
+- [x] `110 @ 5% -> 105`.
+- [x] `9007199254740989 @ 1% -> 8917127262193579`.
+- [x] low-price invalidation such as `50 @ 1%`.
+- [x] fixed valid/invalid + fresher-base drift/recovery.
+- [x] malformed external values + conflict.
 
 ## P3 — repository/lifecycle/runtime health
-- [ ] Batch direct VARIANT + actual owning PRODUCT campaign lookup.
-- [ ] Composite follows real component variant/owner, not presentation parent.
-- [ ] Dynamic PRODUCT coverage; no frozen membership table.
-- [ ] Restart/zero-traffic-safe Draft/Scheduled/Active/Ended/Disabled derivation.
-- [ ] Legal never-Active re-enable writes fresh `enabledAt` + `disabledAt=null` atomically.
-- [ ] Runtime invalid/conflict/recovery per affected variant; healthy siblings continue.
-- [ ] Copy snapshots explicit targets only and never expands PRODUCT coverage.
-- [ ] Deterministic bounded Copy naming.
+- [x] Batch direct VARIANT + actual owning PRODUCT campaign lookup.
+- [x] Composite follows real component variant/owner, not presentation parent.
+- [x] Dynamic PRODUCT coverage; no frozen membership table.
+- [x] Restart/zero-traffic-safe Draft/Scheduled/Active/Ended/Disabled derivation.
+- [x] Legal never-Active re-enable writes fresh `enabledAt` + `disabledAt=null` atomically.
+- [x] Runtime invalid/conflict/recovery per affected variant; healthy siblings continue.
+- [x] Copy snapshots explicit targets only and never expands PRODUCT coverage.
+- [x] Deterministic bounded Copy naming.
 
 Regression:
-- [ ] 119/120 code units.
-- [ ] trailing-space normalization.
-- [ ] surrogate boundary.
-- [ ] Copy-of-Copy.
-- [ ] >2000 dynamic expansion source still copies to Draft.
-- [ ] bounded queries/no N+1.
+- [x] 119/120 code units.
+- [x] trailing-space normalization.
+- [x] surrogate boundary.
+- [x] Copy-of-Copy.
+- [x] >2000 dynamic expansion source still copies to Draft.
+- [x] bounded queries/no N+1.
 
 ## P4 — concurrency-safe admin domain + activation gate + atomic revision
-- [ ] Admin authz + named input bounds.
-- [ ] Coverage-validating write order: campaign lock → owning-product locks → bounded expansion probe → needed variant locks → re-read → atomic commit.
-- [ ] 2000 allowed / 2001 rejected for publish/re-enable/Scheduled material edit.
-- [ ] Same-campaign lost update prevented.
-- [ ] PRODUCT↔PRODUCT / PRODUCT↔VARIANT / VARIANT↔VARIANT overlap race-safe.
-- [ ] Disable uses campaign-row bounded path only.
-- [ ] 1900 variants at activation → later 2001 → Disable still succeeds.
-- [ ] Copy remains non-expanding.
-- [ ] Activation gate defaults off; publish/re-enable => `ACTIVATION_DISABLED` while off.
-- [ ] Failed writes leave previous definition unchanged.
-- [ ] Successful publish/re-enable/Disable/end-early/Scheduled material edit advances the durable promotion-pricing revision **inside the same DB transaction**.
-- [ ] All effective mutation paths acquire/update the revision in one deterministic position in the lock order so concurrent campaign mutations cannot deadlock or lose increments.
-- [ ] Draft-only edits/Copy do not advance revision solely for Merchant.
-- [ ] No `after()`/fire-and-forget/external post-commit signal is required for cache correctness.
+- [x] Admin authz + named input bounds.
+- [x] Coverage-validating write order: campaign lock → owning-product locks → bounded expansion probe → needed variant locks → re-read → atomic commit.
+- [x] 2000 allowed / 2001 rejected for publish/re-enable/Scheduled material edit.
+- [x] Same-campaign lost update prevented.
+- [x] PRODUCT↔PRODUCT / PRODUCT↔VARIANT / VARIANT↔VARIANT overlap race-safe.
+- [x] Disable uses campaign-row bounded path only.
+- [x] 1900 variants at activation → later 2001 → Disable still succeeds.
+- [x] Copy remains non-expanding.
+- [x] Activation gate defaults off; publish/re-enable => `ACTIVATION_DISABLED` while off.
+- [x] Failed writes leave previous definition unchanged.
+- [x] Successful publish/re-enable/Disable/end-early/Scheduled material edit advances the durable promotion-pricing revision **inside the same DB transaction**.
+- [x] All effective mutation paths acquire/update the revision in one deterministic position in the lock order so concurrent campaign mutations cannot deadlock or lose increments.
+- [x] Draft-only edits/Copy do not advance revision solely for Merchant.
+- [x] No `after()`/fire-and-forget/external post-commit signal is required for cache correctness.
 
 Verification:
-- [ ] Effective mutation + revision increment commit together.
-- [ ] Failed/rolled-back mutation leaves revision unchanged.
-- [ ] Draft-only edit/Copy leaves revision unchanged.
-- [ ] Concurrent effective mutations do not lose revision increments or deadlock on inconsistent revision lock ordering.
-- [ ] Repeated concurrency tests, 2000/2001 expansion, 1900→2001 Disable, gate-off/no-partial-write.
+- [x] Effective mutation + revision increment commit together.
+- [x] Failed/rolled-back mutation leaves revision unchanged.
+- [x] Draft-only edit/Copy leaves revision unchanged.
+- [x] Concurrent effective mutations do not lose revision increments or deadlock on inconsistent revision lock ordering.
+- [x] Repeated concurrency tests, 2000/2001 expansion, 1900→2001 Disable, gate-off/no-partial-write.
 
 ### Checkpoint A
-- [ ] P1–P4 focused suites green.
-- [ ] Migration clean.
-- [ ] Repeated concurrency tests green.
-- [ ] Security review: authz/bounds/external-data/no PII or secrets in logs.
-- [ ] 0 Critical / 0 Required.
+
+**PASS** on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. Full record: `docs/audits/wave-1-checkpoint-a.md`.
+
+- [x] P1–P4 focused suites green. `pnpm test` 752/752 and `pnpm test:db` 292/292; lint 0 errors; typecheck and
+      build clean.
+- [x] Migration clean. `prisma validate` / `generate` / `migrate deploy` all succeed and the revision singleton is
+      seeded by the migration.
+- [x] Repeated concurrency tests green. Database-backed races in `tests/database/promotion-activation-service.test.ts`
+      and `tests/database/promotion-admin-operations.test.ts`.
+- [x] Security review: authz/bounds/external-data/no PII or secrets in logs.
+- [x] 0 Critical / 0 Required. Three non-blocking observations carried to P5.
 
 ## P5 — admin UX
 - [ ] Protected `/admin/promotions`.
@@ -124,9 +143,18 @@ Verification:
 - [ ] Keyboard/Axe/mobile + non-admin rejection.
 
 ## #153 T4 identity prerequisite
-- [ ] Product/list/PDP upper-funnel facts propagate `pancakeProductId`.
-- [ ] Concrete options/cart facts propagate real `pancakeVariationId`.
-- [ ] Local variant CUID never becomes vendor item ID.
+
+**Delivered — U8, PR #164 (resolved cart lines) + PR #165 (product/option facts).** Merged on
+`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; per-item state in
+`tasks/marketing-analytics-shopping-todo.md` and the T4 record in `docs/audits/wave-1-checkpoint-a.md`.
+This prerequisite is satisfied for P6; **P6 itself remains unimplemented.**
+
+- [x] Product/list/PDP upper-funnel facts propagate `pancakeProductId`. *(U8, PR #165)*
+- [x] Concrete options/cart facts propagate real `pancakeVariationId`. *(U8, PR #164 + #165; composite
+      component lines carry the actual purchased component variation ID, and unresolvable/private lines
+      fail closed to no external identity.)*
+- [x] Local variant CUID never becomes vendor item ID. *(U8, PR #164 + #165; `VariantMirror.id` stays the
+      authorization/mutation key and presentation `kindKey` never stands in for external identity.)*
 
 ## P6 — PDP/composite promotion projection
 - [ ] Remove equality gate only after P2 evidence acceptance.
@@ -331,12 +359,12 @@ Activation rule:
 - [ ] Human final review: 0 Critical / 0 Required.
 
 ## Recommended implementation sequence
-- [ ] A1 P1 persistence + durable pricing revision.
-- [ ] A2 P2 pricing/evidence.
-- [ ] B1 P3 repository/lifecycle.
-- [ ] B2 P4 concurrency/admin domain + atomic revision advance.
+- [x] A1 P1 persistence + durable pricing revision. *(U3, PR #158)*
+- [x] A2 P2 pricing/evidence. *(U7, PR #162 + #163 + #174)*
+- [x] B1 P3 repository/lifecycle. *(U10, PR #167 + #168 + #169)*
+- [x] B2 P4 concurrency/admin domain + atomic revision advance. *(U11, PR #170 + #171 + #172)*
 - [ ] C P5 admin UX.
-- [ ] Converge #153 T4 identity.
+- [x] Converge #153 T4 identity. *(U8, PR #164 + #165)*
 - [ ] D1 P6 PDP/composite.
 - [ ] D2 P7a shop/cards.
 - [ ] D3 P7b Flash/freshness.

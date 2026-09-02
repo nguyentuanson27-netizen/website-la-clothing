@@ -1,6 +1,11 @@
 # Promotions & Flash Sale v1 — implementation plan
 
-Status: **PLANNING ONLY — implementation has not started.**
+Status: **P1–P4 IMPLEMENTED AND MERGED; Checkpoint A PASS. P5 onward remain planning only.**
+
+P1 (PR #158), P2 (PR #162 + #163 + #174), P3 (PR #167/#168/#169) and P4 (PR #170/#171/#172) are merged and
+integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` and the
+per-item state in `tasks/promotions-flash-sale-v1-todo.md`. Everything from **P5 onward is still planning only**.
+The promotion activation gate remains default-off and no storefront surface consumes promotion pricing yet.
 
 Source of truth: `docs/specs/promotions-flash-sale-v1.md`.
 

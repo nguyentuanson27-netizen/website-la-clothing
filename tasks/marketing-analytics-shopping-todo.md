@@ -1,10 +1,19 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PROPOSED — do not start `/build` until human approval of `tasks/marketing-analytics-shopping-plan.md`.**
+Status: **PR-A (T1–T3) and T4 IMPLEMENTED AND MERGED; M1 partially delivered. T5 onward remain proposed and
+require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
+
+Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
++ PR #165 product/option facts), and the durability half of **M1** (U9, PR #175). Verified on
+`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` for the T4 record.
+
+T5, T6, T7, T8, M2, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
+actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 remains docs-only. Runtime work must land in the focused PRs below.
+PR #153 itself is docs-only; runtime work lands in the focused PRs below, of which PR-A (T1–T3), T4 and part of M1
+have merged.
 
 ## Owner/account gates
 
@@ -38,44 +47,44 @@ PR #153 remains docs-only. Runtime work must land in the focused PRs below.
 ## PR-A — tracking preparation; zero new GTM/vendor network delivery
 
 ### T1 Canonical event/dataLayer contracts
-- [ ] Define `CommerceProductImpression` separately from selected `CommerceVariantItem`.
-- [ ] Product impression supports product external ID + exact/min/max price without requiring a fake variant.
-- [ ] Selected variant item requires `pancakeVariationId`, exact unit price, quantity.
-- [ ] Typed Purchase/event facts contain no customer PII.
-- [ ] Reset ecommerce state before every ecommerce push.
-- [ ] Tracking publisher is fail-safe and never replaces initialized `window.dataLayer`.
-- [ ] RED/GREEN tests cover product-vs-variant identity, sequential-event isolation, malformed/unavailable tracking.
+- [x] Define `CommerceProductImpression` separately from selected `CommerceVariantItem`.
+- [x] Product impression supports product external ID + exact/min/max price without requiring a fake variant.
+- [x] Selected variant item requires `pancakeVariationId`, exact unit price, quantity.
+- [x] Typed Purchase/event facts contain no customer PII.
+- [x] Reset ecommerce state before every ecommerce push.
+- [x] Tracking publisher is fail-safe and never replaces initialized `window.dataLayer`.
+- [x] RED/GREEN tests cover product-vs-variant identity, sequential-event isolation, malformed/unavailable tracking.
 
 ### T2 Desired tracking mode/config + CSP interlock
-- [ ] Parse/validate desired `disabled | preview | live` + future GTM container ID.
-- [ ] `live` is deployment-owned; no Host/query/client activation.
-- [ ] Before T8, both requested `preview` and requested `live` resolve to **no GTM load**.
-- [ ] PR-A opens no new Google/TikTok CSP origins and adds no production `unsafe-eval`/wildcard.
-- [ ] Update env examples and focused config/CSP tests.
+- [x] Parse/validate desired `disabled | preview | live` + future GTM container ID.
+- [x] `live` is deployment-owned; no Host/query/client activation.
+- [x] Before T8, both requested `preview` and requested `live` resolve to **no GTM load**.
+- [x] PR-A opens no new Google/TikTok CSP origins and adds no production `unsafe-eval`/wildcard.
+- [x] Update env examples and focused config/CSP tests.
 
 ### T3 dataLayer + consent + page-view preparation; still no GTM loader
-- [ ] Initialize/queue `dataLayer` and immutable `la_tracking_mode` fact.
-- [ ] Queue current Google consent default before eventual measurement.
-- [ ] Emit exactly one application-owned initial/App Router `page_view` into dataLayer.
-- [ ] Preserve existing direct Meta mount.
-- [ ] Assert no GTM script/iframe/network loader exists in PR-A.
+- [x] Initialize/queue `dataLayer` and immutable `la_tracking_mode` fact.
+- [x] Queue current Google consent default before eventual measurement.
+- [x] Emit exactly one application-owned initial/App Router `page_view` into dataLayer.
+- [x] Preserve existing direct Meta mount.
+- [x] Assert no GTM script/iframe/network loader exists in PR-A.
 
 ### Checkpoint A
-- [ ] Focused tests green.
-- [ ] `pnpm typecheck` green.
-- [ ] `pnpm lint` green.
-- [ ] Security review proves PR-A cannot load GTM in any mode and adds no new third-party network path.
+- [x] Focused tests green.
+- [x] `pnpm typecheck` green.
+- [x] `pnpm lint` green.
+- [x] Security review proves PR-A cannot load GTM in any mode and adds no new third-party network path.
 
 ## PR-B — commerce browser events
 
 ### T4 Product + selected-variant projection facts
-- [ ] Expose stable `pancakeProductId` on list/PDP product facts.
-- [ ] Propagate `pancakeVariationId` + optional SKU through concrete standalone/composite options and server cart mutation lookup facts.
-- [ ] Extend canonical resolved cart/checkout line facts with `pancakeVariationId` for every analytics-safe line; composite component lines use the actual purchased component variation ID, not parent/presentation identity.
-- [ ] Keep local `VariantMirror.id` as mutation/authorization identity only; it must never be mapped as vendor `item_id` fallback.
-- [ ] Presentation `kindKey` never becomes external identity.
-- [ ] Existing price/stock/composite privacy behavior unchanged.
-- [ ] RED/GREEN projection tests cover standalone cart line, composite component cart line, and unresolvable/private line without fabricating external identity.
+- [x] Expose stable `pancakeProductId` on list/PDP product facts.
+- [x] Propagate `pancakeVariationId` + optional SKU through concrete standalone/composite options and server cart mutation lookup facts.
+- [x] Extend canonical resolved cart/checkout line facts with `pancakeVariationId` for every analytics-safe line; composite component lines use the actual purchased component variation ID, not parent/presentation identity.
+- [x] Keep local `VariantMirror.id` as mutation/authorization identity only; it must never be mapped as vendor `item_id` fallback.
+- [x] Presentation `kindKey` never becomes external identity.
+- [x] Existing price/stock/composite privacy behavior unchanged.
+- [x] RED/GREEN projection tests cover standalone cart line, composite component cart line, and unresolvable/private line without fabricating external identity.
 
 ### T5 Product-level list/PDP/select + atomic server-authoritative AddToCart
 - [ ] `view_item_list` emits exactly one product impression per visible card.
