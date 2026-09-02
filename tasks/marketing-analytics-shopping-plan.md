@@ -298,7 +298,7 @@ These do not block pure foundations but block the affected live destination:
 
 - **O1 — Google Ads Purchase value:** choose merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish. GA4 remains merchandise value with shipping separate.
 - **O2 — Merchant market:** proposed initial market Vietnam / Vietnamese / VND; confirm before Merchant activation.
-- **O3 — Apparel facts:** confirm whether every emitted standalone item can truthfully use catalog-wide `gender=male`, `age_group=adult`, `condition=new`; otherwise add product-owned facts before activation.
+- **O3 — Apparel facts — policy decision resolved by ADR 0007:** Merchant v1 uses owner-approved shop defaults `gender=male`, `age_group=adult`, `condition=new`, with independent product-level overrides stored in local website-owned data. Resolution is `explicit product override → approved shop default`; no value may be inferred from Pancake fields, product name/category/description/size/model output. **Runtime readiness remains blocked** until persistence, server validation, admin editing, effective-fact projection and fail-closed tests land before M3/U25 completion.
 - **O4 — Vendor configuration:** provide/review GTM container, GA4 Measurement ID, Google Ads conversion ID/label, and TikTok Pixel ID through their proper account owners.
 
 ## 5. Dependency graph
@@ -342,7 +342,7 @@ ADR 0005 governs reviewability; file count is only a signal.
 - **PR-B — commerce browser events:** T4–T6, including a dedicated atomic PDP increment, server-authoritative mutation snapshots, and complete canonical cart/checkout analytics projection.
 - **PR-C — confirmed Purchase + immutable GTM activation:** T7–T8, including actual GTM loader/CSP opening, saved-version export, static live-guard audit, preview enablement, and later live publish gate.
 - **PR-D — Merchant identity + standalone deep link:** M1–M2.
-- **PR-E — Merchant feed:** M3–M4, including cache/single-flight/backoff/resource controls.
+- **PR-E — Merchant feed:** M3–M4, including O3 product-owned override support plus cache/single-flight/backoff/resource controls.
 - **PR-F — Merchant activation + final convergence:** M5 + V1; primarily operational/verification records unless a verified launch defect requires code.
 
 Do not split directly affected tests away from their behavior merely to hit a line target; do split independent subsystems when review/revert boundaries are cleaner.
@@ -465,7 +465,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 **Build:** bounded audit over current mirrored catalog.
 
-**Acceptance:** validate format/length for `pancakeVariationId` and standalone `pancakeProductId`; prove durability gate; audit SKU-as-MPN; classify composites `COMPOSITE_DEFERRED`; audit price/media/content/apparel facts without PII.
+**Acceptance:** validate format/length for `pancakeVariationId` and standalone `pancakeProductId`; prove durability gate; audit SKU-as-MPN; classify composites `COMPOSITE_DEFERRED`; audit price/media/content and apparel **runtime readiness** without PII. ADR 0007 resolves owner policy but does not make runtime apparel facts ready by itself.
 
 **Verification:** missing/duplicate/overlong IDs, missing SKU, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, authorized real-catalog evidence.
 
@@ -485,11 +485,11 @@ Do not build/activate Merchant feed until ID/MPN/durability audit is green for i
 
 ## M3 — Standalone Merchant mapper and diagnostics
 
-**Build:** pure mapper from canonical standalone product/variation facts.
+**Build:** add the local product-owned O3 override support required by ADR 0007, then map canonical standalone product/variation facts into Merchant offers. Keep the actual offer mapper pure; persistence/admin concerns must not leak Pancake-mirror ownership into mapping logic.
 
-**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size, current required variant fields, approved O2/O3; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows excluded with bounded reason.
+**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size and current required variant fields; approved O2; O3 resolves as `explicit product override → approved male/adult/new shop default`; override values are restricted to reviewed Merchant enums, clearing means inheritance, Pancake sync cannot erase local overrides, and no heuristic/text/model inference is allowed; malformed/unavailable apparel policy or override data fails closed with a bounded `APPAREL_FACT_UNRESOLVED`-class diagnostic; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with bounded reasons.
 
-**Verification:** normal variant, out-of-stock, missing content, invalid SKU, price/media mismatch, composite exclusion; counts reconcile with M1.
+**Verification:** normal variant, out-of-stock, missing content, invalid SKU, price/media mismatch, composite exclusion; inherited O3 defaults, each independent override, mixed overrides, clearing back to inheritance, invalid override values, Pancake-resync preservation and fail-closed unresolved apparel facts; counts reconcile with M1.
 
 ## M4 — Cached, single-flight, backoff-protected bounded serializer and public Merchant route
 

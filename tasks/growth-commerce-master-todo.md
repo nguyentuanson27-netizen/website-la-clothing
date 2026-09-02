@@ -158,7 +158,7 @@ structured data — and only then build the page or change the contract.
 
 - [ ] **O1** Google Ads Purchase value: owner chooses merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish.
 - [ ] **O2** Merchant market/language/currency confirmed before Merchant activation.
-- [ ] **O3** Apparel facts (`gender`/`age_group`/`condition`) confirmed truthful for emitted standalone items or product-owned facts added first.
+- [x] **O3** Apparel facts — **policy decision resolved by ADR 0007**: shop defaults `gender=male`, `age_group=adult`, `condition=new` with local website-owned product overrides. Runtime persistence/validation/admin/effective-fact resolution stays open under M3/U25, and Merchant activation stays blocked until that implementation is verified.
 - [ ] **O4** GTM container, GA4 Measurement ID, Ads conversion ID/label and TikTok Pixel ID provided/reviewed by proper account owners.
 
 # Separate launch gates
@@ -180,7 +180,7 @@ structured data — and only then build the page or change the contract.
 ## Gate M — Merchant activation
 
 - [ ] **Pre-activation:** M1–M4 through U9/U12/U25/U26 + exact variant URL + audited IDs/MPN + canonical pricing + cache/single-flight/backoff/topology proof green.
-- [ ] **O2** market and **O3** apparel facts approved; Merchant site/account/shipping/returns prerequisites satisfied.
+- [ ] **O2** market approved and **O3** apparel-fact **runtime** implementation verified (ADR 0007 resolves the policy, not the runtime); Merchant site/account/shipping/returns prerequisites satisfied.
 - [ ] If promotions are active, U39/G1 covers Merchant monetary/cache behavior.
 - [ ] Human approves activation, then **U41 executes M5**; Gate M completes only after Scheduled Fetch + Diagnostics/crawler verification succeeds.
 - [ ] Composite remains excluded.
