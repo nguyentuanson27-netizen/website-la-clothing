@@ -195,6 +195,9 @@ export async function restoreA132Product(
         id: v.id,
         fields: v.fields.map((f) => ({ name: f.name, value: f.value })),
         retail_price: v.retail_price,
+        // The live product endpoint currently round-trips this writable field through display_id when
+        // the original custom_id is null. Preserve that observed API quirk while verifying BOTH
+        // fields exactly on the fresh read below.
         custom_id: v.custom_id ?? v.display_id,
         is_hidden: v.is_hidden,
       })),
@@ -244,10 +247,10 @@ export async function restoreA132Product(
         ? String(freshVar.display_id)
         : null;
 
-    if (origVar.custom_id !== null && freshCustomId !== origVar.custom_id) {
+    if (freshCustomId !== origVar.custom_id) {
       allVariationsMatch = false;
     }
-    if (origVar.display_id !== null && freshDisplayId !== origVar.display_id) {
+    if (freshDisplayId !== origVar.display_id) {
       allVariationsMatch = false;
     }
   }
@@ -339,6 +342,52 @@ export async function fetchFullPancakeCatalog(
   };
 }
 
+export function assertSetupPreservedIds({
+  snapshot,
+  observation,
+  variationMarkers,
+}: {
+  snapshot: ProductA132Snapshot;
+  observation: RawCorrelatedRunObservation;
+  variationMarkers: Readonly<Record<string, string>>;
+}): true {
+  if (observation.auditProduct.pancakeProductId !== snapshot.id) {
+    throw new Error(
+      `Setup mutation changed product ID: expected ${snapshot.id}, observed ${observation.auditProduct.pancakeProductId}`,
+    );
+  }
+
+  if (observation.auditProduct.variations.length !== snapshot.variations.length) {
+    throw new Error(
+      `Setup mutation changed variation cardinality: expected ${snapshot.variations.length}, observed ${observation.auditProduct.variations.length}`,
+    );
+  }
+
+  for (const originalVariation of snapshot.variations) {
+    const marker = variationMarkers[originalVariation.id];
+    if (!marker) {
+      throw new Error(`Setup mutation has no planned marker for original variation ${originalVariation.id}`);
+    }
+
+    const matches = observation.auditProduct.variations.filter(
+      (variation) => variation.variationMarker === marker,
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `Setup mutation correlation failed for marker ${marker}: expected exactly 1 observation, got ${matches.length}`,
+      );
+    }
+
+    if (matches[0]!.pancakeVariationId !== originalVariation.id) {
+      throw new Error(
+        `Setup mutation changed variation ID for marker ${marker}: expected ${originalVariation.id}, observed ${matches[0]!.pancakeVariationId}`,
+      );
+    }
+  }
+
+  return true;
+}
+
 export type M1DurabilityExperimentReport = Readonly<{
   target: Readonly<{
     productId: string;
@@ -350,6 +399,7 @@ export type M1DurabilityExperimentReport = Readonly<{
   safety: Readonly<{
     fieldsMutated: readonly string[];
     originalSnapshotCaptured: boolean;
+    setupPreservedIds: boolean;
     restorationVerified: boolean;
   }>;
   markers: Readonly<{
@@ -391,6 +441,7 @@ export async function runM1DurabilityExperiment(options: {
   const expectedVariationMarkers = Object.values(variationMarkers);
 
   const observations: RawCorrelatedRunObservation[] = [];
+  let setupPreservedIds = false;
   let restorationResult: { restored: boolean; verifiedFieldsMatch: boolean } | null = null;
   let finalVerifiedProd: RawPancakeProduct | null = null;
 
@@ -518,8 +569,12 @@ export async function runM1DurabilityExperiment(options: {
       };
     }
 
-    // 3. T0 — Baseline Observation
+    // 3. T0 — first observation after marker setup. It must still be the SAME objects from the
+    // pre-mutation snapshot; otherwise a recreate/remap during setup would become an invisible new
+    // baseline and later T0/T1/T2 stability could false-pass.
     const obs0 = await captureObservation(0, "T0_BASELINE", productMarker);
+    assertSetupPreservedIds({ snapshot, observation: obs0, variationMarkers });
+    setupPreservedIds = true;
     observations.push(obs0);
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
 
@@ -574,6 +629,7 @@ export async function runM1DurabilityExperiment(options: {
   });
 
   const isProven =
+    setupPreservedIds &&
     comparison.verdict === "STABLE" &&
     comparison.allMarkersRetainedSameIds &&
     !comparison.remapDetected &&
@@ -602,6 +658,7 @@ export async function runM1DurabilityExperiment(options: {
     safety: Object.freeze({
       fieldsMutated: Object.freeze(["note_product", "variations[].custom_id"]),
       originalSnapshotCaptured: true,
+      setupPreservedIds,
       restorationVerified: restorationResult?.verifiedFieldsMatch ?? false,
     }),
     markers: Object.freeze({
