@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveTrackingRuntime, TRACKING_MODES } from "../../src/tracking/config.ts";
 
-const SOURCE_ROOT = new URL("../../src/", import.meta.url).pathname;
+const SOURCE_ROOT = fileURLToPath(new URL("../../src/", import.meta.url));
 
 const VENDOR_DELIVERY_MARKERS = [
   "googletagmanager.com",

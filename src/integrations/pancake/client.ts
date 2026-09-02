@@ -116,6 +116,41 @@ export class PancakeClient {
     return response.json() as Promise<unknown>;
   }
 
+  async putJson(endpoint: string, body: unknown, options: PostJsonOptions = {}): Promise<unknown> {
+    const url = this.buildUrl(endpoint, {});
+    let serializedBody: string;
+    try {
+      serializedBody = JSON.stringify(body);
+    } catch {
+      throw new TypeError("Pancake JSON request body must be serializable");
+    }
+    if (serializedBody === undefined) {
+      throw new TypeError("Pancake JSON request body must be serializable");
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetcher(url, {
+        method: "PUT",
+        redirect: "error",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: serializedBody,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch {
+      throw new PancakeNetworkError(endpoint);
+    }
+
+    if (!response.ok || (options.expectedStatus !== undefined && response.status !== options.expectedStatus)) {
+      throw new PancakeHttpError(response.status, endpoint);
+    }
+
+    return response.json() as Promise<unknown>;
+  }
+
   private buildUrl(endpoint: string, query: Readonly<Record<string, QueryValue>>): URL {
     if (
       !endpoint.startsWith("/") ||

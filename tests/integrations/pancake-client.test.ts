@@ -237,3 +237,51 @@ test("POST transport failures are sanitized and do not echo request JSON", async
     },
   );
 });
+
+test("PUT serializes JSON bodies and includes content-type", async () => {
+  let requestedUrl = "";
+  let requestedInit: RequestInit | undefined;
+  const body = { product: { name: "Audit Shirt", note_product: "marker" } };
+  const fetcher: typeof fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher });
+  const result = await client.putJson("/shops/4741464/products/prod-1", body);
+
+  const url = new URL(requestedUrl);
+  assert.equal(url.origin + url.pathname, "https://pos.pages.fm/api/v1/shops/4741464/products/prod-1");
+  assert.equal(url.searchParams.get("api_key"), API_KEY);
+  assert.equal(requestedInit?.method, "PUT");
+  assert.deepEqual(requestedInit?.headers, {
+    accept: "application/json",
+    "content-type": "application/json",
+  });
+  assert.equal(requestedInit?.body, JSON.stringify(body));
+  assert.ok(requestedInit?.signal instanceof AbortSignal);
+  assert.equal(requestedInit.signal.aborted, false);
+  assert.deepEqual(result, { success: true });
+});
+
+test("PUT rejects non-serializable request bodies before making a network request", async () => {
+  let called = false;
+  const fetcher: typeof fetch = async () => {
+    called = true;
+    return new Response("{}", { status: 200 });
+  };
+  const client = new PancakeClient({ apiKey: API_KEY, fetcher });
+  const circular: { self?: unknown } = {};
+  circular.self = circular;
+
+  await assert.rejects(
+    () => client.putJson("/shops/4741464/products/prod-1", circular),
+    TypeError,
+  );
+  assert.equal(called, false);
+});
+

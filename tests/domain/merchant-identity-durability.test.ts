@@ -8,7 +8,9 @@ import {
   assertAuditDatabaseUrl,
   assertDurabilityEvidenceEnvironment,
   compareCatalogSnapshots,
+  compareCorrelatedObservations,
   createCatalogIdSnapshot,
+  type RawCorrelatedRunObservation,
 } from "../../src/commerce/merchant-identity-durability.ts";
 
 test("creates well-formed snapshot with sorted hashed identifiers", () => {
@@ -466,3 +468,170 @@ test("no arrangement of inputs can make the comparison claim upstream durability
     );
   }
 });
+
+function makeRunObservation({
+  runIndex,
+  phase = "TEST",
+  productMarker = "M1-A132-P-test",
+  pancakeProductId = "prod-a132",
+  variations = [
+    { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+    { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-m" },
+    { variationMarker: "M1-A132-V-L-test", pancakeVariationId: "var-l" },
+  ],
+}: {
+  runIndex: number;
+  phase?: string;
+  productMarker?: string;
+  pancakeProductId?: string;
+  variations?: { variationMarker: string; pancakeVariationId: string }[];
+}): RawCorrelatedRunObservation {
+  return {
+    runIndex,
+    phase,
+    timestamp: new Date(1700000000000 + runIndex * 1000).toISOString(),
+    totalCatalogEntries: 356,
+    totalCatalogPages: 4,
+    auditProduct: {
+      productMarker,
+      pancakeProductId,
+      productName: "ÁO A132",
+      variations,
+    },
+  };
+}
+
+test("compareCorrelatedObservations requires at least two independent run observations", () => {
+  const singleRun = makeRunObservation({ runIndex: 0 });
+  assert.throws(
+    () => compareCorrelatedObservations([singleRun]),
+    /at least two independent run observations/i,
+  );
+});
+
+test("correlated comparison reports STABLE when all markers retain same IDs across runs", () => {
+  const run0 = makeRunObservation({ runIndex: 0, phase: "T0_BASELINE" });
+  const run1 = makeRunObservation({ runIndex: 1, phase: "T1_MUTATION" });
+  const run2 = makeRunObservation({ runIndex: 2, phase: "T2_MUTATION" });
+
+  const result = compareCorrelatedObservations([run0, run1, run2]);
+
+  assert.equal(result.runsObserved, 3);
+  assert.equal(result.verdict, "STABLE");
+  assert.equal(result.allMarkersRetainedSameIds, true);
+  assert.equal(result.productMarkerStable, true);
+  assert.equal(result.variationMarkersStable, true);
+  assert.equal(result.remapDetected, false);
+  assert.equal(result.duplicateMarkersDetected, false);
+  assert.equal(result.missingMarkersDetected, false);
+  assert.equal(result.stableProductId, "prod-a132");
+  assert.equal(result.variationResults.length, 3);
+  assert.equal(result.variationResults[0]!.stableVariationId, "var-s");
+});
+
+test("remap blind spot: identical ID set across runs where markers swap IDs triggers REMAP_DETECTED", () => {
+  // Run 0: S -> var-s, M -> var-m
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-m" },
+    ],
+  });
+
+  // Run 1: S -> var-m, M -> var-s (SAME ID SET {var-s, var-m}, but IDs were swapped/remapped!)
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-m" },
+      { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-s" },
+    ],
+  });
+
+  const result = compareCorrelatedObservations([run0, run1]);
+
+  assert.equal(result.verdict, "REMAP_DETECTED");
+  assert.equal(result.remapDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+  assert.equal(result.variationMarkersStable, false);
+});
+
+test("correlated comparison detects changed product ID for same marker as REMAP_DETECTED", () => {
+  const run0 = makeRunObservation({ runIndex: 0, pancakeProductId: "prod-1" });
+  const run1 = makeRunObservation({ runIndex: 1, pancakeProductId: "prod-2" });
+
+  const result = compareCorrelatedObservations([run0, run1]);
+
+  assert.equal(result.verdict, "REMAP_DETECTED");
+  assert.equal(result.productMarkerStable, false);
+  assert.equal(result.remapDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
+test("correlated comparison detects changed variation ID for same marker as REMAP_DETECTED", () => {
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s-1" },
+    ],
+  });
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s-2" },
+    ],
+  });
+
+  const result = compareCorrelatedObservations([run0, run1]);
+
+  assert.equal(result.verdict, "REMAP_DETECTED");
+  assert.equal(result.variationMarkersStable, false);
+  assert.equal(result.remapDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
+test("correlated comparison fails closed on duplicate variation markers within a run", () => {
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-DUP", pancakeVariationId: "var-1" },
+      { variationMarker: "M1-A132-V-DUP", pancakeVariationId: "var-2" },
+    ],
+  });
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-DUP", pancakeVariationId: "var-1" },
+    ],
+  });
+
+  const result = compareCorrelatedObservations([run0, run1]);
+
+  assert.equal(result.verdict, "DUPLICATE_MARKERS");
+  assert.equal(result.duplicateMarkersDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
+test("correlated comparison fails closed on missing marker in subsequent run", () => {
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-m" },
+    ],
+  });
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      // M is missing!
+    ],
+  });
+
+  const result = compareCorrelatedObservations([run0, run1]);
+
+  assert.equal(result.verdict, "MISSING_MARKERS");
+  assert.equal(result.missingMarkersDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
