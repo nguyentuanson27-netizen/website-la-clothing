@@ -635,3 +635,65 @@ test("correlated comparison fails closed on missing marker in subsequent run", (
   assert.equal(result.allMarkersRetainedSameIds, false);
 });
 
+test("correlated comparison fails closed when expected marker is missing already at T0", () => {
+  // Expected 3 markers: S, M, L
+  // But T0 and T1 only observed S and M
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-m" },
+      // L is missing at T0!
+    ],
+  });
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-M-test", pancakeVariationId: "var-m" },
+    ],
+  });
+
+  const result = compareCorrelatedObservations({
+    expectedProductMarker: "M1-A132-P-test",
+    expectedVariationMarkers: [
+      "M1-A132-V-S-test",
+      "M1-A132-V-M-test",
+      "M1-A132-V-L-test",
+    ],
+    runs: [run0, run1],
+  });
+
+  assert.equal(result.verdict, "MISSING_MARKERS");
+  assert.equal(result.missingMarkersDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
+test("correlated comparison fails closed on unexpected extra marker not in expected list", () => {
+  const run0 = makeRunObservation({
+    runIndex: 0,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-EXTRA", pancakeVariationId: "var-extra" },
+    ],
+  });
+  const run1 = makeRunObservation({
+    runIndex: 1,
+    variations: [
+      { variationMarker: "M1-A132-V-S-test", pancakeVariationId: "var-s" },
+      { variationMarker: "M1-A132-V-EXTRA", pancakeVariationId: "var-extra" },
+    ],
+  });
+
+  const result = compareCorrelatedObservations({
+    expectedProductMarker: "M1-A132-P-test",
+    expectedVariationMarkers: ["M1-A132-V-S-test"],
+    runs: [run0, run1],
+  });
+
+  assert.equal(result.verdict, "UNEXPECTED_MARKERS");
+  assert.equal(result.unexpectedMarkersDetected, true);
+  assert.equal(result.allMarkersRetainedSameIds, false);
+});
+
+

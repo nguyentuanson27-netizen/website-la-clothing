@@ -305,6 +305,12 @@ export type RawCorrelatedRunObservation = Readonly<{
   auditProduct: CorrelatedProductObservation;
 }>;
 
+export type CorrelatedDurabilityComparisonInput = Readonly<{
+  expectedProductMarker?: string;
+  expectedVariationMarkers?: readonly string[];
+  runs: readonly RawCorrelatedRunObservation[];
+}>;
+
 export type CorrelatedDurabilityComparisonResult = Readonly<{
   runsObserved: number;
   productMarker: string;
@@ -322,38 +328,95 @@ export type CorrelatedDurabilityComparisonResult = Readonly<{
   remapDetected: boolean;
   duplicateMarkersDetected: boolean;
   missingMarkersDetected: boolean;
-  verdict: "STABLE" | "REMAP_DETECTED" | "DUPLICATE_MARKERS" | "MISSING_MARKERS" | "UNSTABLE";
+  unexpectedMarkersDetected: boolean;
+  verdict:
+    | "STABLE"
+    | "REMAP_DETECTED"
+    | "DUPLICATE_MARKERS"
+    | "MISSING_MARKERS"
+    | "UNEXPECTED_MARKERS"
+    | "UNSTABLE";
 }>;
 
 export function compareCorrelatedObservations(
-  runs: readonly RawCorrelatedRunObservation[],
+  inputOrRuns: readonly RawCorrelatedRunObservation[] | CorrelatedDurabilityComparisonInput,
 ): CorrelatedDurabilityComparisonResult {
-  if (runs.length < 2) {
-    throw new Error("Correlated durability comparison requires at least two independent run observations");
-  }
+  let runs: readonly RawCorrelatedRunObservation[];
+  let expectedProductMarker: string;
+  let expectedVariationMarkers: readonly string[];
 
-  const baseRun = runs[0]!;
-  const productMarker = baseRun.auditProduct.productMarker;
-  const observedProductIds: string[] = [];
+  if ("runs" in inputOrRuns) {
+    runs = inputOrRuns.runs;
+    if (runs.length < 2) {
+      throw new Error("Correlated durability comparison requires at least two independent run observations");
+    }
+    const baseRun = runs[0]!;
+    expectedProductMarker =
+      inputOrRuns.expectedProductMarker !== undefined
+        ? inputOrRuns.expectedProductMarker
+        : baseRun.auditProduct.productMarker;
+    expectedVariationMarkers =
+      inputOrRuns.expectedVariationMarkers !== undefined
+        ? inputOrRuns.expectedVariationMarkers
+        : baseRun.auditProduct.variations.map(
+            (v: CorrelatedVariationObservation) => v.variationMarker,
+          );
+  } else {
+    runs = inputOrRuns;
+    if (runs.length < 2) {
+      throw new Error("Correlated durability comparison requires at least two independent run observations");
+    }
+    const baseRun = runs[0]!;
+    expectedProductMarker = baseRun.auditProduct.productMarker;
+    expectedVariationMarkers = baseRun.auditProduct.variations.map(
+      (v: CorrelatedVariationObservation) => v.variationMarker,
+    );
+  }
 
   let duplicateMarkersDetected = false;
   let missingMarkersDetected = false;
+  let unexpectedMarkersDetected = false;
   let remapDetected = false;
 
-  // 1. Check duplicate markers inside each run
+  // 1. Check markers inside EVERY run (including T0!) against expected
   for (const run of runs) {
-    const varMarkersInRun = new Set<string>();
-    for (const v of run.auditProduct.variations) {
-      if (varMarkersInRun.has(v.variationMarker)) {
+    const observedMarkers = run.auditProduct.variations.map(
+      (v: CorrelatedVariationObservation) => v.variationMarker,
+    );
+    const varMarkersSet = new Set<string>();
+
+    for (const marker of observedMarkers) {
+      if (varMarkersSet.has(marker)) {
         duplicateMarkersDetected = true;
       }
-      varMarkersInRun.add(v.variationMarker);
+      varMarkersSet.add(marker);
+
+      if (!expectedVariationMarkers.includes(marker)) {
+        unexpectedMarkersDetected = true;
+      }
+    }
+
+    for (const expected of expectedVariationMarkers) {
+      if (!varMarkersSet.has(expected)) {
+        missingMarkersDetected = true;
+      }
+    }
+
+    if (observedMarkers.length < expectedVariationMarkers.length) {
+      missingMarkersDetected = true;
+    }
+    if (observedMarkers.length > expectedVariationMarkers.length) {
+      unexpectedMarkersDetected = true;
     }
   }
 
   // 2. Track product marker stability across runs
+  const observedProductIds: string[] = [];
   for (const run of runs) {
-    if (run.auditProduct.productMarker !== productMarker) {
+    const runMarker = run.auditProduct.productMarker;
+    const matchesExpected =
+      runMarker === expectedProductMarker || runMarker.startsWith(`${expectedProductMarker}|`);
+    if (!matchesExpected) {
       missingMarkersDetected = true;
     }
     observedProductIds.push(run.auditProduct.pancakeProductId);
@@ -365,8 +428,7 @@ export function compareCorrelatedObservations(
     remapDetected = true;
   }
 
-  // 3. Track each variation marker across all runs
-  const baseVariationMarkers = baseRun.auditProduct.variations.map((v) => v.variationMarker);
+  // 3. Track each variation marker across all runs using EXPECTED markers
   const variationResults: {
     variationMarker: string;
     observedVariationIds: readonly string[];
@@ -374,10 +436,12 @@ export function compareCorrelatedObservations(
     isStable: boolean;
   }[] = [];
 
-  for (const marker of baseVariationMarkers) {
+  for (const marker of expectedVariationMarkers) {
     const observedVarIds: string[] = [];
     for (const run of runs) {
-      const match = run.auditProduct.variations.find((v) => v.variationMarker === marker);
+      const match = run.auditProduct.variations.find(
+        (v: CorrelatedVariationObservation) => v.variationMarker === marker,
+      );
       if (!match) {
         missingMarkersDetected = true;
       } else {
@@ -399,16 +463,6 @@ export function compareCorrelatedObservations(
     });
   }
 
-  // Check if later runs introduced extra variation markers not in base run
-  for (let i = 1; i < runs.length; i += 1) {
-    const run = runs[i]!;
-    for (const v of run.auditProduct.variations) {
-      if (!baseVariationMarkers.includes(v.variationMarker)) {
-        missingMarkersDetected = true;
-      }
-    }
-  }
-
   const variationMarkersStable = variationResults.length > 0 && variationResults.every((r) => r.isStable);
 
   // 4. Verify that no two different markers ever share the same variation ID in any run
@@ -427,11 +481,14 @@ export function compareCorrelatedObservations(
     variationMarkersStable &&
     !remapDetected &&
     !duplicateMarkersDetected &&
-    !missingMarkersDetected;
+    !missingMarkersDetected &&
+    !unexpectedMarkersDetected;
 
   let verdict: CorrelatedDurabilityComparisonResult["verdict"] = "STABLE";
   if (duplicateMarkersDetected) {
     verdict = "DUPLICATE_MARKERS";
+  } else if (unexpectedMarkersDetected) {
+    verdict = "UNEXPECTED_MARKERS";
   } else if (missingMarkersDetected) {
     verdict = "MISSING_MARKERS";
   } else if (remapDetected) {
@@ -442,7 +499,7 @@ export function compareCorrelatedObservations(
 
   return Object.freeze({
     runsObserved: runs.length,
-    productMarker,
+    productMarker: expectedProductMarker,
     productMarkerStable,
     observedProductIds: Object.freeze(observedProductIds),
     stableProductId: productMarkerStable ? distinctProductIds[0]! : null,
@@ -452,6 +509,7 @@ export function compareCorrelatedObservations(
     remapDetected,
     duplicateMarkersDetected,
     missingMarkersDetected,
+    unexpectedMarkersDetected,
     verdict,
   });
 }
