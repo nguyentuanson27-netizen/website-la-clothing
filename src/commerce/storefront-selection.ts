@@ -72,6 +72,11 @@ export function deriveStorefrontSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
+    // Presentation facts for the selected option, so a surface can show a struck-through base
+    // price without recomputing anything. Null/false whenever nothing is selected or the
+    // pricing rule in use has no promotion concept.
+    selectedBasePriceVnd: selected?.basePriceVnd ?? null,
+    selectedIsDiscounted: selected?.isDiscounted ?? false,
     canAdd: selected !== null,
   };
 }

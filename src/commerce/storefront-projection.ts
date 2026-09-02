@@ -1,7 +1,9 @@
 import { sortClothingSizes } from "./clothing-size.ts";
 import {
   buildStorefrontVariantOptions,
+  defaultStorefrontPricingRule,
   toStorefrontSelectableOptions,
+  type StorefrontPricingRule,
   type StorefrontSelectableOption,
   type StorefrontVariantFacts,
   type StorefrontVariantUnavailableReason,
@@ -53,8 +55,9 @@ function projectOptions(
   kindKey: string | null,
   kindLabel: string | null,
   forcedUnavailableReason: StorefrontVariantUnavailableReason | null = null,
+  pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
 ): StorefrontProjectionOption[] {
-  return toStorefrontSelectableOptions(buildStorefrontVariantOptions(variants)).map((option) =>
+  return toStorefrontSelectableOptions(buildStorefrontVariantOptions(variants, pricingRule)).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
       : {
@@ -62,6 +65,9 @@ function projectOptions(
           kindKey,
           kindLabel,
           purchasable: false,
+          // Forced unavailability also clears the sale flag: an option the shopper cannot pick
+          // must not advertise a discount.
+          isDiscounted: false,
           unavailableReason: forcedUnavailableReason,
         },
   );
@@ -71,15 +77,22 @@ export function buildStorefrontProductProjection({
   parentVariants,
   componentGroups,
   hasCompositeGraph,
+  pricingRule = defaultStorefrontPricingRule,
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
   hasCompositeGraph: boolean;
+  /**
+   * Applied to parent and component variants alike. A composite component is priced as the variant
+   * it really is, by its own owning product's campaigns — the presentation grouping carries no
+   * pricing authority of its own.
+   */
+  pricingRule?: StorefrontPricingRule;
 }>): StorefrontProductProjection {
   if (!hasCompositeGraph) {
     return {
       mode: "standalone",
-      options: projectOptions(parentVariants, null, null),
+      options: projectOptions(parentVariants, null, null, null, pricingRule),
     };
   }
 
@@ -90,7 +103,7 @@ export function buildStorefrontProductProjection({
   }
 
   const options: StorefrontProjectionOption[] = [
-    ...projectOptions(parentVariants, "parent", "Set"),
+    ...projectOptions(parentVariants, "parent", "Set", null, pricingRule),
   ];
 
   componentGroups.forEach((group, index) => {
@@ -102,6 +115,7 @@ export function buildStorefrontProductProjection({
         `component-${index + 1}`,
         label,
         ambiguousLabel ? "AMBIGUOUS_OPTION" : null,
+        pricingRule,
       ),
     );
   });
@@ -225,6 +239,11 @@ export function deriveStorefrontProjectionSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
+    // Presentation facts for the selected option, so a surface can show a struck-through base
+    // price without recomputing anything. Null/false whenever nothing is selected or the
+    // pricing rule in use has no promotion concept.
+    selectedBasePriceVnd: selected?.basePriceVnd ?? null,
+    selectedIsDiscounted: selected?.isDiscounted ?? false,
     canAdd: selected !== null,
   };
 }

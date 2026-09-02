@@ -29,9 +29,13 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   await connection();
   const [{ slug }, query] = await Promise.all([params, searchParams]);
 
+  // One instant for this render: pricing, window boundaries and any transition fact on the page
+  // all agree rather than each reading the clock a few milliseconds apart.
+  const requestNow = new Date();
+
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
   try {
-    product = await getConfiguredStorefrontProductBySlug(slug);
+    product = await getConfiguredStorefrontProductBySlug(slug, requestNow);
   } catch (error) {
     if (error instanceof RangeError) notFound();
     throw error;

@@ -39,6 +39,8 @@ test("storefront projection keeps standalone products on the existing size/color
       color: null,
       size: "M",
       price: 590_000,
+      basePriceVnd: null,
+      isDiscounted: false,
       purchasable: true,
       unavailableReason: null,
       kindKey: null,

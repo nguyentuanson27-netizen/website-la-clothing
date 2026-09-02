@@ -29,6 +29,8 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     color: "Đen",
     size: "M",
     price: 890_000,
+    basePriceVnd: 890_000,
+    isDiscounted: false,
     purchasable: true,
     unavailableReason: null,
     kindKey: null,

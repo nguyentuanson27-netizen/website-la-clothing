@@ -20,9 +20,37 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
   color: string | null;
   size: string | null;
   price: number | null;
+  /**
+   * The undiscounted base price behind `price`, when a promotion-aware pricing rule supplied one.
+   * `null` under the default rule, which has no notion of a promotion.
+   */
+  basePriceVnd: number | null;
+  isDiscounted: boolean;
   purchasable: boolean;
   unavailableReason: StorefrontVariantUnavailableReason | null;
 };
+
+/**
+ * What a pricing rule decides for one variant.
+ *
+ * `price` is the money the shopper pays and the only value the selection model uses. `basePriceVnd`
+ * and `isDiscounted` are presentation facts that let a surface strike through the old price without
+ * recomputing anything.
+ */
+export type StorefrontResolvedPrice = Readonly<{
+  price: number | null;
+  basePriceVnd: number | null;
+  isDiscounted: boolean;
+}>;
+
+/**
+ * A per-variant pricing rule.
+ *
+ * Injected rather than branched on so that switching one surface to promotional pricing cannot
+ * change any other. The default is the shared equality-gated rule below; U15 passes a
+ * promotion-aware rule for the product page only.
+ */
+export type StorefrontPricingRule = (variant: StorefrontVariantFacts) => StorefrontResolvedPrice;
 
 export type StorefrontSelectableOption = Pick<
   StorefrontVariantOption,
@@ -31,6 +59,8 @@ export type StorefrontSelectableOption = Pick<
   | "color"
   | "size"
   | "price"
+  | "basePriceVnd"
+  | "isDiscounted"
   | "purchasable"
   | "unavailableReason"
 >;
@@ -76,6 +106,19 @@ export function resolveStorefrontPrice({
   return retailPrice === retailPriceAfterDiscount ? retailPrice : null;
 }
 
+/**
+ * The default pricing rule: the shared equality-gated behaviour, with no promotion concept.
+ *
+ * Every consumer that has not been switched deliberately — cart, checkout, Pancake submission,
+ * Merchant audit, product cards, structured data — still resolves through this.
+ */
+export const defaultStorefrontPricingRule: StorefrontPricingRule = (variant) =>
+  Object.freeze({
+    price: resolveStorefrontPrice(variant),
+    basePriceVnd: null,
+    isDiscounted: false,
+  });
+
 export function getStorefrontResolvedPriceRange(
   options: readonly Pick<StorefrontVariantOption, "price">[],
 ): { minimum: number; maximum: number } | null {
@@ -95,13 +138,18 @@ export function toStorefrontSelectableOptions(
   options: readonly StorefrontVariantOption[],
 ): StorefrontSelectableOption[] {
   return options.map((
-    { id, pancakeVariationId, color, size, price, purchasable, unavailableReason },
+    {
+      id, pancakeVariationId, color, size, price, basePriceVnd, isDiscounted,
+      purchasable, unavailableReason,
+    },
   ) => ({
     id,
     pancakeVariationId,
     color,
     size,
     price,
+    basePriceVnd,
+    isDiscounted,
     purchasable,
     unavailableReason,
   }));
@@ -109,6 +157,7 @@ export function toStorefrontSelectableOptions(
 
 export function buildStorefrontVariantOptions(
   variants: readonly StorefrontVariantFacts[],
+  pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -125,7 +174,7 @@ export function buildStorefrontVariantOptions(
   }
 
   return normalized.map((variant) => {
-    const price = resolveStorefrontPrice(variant);
+    const { price, basePriceVnd, isDiscounted } = pricingRule(variant);
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 
     if (!variant.size || (hasColorDimension && !variant.color)) {
@@ -143,6 +192,10 @@ export function buildStorefrontVariantOptions(
     return {
       ...variant,
       price,
+      basePriceVnd,
+      // A variant the shopper cannot buy is not on sale, whatever the campaign says. Keeping the
+      // discounted flag tied to a usable price stops an unavailable option rendering sale styling.
+      isDiscounted: isDiscounted && unavailableReason === null,
       purchasable: unavailableReason === null,
       unavailableReason,
     };

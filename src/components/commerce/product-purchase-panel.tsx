@@ -60,6 +60,13 @@ export function ProductPurchasePanel({
     selection.selectedPrice === null
       ? defaultPriceLabel(options)
       : currency.format(selection.selectedPrice);
+  // Both facts come from the server-resolved option. The panel never computes a discount, and a
+  // base equal to or below the effective price is not shown as one.
+  const showsDiscount =
+    selection.selectedIsDiscounted
+    && selection.selectedPrice !== null
+    && selection.selectedBasePriceVnd !== null
+    && selection.selectedBasePriceVnd > selection.selectedPrice;
   const hasPurchasableVariant = options.some((option) => option.purchasable);
   const entryPrice = useMemo(() => getStorefrontResolvedPriceRange(options)?.minimum ?? null, [options]);
 
@@ -213,7 +220,22 @@ export function ProductPurchasePanel({
   return (
     <div className="border-t border-black/20 pt-6">
       <div className="flex items-baseline justify-between gap-6">
-        <p className="text-xl font-medium tracking-[-0.02em]">{priceLabel}</p>
+        <p className="text-xl font-medium tracking-[-0.02em]">
+          {showsDiscount ? (
+            <>
+              {/* The base price is announced as "Giá gốc" rather than left as bare struck-through
+                  text, so the comparison is available to a screen reader and not only visually. */}
+              <span className="sr-only">Giá gốc </span>
+              <span className="mr-2 align-baseline text-base font-normal text-black/45 line-through">
+                {currency.format(selection.selectedBasePriceVnd as number)}
+              </span>
+              <span className="sr-only">Giá khuyến mãi </span>
+              <span>{priceLabel}</span>
+            </>
+          ) : (
+            priceLabel
+          )}
+        </p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/55">
           {hasPurchasableVariant
             ? selection.hasKindOptions

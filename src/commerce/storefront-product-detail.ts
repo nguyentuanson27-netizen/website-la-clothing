@@ -5,6 +5,8 @@ import {
   type StorefrontCompositeComponentGroup,
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { readApplicablePromotionCampaigns } from "./promotion-candidate-repository.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -23,7 +25,11 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
 export function createStorefrontProductDetailRepository(client: PrismaClient) {
   const catalog = createStorefrontCatalogRepository(client);
 
-  async function getProductBySlug({ shopId, slug }: { shopId: number; slug: string }) {
+  async function getProductBySlug({
+    shopId,
+    slug,
+    now = new Date(),
+  }: { shopId: number; slug: string; now?: Date }) {
     const product = await catalog.getProductBySlug({ shopId, slug });
     if (!product) return null;
 
@@ -114,12 +120,29 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         variants: [...group.variants.values()],
       }));
 
+    // One batched candidate lookup for every variant this page can display — parent options and
+    // composite components alike. Resolving per option would be an N+1 on the busiest storefront
+    // page, and a component must be priced by its own owning product's campaigns rather than the
+    // parent's, which the repository already handles by keying on each variant's real owner.
+    const pricedVariantIds = [
+      ...new Set([
+        ...product.variants.map((variant) => variant.id),
+        ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
+      ]),
+    ];
+    const { campaignsByVariantId } = await readApplicablePromotionCampaigns({
+      variantIds: pricedVariantIds,
+    });
+
     return {
       ...product,
       projection: buildStorefrontProductProjection({
         parentVariants: product.variants,
         componentGroups,
         hasCompositeGraph,
+        // One instant for the whole page, passed in by the caller, so every option on it agrees
+        // about whether a window is open.
+        pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
       }),
     };
   }
