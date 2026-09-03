@@ -13,7 +13,6 @@ import type { StorefrontPricingRule } from "./storefront-product.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
-const RETRYABLE_DRAFT_ERROR = "VALIDATION_UNAVAILABLE";
 const ACTIVE_CHECKOUT_STATES = [
   "DRAFT",
   "VALIDATING",
@@ -127,8 +126,8 @@ function isActiveCheckoutState(state: string): state is ActiveCheckoutState {
   return (ACTIVE_CHECKOUT_STATES as readonly string[]).includes(state);
 }
 
-function isRetryableDraft(order: SelectedSnapshotOrder): boolean {
-  return order.state === "DRAFT" && order.syncErrorCode === RETRYABLE_DRAFT_ERROR;
+function isMutableDraft(order: SelectedSnapshotOrder): boolean {
+  return order.state === "DRAFT";
 }
 
 function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult | null {
@@ -234,7 +233,7 @@ export async function requiresFreshGuestCheckoutSnapshot(
     select: snapshotOrderSelection,
   });
 
-  return !activeCheckout || isRetryableDraft(activeCheckout);
+  return !activeCheckout || isMutableDraft(activeCheckout);
 }
 
 function toStorefrontProduct(product: SelectedProduct) {
@@ -311,7 +310,7 @@ export function createGuestCheckoutSnapshotService(
         }
 
         const activeCheckout = await lockActiveCheckout(tx, cartId);
-        const mutableDraft = activeCheckout && isRetryableDraft(activeCheckout)
+        const mutableDraft = activeCheckout && isMutableDraft(activeCheckout)
           ? activeCheckout
           : null;
         if (activeCheckout) {
@@ -524,7 +523,7 @@ export function createGuestCheckoutSnapshotService(
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: snapshotOrderSelection,
         });
-        if (!activeCheckout || isRetryableDraft(activeCheckout)) {
+        if (!activeCheckout || isMutableDraft(activeCheckout)) {
           return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
         }
         return toSnapshotResult(activeCheckout) ?? {
