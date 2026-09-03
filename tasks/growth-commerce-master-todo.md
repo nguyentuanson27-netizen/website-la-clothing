@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 1 COMPLETE — U7–U11 merged and integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint A PASS; Wave 2 onward planned**
+Status: **WAVE 1 COMPLETE — U7–U11 merged and integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint A PASS. Wave 2 U12–U17 implementation is delivered: U12/U13/U15/U16/U17 are merged, while U14/P5 is delivered via P5a PR #184 (merged) + P5b PR #185 (this branch). Checkpoint B remains OPEN pending #185 integration and fresh integrated review.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -50,16 +50,16 @@ not resolve downstream owner or launch gates.
 **PASS** — integrated evidence recorded in `docs/audits/wave-1-checkpoint-a.md`, verified at exact head
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`.
 
-The owning source checklists are reconciled to the same truth, so there is one execution reality rather than two:
-`tasks/promotions-flash-sale-v1-todo.md` records P1–P4 + Checkpoint A as delivered with P5 onward open, and
-`tasks/marketing-analytics-shopping-todo.md` records T1–T3 + T4 as delivered with T5 onward open.
+At the Checkpoint A head, the owning source checklists were reconciled to the same then-current truth:
+`tasks/promotions-flash-sale-v1-todo.md` recorded P1–P4 + Checkpoint A as delivered with P5 onward open, and
+`tasks/marketing-analytics-shopping-todo.md` recorded T1–T3 + T4 as delivered with T5 onward open. Later Wave 2 delivery is tracked below.
 
 - [x] #151 P1–P4 verification green; price evidence accepted; activation gate off. `pnpm lint`,
       `pnpm typecheck`, `pnpm test` (752/752), `pnpm test:db` (292/292) and `pnpm build` all pass;
       migrations deploy clean. Exact-head CI `verify` + `admin-a11y-runtime`, VPS container
       verification and Catalog indexation runtime all succeeded.
-- [x] Identity ready before consumers depend on it. No storefront, cart, checkout, analytics,
-      Merchant or structured-data consumer reads the promotion resolver yet; those switches belong to
+- [x] At the Checkpoint A head, identity was ready before consumers depended on it. No storefront, cart, checkout, analytics,
+      Merchant or structured-data consumer read the promotion resolver yet; those switches belonged to
       Wave 2 onward.
 - [x] Authz/bounds/concurrency/external-data security review green. Admin session required on every
       write before the gate and before any transaction; deterministic revision → campaign → product →
@@ -69,20 +69,22 @@ The owning source checklists are reconciled to the same truth, so there is one e
 
 ## Wave 2 — addressability and storefront
 
-- [ ] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link; requires U8 + accepted U9 evidence.
-- [ ] **U13** #152 W15b — wire only missing SEO HTTP/runtime signals from U5 coverage map: a negative `release:check` case for the temporary-host indexing block, and an HTTP case proving that host stays noindex when a deployment requests indexing. Do not re-invoke the five smokes that already run in `pnpm test`.
-- [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 and P5b PR #185)*
-- [ ] **U15** #151 P6 — PDP promotion projection using central pricing + **U8/T4 selected-variant state (`pancakeVariationId`)**; do not define a query/canonical contract. If U12 has landed, consume it directly.
-- [ ] **U16** #151 P7a — `/shop` effective-price discovery; SQL↔TS parity and product-level analytics identity preserved.
-- [ ] **U17** #151 P7b — `/flash-sale` via same projection; bounded pagination and ≤60s server-relative freshness.
+- [x] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link. *(PR #180, merged; consumes U8 identity and accepted U9 evidence.)*
+- [x] **U13** #152 W15b — wire only the two missing SEO HTTP/runtime signals from U5 coverage map. *(PR #179, merged; no duplicate smoke suite.)*
+- [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 merged + P5b PR #185 this branch; not integrated on `main` until #185 merges.)*
+- [x] **U15** #151 P6 — PDP promotion projection using central pricing + U8/T4 selected-variant state. *(PR #181, merged; consumes U12 deep-link state rather than defining a second query/canonical contract.)*
+- [x] **U16** #151 P7a — `/shop` effective-price discovery; SQL↔TS parity and product-level analytics identity preserved. *(PR #182, merged.)*
+- [x] **U17** #151 P7b — `/flash-sale` via same projection; bounded pagination and ≤60s server-relative freshness. *(PR #183, merged.)*
 
 ### Checkpoint B
 
+- [ ] **Integration blocker:** P5b / PR #185 must merge into current `main`, then fresh exact integrated verification/review must pass before Checkpoint B is declared complete.
 - [ ] **Blocker:** U20/P8 and later promotion checkout/order convergence must not start before Checkpoint B passes; U18/U19 canonical analytics/cart work may proceed from their own prerequisites.
-- [ ] PDP/cards/shop/Flash share one pricing authority.
-- [ ] T4 identity regressions green; **if U12/M2 has landed, its addressability regressions are also green**.
-- [ ] SQL↔TS parity + required browser freshness/a11y green.
-- [ ] Activation remains off; fresh review 0 Critical / 0 Required.
+- [x] PDP/cards/shop/Flash share one pricing authority.
+- [x] T4 identity regressions and merged U12/M2 addressability regressions are green on their owning PR evidence.
+- [x] SQL↔TS parity + required browser freshness/a11y are green on merged U16/U17 evidence.
+- [x] Activation remains off.
+- [ ] Fresh integrated review: 0 Critical / 0 Required.
 
 ## Wave 3 — canonical analytics/cart APIs
 
