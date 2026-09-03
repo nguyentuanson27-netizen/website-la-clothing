@@ -187,6 +187,41 @@ try {
     "CUSTOMER response must not disclose the protected product list",
   );
 
+  // U14 — the promotion admin surface sits behind the same guard as the rest of /admin, and the
+  // activation gate must be visibly off rather than silently absent.
+  const customerPromotions = await fetch(`${BASE_URL}/admin/promotions`, {
+    headers: { cookie: customerCookie },
+    redirect: "manual",
+  });
+  assert.equal(
+    customerPromotions.status,
+    404,
+    `CUSTOMER must not read /admin/promotions, received ${customerPromotions.status}`,
+  );
+
+  const anonymousPromotions = await fetch(`${BASE_URL}/admin/promotions`, { redirect: "manual" });
+  assert.ok(
+    anonymousPromotions.status === 307
+      || anonymousPromotions.status === 302
+      || anonymousPromotions.status === 404,
+    `anonymous must not read /admin/promotions, received ${anonymousPromotions.status}`,
+  );
+
+  const adminPromotions = await fetch(`${BASE_URL}/admin/promotions`, {
+    headers: { cookie: adminCookie },
+    redirect: "manual",
+  });
+  assert.equal(
+    adminPromotions.status,
+    200,
+    `ADMIN must read /admin/promotions, received ${adminPromotions.status}`,
+  );
+  const promotionsHtml = await adminPromotions.text();
+  assert.ok(
+    promotionsHtml.includes("Kích hoạt khuyến mãi đang tắt"),
+    "the promotion admin must state that activation is off while the gate is disabled",
+  );
+
   const editorPath = `/admin/products/${encodeURIComponent(product.id)}`;
   const editorResponse = await fetch(`${BASE_URL}${editorPath}`, {
     headers: { cookie: adminCookie },
