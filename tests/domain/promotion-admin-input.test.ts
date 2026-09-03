@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  parseDiscountInputs,
+  parseCampaignFormInput,
+  parseStrictVietnamDateTime,
   parseTargets,
-  parseVietnamDateTime,
 } from "../../src/commerce/promotion-admin-input.ts";
 import {
   MAX_PROMOTION_IDENTIFIER_LENGTH,
@@ -47,92 +47,122 @@ test("Finding 1: parseTargets bounds target count extraction to prevent memory d
   assert.ok(!validated.ok && validated.errors.includes("TOO_MANY_TARGETS"));
 });
 
-test("Finding 2: parseDiscountInputs strictly rejects malformed fixed price and never coerces invalid representations", () => {
-  const malformedInputs = [
-    "-100",
-    "+100",
-    "1e6",
-    "1.5",
-    "199,000",
-    "199 000",
-    "abc500000",
-    "500000abc",
-    "0",
-    "-0",
-    "NaN",
-    "Infinity",
-    "0199000", // leading zero
+test("Required 3: parseStrictVietnamDateTime strictly validates calendar correctness and rejects invalid representations", () => {
+  // Valid representations in local Vietnam time (UTC+07:00)
+  const valid1 = parseStrictVietnamDateTime("2026-09-20T10:00");
+  assert.equal(valid1.ok, true);
+  if (valid1.ok) {
+    assert.equal(valid1.date?.toISOString(), "2026-09-20T03:00:00.000Z");
+  }
+
+  const valid2 = parseStrictVietnamDateTime("2026-09-20T10:00:45");
+  assert.equal(valid2.ok, true);
+  if (valid2.ok) {
+    assert.equal(valid2.date?.toISOString(), "2026-09-20T03:00:45.000Z");
+  }
+
+  // Optional empty/null values map to null
+  assert.deepEqual(parseStrictVietnamDateTime(""), { ok: true, date: null });
+  assert.deepEqual(parseStrictVietnamDateTime("   "), { ok: true, date: null });
+  assert.deepEqual(parseStrictVietnamDateTime(null), { ok: true, date: null });
+  assert.deepEqual(parseStrictVietnamDateTime(undefined), { ok: true, date: null });
+
+  // Malformed representations must be rejected (not coerced to null or normalized by JS Date)
+  const invalidDates = [
+    "2026/09/20 10:00", // slash format
+    "Sep 20 2026", // words
+    "2026-09-20Z", // missing time
+    "foo", // garbage
+    "2026-02-31T10:00", // Feb 31 does not exist
+    "2026-04-31T10:00", // April has 30 days
+    "2026-13-99T99:99", // impossible month/day/time
+    "2026-09-20T25:00", // hour 25
+    "2026-09-20T10:60", // minute 60
   ];
 
-  for (const bad of malformedInputs) {
-    const formData = new FormData();
-    formData.append("discountType", "FIXED_PRICE");
-    formData.append("fixedPriceVnd", bad);
-
-    const parsed = parseDiscountInputs(formData);
-    assert.equal(
-      parsed.ok,
-      false,
-      `expected input "${bad}" to be strictly rejected, but got ${JSON.stringify(parsed)}`,
-    );
-    if (!parsed.ok) {
-      assert.equal(parsed.reason, "MALFORMED_FIXED_PRICE");
-    }
+  for (const bad of invalidDates) {
+    const res = parseStrictVietnamDateTime(bad);
+    assert.equal(res.ok, false, `expected "${bad}" to be rejected`);
   }
 });
 
-test("Finding 2: parseDiscountInputs accepts strict positive decimal integer VND and parses exact BigInt", () => {
-  const validCases = [
-    { input: "199000", expected: BigInt(199000) },
-    { input: " 500000 ", expected: BigInt(500000) },
-    { input: "1", expected: BigInt(1) },
-    { input: "999999999", expected: BigInt(999999999) },
-  ];
-
-  for (const { input, expected } of validCases) {
+test("Required 3: parseCampaignFormInput rejects invalid kind without fail-open coercion", () => {
+  for (const bad of ["HACKED", "PROMO", "promotion", "FLASH", ""]) {
     const formData = new FormData();
-    formData.append("discountType", "FIXED_PRICE");
-    formData.append("fixedPriceVnd", input);
-
-    const parsed = parseDiscountInputs(formData);
-    assert.equal(parsed.ok, true, `expected "${input}" to be accepted`);
-    if (parsed.ok) {
-      assert.equal(parsed.discountType, "FIXED_PRICE");
-      assert.equal(parsed.fixedPriceVnd, expected);
-      assert.equal(parsed.percentageValue, null);
-    }
-  }
-});
-
-test("Finding 2: parseDiscountInputs strictly validates percentage value", () => {
-  for (const bad of ["-10", "0", "100", "105", "1e2", "abc", "50.5"]) {
-    const formData = new FormData();
+    formData.append("kind", bad);
     formData.append("discountType", "PERCENTAGE");
-    formData.append("percentageValue", bad);
 
-    const parsed = parseDiscountInputs(formData);
-    assert.equal(parsed.ok, false, `expected percentage "${bad}" to be rejected`);
-    if (!parsed.ok) {
-      assert.equal(parsed.reason, "INVALID_PERCENTAGE");
+    const res = parseCampaignFormInput(formData);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.reason, "INVALID_CAMPAIGN_KIND", `expected "${bad}" to reject with INVALID_CAMPAIGN_KIND`);
     }
-  }
-
-  const valid = new FormData();
-  valid.append("discountType", "PERCENTAGE");
-  valid.append("percentageValue", " 25 ");
-  const parsedValid = parseDiscountInputs(valid);
-  assert.equal(parsedValid.ok, true);
-  if (parsedValid.ok) {
-    assert.equal(parsedValid.percentageValue, 25);
-    assert.equal(parsedValid.fixedPriceVnd, null);
   }
 });
 
-test("parseVietnamDateTime parses ISO local time to Vietnam UTC+7 instant", () => {
-  const parsed = parseVietnamDateTime("2026-09-20T10:00");
-  assert.ok(parsed instanceof Date);
-  assert.equal(parsed.toISOString(), "2026-09-20T03:00:00.000Z");
+test("Required 3: parseCampaignFormInput rejects invalid discountType without fail-open coercion", () => {
+  for (const bad of ["BOGUS", "FIXED", "percentage", "CASH", ""]) {
+    const formData = new FormData();
+    formData.append("kind", "PROMOTION");
+    formData.append("discountType", bad);
 
-  assert.equal(parseVietnamDateTime(""), null);
-  assert.equal(parseVietnamDateTime("not-a-date"), null);
+    const res = parseCampaignFormInput(formData);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.reason, "INVALID_DISCOUNT_TYPE", `expected "${bad}" to reject with INVALID_DISCOUNT_TYPE`);
+    }
+  }
+});
+
+test("Required 3: parseCampaignFormInput strictly rejects malformed fixed price and invalid percentage", () => {
+  for (const badPrice of ["-100", "+100", "1e6", "1.5", "199,000", "abc500000", "0"]) {
+    const formData = new FormData();
+    formData.append("kind", "PROMOTION");
+    formData.append("discountType", "FIXED_PRICE");
+    formData.append("fixedPriceVnd", badPrice);
+
+    const res = parseCampaignFormInput(formData);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.reason, "MALFORMED_FIXED_PRICE", `expected "${badPrice}" to fail with MALFORMED_FIXED_PRICE`);
+    }
+  }
+
+  for (const badPct of ["-10", "0", "100", "105", "1e2", "abc"]) {
+    const formData = new FormData();
+    formData.append("kind", "PROMOTION");
+    formData.append("discountType", "PERCENTAGE");
+    formData.append("percentageValue", badPct);
+
+    const res = parseCampaignFormInput(formData);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.reason, "INVALID_PERCENTAGE", `expected "${badPct}" to fail with INVALID_PERCENTAGE`);
+    }
+  }
+});
+
+test("Required 3: parseCampaignFormInput strictly parses valid full campaign form", () => {
+  const formData = new FormData();
+  formData.append("name", "Chiến dịch Thu Đông 2026");
+  formData.append("kind", "FLASH_SALE");
+  formData.append("discountType", "FIXED_PRICE");
+  formData.append("fixedPriceVnd", "  450000  ");
+  formData.append("startsAt", "2026-10-01T09:00");
+  formData.append("endsAt", "2026-10-05T21:00");
+  formData.append("targetProductId", "prod-1");
+  formData.append("targetVariantId", "var-2");
+
+  const res = parseCampaignFormInput(formData);
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.equal(res.value.name, "Chiến dịch Thu Đông 2026");
+    assert.equal(res.value.kind, "FLASH_SALE");
+    assert.equal(res.value.discountType, "FIXED_PRICE");
+    assert.equal(res.value.fixedPriceVnd, BigInt(450000));
+    assert.equal(res.value.percentageValue, null);
+    assert.equal(res.value.startsAt?.toISOString(), "2026-10-01T02:00:00.000Z");
+    assert.equal(res.value.endsAt?.toISOString(), "2026-10-05T14:00:00.000Z");
+    assert.equal(res.value.targets.length, 2);
+  }
 });

@@ -15,13 +15,10 @@ import {
   publishPromotionCampaign,
   type CampaignPatch,
 } from "@/commerce/promotion-activation-service";
+import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
-import {
-  parseDiscountInputs,
-  parseTargets,
-  parseVietnamDateTime,
-} from "@/commerce/promotion-admin-input";
+import { parseCampaignFormInput } from "@/commerce/promotion-admin-input";
 import {
   describePromotionFailure,
   translatePromotionWriteError,
@@ -134,23 +131,24 @@ export async function copyPromotionAction(formData: FormData): Promise<void> {
 }
 
 export async function createPromotionAction(formData: FormData): Promise<void> {
-  const discountResult = parseDiscountInputs(formData);
-  if (!discountResult.ok) {
-    completeWith({
-      ok: false,
-      failure: describePromotionFailure({ reason: discountResult.reason }),
-    });
-  }
+  const outcome = await runPromotionOperation((session) => {
+    const parseResult = parseCampaignFormInput(formData);
+    if (!parseResult.ok) {
+      return Promise.resolve({ ok: false, failure: { reason: parseResult.reason } });
+    }
 
-  const { discountType, percentageValue, fixedPriceVnd } = discountResult;
-  const name = typeof formData.get("name") === "string" ? (formData.get("name") as string) : "";
-  const kind = formData.get("kind") === "FLASH_SALE" ? "FLASH_SALE" : "PROMOTION";
-  const startsAt = parseVietnamDateTime(formData.get("startsAt"));
-  const endsAt = parseVietnamDateTime(formData.get("endsAt"));
-  const targets = parseTargets(formData);
+    const {
+      name,
+      kind,
+      discountType,
+      percentageValue,
+      fixedPriceVnd,
+      startsAt,
+      endsAt,
+      targets,
+    } = parseResult.value;
 
-  const outcome = await runPromotionOperation((session) =>
-    createDraftPromotionCampaign({
+    return createDraftPromotionCampaign({
       name,
       kind,
       discountType,
@@ -160,30 +158,25 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
       endsAt,
       targets,
       session,
-    }),
-  );
+    });
+  });
 
   completeWith(outcome);
 }
 
 export async function editPromotionAction(formData: FormData): Promise<void> {
-  const campaignId = campaignIdFrom(formData);
-  const discountResult = parseDiscountInputs(formData);
-  if (!discountResult.ok) {
-    completeWith({
-      ok: false,
-      failure: describePromotionFailure({ reason: discountResult.reason }),
-    });
-  }
-
-  const { discountType, percentageValue, fixedPriceVnd } = discountResult;
-  const name = typeof formData.get("name") === "string" ? (formData.get("name") as string) : "";
-  const kind = formData.get("kind") === "FLASH_SALE" ? "FLASH_SALE" : "PROMOTION";
-  const startsAt = parseVietnamDateTime(formData.get("startsAt"));
-  const endsAt = parseVietnamDateTime(formData.get("endsAt"));
-  const targets = parseTargets(formData);
-
   const outcome = await runPromotionOperation(async (session) => {
+    const parseResult = parseCampaignFormInput(formData);
+    if (!parseResult.ok) {
+      return { ok: false, failure: { reason: parseResult.reason } };
+    }
+
+    const rawId = campaignIdFrom(formData).trim();
+    if (!isBoundedPromotionIdentifier(rawId)) {
+      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
+    }
+    const campaignId = rawId;
+
     const existing = await prisma.promotionCampaign.findUnique({
       where: { id: campaignId },
       select: {
@@ -196,22 +189,13 @@ export async function editPromotionAction(formData: FormData): Promise<void> {
       },
     });
     if (!existing) {
-      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } as const };
+      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
     }
 
     const now = new Date();
     const lifecycle = deriveCampaignLifecycle({ ...existing, now });
 
-    const patch: CampaignPatch = {
-      name,
-      kind,
-      discountType,
-      percentageValue,
-      fixedPriceVnd,
-      startsAt,
-      endsAt,
-      targets,
-    };
+    const patch: CampaignPatch = parseResult.value;
 
     if (lifecycle.status === "DRAFT") {
       return editDraftPromotionCampaign({ campaignId, now, session, patch });
@@ -221,7 +205,7 @@ export async function editPromotionAction(formData: FormData): Promise<void> {
       return editScheduledPromotionCampaign({ campaignId, now, session, patch });
     }
 
-    return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } as const };
+    return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } };
   });
 
   completeWith(outcome);

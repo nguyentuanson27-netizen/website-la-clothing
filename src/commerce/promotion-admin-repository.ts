@@ -20,7 +20,10 @@ import {
   parseAdminPromotionPageSize,
   parseAdminTargetSearchLimit,
 } from "./promotion-admin-feedback.ts";
-import { MAX_PROMOTION_IDENTIFIER_LENGTH } from "./promotion-activation.ts";
+import {
+  isBoundedPromotionIdentifier,
+  MAX_PROMOTION_IDENTIFIER_LENGTH,
+} from "./promotion-activation.ts";
 
 /** Bounds the operator-supplied search text before it reaches a query. */
 const MAX_ADMIN_SEARCH_LENGTH = 120;
@@ -151,8 +154,8 @@ export function createPromotionAdminRepository(client: PrismaClient) {
     campaignId: string,
     now = new Date(),
   ): Promise<CampaignEditData | null> {
-    const trimmedId = campaignId.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH);
-    if (trimmedId.length === 0) return null;
+    const trimmedId = campaignId.trim();
+    if (!isBoundedPromotionIdentifier(trimmedId)) return null;
 
     const campaign = await client.promotionCampaign.findUnique({
       where: { id: trimmedId },

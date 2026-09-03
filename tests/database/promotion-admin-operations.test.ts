@@ -1048,3 +1048,44 @@ test("Finding 2 regression: valid fixed price persists exact BigInt amount and d
   }
 });
 
+test("Required 1: authorization precedes any input or parser processing", async () => {
+  for (const [label, session] of [["anonymous", null], ["non-admin", STAFF]] as const) {
+    const expected = session === null ? "UNAUTHENTICATED" : "FORBIDDEN";
+
+    // Calling mutation with malformed input under unauthenticated session must throw AuthorizationError
+    await assert.rejects(
+      () =>
+        createDraftPromotionCampaign({
+          name: "Invalid Money Draft",
+          discountType: "FIXED_PRICE",
+          fixedPriceVnd: BigInt(-100),
+          session,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof AuthorizationError, `${label}: must fail with AuthorizationError`);
+        assert.equal(error.code, expected);
+        return true;
+      },
+      `${label}: authorization must reject before business validation`,
+    );
+  }
+});
+
+test("Required 2: getCampaignForEdit rejects oversized campaign ID and never matches real campaign", async () => {
+  await seedProduct("edit-bound-p", 1);
+  await draft("edit-real", "edit-bound-p");
+
+  const repository = createPromotionAdminRepository(prisma);
+
+  // Exact ID returns the seeded campaign
+  const found = await repository.getCampaignForEdit(`${P}-edit-real`, NOW);
+  assert.ok(found !== null, "valid campaign ID must be found");
+  assert.equal(found.id, `${P}-edit-real`);
+
+  // Crafted oversized ID matching prefix + oversized suffix must NOT return the campaign
+  const craftedOversized = `${P}-edit-real`.concat("x".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH + 10));
+  const notFound = await repository.getCampaignForEdit(craftedOversized, NOW);
+  assert.equal(notFound, null, "oversized ID must return null without matching the real row");
+});
+
+
