@@ -7,6 +7,7 @@ import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts
 import { createProductCommerceAdminService } from "../../src/commerce/product-commerce-admin.ts";
 import { createProductCommerceRepository } from "../../src/commerce/product-commerce-repository.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -224,6 +225,7 @@ test("admin activation converges inactive real parent and child through PDP, car
 
   const checkout = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
   const checkoutResult = await checkout.create({
     cartId,

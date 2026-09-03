@@ -39,7 +39,7 @@ const geoFailures = {
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
-export function GuestCheckoutForm() {
+export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string }>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
     null,
@@ -185,6 +185,15 @@ export function GuestCheckoutForm() {
     };
   }, []);
 
+  // Derived, not stored: `useActionState` already holds the last server response, so mirroring it
+  // into state would be a second copy that can disagree with it. When the server refused a stale
+  // quote it handed back a proof for the price it just showed, and that is the one the explicit
+  // re-submission must carry; otherwise the page's own proof still stands.
+  const activeQuoteProof =
+    submitState && !submitState.ok && submitState.status === "PRICE_CHANGED"
+      ? submitState.priceChange.quoteProof
+      : quoteProof;
+
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
   const geoBusy = provinceLoading || districtLoading || communeLoading;
@@ -253,6 +262,10 @@ export function GuestCheckoutForm() {
 
   return (
     <form action={submitAction} className="space-y-8">
+      {/* Opaque and server-authenticated. Editing it cannot change what the buyer is charged: the
+          server recomputes the price itself and only asks this token whether that price is the one
+          it already showed. A tampered or swapped value simply fails closed into re-confirmation. */}
+      <input name="quoteProof" type="hidden" value={activeQuoteProof} />
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>

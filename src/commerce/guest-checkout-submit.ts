@@ -1,3 +1,7 @@
+import type {
+  RenderedQuoteProofFacts,
+  RenderedQuoteProofRejection,
+} from "./checkout-quote-proof.ts";
 import type { PancakeOrderSubmissionResult } from "./pancake-order-submit.ts";
 
 type ActiveSnapshotState =
@@ -26,7 +30,13 @@ type SnapshotResult =
         totalVnd: bigint;
       };
     }
-  | { ok: false; reason: SnapshotFailureReason };
+  | { ok: false; reason: SnapshotFailureReason }
+  | {
+      ok: false;
+      reason: "QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedQuote: RenderedQuoteProofFacts;
+    };
 
 type SnapshotService = {
   create(input: {
@@ -37,6 +47,9 @@ type SnapshotService = {
     now: Date;
   }): Promise<SnapshotResult>;
 };
+
+/** Issues a proof over the refreshed quote so the buyer can acknowledge the new price. */
+type IssueQuoteProof = (facts: RenderedQuoteProofFacts) => string;
 
 type OrderSubmissionService = {
   submit(input: { publicCode: string; shopId: number }): Promise<PancakeOrderSubmissionResult>;
@@ -49,8 +62,21 @@ export type GuestCheckoutBrowserReason =
   | "SERVICE_UNAVAILABLE"
   | "CHECKOUT_UNAVAILABLE";
 
+/**
+ * The refreshed quote a buyer must explicitly accept before submission can continue, together with
+ * the fresh proof that will authorise that acceptance. Money here is for display only; the next
+ * submission re-derives it server-side and checks this proof against that answer.
+ */
+export type GuestCheckoutPriceChange = Readonly<{
+  quoteProof: string;
+  merchandiseSubtotalVnd: number;
+  shippingFeeVnd: number;
+  totalVnd: number;
+}>;
+
 export type GuestCheckoutSubmitResult =
   | { ok: true; status: "CONFIRMED"; orderCode: string }
+  | { ok: false; status: "PRICE_CHANGED"; priceChange: GuestCheckoutPriceChange }
   | {
       ok: false;
       status: "RETRYABLE";
@@ -64,6 +90,7 @@ export type GuestCheckoutSubmitDependencies = {
   snapshot: SnapshotService;
   orderSubmission: OrderSubmissionService;
   generatePublicCode: () => string;
+  issueQuoteProof: IssueQuoteProof;
 };
 
 function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitResult {
@@ -133,6 +160,7 @@ export function createGuestCheckoutSubmitService({
   snapshot,
   orderSubmission,
   generatePublicCode,
+  issueQuoteProof,
 }: GuestCheckoutSubmitDependencies) {
   async function submit({
     cartId,
@@ -155,6 +183,23 @@ export function createGuestCheckoutSubmitService({
     });
 
     if (!snapshotResult.ok) {
+      if (snapshotResult.reason === "QUOTE_UNPROVEN") {
+        // Every unproven outcome — missing, oversized, malformed, forged, wrong-cart or simply
+        // stale — converges here deliberately: the buyer is shown the current price and must accept
+        // it again. Reporting *why* the proof failed would tell a probing client which of its
+        // guesses was closer, and the buyer's next step is identical in every case.
+        const { refreshedQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            quoteProof: issueQuoteProof(refreshedQuote),
+            merchandiseSubtotalVnd: refreshedQuote.merchandiseSubtotalVnd,
+            shippingFeeVnd: refreshedQuote.shippingFeeVnd,
+            totalVnd: refreshedQuote.totalVnd,
+          },
+        };
+      }
       return mapSnapshotFailure(snapshotResult.reason);
     }
 

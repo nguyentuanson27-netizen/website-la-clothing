@@ -19,7 +19,7 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
   let configReads = 0;
   let recoveryInput: unknown;
   let geoInput: unknown;
-  let snapshotFactoryInput: unknown;
+  let snapshotFactoryInput: { checkoutInputValidated?: boolean; verifyRenderedQuote?: unknown } | undefined;
   let snapshotInput: unknown;
   let submissionInput: unknown;
   let orderFactoryConfig: unknown;
@@ -79,10 +79,11 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
       };
     },
     generatePublicCode: () => "LA-server-owned",
+    readQuoteProofSecret: () => "runtime-test-secret-at-least-32-characters",
     clock: () => now,
   });
 
-  assert.deepEqual(await runtime.submit({ cartId, checkoutInput }), {
+  assert.deepEqual(await runtime.submit({ cartId, checkoutInput, quoteProof: null }), {
     ok: true,
     status: "CONFIRMED",
     orderCode: "LA-server-owned",
@@ -91,7 +92,11 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
   assert.deepEqual(recoveryInput, { cartId, now });
   assert.equal(configReads, 1);
   assert.deepEqual(geoInput, checkoutInput);
-  assert.deepEqual(snapshotFactoryInput, { checkoutInputValidated: true });
+  assert.equal(snapshotFactoryInput?.checkoutInputValidated, true);
+  // The runtime must hand the snapshot a real verifier on every path, whatever it decided about
+  // geo authority: a snapshot service built without one would create submit-capable DRAFTs at
+  // prices no buyer has acknowledged.
+  assert.equal(typeof snapshotFactoryInput?.verifyRenderedQuote, "function");
   assert.deepEqual(orderFactoryConfig, { apiKey: "server-secret", shopId: 920_007 });
   assert.deepEqual(snapshotInput, {
     cartId,
@@ -108,8 +113,9 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
 
 test("reusable active checkout skips geo reads while snapshot transaction retains race authority", async () => {
   const calls: string[] = [];
-  let snapshotFactoryInput: unknown;
+  let snapshotFactoryInput: { checkoutInputValidated?: boolean; verifyRenderedQuote?: unknown } | undefined;
   const runtime = createGuestCheckoutSubmitRuntime({
+    readQuoteProofSecret: () => "runtime-test-secret-at-least-32-characters",
     recoverStranded: async () => {
       calls.push("recover");
     },
@@ -156,18 +162,23 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
     clock: () => now,
   });
 
-  assert.deepEqual(await runtime.submit({ cartId, checkoutInput }), {
+  assert.deepEqual(await runtime.submit({ cartId, checkoutInput, quoteProof: null }), {
     ok: true,
     status: "CONFIRMED",
     orderCode: "LA-confirmed",
   });
   assert.deepEqual(calls, ["recover", "config", "fresh-check", "snapshot", "submit"]);
-  assert.deepEqual(snapshotFactoryInput, { checkoutInputValidated: false });
+  assert.equal(snapshotFactoryInput?.checkoutInputValidated, false);
+  // The runtime must hand the snapshot a real verifier on every path, whatever it decided about
+  // geo authority: a snapshot service built without one would create submit-capable DRAFTs at
+  // prices no buyer has acknowledged.
+  assert.equal(typeof snapshotFactoryInput?.verifyRenderedQuote, "function");
 });
 
 test("fresh guest checkout rejects an invalid geo hierarchy before snapshot or order submission", async () => {
   const calls: string[] = [];
   const runtime = createGuestCheckoutSubmitRuntime({
+    readQuoteProofSecret: () => "runtime-test-secret-at-least-32-characters",
     recoverStranded: async () => {
       calls.push("recover");
     },
@@ -194,7 +205,7 @@ test("fresh guest checkout rejects an invalid geo hierarchy before snapshot or o
     clock: () => now,
   });
 
-  assert.deepEqual(await runtime.submit({ cartId, checkoutInput }), {
+  assert.deepEqual(await runtime.submit({ cartId, checkoutInput, quoteProof: null }), {
     ok: false,
     status: "RETRYABLE",
     reason: "INVALID_INPUT",

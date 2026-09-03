@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
@@ -9,6 +10,11 @@ import {
   loadCheckoutProvinces,
 } from "./checkout-geo.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
+import {
+  issueRenderedQuoteProof,
+  verifyRenderedQuoteProof,
+  type RenderedQuoteProofFacts,
+} from "./checkout-quote-proof.ts";
 import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
 import {
   createGuestCheckoutSnapshotService,
@@ -22,6 +28,9 @@ import { createPancakeOrderSubmissionRuntime } from "./pancake-order-submit-runt
 
 type SnapshotAuthority = Readonly<{
   checkoutInputValidated: boolean;
+  verifyRenderedQuote: (
+    facts: RenderedQuoteProofFacts,
+  ) => ReturnType<typeof verifyRenderedQuoteProof>;
 }>;
 
 type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
@@ -39,6 +48,12 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   ) => GuestCheckoutSubmitDependencies["orderSubmission"];
   recoverStranded: (input: { cartId: string; now: Date }) => Promise<void>;
   generatePublicCode: () => string;
+  /**
+   * The server-only key material for the rendered-quote proof. Injected as a reader rather than
+   * read at module load so a test can supply its own secret without touching process env, and so a
+   * misconfigured secret fails at submit time rather than at import time.
+   */
+  readQuoteProofSecret: () => string;
   clock: () => Date;
 }>;
 
@@ -77,14 +92,18 @@ export function createGuestCheckoutSubmitRuntime(
     options.recoverStranded ??
     (({ cartId, now }) => recoverStrandedGuestCheckoutForCart(prisma, cartId, now));
   const generatePublicCode = options.generatePublicCode ?? (() => `LA-${randomUUID()}`);
+  const readQuoteProofSecret =
+    options.readQuoteProofSecret ?? (() => readAuthServerConfig().secret);
   const clock = options.clock ?? (() => new Date());
 
   async function submit({
     cartId,
     checkoutInput,
+    quoteProof,
   }: {
     cartId: string;
     checkoutInput: unknown;
+    quoteProof: unknown;
   }) {
     const now = clock();
     await recoverStranded({ cartId, now });
@@ -107,10 +126,24 @@ export function createGuestCheckoutSubmitRuntime(
       checkoutInputValidated = true;
     }
 
+    // The cart id comes from the HttpOnly cookie the server just read, never from the request
+    // body, so binding the proof to it here is what makes a token minted for another cart useless.
+    const quoteProofSecret = readQuoteProofSecret();
     const service = createGuestCheckoutSubmitService({
-      snapshot: createSnapshot({ checkoutInputValidated }),
+      snapshot: createSnapshot({
+        checkoutInputValidated,
+        verifyRenderedQuote: (currentQuote) =>
+          verifyRenderedQuoteProof({
+            proof: quoteProof,
+            cartId,
+            currentQuote,
+            secret: quoteProofSecret,
+          }),
+      }),
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
+      issueQuoteProof: (facts) =>
+        issueRenderedQuoteProof({ quote: facts, cartId, secret: quoteProofSecret }),
     });
 
     return service.submit({
@@ -127,6 +160,7 @@ export function createGuestCheckoutSubmitRuntime(
 export async function submitGuestCheckoutByCart(input: {
   cartId: string;
   checkoutInput: unknown;
+  quoteProof: unknown;
 }) {
   return createGuestCheckoutSubmitRuntime().submit(input);
 }

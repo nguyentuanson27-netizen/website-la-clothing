@@ -44,6 +44,7 @@ test("snapshot failure stops before Pancake submission and exposes only a stable
       },
     },
     generatePublicCode: () => "LA-proposed",
+    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -72,6 +73,7 @@ test("reused active snapshot submits by the persisted order code rather than a n
       },
     },
     generatePublicCode: () => "LA-proposed",
+    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -116,6 +118,7 @@ test("ambiguous and in-flight outcomes never become browser retry instructions",
       snapshot: { async create() { return snapshotOrder("LA-existing"); } },
       orderSubmission: { async submit() { return entry.submission; } },
       generatePublicCode: () => "LA-unused",
+      issueQuoteProof: () => "fresh-proof",
     });
 
     assert.deepEqual(
@@ -138,6 +141,7 @@ test("only pre-write validation unavailability is presented as a safe retry for 
       },
     },
     generatePublicCode: () => "LA-unused",
+    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -165,6 +169,7 @@ test("live price or stock rejection becomes a cart-changed result while internal
         },
       },
       generatePublicCode: () => "LA-unused",
+      issueQuoteProof: () => "fresh-proof",
     });
 
     assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {

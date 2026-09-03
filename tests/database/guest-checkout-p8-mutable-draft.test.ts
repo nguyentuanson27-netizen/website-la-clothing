@@ -7,6 +7,7 @@ import {
   createGuestCheckoutSnapshotService,
   requiresFreshGuestCheckoutSnapshot,
 } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -87,7 +88,7 @@ test("P8 an ordinary DRAFT is refreshable in place until guarded finalization", 
       items: { create: { variantId: product.variants[0]!.id, quantity: 1 } },
     },
   });
-  const service = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true });
+  const service = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote });
   const publicCode = `${prefix}-order`;
 
   const first = await service.create({ cartId: cart.id, shopId, publicCode, checkoutInput: inputA, now });

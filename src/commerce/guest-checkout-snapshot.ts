@@ -4,6 +4,10 @@ import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import type {
+  RenderedQuoteProofFacts,
+  RenderedQuoteProofRejection,
+} from "./checkout-quote-proof.ts";
 import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
@@ -39,10 +43,31 @@ type CheckoutSnapshotResult =
         totalVnd: bigint;
       };
     }
-  | { ok: false; reason: CheckoutFailureReason };
+  | { ok: false; reason: CheckoutFailureReason }
+  /**
+   * The buyer has not demonstrably seen this price. Carries the quote the server just computed so
+   * the caller can show refreshed money and issue a fresh proof; no DRAFT is left submit-capable.
+   */
+  | {
+      ok: false;
+      reason: "QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedQuote: RenderedQuoteProofFacts;
+    };
+
+/**
+ * Decides whether the authoritative quote this transaction just computed is the one the buyer was
+ * shown. Required rather than optional: a snapshot service constructed without it would create
+ * submit-capable DRAFTs at prices nobody proved, and that is exactly the P9a failure. Callers that
+ * are exercising something else pass an explicitly accepting verifier, which is greppable.
+ */
+export type RenderedQuoteVerifier = (
+  facts: RenderedQuoteProofFacts,
+) => Readonly<{ ok: true }> | Readonly<{ ok: false; reason: RenderedQuoteProofRejection }>;
 
 type GuestCheckoutSnapshotServiceOptions = Readonly<{
   checkoutInputValidated?: boolean;
+  verifyRenderedQuote: RenderedQuoteVerifier;
 }>;
 
 const snapshotOrderSelection = {
@@ -271,9 +296,13 @@ function toStorefrontProduct(product: SelectedProduct) {
 
 export function createGuestCheckoutSnapshotService(
   client: PrismaClient,
-  options: GuestCheckoutSnapshotServiceOptions = {},
+  options: GuestCheckoutSnapshotServiceOptions,
 ) {
   const checkoutInputValidated = options.checkoutInputValidated ?? false;
+  const verifyRenderedQuote = options.verifyRenderedQuote;
+  if (typeof verifyRenderedQuote !== "function") {
+    throw new TypeError("Guest checkout snapshot requires a rendered-quote verifier");
+  }
 
   async function create({
     cartId,
@@ -410,6 +439,14 @@ export function createGuestCheckoutSnapshotService(
           promotionPercentageValue: number | null;
           promotionFixedPriceVnd: bigint | null;
         }> = [];
+        // Kept as plain numbers beside the BigInt rows: the proof canonicalizes safe integers, and
+        // round-tripping money back out of BigInt purely to hash it would be a second conversion
+        // with nothing to gain.
+        const quoteItems: Array<{
+          variantExternalId: string;
+          quantity: number;
+          unitPriceVnd: number;
+        }> = [];
         let merchandiseSubtotalVnd = 0;
         let totalQuantity = 0;
 
@@ -469,6 +506,11 @@ export function createGuestCheckoutSnapshotService(
             promotionPercentageValue: promotion?.percentageValue ?? null,
             promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
           });
+          quoteItems.push({
+            variantExternalId: pancakeVariationId,
+            quantity: line.quantity,
+            unitPriceVnd: line.price,
+          });
         }
 
         const shippingFeeVnd = calculateGuestShippingFeeVnd({
@@ -478,6 +520,29 @@ export function createGuestCheckoutSnapshotService(
         const totalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
         if (totalVnd === null) {
           return { ok: false, reason: "MONEY_UNSUPPORTED" };
+        }
+
+        // The acknowledgement gate, deliberately inside this transaction rather than ahead of it.
+        // The quote is checked against the proof at the same instant, under the same cart lock, that
+        // it is about to be persisted — a check before the transaction could pass and then have the
+        // price move underneath it before the DRAFT was written, which is the exact substitution
+        // this unit exists to prevent. Nothing has been written for this attempt yet, so returning
+        // here leaves no submit-capable DRAFT, no `POS_SUBMITTING` and no Pancake call.
+        const refreshedQuote: RenderedQuoteProofFacts = Object.freeze({
+          items: Object.freeze(quoteItems.map((item) => Object.freeze({ ...item }))),
+          merchandiseSubtotalVnd,
+          shippingFeeVnd,
+          totalVnd,
+          totalQuantity,
+        });
+        const quoteVerification = verifyRenderedQuote(refreshedQuote);
+        if (!quoteVerification.ok) {
+          return {
+            ok: false,
+            reason: "QUOTE_UNPROVEN",
+            quoteReason: quoteVerification.reason,
+            refreshedQuote,
+          };
         }
 
         const draftFacts = {

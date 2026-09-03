@@ -3,8 +3,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { readAuthServerConfig } from "@/auth/config";
 import { buildRenderedCheckoutQuoteFacts } from "@/commerce/checkout-quote";
-import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
+import { issueRenderedQuoteProof } from "@/commerce/checkout-quote-proof";
+import { getCurrentStorefrontCheckoutContext } from "@/commerce/storefront-cart-runtime";
 import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
@@ -23,7 +25,8 @@ const currency = new Intl.NumberFormat("vi-VN", {
 
 export default async function CheckoutPage() {
   await connection();
-  const lines = await getCurrentStorefrontCartLines();
+  const checkoutContext = await getCurrentStorefrontCheckoutContext();
+  const lines = checkoutContext?.lines ?? [];
 
   if (lines.length === 0) {
     return (
@@ -66,8 +69,18 @@ export default async function CheckoutPage() {
     );
   }
 
-  const totals = buildRenderedCheckoutQuoteFacts(lines);
-  if (!totals) {
+  const totals = checkoutContext ? buildRenderedCheckoutQuoteFacts(lines) : null;
+  // Issued over exactly the facts rendered below, bound to the cart the cookie names. Submission
+  // will recompute this quote server-side and refuse to create a submit-capable DRAFT unless this
+  // token still describes it, so what the buyer sees here is what they can be charged.
+  const quoteProof = totals && checkoutContext
+    ? issueRenderedQuoteProof({
+        quote: totals,
+        cartId: checkoutContext.cartId,
+        secret: readAuthServerConfig().secret,
+      })
+    : null;
+  if (!totals || !quoteProof) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
@@ -146,7 +159,7 @@ export default async function CheckoutPage() {
       </div>
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
-        <GuestCheckoutForm />
+        <GuestCheckoutForm quoteProof={quoteProof} />
         {/* Emitted only on this branch: the quote gate above already established that every line
             resolved, priced and had sufficient stock. Analytics never gates checkout itself — an
             unavailable projection suppresses the event and changes nothing else. */}
