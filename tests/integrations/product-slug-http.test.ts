@@ -32,3 +32,7 @@ test("P14 PDP renders factual site, product, offer, and breadcrumb JSON-LD", asy
 test("P16C robots.txt keeps OAI-SearchBot on the reviewed public crawl boundary", async () => {
   await import("../../scripts/oai-robots-http-smoke.ts");
 });
+
+test("U12 the standalone variant deep link preselects only authorized options", async () => {
+  await import("../../scripts/variant-deep-link-http-smoke.ts");
+});

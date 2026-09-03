@@ -211,7 +211,6 @@ export function deriveStorefrontProjectionSelection(
     (!hasColorOptions || selection.color !== null)
       ? kindOptions.find(
           (option) =>
-            option.purchasable &&
             option.size === selection.size &&
             (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
@@ -225,6 +224,8 @@ export function deriveStorefrontProjectionSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
-    canAdd: selected !== null,
+    // A selected option that is not purchasable is still selected; only add-to-bag is withheld.
+    selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    canAdd: selected !== null && selected.purchasable,
   };
 }

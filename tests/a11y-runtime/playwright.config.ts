@@ -31,6 +31,7 @@ export default defineConfig({
     "storefront-composite.spec.ts",
     "storefront-media.spec.ts",
     "tracking.spec.ts",
+    "variant-deep-link.spec.ts",
   ],
   workers: 1,
   timeout: 120_000,
