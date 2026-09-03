@@ -104,20 +104,10 @@ test.afterAll(async () => {
 });
 
 test("U17 self-rearms for the same server duration and resumes on visibility/BFCache", async ({ page }) => {
-  // Speed up only the first two 60s promotion timers. After two cycles the third fallback stays at
-  // 60s, which isolates the visibility/pageshow assertions from timer-driven traffic.
-  await page.addInitScript(() => {
-    const originalSetTimeout = window.setTimeout.bind(window);
-    let promotionTimerCount = 0;
-    window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-      if (timeout === 60_000) {
-        promotionTimerCount += 1;
-        const effectiveDelay = promotionTimerCount <= 2 ? 150 : timeout;
-        return originalSetTimeout(handler, effectiveDelay, ...args);
-      }
-      return originalSetTimeout(handler, timeout, ...args);
-    }) as typeof window.setTimeout;
-  });
+  // Install before navigation, as required by Playwright's Clock contract. Advancing the browser
+  // clock cannot advance the server's request clock; that is intentional evidence that browser
+  // wall time is presentation/test machinery, never promotion authority.
+  await page.clock.install();
 
   let refreshRequests = 0;
   page.on("request", (request) => {
@@ -132,10 +122,20 @@ test("U17 self-rearms for the same server duration and resumes on visibility/BFC
 
   await page.goto(`${BASE_URL}/flash-sale`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { level: 1, name: "Flash Sale" })).toBeVisible();
+  // Let React hydrate and arm the first server-supplied 60s timer using real runner time.
+  await delay(500);
 
+  const beforeFirstTimer = refreshRequests;
+  await page.clock.fastForward(60_000);
   await expect
-    .poll(() => refreshRequests, { timeout: 5_000, message: "two timer refresh cycles" })
-    .toBeGreaterThanOrEqual(2);
+    .poll(() => refreshRequests, { timeout: 3_000, message: "first timer refresh" })
+    .toBeGreaterThan(beforeFirstTimer);
+
+  const beforeSecondTimer = refreshRequests;
+  await page.clock.fastForward(60_000);
+  await expect
+    .poll(() => refreshRequests, { timeout: 3_000, message: "second self-rearmed timer refresh" })
+    .toBeGreaterThan(beforeSecondTimer);
 
   const beforeVisible = refreshRequests;
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
