@@ -1,11 +1,11 @@
 # Promotions & Flash Sale v1 — implementation plan
 
-Status: **P1–P4 IMPLEMENTED AND MERGED; Checkpoint A PASS. P5 onward remain planning only.**
+Status: **P1–P4, P6, P7a and P7b IMPLEMENTED AND MERGED; Checkpoint A PASS. P5 is delivered across P5a (PR #184, merged) + P5b (PR #185, this branch). Checkpoint B remains OPEN pending P5b integration/reconciliation; P8 onward remain planned.**
 
 P1 (PR #158), P2 (PR #162 + #163 + #174), P3 (PR #167/#168/#169) and P4 (PR #170/#171/#172) are merged and
 integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` and the
-per-item state in `tasks/promotions-flash-sale-v1-todo.md`. Everything from **P5 onward is still planning only**.
-The promotion activation gate remains default-off and no storefront surface consumes promotion pricing yet.
+per-item state in `tasks/promotions-flash-sale-v1-todo.md`. P5a (PR #184) is merged on `main@3de4c825dcce42cbde2f42fd10612d6a069c8097`, while P5b is delivered by PR #185 and must merge before P5 is integrated on `main`.
+P6 (PR #181), P7a (PR #182) and P7b (PR #183) are already merged. Checkpoint B is deliberately not claimed by this PR: P5b integration plus fresh integrated verification/review are still required. The promotion activation gate remains default-off.
 
 Source of truth: `docs/specs/promotions-flash-sale-v1.md`.
 
@@ -212,14 +212,16 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ## P5 — admin UX
 
-**Description:** Build `/admin/promotions` over the P4 service boundary.
+**Delivery status:** **DELIVERED** across P5a PR #184 (merged) + P5b PR #185 (this branch). P5b supplies the remaining lifecycle-valid create/edit surface and product-admin related-campaign summary/link. P5 is not considered integrated on `main` until #185 merges.
+
+**Description:** `/admin/promotions` is implemented over the P4 service boundary.
 
 **Acceptance criteria:**
-- [ ] bounded list/search and lifecycle-valid create/edit/publish/re-enable/disable/copy;
-- [ ] typed overlap/validation/expansion/activation feedback;
-- [ ] product admin links to campaigns instead of duplicating editor; no pricing math in React.
+- [x] bounded list/search and lifecycle-valid create/edit/publish/re-enable/disable/copy;
+- [x] typed overlap/validation/expansion/activation feedback;
+- [x] product admin links to campaigns instead of duplicating editor; no pricing math in React.
 
-**Verification:** service/action/component tests; non-admin rejection; keyboard/Axe/mobile.
+**Verification:** P5a/P5b service/action/component coverage; non-admin rejection; keyboard/Axe/mobile. Exact-head PR #185 verification is recorded in the PR description and must be green on the current head before merge.
 
 **Dependencies:** P4.
 
@@ -227,15 +229,17 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ## P6 — PDP/composite promotion projection on #153 identity facts
 
-**Description:** Switch selected-option storefront pricing to the central resolver without inventing new identity/URL contracts.
+**Delivery status:** **IMPLEMENTED AND MERGED** via U15 / PR #181.
+
+**Description:** Selected-option storefront pricing consumes the central resolver without inventing new identity/URL contracts.
 
 **Acceptance criteria:**
-- [ ] equality gate removed only after P2 evidence acceptance;
-- [ ] selected option preserves `pancakeVariationId`; composite campaign ownership follows real component variant + actual owning product;
-- [ ] sale/Flash UI consumes resolver quote; no client formula or per-option N+1;
-- [ ] compatible with #153 M2 deep link `/shop/<slug>?variant=<pancakeVariationId>`; promotion adds no competing variant URL/state model.
+- [x] equality gate removed only after P2 evidence acceptance;
+- [x] selected option preserves `pancakeVariationId`; composite campaign ownership follows real component variant + actual owning product;
+- [x] sale/Flash UI consumes resolver quote; no client formula or per-option N+1;
+- [x] compatible with #153 M2 deep link `/shop/<slug>?variant=<pancakeVariationId>`; promotion adds no competing variant URL/state model.
 
-**Verification:** standalone/composite owner tests; invalid base; selected variant exact quote; M2 deep-link compatibility; browser PDP/a11y checks.
+**Verification:** standalone/composite owner tests; invalid base; selected variant exact quote; M2 deep-link compatibility; browser PDP/a11y checks. PR #181 exact-head evidence is recorded in that merged PR.
 
 **Dependencies:** P4 + #153 T4 identity propagation + P2 evidence acceptance.
 
@@ -243,15 +247,17 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ## P7a — cards + `/shop` effective-price discovery
 
-**Description:** Apply authoritative pricing before bounded listing pagination.
+**Delivery status:** **IMPLEMENTED AND MERGED** via U16 / PR #182.
+
+**Description:** Authoritative pricing is applied before bounded listing pagination.
 
 **Acceptance criteria:**
-- [ ] min/max/price sort and representative card pricing use current effective price with spec-approved non-misleading wording;
-- [ ] one `requestNow` spans count/order/SQL/hydration/card/query-wide transition aggregation;
-- [ ] SQL casts validated base to `numeric` before percentage arithmetic and matches TypeScript target/time/conflict/invalid semantics;
-- [ ] product-level analytics identity remains product-level even when a representative sale variant supplies display price.
+- [x] min/max/price sort and representative card pricing use current effective price with spec-approved non-misleading wording;
+- [x] one `requestNow` spans count/order/SQL/hydration/card/query-wide transition aggregation;
+- [x] SQL casts validated base to `numeric` before percentage arithmetic and matches TypeScript target/time/conflict/invalid semantics;
+- [x] product-level analytics identity remains product-level even when a representative sale variant supplies display price.
 
-**Verification:** SQL↔TS parity; filter/sort/pagination; off-page transition enters page; existing page/offset bounds; no N+1.
+**Verification:** SQL↔TS parity; filter/sort/pagination; off-page transition enters page; existing page/offset bounds; no N+1. PR #182 exact-head evidence is recorded in that merged PR.
 
 **Dependencies:** P6.
 
@@ -259,21 +265,26 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ## P7b — `/flash-sale` + freshness
 
-**Description:** Add active-valid Flash membership through the same pricing/membership projection.
+**Delivery status:** **IMPLEMENTED AND MERGED** via U17 / PR #183.
+
+**Description:** Active-valid Flash membership uses the same pricing/membership projection.
 
 **Acceptance criteria:**
-- [ ] no second promotion predicate; page parser ≤10000, page size ≤48, offset ≤50000;
-- [ ] page 1042@48 allowed and 1043@48 rejected before expensive query;
-- [ ] empty route knows next enabled Flash boundary;
-- [ ] server emits relative refresh ≤60s; visibility/pageshow resumes after suspended boundary; browser wall clock is not authority.
+- [x] no second promotion predicate; page parser ≤10000, page size ≤48, offset ≤50000;
+- [x] page 1042@48 allowed and 1043@48 rejected before expensive query;
+- [x] empty route knows next enabled Flash boundary;
+- [x] server emits relative refresh ≤60s; visibility/pageshow resumes after suspended boundary; browser wall clock is not authority.
 
-**Verification:** empty→active, end boundary, clock skew, tab resume, pagination/query budget.
+**Verification:** empty→active, end boundary, clock skew, tab resume, pagination/query budget. PR #183 exact-head evidence is recorded in that merged PR.
 
 **Dependencies:** P7a.
 
 **Scope:** M.
 
 ### Checkpoint B
+
+**Status: OPEN.** P6/P7a/P7b are merged, but P5b/#185 is not yet integrated on `main`. Do not claim Checkpoint B until P5b merges and fresh integrated verification/review confirms the full checkpoint.
+
 PDP/cards/shop/Flash share one pricing authority; #153 identity contract remains intact; SQL↔TS parity + browser freshness/a11y green; 0 Critical/Required.
 
 ## Shared cart checkpoint — #153 T5/T6
