@@ -20,6 +20,7 @@ import {
   parseAdminPromotionPageSize,
   parseAdminTargetSearchLimit,
 } from "./promotion-admin-feedback.ts";
+import { MAX_PROMOTION_IDENTIFIER_LENGTH } from "./promotion-activation.ts";
 
 /** Bounds the operator-supplied search text before it reaches a query. */
 const MAX_ADMIN_SEARCH_LENGTH = 120;
@@ -84,13 +85,13 @@ export function createPromotionAdminRepository(client: PrismaClient) {
     shopId,
     search,
     limit = ADMIN_TARGET_SEARCH_LIMIT,
-  }: Readonly<{ shopId: number; search?: string | null; limit?: number }>) {
+  }: Readonly<{ shopId?: number; search?: string | null; limit?: number }> = {}) {
     const take = parseAdminTargetSearchLimit(limit);
     const trimmed = typeof search === "string" ? search.trim().slice(0, MAX_ADMIN_SEARCH_LENGTH) : "";
 
     return client.productMirror.findMany({
       where: {
-        pancakeShopId: shopId,
+        ...(shopId !== undefined ? { pancakeShopId: shopId } : {}),
         isPresent: true,
         isActive: true,
         ...(trimmed.length > 0 ? { name: { contains: trimmed, mode: "insensitive" as const } } : {}),
@@ -101,5 +102,270 @@ export function createPromotionAdminRepository(client: PrismaClient) {
     });
   }
 
-  return { listCampaigns, searchTargetProducts };
+  /** Bounded variant search for building a campaign's explicit target list. */
+  async function searchTargetVariants({
+    shopId,
+    search,
+    limit = ADMIN_TARGET_SEARCH_LIMIT,
+  }: Readonly<{ shopId?: number; search?: string | null; limit?: number }> = {}) {
+    const take = parseAdminTargetSearchLimit(limit);
+    const trimmed = typeof search === "string" ? search.trim().slice(0, MAX_ADMIN_SEARCH_LENGTH) : "";
+
+    return client.variantMirror.findMany({
+      where: {
+        product: {
+          ...(shopId !== undefined ? { pancakeShopId: shopId } : {}),
+          isPresent: true,
+        },
+        isPresent: true,
+        ...(trimmed.length > 0
+          ? {
+              OR: [
+                { sku: { contains: trimmed, mode: "insensitive" as const } },
+                { color: { contains: trimmed, mode: "insensitive" as const } },
+                { size: { contains: trimmed, mode: "insensitive" as const } },
+                { product: { name: { contains: trimmed, mode: "insensitive" as const } } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ sku: "asc" }, { id: "asc" }],
+      take,
+      select: {
+        id: true,
+        sku: true,
+        color: true,
+        size: true,
+        productId: true,
+        product: { select: { name: true } },
+      },
+    });
+  }
+
+  /**
+   * Load campaign data pre-formatted for edit.
+   *
+   * Target rows are loaded verbatim (up to 200) without dynamic product variant expansion.
+   */
+  async function getCampaignForEdit(
+    campaignId: string,
+    now = new Date(),
+  ): Promise<CampaignEditData | null> {
+    const trimmedId = campaignId.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH);
+    if (trimmedId.length === 0) return null;
+
+    const campaign = await client.promotionCampaign.findUnique({
+      where: { id: trimmedId },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        discountType: true,
+        percentageValue: true,
+        fixedPriceVnd: true,
+        startsAt: true,
+        endsAt: true,
+        isEnabled: true,
+        enabledAt: true,
+        disabledAt: true,
+        targets: {
+          take: 200,
+          select: {
+            id: true,
+            productId: true,
+            variantId: true,
+            product: { select: { id: true, name: true } },
+            variant: {
+              select: {
+                id: true,
+                sku: true,
+                color: true,
+                size: true,
+                product: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!campaign) return null;
+
+    const lifecycle = deriveCampaignLifecycle({ ...campaign, now });
+
+    const targets: CampaignEditTarget[] = campaign.targets.map((target) => {
+      if (target.productId !== null) {
+        return {
+          id: target.id,
+          productId: target.productId,
+          variantId: null,
+          label: target.product?.name ?? target.productId,
+          scope: "PRODUCT",
+        };
+      }
+      const variant = target.variant;
+      const variantDetails = variant
+        ? (variant.sku || [variant.color, variant.size].filter(Boolean).join(" / ") || variant.id)
+        : (target.variantId ?? "");
+      const parentName = variant?.product?.name ? `${variant.product.name} — ` : "";
+      return {
+        id: target.id,
+        productId: null,
+        variantId: target.variantId,
+        label: `${parentName}${variantDetails}`,
+        scope: "VARIANT",
+      };
+    });
+
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      kind: campaign.kind,
+      discountType: campaign.discountType,
+      percentageValue: campaign.percentageValue,
+      fixedPriceVnd: campaign.fixedPriceVnd,
+      startsAt: campaign.startsAt,
+      endsAt: campaign.endsAt,
+      status: lifecycle.status,
+      canReEnable: lifecycle.canReEnable,
+      isTerminal: lifecycle.isTerminal,
+      targets,
+    };
+  }
+
+  /**
+   * Bounded query for campaigns related to a product (direct product target or variant target).
+   *
+   * Zero pricing calculation. Zero duplicate campaign form logic.
+   */
+  async function listRelatedCampaignsForProduct({
+    productId,
+    variantIds = [],
+    limit = 20,
+    now = new Date(),
+  }: Readonly<{
+    productId: string;
+    variantIds?: readonly string[];
+    limit?: number;
+    now?: Date;
+  }>): Promise<readonly RelatedCampaignSummary[]> {
+    const cleanProductId = productId.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH);
+    if (cleanProductId.length === 0) return [];
+
+    const cleanVariantIds = variantIds
+      .map((id) => id.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH))
+      .filter((id) => id.length > 0);
+
+    const take = Math.min(Math.max(1, limit), 50);
+
+    const targets = await client.promotionTarget.findMany({
+      where: {
+        OR: [
+          { productId: cleanProductId },
+          ...(cleanVariantIds.length > 0 ? [{ variantId: { in: cleanVariantIds } }] : []),
+        ],
+      },
+      take,
+      select: {
+        productId: true,
+        variantId: true,
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            kind: true,
+            startsAt: true,
+            endsAt: true,
+            isEnabled: true,
+            enabledAt: true,
+            disabledAt: true,
+          },
+        },
+      },
+    });
+
+    const campaignsById = new Map<
+      string,
+      {
+        campaign: (typeof targets)[number]["campaign"];
+        hasProductTarget: boolean;
+        hasVariantTarget: boolean;
+      }
+    >();
+
+    for (const target of targets) {
+      const campaign = target.campaign;
+      let entry = campaignsById.get(campaign.id);
+      if (!entry) {
+        entry = { campaign, hasProductTarget: false, hasVariantTarget: false };
+        campaignsById.set(campaign.id, entry);
+      }
+      if (target.productId === cleanProductId) {
+        entry.hasProductTarget = true;
+      }
+      if (target.variantId !== null && cleanVariantIds.includes(target.variantId)) {
+        entry.hasVariantTarget = true;
+      }
+    }
+
+    return Array.from(campaignsById.values()).map(
+      ({ campaign, hasProductTarget, hasVariantTarget }) => {
+        const lifecycle = deriveCampaignLifecycle({ ...campaign, now });
+        let targetScope: "PRODUCT" | "VARIANT" | "BOTH" = "PRODUCT";
+        if (hasProductTarget && hasVariantTarget) {
+          targetScope = "BOTH";
+        } else if (hasVariantTarget) {
+          targetScope = "VARIANT";
+        }
+
+        return {
+          id: campaign.id,
+          name: campaign.name,
+          kind: campaign.kind,
+          status: lifecycle.status,
+          targetScope,
+        };
+      },
+    );
+  }
+
+  return {
+    listCampaigns,
+    searchTargetProducts,
+    searchTargetVariants,
+    getCampaignForEdit,
+    listRelatedCampaignsForProduct,
+  };
 }
+
+export type CampaignEditTarget = Readonly<{
+  id: string;
+  productId: string | null;
+  variantId: string | null;
+  label: string;
+  scope: "PRODUCT" | "VARIANT";
+}>;
+
+export type CampaignEditData = Readonly<{
+  id: string;
+  name: string;
+  kind: "PROMOTION" | "FLASH_SALE";
+  discountType: "PERCENTAGE" | "FIXED_PRICE";
+  percentageValue: number | null;
+  fixedPriceVnd: bigint | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  status: CampaignLifecycleStatus;
+  canReEnable: boolean;
+  isTerminal: boolean;
+  targets: readonly CampaignEditTarget[];
+}>;
+
+export type RelatedCampaignSummary = Readonly<{
+  id: string;
+  name: string;
+  kind: "PROMOTION" | "FLASH_SALE";
+  status: CampaignLifecycleStatus;
+  targetScope: "PRODUCT" | "VARIANT" | "BOTH";
+}>;
+

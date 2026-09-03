@@ -5,6 +5,7 @@ import {
   isPromotionActivationEnabled,
   MAX_TARGETS_PER_CAMPAIGN,
   validateCampaignForActivation,
+  validateDraftInput,
   type CampaignActivationInput,
 } from "../../src/commerce/promotion-activation.ts";
 
@@ -227,4 +228,70 @@ test("P4 validation is pure, so a Draft can be checked without being changed", (
   validateCampaignForActivation(facts);
 
   assert.equal(JSON.stringify(facts, (_, v) => (typeof v === "bigint" ? String(v) : v)), before);
+});
+
+test("P5b validateDraftInput accepts valid draft input", () => {
+  assert.deepEqual(
+    validateDraftInput({
+      name: "Chiến dịch hợp lệ",
+      targets: [{ productId: "p1", variantId: null }],
+    }),
+    { ok: true },
+  );
+});
+
+test("P5b validateDraftInput rejects oversized or unstorable names", () => {
+  assert.deepEqual(validateDraftInput({ name: "a".repeat(121) }), {
+    ok: false,
+    errors: ["NAME_TOO_LONG"],
+  });
+  assert.deepEqual(validateDraftInput({ name: "   " }), {
+    ok: false,
+    errors: ["NAME_UNSTORABLE"],
+  });
+  assert.deepEqual(validateDraftInput({ name: "Bad\0Name" }), {
+    ok: false,
+    errors: ["NAME_UNSTORABLE"],
+  });
+});
+
+test("P5b validateDraftInput rejects excessive targets, oversized ids, and invalid scopes", () => {
+  const overTargets = Array.from({ length: MAX_TARGETS_PER_CAMPAIGN + 1 }, (_, i) => ({
+    productId: `p-${i}`,
+    variantId: null,
+  }));
+  assert.deepEqual(validateDraftInput({ targets: overTargets }), {
+    ok: false,
+    errors: ["TOO_MANY_TARGETS"],
+  });
+
+  assert.deepEqual(
+    validateDraftInput({
+      targets: [{ productId: "p".repeat(129), variantId: null }],
+    }),
+    {
+      ok: false,
+      errors: ["IDENTIFIER_TOO_LONG"],
+    },
+  );
+
+  assert.deepEqual(
+    validateDraftInput({
+      targets: [{ productId: null, variantId: null }],
+    }),
+    {
+      ok: false,
+      errors: ["INVALID_TARGET_SCOPE"],
+    },
+  );
+
+  assert.deepEqual(
+    validateDraftInput({
+      targets: [{ productId: "p1", variantId: "v1" }],
+    }),
+    {
+      ok: false,
+      errors: ["INVALID_TARGET_SCOPE"],
+    },
+  );
 });

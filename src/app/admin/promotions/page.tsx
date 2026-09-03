@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { requireCurrentAdminPage } from "@/auth/current-admin";
 import { isPromotionActivationEnabled } from "@/commerce/promotion-activation";
@@ -9,11 +10,14 @@ import {
   type PromotionAdminFailure,
 } from "@/commerce/promotion-admin-feedback";
 import { PromotionAdminStatus } from "@/components/admin/promotion-admin-status";
+import { PromotionCampaignForm } from "@/components/admin/promotion-campaign-form";
 import { prisma } from "@/db/prisma";
 
 import {
   copyPromotionAction,
+  createPromotionAction,
   disablePromotionAction,
+  editPromotionAction,
   endPromotionEarlyAction,
   publishPromotionAction,
 } from "./actions";
@@ -57,6 +61,8 @@ type PromotionsPageProps = {
     q?: string | string[];
     status?: string | string[];
     reason?: string | string[];
+    new?: string | string[];
+    edit?: string | string[];
   }>;
 };
 
@@ -78,6 +84,8 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
   const query = await searchParams;
   const search = singleValue(query.q);
   const statusKind = singleValue(query.status);
+  const isNew = singleValue(query.new) === "1";
+  const editId = singleValue(query.edit);
   // The URL carries only a typed reason. The sentence is resolved here, on the server, so a
   // hand-edited query string cannot put arbitrary text on an admin screen.
   const failureReason = singleValue(query.reason);
@@ -88,6 +96,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
   const requestNow = new Date();
 
   const campaigns = await repository.listCampaigns({ search, now: requestNow });
+  const campaignToEdit = editId ? await repository.getCampaignForEdit(editId, requestNow) : null;
   // Read on the server for display only. The gate is enforced by the activation service; this
   // banner exists so an operator understands why publishing is refused, not to decide anything.
   const activationEnabled = isPromotionActivationEnabled();
@@ -101,6 +110,17 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
             Danh sách chiến dịch khuyến mãi và Flash Sale do website sở hữu. Giá hiệu lực, quy tắc
             trùng lặp và vòng đời đều do máy chủ quyết định.
           </p>
+        </div>
+        <div>
+          {isNew || editId ? (
+            <Link className={buttonClassName} href="/admin/promotions">
+              ← Quay lại danh sách
+            </Link>
+          ) : (
+            <Link className={buttonClassName} href="/admin/promotions?new=1">
+              + Tạo chiến dịch mới
+            </Link>
+          )}
         </div>
       </header>
 
@@ -145,6 +165,61 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
         }
       />
 
+      {isNew ? (
+        <section aria-labelledby="new-campaign-heading" className="mt-8 border border-black/20 bg-black/[0.01] p-6">
+          <h2 className="text-xl font-semibold tracking-[-0.02em]" id="new-campaign-heading">
+            Tạo chiến dịch mới
+          </h2>
+          <p className="mt-1 text-xs text-black/60">
+            Chiến dịch tạo mới sẽ ở trạng thái Nháp (Draft) và không tự kích hoạt trừ khi được Bật.
+          </p>
+          <div className="mt-6 border-t border-black/10 pt-6">
+            <PromotionCampaignForm action={createPromotionAction} mode="create" />
+          </div>
+        </section>
+      ) : null}
+
+      {editId ? (
+        <section aria-labelledby="edit-campaign-heading" className="mt-8 border border-black/20 bg-black/[0.01] p-6">
+          {campaignToEdit ? (
+            <>
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold tracking-[-0.02em]" id="edit-campaign-heading">
+                  Chỉnh sửa: {campaignToEdit.name}
+                </h2>
+                <p className="text-xs uppercase tracking-[0.14em] text-black/60">
+                  Trạng thái: <strong>{STATUS_LABELS[campaignToEdit.status] ?? campaignToEdit.status}</strong>
+                </p>
+              </div>
+
+              {campaignToEdit.status === "DRAFT" || campaignToEdit.status === "SCHEDULED" ? (
+                <div className="mt-6 border-t border-black/10 pt-6">
+                  <PromotionCampaignForm
+                    action={editPromotionAction}
+                    initialData={campaignToEdit}
+                    mode="edit"
+                  />
+                </div>
+              ) : (
+                <div className="mt-6 border-l-2 border-amber-800 bg-amber-50/50 p-4 text-sm leading-6 text-amber-900">
+                  <p>
+                    Chiến dịch đang ở trạng thái <strong>{STATUS_LABELS[campaignToEdit.status] ?? campaignToEdit.status}</strong>.
+                    Theo quy định vòng đời, chiến dịch chỉ có thể chỉnh sửa khi ở trạng thái <strong>Nháp</strong> hoặc <strong>Đã lên lịch</strong>.
+                  </p>
+                  <p className="mt-2 text-xs">
+                    {campaignToEdit.status === "ACTIVE"
+                      ? "Nếu muốn thay đổi giá hoặc phạm vi của chiến dịch đang chạy, hãy kết thúc sớm và tạo/sao chép chiến dịch mới."
+                      : "Bạn có thể sao chép chiến dịch này thành một bản nháp mới từ bảng danh sách."}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-red-700">Không tìm thấy chiến dịch yêu cầu chỉnh sửa.</p>
+          )}
+        </section>
+      ) : null}
+
       <p className="mt-8 text-xs uppercase tracking-[0.14em] text-black/55" aria-live="polite">
         {campaigns.length === 0
           ? "Chưa có chiến dịch nào."
@@ -183,6 +258,14 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
                     <div className="flex flex-wrap gap-2">
                       {/* Rendered from the server-derived lifecycle. The service re-checks every
                           rule regardless, so hiding a button is presentation, not enforcement. */}
+                      {campaign.status === "DRAFT" || campaign.status === "SCHEDULED" ? (
+                        <Link
+                          className={buttonClassName}
+                          href={`/admin/promotions?edit=${campaign.id}`}
+                        >
+                          Sửa
+                        </Link>
+                      ) : null}
                       {campaign.status === "DRAFT" || campaign.canReEnable ? (
                         <form action={publishPromotionAction}>
                           <input name="campaignId" type="hidden" value={campaign.id} />
