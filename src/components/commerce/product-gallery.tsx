@@ -8,11 +8,22 @@ import type { StorefrontProductMedia } from "@/commerce/product-media";
 type ProductGalleryProps = {
   media: StorefrontProductMedia;
   productName: string;
+  /**
+   * Which image to open on, resolved on the server from a `?variant=` deep link. A plain product
+   * page passes nothing and opens on the first image as before.
+   */
+  initialIndex?: number;
 };
 
-export function ProductGallery({ media, productName }: ProductGalleryProps) {
+export function ProductGallery({ media, productName, initialIndex = 0 }: ProductGalleryProps) {
   const images = media.gallery;
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Clamped rather than trusted: the caller resolves this from catalog data, but an index outside
+  // the gallery would render a blank frame.
+  const [selectedIndex, setSelectedIndex] = useState(
+    Number.isSafeInteger(initialIndex) && initialIndex >= 0 && initialIndex < images.length
+      ? initialIndex
+      : 0,
+  );
 
   // Fallback state when no trusted photography is present
   if (images.length === 0) {
