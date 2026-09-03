@@ -171,7 +171,7 @@ export function ProductPurchasePanel({
           {showsDiscount ? (
             <>
               <span className="sr-only">Giá gốc </span>
-              <span className="mr-2 align-baseline text-base font-normal text-black/45 line-through">
+              <span className="mr-2 align-baseline text-base font-normal text-black/60 line-through">
                 {currency.format(selection.selectedBasePriceVnd as number)}
               </span>
               <span className="sr-only">Giá khuyến mãi </span>
