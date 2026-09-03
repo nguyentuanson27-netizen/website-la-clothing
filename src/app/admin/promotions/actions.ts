@@ -25,6 +25,7 @@ import {
   type PromotionFailureDescription,
 } from "@/commerce/promotion-admin-feedback";
 import { prisma } from "@/db/prisma";
+import { readPancakeShopId } from "@/integrations/pancake/config";
 
 /**
  * Outcomes travel back as a redirect rather than a returned value, so the surface keeps working
@@ -229,10 +230,13 @@ export async function searchPromotionTargetsAction(
     return [];
   }
 
+  // Promotion targets belong to this storefront's Pancake shop. Configuration is parsed strictly;
+  // a missing or invalid shop id fails closed instead of broadening the search to every mirror row.
+  const shopId = readPancakeShopId();
   const repository = createPromotionAdminRepository(prisma);
 
   if (scope === "PRODUCT") {
-    const products = await repository.searchTargetProducts({ search });
+    const products = await repository.searchTargetProducts({ shopId, search });
     return products.map((p) => ({
       id: p.id,
       label: p.name,
@@ -242,7 +246,7 @@ export async function searchPromotionTargetsAction(
     }));
   }
 
-  const variants = await repository.searchTargetVariants({ search });
+  const variants = await repository.searchTargetVariants({ shopId, search });
   return variants.map((v) => {
     const details = v.sku || [v.color, v.size].filter(Boolean).join(" / ") || v.id;
     const parent = v.product?.name ? `${v.product.name} — ` : "";

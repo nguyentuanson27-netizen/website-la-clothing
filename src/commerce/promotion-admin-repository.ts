@@ -88,13 +88,13 @@ export function createPromotionAdminRepository(client: PrismaClient) {
     shopId,
     search,
     limit = ADMIN_TARGET_SEARCH_LIMIT,
-  }: Readonly<{ shopId?: number; search?: string | null; limit?: number }> = {}) {
+  }: Readonly<{ shopId: number; search?: string | null; limit?: number }>) {
     const take = parseAdminTargetSearchLimit(limit);
     const trimmed = typeof search === "string" ? search.trim().slice(0, MAX_ADMIN_SEARCH_LENGTH) : "";
 
     return client.productMirror.findMany({
       where: {
-        ...(shopId !== undefined ? { pancakeShopId: shopId } : {}),
+        pancakeShopId: shopId,
         isPresent: true,
         isActive: true,
         ...(trimmed.length > 0 ? { name: { contains: trimmed, mode: "insensitive" as const } } : {}),
@@ -110,14 +110,14 @@ export function createPromotionAdminRepository(client: PrismaClient) {
     shopId,
     search,
     limit = ADMIN_TARGET_SEARCH_LIMIT,
-  }: Readonly<{ shopId?: number; search?: string | null; limit?: number }> = {}) {
+  }: Readonly<{ shopId: number; search?: string | null; limit?: number }>) {
     const take = parseAdminTargetSearchLimit(limit);
     const trimmed = typeof search === "string" ? search.trim().slice(0, MAX_ADMIN_SEARCH_LENGTH) : "";
 
     return client.variantMirror.findMany({
       where: {
         product: {
-          ...(shopId !== undefined ? { pancakeShopId: shopId } : {}),
+          pancakeShopId: shopId,
           isPresent: true,
         },
         isPresent: true,
