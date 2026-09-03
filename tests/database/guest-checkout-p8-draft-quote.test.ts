@@ -148,7 +148,6 @@ async function createDraft({
     checkoutInput: input,
     now: at,
   });
-  assert.equal(result.ok, true);
   if (!result.ok) throw new Error(`snapshot failed: ${result.reason}`);
   return result;
 }
