@@ -1,15 +1,13 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P5 IMPLEMENTED; P1–P4 merged, P5 delivered via P5a (PR #184) and P5b (PR #185). Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. P6 onward remain planned.**
+Status: **P1–P7b IMPLEMENTED. P1–P4, P6, P7a and P7b are merged; P5 is delivered via P5a (PR #184, merged) + P5b (PR #185, this branch). Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. Checkpoint B remains OPEN pending P5b integration and fresh integrated review; P8 onward remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
-real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b). Integrated Checkpoint A
+real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; the W3 pricing evidence is in
 `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**, and the storefront
-`retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place — its removal is P6
-work. P6 onward remain planned.
+The promotion activation gate remains **default-off**. P6/P7 storefront projection is merged, but P5b is not yet integrated on `main`; therefore Checkpoint B is not claimed by this branch update. P8 onward remain planned.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -134,7 +132,7 @@ Verification:
 - [x] 0 Critical / 0 Required. Three non-blocking observations carried to P5.
 
 ## P5 — admin UX
-*(Delivered across P5a PR #184 and P5b PR #185)*
+*(Delivered across P5a PR #184 and P5b PR #185; P5b is not integrated on `main` until #185 merges.)*
 - [x] Protected `/admin/promotions`.
 - [x] List/search bounded 50.
 - [x] Lifecycle-valid create/edit/publish/re-enable/disable/copy.
@@ -148,7 +146,7 @@ Verification:
 **Delivered — U8, PR #164 (resolved cart lines) + PR #165 (product/option facts).** Merged on
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; per-item state in
 `tasks/marketing-analytics-shopping-todo.md` and the T4 record in `docs/audits/wave-1-checkpoint-a.md`.
-This prerequisite is satisfied for P6; **P6 itself remains unimplemented.**
+This prerequisite is satisfied for P6, and **P6 is delivered via U15 / PR #181**.
 
 - [x] Product/list/PDP upper-funnel facts propagate `pancakeProductId`. *(U8, PR #165)*
 - [x] Concrete options/cart facts propagate real `pancakeVariationId`. *(U8, PR #164 + #165; composite
@@ -158,58 +156,62 @@ This prerequisite is satisfied for P6; **P6 itself remains unimplemented.**
       authorization/mutation key and presentation `kindKey` never stands in for external identity.)*
 
 ## P6 — PDP/composite promotion projection
-- [ ] Remove equality gate only after P2 evidence acceptance.
-- [ ] Selected option uses central quote and retains `pancakeVariationId`.
-- [ ] Composite campaign ownership follows real component owner.
-- [ ] Sale/Flash UI has no local discount formula.
-- [ ] No per-option N+1.
-- [ ] Compatible with #153 M2 `/shop/<slug>?variant=<pancakeVariationId>`; no competing promotion URL state.
+*(Delivered via U15 / PR #181, merged.)*
+- [x] Remove equality gate only after P2 evidence acceptance.
+- [x] Selected option uses central quote and retains `pancakeVariationId`.
+- [x] Composite campaign ownership follows real component owner.
+- [x] Sale/Flash UI has no local discount formula.
+- [x] No per-option N+1.
+- [x] Compatible with #153 M2 `/shop/<slug>?variant=<pancakeVariationId>`; no competing promotion URL state.
 
 Verification:
-- [ ] standalone/composite owner tests.
-- [ ] invalid base and selected exact quote.
-- [ ] deep-link compatibility when M2 lands.
-- [ ] browser/a11y PDP checks.
+- [x] standalone/composite owner tests.
+- [x] invalid base and selected exact quote.
+- [x] deep-link compatibility with merged M2/U12.
+- [x] browser/a11y PDP checks.
 
 ## P7a — cards + `/shop`
-- [ ] Representative sale variant/wording follows spec.
-- [ ] Filter/min/max/price sort use effective price before pagination.
-- [ ] One `requestNow` spans count/order/SQL/hydration/card/transition aggregation.
-- [ ] SQL casts validated base to `numeric` before percentage arithmetic.
-- [ ] SQL target/time/conflict/invalid semantics match TypeScript.
-- [ ] Product-level analytics remains product-level; representative variant is not fabricated as selected item.
-- [ ] Query-wide transition aggregate includes off-page membership/order changes.
+*(Delivered via U16 / PR #182, merged.)*
+- [x] Representative sale variant/wording follows spec.
+- [x] Filter/min/max/price sort use effective price before pagination.
+- [x] One `requestNow` spans count/order/SQL/hydration/card/transition aggregation.
+- [x] SQL casts validated base to `numeric` before percentage arithmetic.
+- [x] SQL target/time/conflict/invalid semantics match TypeScript.
+- [x] Product-level analytics remains product-level; representative variant is not fabricated as selected item.
+- [x] Query-wide transition aggregate includes off-page membership/order changes.
 
 Verification:
-- [ ] SQL↔TS parity including P2 fixtures.
-- [ ] filter/sort/pagination.
-- [ ] off-page transition.
-- [ ] page/offset guards.
-- [ ] no N+1.
+- [x] SQL↔TS parity including P2 fixtures.
+- [x] filter/sort/pagination.
+- [x] off-page transition.
+- [x] page/offset guards.
+- [x] no N+1.
 
 ## P7b — `/flash-sale` + freshness
-- [ ] Same sanctioned pricing/membership projection; no duplicate Flash formula.
-- [ ] Active-valid Flash variants only.
-- [ ] page <=10000, size <=48, offset <=50000.
-- [ ] page 1042@48 allowed; 1043@48 rejected before expensive query.
-- [ ] Empty route knows next enabled Flash boundary.
-- [ ] Relative refresh <=60s.
-- [ ] Browser wall clock not authority.
-- [ ] visibility/pageshow resume guard.
+*(Delivered via U17 / PR #183, merged.)*
+- [x] Same sanctioned pricing/membership projection; no duplicate Flash formula.
+- [x] Active-valid Flash variants only.
+- [x] page <=10000, size <=48, offset <=50000.
+- [x] page 1042@48 allowed; 1043@48 rejected before expensive query.
+- [x] Empty route knows next enabled Flash boundary.
+- [x] Relative refresh <=60s.
+- [x] Browser wall clock not authority.
+- [x] visibility/pageshow resume guard.
 
 Verification:
-- [ ] empty→active.
-- [ ] end boundary.
-- [ ] clock skew.
-- [ ] background resume.
-- [ ] pagination/query budget.
+- [x] empty→active.
+- [x] end boundary.
+- [x] clock skew.
+- [x] background resume.
+- [x] pagination/query budget.
 
 ### Checkpoint B
-- [ ] PDP/cards/shop/Flash share one price authority.
-- [ ] #153 identity contract remains green.
-- [ ] SQL parity green.
-- [ ] Browser freshness/a11y green.
-- [ ] 0 Critical / 0 Required.
+- [ ] **Integration blocker:** merge P5b / PR #185 into current `main`, then require fresh exact integrated verification/review before declaring Checkpoint B PASS.
+- [x] PDP/cards/shop/Flash share one price authority.
+- [x] #153 identity contract remains green, including merged U12/M2 addressability regressions.
+- [x] SQL parity green.
+- [x] Browser freshness/a11y green.
+- [ ] 0 Critical / 0 Required on the fresh integrated checkpoint review.
 
 ## Shared #153 T5/T6 cart contract
 - [ ] PDP AddToCart is atomic `+1`, never absolute set-to-1.
@@ -364,11 +366,11 @@ Activation rule:
 - [x] A2 P2 pricing/evidence. *(U7, PR #162 + #163 + #174)*
 - [x] B1 P3 repository/lifecycle. *(U10, PR #167 + #168 + #169)*
 - [x] B2 P4 concurrency/admin domain + atomic revision advance. *(U11, PR #170 + #171 + #172)*
-- [ ] C P5 admin UX.
+- [x] C P5 admin UX. *(P5a PR #184 merged + P5b PR #185 this branch)*
 - [x] Converge #153 T4 identity. *(U8, PR #164 + #165)*
-- [ ] D1 P6 PDP/composite.
-- [ ] D2 P7a shop/cards.
-- [ ] D3 P7b Flash/freshness.
+- [x] D1 P6 PDP/composite. *(U15, PR #181 merged)*
+- [x] D2 P7a shop/cards. *(U16, PR #182 merged)*
+- [x] D3 P7b Flash/freshness. *(U17, PR #183 merged)*
 - [ ] Converge shared #153 T5/T6 cart API.
 - [ ] E1 P8 DRAFT.
 - [ ] E2 P9a stateless rendered quote proof/reconfirmation.
