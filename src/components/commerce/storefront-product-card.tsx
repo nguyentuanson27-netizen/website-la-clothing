@@ -16,6 +16,15 @@ const currency = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
+export type StorefrontFlashSalePresentation = Readonly<{
+  representativeVariantId: string;
+  basePriceVnd: number;
+  effectivePriceVnd: number;
+  hasCheaperCurrentVariant: boolean;
+  /** Server-relative remaining duration. No browser wall-clock deadline is exposed. */
+  remainingMs: number;
+}>;
+
 type StorefrontProductCardProps = {
   slug: string;
   name: string;
@@ -27,6 +36,8 @@ type StorefrontProductCardProps = {
    * filtered and ordered it. Absent on surfaces that have not switched, which keeps the default.
    */
   pricingRule?: StorefrontPricingRule;
+  /** Exact Flash representative selected server-side from purchasable active Flash variants. */
+  flashSale?: StorefrontFlashSalePresentation;
 };
 
 function describePrice(options: readonly StorefrontVariantOption[]): string {
@@ -37,6 +48,26 @@ function describePrice(options: readonly StorefrontVariantOption[]): string {
     : `Từ ${currency.format(range.minimum)}`;
 }
 
+function describeFlashPrice(flashSale: StorefrontFlashSalePresentation): string {
+  return flashSale.hasCheaperCurrentVariant
+    ? `Sale từ ${currency.format(flashSale.effectivePriceVnd)}`
+    : currency.format(flashSale.effectivePriceVnd);
+}
+
+function describeFlashCountdown(remainingMs: number): string | null {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60_000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return hours > 0 ? `Còn ${days} ngày ${hours} giờ` : `Còn ${days} ngày`;
+  }
+  if (hours > 0) return `Còn ${hours} giờ ${minutes} phút`;
+  return `Còn ${minutes} phút`;
+}
+
 export function StorefrontProductCard({
   slug,
   name,
@@ -44,10 +75,12 @@ export function StorefrontProductCard({
   tone,
   media,
   pricingRule,
+  flashSale,
 }: StorefrontProductCardProps) {
-  // The rule is supplied by whoever listed these products, so the card shows the same price the
-  // listing filtered and ordered by. Omitted elsewhere, which keeps the default behaviour.
-  const options = buildStorefrontVariantOptions(variants, pricingRule);
+  // Flash cards receive the exact representative selected before pagination. Other listings keep
+  // their existing option-range path and can still inject a promotion-aware pricing rule.
+  const options = flashSale ? null : buildStorefrontVariantOptions(variants, pricingRule);
+  const countdown = flashSale ? describeFlashCountdown(flashSale.remainingMs) : null;
   const primaryImage = media?.primary ?? null;
   const secondaryImage =
     media?.gallery && media.gallery.length > 1 && media.gallery[1]?.url !== primaryImage?.url
@@ -100,7 +133,22 @@ export function StorefrontProductCard({
             still read the card as this product. */}
         <div className="product-meta">
           <h2 className="sr-only">{name}</h2>
-          <p className="product-price">{describePrice(options)}</p>
+          {flashSale ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.12em]">
+                <span className="bg-black px-2 py-1 text-white">FLASH SALE</span>
+                {countdown ? <span className="text-black/70">{countdown}</span> : null}
+              </div>
+              <p className="product-price mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="sr-only">Giá gốc</span>
+                <del className="text-black/60">{currency.format(flashSale.basePriceVnd)}</del>
+                <span className="sr-only">Giá Flash Sale</span>
+                <strong className="font-semibold text-black">{describeFlashPrice(flashSale)}</strong>
+              </p>
+            </>
+          ) : (
+            <p className="product-price">{describePrice(options ?? [])}</p>
+          )}
         </div>
       </Link>
     </article>
