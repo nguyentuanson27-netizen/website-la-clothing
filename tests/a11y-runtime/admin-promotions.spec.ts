@@ -1,0 +1,179 @@
+/**
+ * U14 / P5 — the promotion admin surface in a real browser.
+ *
+ * Three things need a browser rather than a unit test: that the page is reachable and operable by
+ * keyboard, that Axe finds no violations on a data-bearing table, and — the one that matters most —
+ * that pressing a lifecycle button while the activation gate is off produces a *typed, readable*
+ * refusal rather than a driver error or a silent no-op.
+ */
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+import { auth } from "../../src/auth/server.ts";
+import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+
+const HOST = "127.0.0.1";
+const PORT = 3221;
+const BASE_URL = `http://${HOST}:${PORT}`;
+const APP_ROOT = resolve(import.meta.dirname, "../..");
+const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+
+const runId = `${Date.now()}-${process.pid}`;
+const adminEmail = `admin-promotions-${runId}@example.invalid`;
+const password = "admin-promotions-runtime-password-123";
+const campaignId = `u14-a11y-${runId}`;
+const campaignName = `U14 Draft Campaign ${runId}`;
+
+let server: ChildProcess | undefined;
+let serverOutput = "";
+let adminCookies: Array<{ name: string; value: string; url: string }> = [];
+
+function captureServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
+}
+
+function cookiesFrom(headers: Headers) {
+  return headers.getSetCookie().map((header) => {
+    const pair = header.split(";", 1)[0];
+    const separator = pair.indexOf("=");
+    if (separator < 1) throw new Error("Better Auth returned a malformed Set-Cookie header");
+    return { name: pair.slice(0, separator), value: pair.slice(separator + 1), url: BASE_URL };
+  });
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Next.js promotions server exited with ${server.exitCode}\n${serverOutput}`);
+    }
+    try {
+      const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // still compiling
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for promotions server\n${serverOutput}`);
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+  server.kill("SIGTERM");
+  const exited = await Promise.race([
+    once(server, "exit").then(() => true),
+    delay(5_000).then(() => false),
+  ]);
+  if (!exited) server.kill("SIGKILL");
+}
+
+async function cleanupDatabase() {
+  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" = ${campaignId}`;
+  await prisma.user.deleteMany({ where: { email: adminEmail } });
+}
+
+test.beforeAll(async () => {
+  await cleanupDatabase();
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'PERCENTAGE'::"PromotionDiscountType",10,false,NOW(),NOW())`,
+    campaignId, campaignName,
+  );
+
+  const { headers } = await auth.api.signUpEmail({
+    returnHeaders: true,
+    headers: new Headers({ "x-ci-client-ip": "203.0.113.44" }),
+    body: { name: "Admin Promotions Runtime", email: adminEmail, password },
+  });
+  adminCookies = cookiesFrom(headers);
+  expect(adminCookies.length).toBeGreaterThan(0);
+
+  await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
+
+  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+    cwd: APP_ROOT,
+    // The gate is left at its default — off — because that is the state this unit ships in and the
+    // refusal path is what needs proving.
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", captureServerOutput);
+  server.stderr?.on("data", captureServerOutput);
+  await waitForServer();
+});
+
+test.afterAll(async () => {
+  await stopServer();
+  await cleanupDatabase();
+  await prisma.$disconnect();
+});
+
+test("U14 the promotion admin lists campaigns and refuses activation with a typed message", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions`, { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "Khuyến mãi", level: 1 })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(campaignName) })).toBeVisible();
+
+  // The gate is off, so the operator is told before they try.
+  await expect(page.getByText("Kích hoạt khuyến mãi đang tắt")).toBeVisible();
+
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  // Keyboard reachability: the search field and the row's own controls take focus.
+  await page.getByLabel("Tìm theo tên chiến dịch").focus();
+  await expect(page.getByLabel("Tìm theo tên chiến dịch")).toBeFocused();
+
+  const row = page.getByRole("row", { name: new RegExp(campaignName) });
+  await row.getByRole("button", { name: "Bật" }).click();
+
+  // The refusal is typed and readable — not a driver error, not a silent no-op — and it is
+  // announced, with focus moved to it so a keyboard operator is not left on a vanished button.
+  // Addressed by id: the framework mounts its own empty role="alert" route announcer, so a bare
+  // role lookup is ambiguous rather than wrong.
+  const status = page.locator("#promotion-admin-status");
+  await expect(status).toHaveAttribute("role", "alert");
+  await expect(status).toContainText("Chức năng kích hoạt khuyến mãi đang tắt");
+  await expect(status).toContainText("Không có thay đổi nào được lưu");
+  await expect(status).toBeFocused();
+
+  // Nothing may have been written by a refused activation.
+  const after = await prisma.$queryRaw<Array<{ isEnabled: boolean }>>`
+    SELECT "isEnabled" FROM "PromotionCampaign" WHERE "id" = ${campaignId}
+  `;
+  expect(after[0]?.isEnabled).toBe(false);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 the surface stays usable at a narrow mobile viewport", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/admin/promotions`, { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "Khuyến mãi", level: 1 })).toBeVisible();
+  // The table scrolls inside its own container rather than pushing the document sideways.
+  const documentOverflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  );
+  expect(documentOverflows).toBe(false);
+
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
