@@ -30,7 +30,7 @@ export function ProductPromotionsSummary({ campaigns }: ProductPromotionsSummary
           </h2>
         </div>
         <Link
-          className="text-xs font-semibold uppercase tracking-[0.14em] text-black/75 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+          className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-800 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/admin/promotions"
         >
           Xem tất cả khuyến mãi →
@@ -38,12 +38,12 @@ export function ProductPromotionsSummary({ campaigns }: ProductPromotionsSummary
       </div>
 
       {campaigns.length === 0 ? (
-        <p className="mt-4 text-sm text-black/60">
+        <p className="mt-4 text-sm text-neutral-700">
           Chưa có chiến dịch khuyến mãi nào áp dụng trực tiếp cho sản phẩm hoặc phiên bản này.
         </p>
       ) : (
         <div className="mt-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-black/55">
+          <p className="text-xs uppercase tracking-[0.14em] text-neutral-700">
             {campaigns.length} chiến dịch liên quan:
           </p>
           <ul className="mt-3 divide-y divide-black/10 text-sm">
@@ -56,15 +56,15 @@ export function ProductPromotionsSummary({ campaigns }: ProductPromotionsSummary
                   >
                     {campaign.name}
                   </Link>
-                  <span className="ml-2 text-xs text-black/50">
+                  <span className="ml-2 text-xs text-neutral-700">
                     ({campaign.kind === "FLASH_SALE" ? "Flash Sale" : "Khuyến mãi"})
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-black/65">
-                  <span className="rounded bg-black/5 px-2 py-0.5 font-medium">
+                <div className="flex items-center gap-3 text-xs text-neutral-800">
+                  <span className="rounded bg-black/10 px-2 py-0.5 font-medium text-neutral-900">
                     {SCOPE_LABELS[campaign.targetScope] ?? campaign.targetScope}
                   </span>
-                  <span className="font-semibold text-black/85">
+                  <span className="font-semibold text-black">
                     {STATUS_LABELS[campaign.status] ?? campaign.status}
                   </span>
                 </div>

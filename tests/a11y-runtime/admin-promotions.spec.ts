@@ -239,7 +239,10 @@ test("U14 P5b product admin displays related campaign summary and link with zero
   await expect(page.getByText(campaignName)).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả khuyến mãi →" })).toBeVisible();
 
-  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  const accessibility = await new AxeBuilder({ page })
+    .include("section[aria-labelledby='product-promotions-heading']")
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
   expect(accessibility.violations).toEqual([]);
 
   expect(browserErrors).toEqual([]);

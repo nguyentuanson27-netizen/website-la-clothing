@@ -170,7 +170,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
           <h2 className="text-xl font-semibold tracking-[-0.02em]" id="new-campaign-heading">
             Tạo chiến dịch mới
           </h2>
-          <p className="mt-1 text-xs text-black/60">
+          <p className="mt-1 text-xs text-neutral-700">
             Chiến dịch tạo mới sẽ ở trạng thái Nháp (Draft) và không tự kích hoạt trừ khi được Bật.
           </p>
           <div className="mt-6 border-t border-black/10 pt-6">
@@ -187,7 +187,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
                 <h2 className="text-xl font-semibold tracking-[-0.02em]" id="edit-campaign-heading">
                   Chỉnh sửa: {campaignToEdit.name}
                 </h2>
-                <p className="text-xs uppercase tracking-[0.14em] text-black/60">
+                <p className="text-xs uppercase tracking-[0.14em] text-neutral-800">
                   Trạng thái: <strong>{STATUS_LABELS[campaignToEdit.status] ?? campaignToEdit.status}</strong>
                 </p>
               </div>

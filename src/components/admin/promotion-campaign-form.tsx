@@ -31,7 +31,7 @@ export type PromotionCampaignFormProps = Readonly<{
 }>;
 
 const inputClassName =
-  "w-full border-b border-black/30 bg-transparent px-0 py-2 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
+  "w-full border-b border-black/30 bg-transparent px-0 py-2 text-base outline-none transition-colors placeholder:text-neutral-500 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 
 const selectClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-2 text-base outline-none transition-colors focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
@@ -146,7 +146,7 @@ export function PromotionCampaignForm({
             required
             type="text"
           />
-          <p className="mt-1 text-xs text-black/55">Tối đa 120 ký tự.</p>
+          <p className="mt-1 text-xs text-neutral-700">Tối đa 120 ký tự.</p>
         </div>
 
         <div>
@@ -209,7 +209,7 @@ export function PromotionCampaignForm({
                 step={1}
                 type="number"
               />
-              <p className="mt-1 text-xs text-black/55">Số nguyên từ 1% đến 99%.</p>
+              <p className="mt-1 text-xs text-neutral-700">Số nguyên từ 1% đến 99%.</p>
             </div>
           ) : (
             <div>
@@ -225,7 +225,7 @@ export function PromotionCampaignForm({
                 placeholder="Ví dụ: 199000"
                 type="text"
               />
-              <p className="mt-1 text-xs text-black/55">Đơn vị VNĐ, số nguyên dương lớn hơn 0.</p>
+              <p className="mt-1 text-xs text-neutral-700">Đơn vị VNĐ, số nguyên dương lớn hơn 0.</p>
             </div>
           )}
         </div>
@@ -235,7 +235,7 @@ export function PromotionCampaignForm({
         <legend className="text-xs font-semibold uppercase tracking-[0.14em]">
           Thời gian áp dụng (Asia/Ho_Chi_Minh)
         </legend>
-        <p className="mt-1 text-xs text-black/55">
+        <p className="mt-1 text-xs text-neutral-700">
           {kind === "FLASH_SALE"
             ? "Flash Sale bắt buộc phải có cả thời gian bắt đầu và kết thúc."
             : "Để trống nếu chiến dịch không giới hạn thời gian."}
@@ -276,14 +276,14 @@ export function PromotionCampaignForm({
           <h2 className="text-xs font-semibold uppercase tracking-[0.14em]" id={`${formId}-target-heading`}>
             Danh sách áp dụng ({targets.length}/{MAX_TARGETS_PER_CAMPAIGN})
           </h2>
-          <p className="text-xs text-black/55">
+          <p className="text-xs text-neutral-700">
             Sản phẩm bao phủ tất cả phiên bản hiện tại và tương lai. Biến thể chỉ áp dụng đúng phiên bản được chọn.
           </p>
         </div>
 
         {/* Search for targets */}
         <div className="mt-4 border border-black/20 bg-black/[0.02] p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/75">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-900">
             Tìm và thêm mục áp dụng
           </p>
 
@@ -316,7 +316,7 @@ export function PromotionCampaignForm({
                 Từ khóa tìm kiếm mục áp dụng
               </label>
               <input
-                className="w-full border border-black/30 bg-white px-3 py-2 text-sm outline-none focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-2"
+                className="w-full border border-black/30 bg-white px-3 py-2 text-sm outline-none focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-2 placeholder:text-neutral-500"
                 id={`${formId}-target-search`}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -345,7 +345,7 @@ export function PromotionCampaignForm({
           </div>
 
           {targetFeedback ? (
-            <p className="mt-2 text-xs text-amber-800" role="status">
+            <p className="mt-2 text-xs text-amber-900 font-medium" role="status">
               {targetFeedback}
             </p>
           ) : null}
@@ -363,7 +363,7 @@ export function PromotionCampaignForm({
                   return (
                     <li className="flex items-center justify-between py-2" key={item.id}>
                       <span className="pr-4">
-                        <span className="mr-2 inline-block rounded bg-black/10 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-black/75">
+                        <span className="mr-2 inline-block rounded bg-black/10 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-neutral-900">
                           {item.scope === "PRODUCT" ? "Sản phẩm" : "Biến thể"}
                         </span>
                         {item.label}
@@ -387,7 +387,7 @@ export function PromotionCampaignForm({
         {/* Selected targets table */}
         <div className="mt-4">
           {targets.length === 0 ? (
-            <p className="py-4 text-xs italic text-black/55">
+            <p className="py-4 text-xs italic text-neutral-700">
               Chưa có mục nào được chọn. Hãy tìm và thêm sản phẩm hoặc phiên bản ở trên.
             </p>
           ) : (
@@ -395,7 +395,7 @@ export function PromotionCampaignForm({
               <table className="w-full border-collapse text-left text-xs">
                 <caption className="sr-only">Danh sách mục đã chọn cho chiến dịch</caption>
                 <thead>
-                  <tr className="border-b border-black/20 bg-black/[0.02] text-black/55">
+                  <tr className="border-b border-black/20 bg-black/[0.02] text-neutral-800">
                     <th className="py-2 pl-3 pr-2 font-semibold uppercase tracking-wider" scope="col">
                       Phạm vi
                     </th>
