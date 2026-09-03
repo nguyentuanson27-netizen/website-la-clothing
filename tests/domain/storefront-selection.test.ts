@@ -128,14 +128,22 @@ test("storefront selection resolves a size-only product without requiring color"
   assert.equal(selected.canAdd, true);
 });
 
-test("storefront selection fails closed for stale or unavailable selections", () => {
+test("storefront selection names a sold-out combination but refuses to add it", () => {
+  // Being selected and being addable are separate facts. The shopper picked a concrete existing
+  // combination, so the panel must show that variant's own price and say it is out of stock —
+  // not fall back to a vague range as if nothing were chosen. Only `canAdd` is withheld.
   const soldOut = deriveStorefrontSelection(options, { color: "Black", size: "L" });
-  assert.equal(soldOut.selectedVariantId, null);
-  assert.equal(soldOut.selectedPrice, null);
+  assert.equal(soldOut.selectedVariantId, "black-l-sold-out");
+  assert.equal(soldOut.selectedPrice, 590_000);
+  assert.equal(soldOut.selectedUnavailableReason, "OUT_OF_STOCK");
   assert.equal(soldOut.canAdd, false);
+});
 
+test("storefront selection fails closed for a combination that does not exist", () => {
   const unknown = deriveStorefrontSelection(options, { color: "Unknown", size: "M" });
   assert.equal(unknown.selectedVariantId, null);
+  assert.equal(unknown.selectedPrice, null);
+  assert.equal(unknown.selectedUnavailableReason, null);
   assert.equal(unknown.canAdd, false);
 });
 

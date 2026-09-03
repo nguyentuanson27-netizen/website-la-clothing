@@ -21,16 +21,12 @@ const relatedTones = ["stone", "olive", "ink", "sand"] as const;
 
 type ProductPageProps = {
   params: Promise<{ slug: string }>;
-  // Next 16 delivers search params as a promise, the same as route params.
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function ProductPage({ params, searchParams }: ProductPageProps) {
   await connection();
   const [{ slug }, query] = await Promise.all([params, searchParams]);
-
-  // One instant for this render: pricing, window boundaries and any transition fact on the page
-  // all agree rather than each reading the clock a few milliseconds apart.
   const requestNow = new Date();
 
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
@@ -45,15 +41,14 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
   const options = product.projection.options;
-  // Resolved on the server against this product's own authorized projection, so an unusable value
-  // never reaches the browser as a selection. Canonical/indexing policy is untouched: the query
-  // string already makes the URL noindex under the existing search-exposure rule, and the base
-  // product URL remains the canonical one because it is generated in the layout, which receives no
-  // search params at all.
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
     projection: product.projection,
     variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
   });
+  const deepLinkedImageIndex =
+    deepLinkedSelection === null
+      ? 0
+      : product.galleryIndexByVariantId[deepLinkedSelection.variantId] ?? 0;
   const structuredData = buildStorefrontProductStructuredData({
     origin: readSearchExposure().origin,
     product,
@@ -67,26 +62,20 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       />
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
-          <li>
-            <Link className="hover:underline" href="/">
-              Trang chủ
-            </Link>
-          </li>
+          <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
           <li aria-hidden="true">/</li>
-          <li>
-            <Link className="hover:underline" href="/shop">
-              Cửa hàng
-            </Link>
-          </li>
+          <li><Link className="hover:underline" href="/shop">Cửa hàng</Link></li>
           <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-black">
-            {product.name}
-          </li>
+          <li aria-current="page" className="text-black">{product.name}</li>
         </ol>
       </nav>
 
       <div className="mt-7 grid min-w-0 gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-16">
-        <ProductGallery media={product.media} productName={product.name} />
+        <ProductGallery
+          media={product.media}
+          productName={product.name}
+          initialIndex={deepLinkedImageIndex}
+        />
 
         <article className="min-w-0 pb-10 lg:pt-4">
           <p className="eyebrow">LA Clothing / Sản phẩm</p>
@@ -97,11 +86,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
           {product.collections.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {product.collections.map((collection) => (
-                <Link
-                  key={collection.slug}
-                  href={`/collections/${collection.slug}`}
-                  className="badge badge--stone transition-colors hover:border-black"
-                >
+                <Link key={collection.slug} href={`/collections/${collection.slug}`} className="badge badge--stone transition-colors hover:border-black">
                   {collection.title}
                 </Link>
               ))}
@@ -129,14 +114,10 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
           {(product.sizeGuide || product.careInstructions) && (
             <section className="mt-12 border-t border-black/20" aria-labelledby="product-notes-title">
-              <h2 id="product-notes-title" className="sr-only">
-                Thông tin sản phẩm
-              </h2>
+              <h2 id="product-notes-title" className="sr-only">Thông tin sản phẩm</h2>
               {product.sizeGuide ? (
                 <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">
-                    Hướng dẫn chọn kích cỡ
-                  </h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Hướng dẫn chọn kích cỡ</h3>
                   <p className="max-w-xl text-sm leading-6 text-black/70">{product.sizeGuide}</p>
                 </div>
               ) : null}
@@ -156,10 +137,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       </div>
 
       {relatedProducts.length > 0 ? (
-        <section
-          aria-labelledby="related-products-title"
-          className="mt-20 border-t border-black/20 pt-6"
-        >
+        <section aria-labelledby="related-products-title" className="mt-20 border-t border-black/20 pt-6">
           <div className="section-heading-row">
             <h2 id="related-products-title">Hoàn thiện phối đồ</h2>
             <p className="eyebrow">Cùng bộ sưu tập</p>

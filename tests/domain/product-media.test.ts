@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   parseTrustedProductImageUrl,
   resolveStorefrontProductMedia,
+  resolveVariantGalleryIndexes,
   type TrustedProductImage,
 } from "../../src/commerce/product-media.ts";
 
@@ -307,3 +308,74 @@ test("resolveStorefrontProductMedia provides secondary image at gallery[1] for c
   assert.equal(media.gallery[1]?.url, "https://content.pancake.vn/images/1/2/3/back.jpg");
 });
 
+
+test("resolveVariantGalleryIndexes maps each variant to its own gallery slot", () => {
+  const gallery = resolveStorefrontProductMedia({
+    productName: "Deep Link Product",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/primary.jpg",
+    variantImageUrls: [
+      ["https://content.pancake.vn/images/1/2/3/medium.jpg"],
+      ["https://content.pancake.vn/images/1/2/3/large.jpg"],
+    ],
+  }).gallery;
+
+  const indexes = resolveVariantGalleryIndexes({
+    gallery,
+    variants: [
+      { id: "v-medium", imageUrls: ["https://content.pancake.vn/images/1/2/3/medium.jpg"] },
+      { id: "v-large", imageUrls: ["https://content.pancake.vn/images/1/2/3/large.jpg"] },
+    ],
+  });
+
+  assert.equal(indexes.get("v-medium"), 1);
+  assert.equal(indexes.get("v-large"), 2);
+});
+
+test("resolveVariantGalleryIndexes leaves out variants with no locatable trusted image", () => {
+  const gallery = resolveStorefrontProductMedia({
+    productName: "Deep Link Product",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/primary.jpg",
+    variantImageUrls: [],
+  }).gallery;
+
+  const indexes = resolveVariantGalleryIndexes({
+    gallery,
+    variants: [
+      { id: "v-untrusted", imageUrls: ["https://evil.com/spoof.jpg"] },
+      { id: "v-empty", imageUrls: [] },
+      { id: "v-not-in-gallery", imageUrls: ["https://content.pancake.vn/images/1/2/3/absent.jpg"] },
+      { id: "v-primary", imageUrls: ["https://content.pancake.vn/images/1/2/3/primary.jpg"] },
+    ],
+  });
+
+  assert.equal(indexes.has("v-untrusted"), false);
+  assert.equal(indexes.has("v-empty"), false);
+  assert.equal(indexes.has("v-not-in-gallery"), false);
+  // The product's own primary photo is a legitimate answer when a variant reuses it.
+  assert.equal(indexes.get("v-primary"), 0);
+});
+
+test("resolveVariantGalleryIndexes skips untrusted candidates and takes the first trusted one", () => {
+  const gallery = resolveStorefrontProductMedia({
+    productName: "Deep Link Product",
+    primaryImageUrl: "https://content.pancake.vn/images/1/2/3/primary.jpg",
+    variantImageUrls: [["https://content.pancake.vn/images/1/2/3/second.jpg"]],
+  }).gallery;
+
+  const indexes = resolveVariantGalleryIndexes({
+    gallery,
+    variants: [
+      {
+        id: "v-mixed",
+        imageUrls: [
+          null,
+          123,
+          "https://evil.com/spoof.jpg",
+          "https://content.pancake.vn/images/1/2/3/second.jpg",
+        ],
+      },
+    ],
+  });
+
+  assert.equal(indexes.get("v-mixed"), 1);
+});
