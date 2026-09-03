@@ -21,6 +21,7 @@ import {
 import { MAX_CAMPAIGN_NAME_LENGTH } from "../../src/commerce/promotion-campaign-name.ts";
 import {
   copyPromotionCampaign,
+  createDraftPromotionCampaign,
   disablePromotionCampaign,
   editDraftPromotionCampaign,
   editScheduledPromotionCampaign,
@@ -29,6 +30,7 @@ import {
   MAX_EXPANDED_VARIANTS_PER_CAMPAIGN,
   PROMOTION_REVISION_ID,
 } from "../../src/commerce/promotion-activation-service.ts";
+import { createPromotionAdminRepository } from "../../src/commerce/promotion-admin-repository.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -118,6 +120,7 @@ test("P4 every promotion mutation requires an authenticated admin", async () => 
       () => editScheduledPromotionCampaign({ campaignId: `${P}-a`, now: NOW, env: ON, session, patch: {} }),
       () => copyPromotionCampaign({ campaignId: `${P}-a`, session }),
       () => editDraftPromotionCampaign({ campaignId: `${P}-a`, now: NOW, session, patch: {} }),
+      () => createDraftPromotionCampaign({ name: "Draft", session }),
     ]) {
       await assert.rejects(attempt, (error: unknown) => {
         assert.ok(error instanceof AuthorizationError, `${label}: expected an authorization error`);
@@ -416,6 +419,185 @@ test("P4 an enabled campaign cannot be edited through the Draft path", async () 
   assert.equal(result.ok === false && result.failure.reason, "ILLEGAL_TRANSITION");
 });
 
+/* ---------------------------------------------------------------- P5b create / edit / repository */
+
+test("P5b createDraftPromotionCampaign creates a Draft and does not advance the revision", async () => {
+  await seedProduct("prod", 2);
+  const before = await revision();
+
+  const result = await createDraftPromotionCampaign({
+    name: "Chiến dịch Thu Đông",
+    kind: "PROMOTION",
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    targets: [{ productId: `${P}-prod`, variantId: null }],
+    session: ADMIN,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(await revision(), before, "creating a Draft charges nobody, so the revision is untouched");
+
+  const createdId = result.ok ? result.campaignId : "";
+  const campaign = await prisma.promotionCampaign.findUniqueOrThrow({
+    where: { id: createdId },
+    include: { targets: true },
+  });
+
+  assert.equal(campaign.name, "Chiến dịch Thu Đông");
+  assert.equal(campaign.isEnabled, false);
+  assert.equal(campaign.enabledAt, null);
+  assert.equal(campaign.disabledAt, null);
+  assert.equal(campaign.percentageValue, 20);
+  assert.equal(campaign.targets.length, 1);
+  assert.equal(campaign.targets[0]?.productId, `${P}-prod`);
+  assert.equal(campaign.targets[0]?.variantId, null);
+
+  await prisma.promotionTarget.deleteMany({ where: { campaignId: createdId } });
+  await prisma.promotionCampaign.delete({ where: { id: createdId } });
+});
+
+test("P5b createDraftPromotionCampaign rejects invalid draft input (oversized name, too many targets, invalid target scope)", async () => {
+  const before = await revision();
+
+  const oversizedName = await createDraftPromotionCampaign({
+    name: "a".repeat(MAX_CAMPAIGN_NAME_LENGTH + 1),
+    session: ADMIN,
+  });
+  assert.equal(oversizedName.ok, false);
+  assert.equal(oversizedName.ok === false && oversizedName.failure.reason, "INVALID_DRAFT_INPUT");
+
+  const invalidScope = await createDraftPromotionCampaign({
+    name: "Bad Scope",
+    targets: [{ productId: null, variantId: null }],
+    session: ADMIN,
+  });
+  assert.equal(invalidScope.ok, false);
+  assert.equal(invalidScope.ok === false && invalidScope.failure.reason, "INVALID_DRAFT_INPUT");
+
+  const overTargets = await createDraftPromotionCampaign({
+    name: "Too Many Targets",
+    targets: Array.from({ length: MAX_TARGETS_PER_CAMPAIGN + 1 }, (_, i) => ({
+      productId: `p-${i}`,
+      variantId: null,
+    })),
+    session: ADMIN,
+  });
+  assert.equal(overTargets.ok, false);
+  assert.equal(overTargets.ok === false && overTargets.failure.reason, "INVALID_DRAFT_INPUT");
+
+  assert.equal(await revision(), before);
+});
+
+test("P5b createDraftPromotionCampaign and editDraftPromotionCampaign reject duplicate targets with typed DUPLICATE_TARGET", async () => {
+  await seedProduct("prod", 1);
+  const before = await revision();
+
+  const createDuplicate = await createDraftPromotionCampaign({
+    name: "Duplicate Targets",
+    targets: [
+      { productId: `${P}-prod`, variantId: null },
+      { productId: `${P}-prod`, variantId: null },
+    ],
+    session: ADMIN,
+  });
+  assert.equal(createDuplicate.ok, false);
+  assert.equal(createDuplicate.ok === false && createDuplicate.failure.reason, "DUPLICATE_TARGET");
+
+  await draft("dup-test", "prod");
+  const editDuplicate = await editDraftPromotionCampaign({
+    campaignId: `${P}-dup-test`,
+    now: NOW,
+    session: ADMIN,
+    patch: {
+      targets: [
+        { productId: `${P}-prod`, variantId: null },
+        { productId: `${P}-prod`, variantId: null },
+      ],
+    },
+  });
+  assert.equal(editDuplicate.ok, false);
+  assert.equal(editDuplicate.ok === false && editDuplicate.failure.reason, "DUPLICATE_TARGET");
+
+  assert.equal(await revision(), before);
+});
+
+test("P5b repository listRelatedCampaignsForProduct identifies direct product targets and variant targets with bounded query", async () => {
+  await seedProduct("rel-p1", 2);
+  await seedProduct("rel-p2", 2);
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'C1 Product Level','PERCENTAGE'::"PromotionDiscountType",10,FALSE,NOW(),NOW())`,
+    `${P}-c1-prod`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,NULL,NOW())`,
+    `${P}-t-c1`, `${P}-c1-prod`, `${P}-rel-p1`,
+  );
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'FLASH_SALE'::"PromotionCampaignKind",'C2 Variant Level','PERCENTAGE'::"PromotionDiscountType",20,FALSE,NOW(),NOW())`,
+    `${P}-c2-var`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,NULL,$3,NOW())`,
+    `${P}-t-c2`, `${P}-c2-var`, `${P}-rel-p1-v1`,
+  );
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'C3 Unrelated','PERCENTAGE'::"PromotionDiscountType",15,FALSE,NOW(),NOW())`,
+    `${P}-c3-other`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,NULL,NOW())`,
+    `${P}-t-c3`, `${P}-c3-other`, `${P}-rel-p2`,
+  );
+
+  const repository = createPromotionAdminRepository(prisma);
+  const related = await repository.listRelatedCampaignsForProduct({
+    productId: `${P}-rel-p1`,
+    variantIds: [`${P}-rel-p1-v1`, `${P}-rel-p1-v2`],
+  });
+
+  assert.equal(related.length, 2, "only campaigns targeting this product or its variants are returned");
+  const c1 = related.find((r) => r.id === `${P}-c1-prod`);
+  assert.ok(c1, "direct product target campaign is found");
+  assert.equal(c1?.targetScope, "PRODUCT");
+  assert.equal(c1?.status, "DRAFT");
+
+  const c2 = related.find((r) => r.id === `${P}-c2-var`);
+  assert.ok(c2, "direct variant target campaign is found");
+  assert.equal(c2?.targetScope, "VARIANT");
+  assert.equal(c2?.kind, "FLASH_SALE");
+
+  const c3 = related.find((r) => r.id === `${P}-c3-other`);
+  assert.equal(c3, undefined, "unrelated campaign is excluded");
+});
+
+test("P5b repository getCampaignForEdit loads campaign and target labels without variant expansion", async () => {
+  await seedProduct("edit-p", 2);
+  await draft("edit-load", "edit-p");
+
+  const repository = createPromotionAdminRepository(prisma);
+  const campaign = await repository.getCampaignForEdit(`${P}-edit-load`, NOW);
+
+  assert.ok(campaign);
+  assert.equal(campaign.name, "Campaign edit-load");
+  assert.equal(campaign.status, "DRAFT");
+  assert.equal(campaign.targets.length, 1);
+  assert.equal(campaign.targets[0]?.scope, "PRODUCT");
+  assert.equal(campaign.targets[0]?.productId, `${P}-edit-p`);
+  assert.equal(campaign.targets[0]?.label, "P4 Ops Product");
+});
+
 /* ---------------------------------------------------------------- expired window */
 
 test("P4 a campaign whose window has already closed cannot be published", async () => {
@@ -705,3 +887,205 @@ for (const [label, window, run] of [
     }
   });
 }
+
+test("Finding 3 Case A: campaign with 50+ variant targets does not crowd out another related campaign", async () => {
+  const pId = "crowd-p";
+  await seedProduct(pId, 55);
+
+  // Campaign A: 55 variant targets
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'Campaign A Many Targets','PERCENTAGE'::"PromotionDiscountType",10,FALSE,NOW(),NOW())`,
+    `${P}-camp-a-many`,
+  );
+  for (let i = 1; i <= 55; i++) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+       VALUES ($1,$2,NULL,$3,NOW())`,
+      `${P}-t-a-${i}`, `${P}-camp-a-many`, `${P}-${pId}-v${i}`,
+    );
+  }
+
+  // Campaign B: 1 product target
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'Campaign B Direct Product','PERCENTAGE'::"PromotionDiscountType",15,FALSE,NOW(),NOW())`,
+    `${P}-camp-b-prod`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,NULL,NOW())`,
+    `${P}-t-b-prod`, `${P}-camp-b-prod`, `${P}-${pId}`,
+  );
+
+  const repository = createPromotionAdminRepository(prisma);
+  const variantIds = Array.from({ length: 55 }, (_, i) => `${P}-${pId}-v${i + 1}`);
+  const related = await repository.listRelatedCampaignsForProduct({
+    productId: `${P}-${pId}`,
+    variantIds,
+    limit: 50,
+  });
+
+  // BOTH campaigns must be present! Campaign A's 55 targets must not truncate Campaign B
+  assert.ok(related.length >= 2, "both campaigns must be found even when one has 50+ variant targets");
+  const foundA = related.find((r) => r.id === `${P}-camp-a-many`);
+  const foundB = related.find((r) => r.id === `${P}-camp-b-prod`);
+  assert.ok(foundA, "Campaign A with 55 variant targets is returned");
+  assert.equal(foundA?.targetScope, "VARIANT");
+  assert.ok(foundB, "Campaign B is returned and not crowded out");
+  assert.equal(foundB?.targetScope, "PRODUCT");
+});
+
+test("Finding 3 Case B: campaign targeting both product and variant classifies as BOTH", async () => {
+  const pId = "both-p";
+  await seedProduct(pId, 2);
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",'Campaign Both Scopes','PERCENTAGE'::"PromotionDiscountType",20,FALSE,NOW(),NOW())`,
+    `${P}-camp-both`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,NULL,NOW())`,
+    `${P}-t-both-prod`, `${P}-camp-both`, `${P}-${pId}`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,NULL,$3,NOW())`,
+    `${P}-t-both-var`, `${P}-camp-both`, `${P}-${pId}-v1`,
+  );
+
+  const repository = createPromotionAdminRepository(prisma);
+  const related = await repository.listRelatedCampaignsForProduct({
+    productId: `${P}-${pId}`,
+    variantIds: [`${P}-${pId}-v1`, `${P}-${pId}-v2`],
+  });
+
+  const foundBoth = related.find((r) => r.id === `${P}-camp-both`);
+  assert.ok(foundBoth, "campaign targeting both product and variant is returned");
+  assert.equal(foundBoth?.targetScope, "BOTH", "targetScope must be classified as BOTH");
+});
+
+test("Finding 3 Case C: >50 related campaigns are bounded and deterministically ordered", async () => {
+  const pId = "bounded-p";
+  await seedProduct(pId, 1);
+
+  // Insert 55 campaigns with distinct createdAt timestamps
+  for (let i = 1; i <= 55; i++) {
+    const pad = String(i).padStart(3, "0");
+    const seconds = 1000 + i;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "PromotionCampaign"
+         ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
+       VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'PERCENTAGE'::"PromotionDiscountType",10,FALSE,
+               ('2026-09-01T00:00:00.000Z'::timestamptz + make_interval(secs => $3)),NOW())`,
+      `${P}-bounded-${pad}`, `Bounded Campaign ${pad}`, seconds,
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+       VALUES ($1,$2,$3,NULL,NOW())`,
+      `${P}-t-bnd-${pad}`, `${P}-bounded-${pad}`, `${P}-${pId}`,
+    );
+  }
+
+  const repository = createPromotionAdminRepository(prisma);
+  const related = await repository.listRelatedCampaignsForProduct({
+    productId: `${P}-${pId}`,
+    limit: 50,
+  });
+
+  assert.equal(related.length, 50, "result is capped at 50 campaigns");
+  // Check deterministic order: createdAt desc -> campaign 055 should be first, 006 should be 50th
+  assert.equal(related[0]?.id, `${P}-bounded-055`, "most recent campaign is first");
+  assert.equal(related[49]?.id, `${P}-bounded-006`, "50th campaign is 006");
+});
+
+test("Finding 1 regression: createDraftPromotionCampaign refuses oversized target ID and writes nothing", async () => {
+  const oversizedId = "prod-".concat("x".repeat(150));
+  const beforeCampaignCount = await prisma.promotionCampaign.count();
+  const beforeTargetCount = await prisma.promotionTarget.count();
+
+  const outcome = await createDraftPromotionCampaign({
+    name: "Draft Oversized ID",
+    targets: [{ productId: oversizedId, variantId: null }],
+    session: ADMIN,
+  });
+
+  assert.equal(outcome.ok, false);
+  if (!outcome.ok) {
+    assert.equal(outcome.failure.reason, "INVALID_DRAFT_INPUT");
+  }
+
+  assert.equal(await prisma.promotionCampaign.count(), beforeCampaignCount, "no campaign written");
+  assert.equal(await prisma.promotionTarget.count(), beforeTargetCount, "no target written");
+});
+
+test("Finding 2 regression: valid fixed price persists exact BigInt amount and does not alter value", async () => {
+  const pId = "fx-p";
+  await seedProduct(pId, 1);
+
+  const exactVnd = BigInt(450_000);
+  const outcome = await createDraftPromotionCampaign({
+    name: "Exact Fixed Price Draft",
+    discountType: "FIXED_PRICE",
+    fixedPriceVnd: exactVnd,
+    targets: [{ productId: `${P}-${pId}`, variantId: null }],
+    session: ADMIN,
+  });
+
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    const saved = await prisma.promotionCampaign.findUnique({
+      where: { id: outcome.campaignId },
+      select: { fixedPriceVnd: true, discountType: true },
+    });
+    assert.equal(saved?.discountType, "FIXED_PRICE");
+    assert.equal(saved?.fixedPriceVnd, exactVnd, "exact monetary amount is stored without alteration");
+  }
+});
+
+test("Required 1: authorization precedes any input or parser processing", async () => {
+  for (const [label, session] of [["anonymous", null], ["non-admin", STAFF]] as const) {
+    const expected = session === null ? "UNAUTHENTICATED" : "FORBIDDEN";
+
+    // Calling mutation with malformed input under unauthenticated session must throw AuthorizationError
+    await assert.rejects(
+      () =>
+        createDraftPromotionCampaign({
+          name: "Invalid Money Draft",
+          discountType: "FIXED_PRICE",
+          fixedPriceVnd: BigInt(-100),
+          session,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof AuthorizationError, `${label}: must fail with AuthorizationError`);
+        assert.equal(error.code, expected);
+        return true;
+      },
+      `${label}: authorization must reject before business validation`,
+    );
+  }
+});
+
+test("Required 2: getCampaignForEdit rejects oversized campaign ID and never matches real campaign", async () => {
+  await seedProduct("edit-bound-p", 1);
+  await draft("edit-real", "edit-bound-p");
+
+  const repository = createPromotionAdminRepository(prisma);
+
+  // Exact ID returns the seeded campaign
+  const found = await repository.getCampaignForEdit(`${P}-edit-real`, NOW);
+  assert.ok(found !== null, "valid campaign ID must be found");
+  assert.equal(found.id, `${P}-edit-real`);
+
+  // Crafted oversized ID matching prefix + oversized suffix must NOT return the campaign
+  const craftedOversized = `${P}-edit-real`.concat("x".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH + 10));
+  const notFound = await repository.getCampaignForEdit(craftedOversized, NOW);
+  assert.equal(notFound, null, "oversized ID must return null without matching the real row");
+});
+
+

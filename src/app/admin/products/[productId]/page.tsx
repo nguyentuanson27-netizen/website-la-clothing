@@ -26,6 +26,8 @@ import {
   type ProductPancakeSourceVariant,
 } from "@/components/admin/product-pancake-source";
 import { ProductSlugEditor } from "@/components/admin/product-slug-editor";
+import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
+import { ProductPromotionsSummary } from "@/components/admin/product-promotions-summary";
 import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
@@ -35,6 +37,7 @@ export const metadata: Metadata = {
 const repository = createProductContentRepository(prisma);
 const collectionRepository = createCollectionDefinitionRepository(prisma);
 const productCommerceRepository = createProductCommerceRepository(prisma);
+const promotionRepository = createPromotionAdminRepository(prisma);
 const productCommerceAdminService = createProductCommerceAdminService({
   setVariantActivation: productCommerceRepository.setVariantActivation,
   readCatalogEnableWarningState: productCommerceRepository.readCatalogEnableWarningState,
@@ -372,6 +375,11 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const positiveStockVariantCount = commerceVariants.filter((variant) => variant.stock > 0).length;
   const totalStock = commerceVariants.reduce((sum, variant) => sum + variant.stock, 0);
 
+  const relatedCampaigns = await promotionRepository.listRelatedCampaignsForProduct({
+    productId: persistedProductId,
+    variantIds: product.variants.map((variant) => variant.id),
+  });
+
   return (
     <div className="mx-auto max-w-6xl">
       <div className="border-b border-black/20 pb-8">
@@ -438,6 +446,8 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         variantAction={setWebsiteVariantActivation}
         variants={commerceVariants}
       />
+
+      <ProductPromotionsSummary campaigns={relatedCampaigns} />
 
       <ProductEditorialForm
         action={saveProductContent}

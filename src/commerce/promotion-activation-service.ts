@@ -73,7 +73,8 @@ export type ActivationFailure =
   | { reason: "NO_EFFECTIVE_DISCOUNT"; invalidVariantIds: readonly string[] }
   /** A currently covered variant has no usable mirrored base price. Names the catalog rows to fix. */
   | { reason: "UNUSABLE_BASE_PRICE"; variantIds: readonly string[] }
-  | { reason: "OVERLAPPING_CAMPAIGN"; conflictingCampaignIds: readonly string[] };
+  | { reason: "OVERLAPPING_CAMPAIGN"; conflictingCampaignIds: readonly string[] }
+  | { reason: "DUPLICATE_TARGET" };
 
 export type ActivationOutcome =
   | Readonly<{ ok: true; campaignId: string; revision: bigint }>
@@ -677,6 +678,17 @@ export async function editDraftPromotionCampaign({
     return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } };
   }
 
+  if (patch.targets !== undefined) {
+    const seen = new Set<string>();
+    for (const target of patch.targets) {
+      const key = target.productId !== null ? `p:${target.productId}` : `v:${target.variantId}`;
+      if (seen.has(key)) {
+        return { ok: false, failure: { reason: "DUPLICATE_TARGET" } };
+      }
+      seen.add(key);
+    }
+  }
+
   return client.$transaction(async (tx) => {
     // The campaign row is locked before its lifecycle is read, so "this is a Draft" is a fact that
     // holds until commit rather than an observation a concurrent publish can invalidate. Without it
@@ -705,6 +717,84 @@ export async function editDraftPromotionCampaign({
 
     // Read back rather than reuse the pre-write value: this path takes no revision lock, so the
     // number it reports is a snapshot, not a claim that it advanced anything.
+    const [row] = await tx.$queryRaw<Array<{ revision: bigint }>>`
+      SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}
+    `;
+    return { ok: true, campaignId: campaign.id, revision: row?.revision ?? BigInt(0) } as const;
+  });
+}
+
+export type CreateDraftInput = Readonly<{
+  name: string;
+  kind?: "PROMOTION" | "FLASH_SALE";
+  discountType?: PromotionDiscountType;
+  percentageValue?: number | null;
+  fixedPriceVnd?: bigint | null;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  targets?: readonly CampaignTargetInput[];
+  session: AdminSessionCandidate;
+  client?: PrismaClient;
+}>;
+
+/**
+ * Create a new Draft campaign.
+ *
+ * Non-effective: a Draft is never storefront-effective, so this does NOT advance the revision.
+ * Non-expanding: targets are stored verbatim without variant expansion.
+ * Re-authorizes on the server and validates input bounds and target uniqueness before persisting.
+ */
+export async function createDraftPromotionCampaign({
+  name,
+  kind = "PROMOTION",
+  discountType = "PERCENTAGE",
+  percentageValue = null,
+  fixedPriceVnd = null,
+  startsAt = null,
+  endsAt = null,
+  targets = [],
+  session,
+  client = prisma,
+}: CreateDraftInput): Promise<ActivationOutcome> {
+  authorize(session);
+
+  const bounds = validateDraftInput({ name, targets });
+  if (!bounds.ok) {
+    return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } };
+  }
+
+  const seenTargets = new Set<string>();
+  for (const target of targets) {
+    const key = target.productId !== null ? `p:${target.productId}` : `v:${target.variantId}`;
+    if (seenTargets.has(key)) {
+      return { ok: false, failure: { reason: "DUPLICATE_TARGET" } };
+    }
+    seenTargets.add(key);
+  }
+
+  return client.$transaction(async (tx) => {
+    const campaign = await tx.promotionCampaign.create({
+      data: {
+        kind,
+        name: name.trim(),
+        discountType,
+        percentageValue,
+        fixedPriceVnd,
+        startsAt,
+        endsAt,
+        isEnabled: false,
+        enabledAt: null,
+        disabledAt: null,
+        targets: {
+          create: targets.map((target) => ({
+            productId: target.productId,
+            variantId: target.variantId,
+          })),
+        },
+      },
+      select: { id: true },
+    });
+
     const [row] = await tx.$queryRaw<Array<{ revision: bigint }>>`
       SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}
     `;

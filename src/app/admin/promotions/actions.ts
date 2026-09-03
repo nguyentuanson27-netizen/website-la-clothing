@@ -7,15 +7,25 @@ import { requireCurrentAdmin } from "@/auth/current-admin";
 import { AuthorizationError } from "@/auth/authorization";
 import {
   copyPromotionCampaign,
+  createDraftPromotionCampaign,
   disablePromotionCampaign,
+  editDraftPromotionCampaign,
+  editScheduledPromotionCampaign,
   endPromotionCampaignEarly,
   publishPromotionCampaign,
+  type CampaignPatch,
 } from "@/commerce/promotion-activation-service";
+import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
+import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
+import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
+import { parseCampaignFormInput } from "@/commerce/promotion-admin-input";
 import {
   describePromotionFailure,
   translatePromotionWriteError,
   type PromotionFailureDescription,
 } from "@/commerce/promotion-admin-feedback";
+import { prisma } from "@/db/prisma";
+import { readPancakeShopId } from "@/integrations/pancake/config";
 
 /**
  * Outcomes travel back as a redirect rather than a returned value, so the surface keeps working
@@ -119,4 +129,133 @@ export async function copyPromotionAction(formData: FormData): Promise<void> {
     copyPromotionCampaign({ campaignId, session }),
   );
   completeWith(outcome);
+}
+
+export async function createPromotionAction(formData: FormData): Promise<void> {
+  const outcome = await runPromotionOperation((session) => {
+    const parseResult = parseCampaignFormInput(formData);
+    if (!parseResult.ok) {
+      return Promise.resolve({ ok: false, failure: { reason: parseResult.reason } });
+    }
+
+    const {
+      name,
+      kind,
+      discountType,
+      percentageValue,
+      fixedPriceVnd,
+      startsAt,
+      endsAt,
+      targets,
+    } = parseResult.value;
+
+    return createDraftPromotionCampaign({
+      name,
+      kind,
+      discountType,
+      percentageValue,
+      fixedPriceVnd,
+      startsAt,
+      endsAt,
+      targets,
+      session,
+    });
+  });
+
+  completeWith(outcome);
+}
+
+export async function editPromotionAction(formData: FormData): Promise<void> {
+  const outcome = await runPromotionOperation(async (session) => {
+    const parseResult = parseCampaignFormInput(formData);
+    if (!parseResult.ok) {
+      return { ok: false, failure: { reason: parseResult.reason } };
+    }
+
+    const rawId = campaignIdFrom(formData).trim();
+    if (!isBoundedPromotionIdentifier(rawId)) {
+      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
+    }
+    const campaignId = rawId;
+
+    const existing = await prisma.promotionCampaign.findUnique({
+      where: { id: campaignId },
+      select: {
+        id: true,
+        isEnabled: true,
+        enabledAt: true,
+        disabledAt: true,
+        startsAt: true,
+        endsAt: true,
+      },
+    });
+    if (!existing) {
+      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
+    }
+
+    const now = new Date();
+    const lifecycle = deriveCampaignLifecycle({ ...existing, now });
+
+    const patch: CampaignPatch = parseResult.value;
+
+    if (lifecycle.status === "DRAFT") {
+      return editDraftPromotionCampaign({ campaignId, now, session, patch });
+    }
+
+    if (lifecycle.status === "SCHEDULED") {
+      return editScheduledPromotionCampaign({ campaignId, now, session, patch });
+    }
+
+    return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } };
+  });
+
+  completeWith(outcome);
+}
+
+export async function searchPromotionTargetsAction(
+  search: string,
+  scope: "PRODUCT" | "VARIANT",
+): Promise<
+  Array<{
+    id: string;
+    label: string;
+    scope: "PRODUCT" | "VARIANT";
+    productId: string | null;
+    variantId: string | null;
+  }>
+> {
+  try {
+    await requireCurrentAdmin();
+  } catch {
+    return [];
+  }
+
+  // Promotion targets belong to this storefront's Pancake shop. Configuration is parsed strictly;
+  // a missing or invalid shop id fails closed instead of broadening the search to every mirror row.
+  const shopId = readPancakeShopId();
+  const repository = createPromotionAdminRepository(prisma);
+
+  if (scope === "PRODUCT") {
+    const products = await repository.searchTargetProducts({ shopId, search });
+    return products.map((p) => ({
+      id: p.id,
+      label: p.name,
+      scope: "PRODUCT" as const,
+      productId: p.id,
+      variantId: null,
+    }));
+  }
+
+  const variants = await repository.searchTargetVariants({ shopId, search });
+  return variants.map((v) => {
+    const details = v.sku || [v.color, v.size].filter(Boolean).join(" / ") || v.id;
+    const parent = v.product?.name ? `${v.product.name} — ` : "";
+    return {
+      id: v.id,
+      label: `${parent}${details}`,
+      scope: "VARIANT" as const,
+      productId: null,
+      variantId: v.id,
+    };
+  });
 }

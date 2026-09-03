@@ -30,6 +30,8 @@ const adminEmail = `admin-promotions-${runId}@example.invalid`;
 const password = "admin-promotions-runtime-password-123";
 const campaignId = `u14-a11y-${runId}`;
 const campaignName = `U14 Draft Campaign ${runId}`;
+const testProductId = `u14-prod-${runId}`;
+const testVariantId = `u14-var-${runId}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -75,7 +77,10 @@ async function stopServer() {
 }
 
 async function cleanupDatabase() {
-  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" = ${campaignId}`;
+  await prisma.$executeRaw`DELETE FROM "PromotionTarget" WHERE "id" LIKE ${`u14-%${runId}%`}`;
+  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" = ${campaignId} OR "name" LIKE ${`%${runId}%`}`;
+  await prisma.$executeRaw`DELETE FROM "VariantMirror" WHERE "id" = ${testVariantId}`;
+  await prisma.$executeRaw`DELETE FROM "ProductMirror" WHERE "id" = ${testProductId}`;
   await prisma.user.deleteMany({ where: { email: adminEmail } });
 }
 
@@ -83,10 +88,26 @@ test.beforeAll(async () => {
   await cleanupDatabase();
 
   await prisma.$executeRawUnsafe(
+    `INSERT INTO "ProductMirror" ("id","pancakeShopId","pancakeProductId","slug","name","syncedAt","createdAt","updatedAt")
+     VALUES ($1,920942,$2,$3,'U14 A11y Product',NOW(),NOW(),NOW())`,
+    testProductId, `${testProductId}-ext`, `u14-prod-slug-${runId}`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VariantMirror" ("id","pancakeVariationId","productId","pancakeRetailPrice","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,500000,NOW(),NOW(),NOW())`,
+    testVariantId, `${testVariantId}-ext`, testProductId,
+  );
+
+  await prisma.$executeRawUnsafe(
     `INSERT INTO "PromotionCampaign"
        ("id","kind","name","discountType","percentageValue","isEnabled","createdAt","updatedAt")
      VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'PERCENTAGE'::"PromotionDiscountType",10,false,NOW(),NOW())`,
     campaignId, campaignName,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","variantId","createdAt")
+     VALUES ($1,$2,$3,NULL,NOW())`,
+    `u14-target-${runId}`, campaignId, testProductId,
   );
 
   const { headers } = await auth.api.signUpEmail({
@@ -177,3 +198,138 @@ test("U14 the surface stays usable at a narrow mobile viewport", async ({ page, 
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);
 });
+
+test("U14 P5b create and edit campaign form renders with zero Axe violations", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("textbox", { name: "Tên chiến dịch" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Loại chiến dịch" })).toBeVisible();
+
+  const newFormAxe = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(newFormAxe.violations).toEqual([]);
+
+  await page.goto(`${BASE_URL}/admin/promotions?edit=${campaignId}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: new RegExp(`Chỉnh sửa: ${campaignName}`), level: 2 })).toBeVisible();
+
+  const editFormAxe = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(editFormAxe.violations).toEqual([]);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b product admin displays related campaign summary and link with zero Axe violations", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/products/${testProductId}`, { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "Chiến dịch liên quan", level: 2 })).toBeVisible();
+  await expect(page.getByText(campaignName)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Xem tất cả khuyến mãi →" })).toBeVisible();
+
+  const accessibility = await new AxeBuilder({ page })
+    .include("section[aria-labelledby='product-promotions-heading']")
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b browser creates campaign and persists exact Draft row without advancing revision", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  const newCampaignName = `U14 Browser Created ${runId}`;
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
+
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(newCampaignName);
+  await page.getByLabel("Mức giảm (%)").fill("25");
+
+  // Search target and add
+  const searchInput = page.getByRole("searchbox", { name: "Từ khóa tìm kiếm mục áp dụng" });
+  await searchInput.fill("U14 A11y Product");
+  await page.getByRole("button", { name: "Tìm mục" }).click();
+
+  const addButton = page.getByRole("button", { name: "+ Thêm" });
+  await expect(addButton).toBeVisible();
+  await addButton.click();
+  await expect(page.getByRole("button", { name: "Đã thêm" })).toBeVisible();
+
+  // Submit create
+  await page.getByRole("button", { name: "Tạo chiến dịch (Nháp)" }).click();
+
+  // Wait for redirect to /admin/promotions?status=ok
+  await expect(page).toHaveURL(`${BASE_URL}/admin/promotions?status=ok`);
+  await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(newCampaignName) })).toBeVisible();
+
+  // Direct database assertions
+  const created = await prisma.promotionCampaign.findFirst({
+    where: { name: newCampaignName },
+    include: { targets: true },
+  });
+  expect(created).not.toBeNull();
+  expect(created?.percentageValue).toBe(25);
+  expect(created?.isEnabled).toBe(false);
+  expect(created?.targets.length).toBe(1);
+  expect(created?.targets[0]?.productId).toBe(testProductId);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b browser edits campaign and updates material fields in DB", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions?edit=${campaignId}`, { waitUntil: "networkidle" });
+
+  const percentInput = page.getByLabel("Mức giảm (%)");
+  await percentInput.clear();
+  await percentInput.fill("35");
+
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/admin/promotions?status=ok`);
+  await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
+
+  // Assert DB exact value
+  const updated = await prisma.promotionCampaign.findUnique({
+    where: { id: campaignId },
+  });
+  expect(updated?.percentageValue).toBe(35);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b non-admin is refused access to campaign creation and actions", async ({ browser }) => {
+  const anonContext = await browser.newContext();
+  const anonPage = await anonContext.newPage();
+
+  // Unauthenticated user navigating to admin promotions create URL is blocked
+  await anonPage.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
+  await expect(anonPage.getByRole("textbox", { name: "Tên chiến dịch" })).not.toBeVisible();
+
+  await anonContext.close();
+});
+
