@@ -6,7 +6,7 @@ import {
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
-import { readApplicablePromotionCampaigns } from "./promotion-candidate-repository.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -120,17 +120,15 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         variants: [...group.variants.values()],
       }));
 
-    // One batched candidate lookup for every variant this page can display — parent options and
-    // composite components alike. Resolving per option would be an N+1 on the busiest storefront
-    // page, and a component must be priced by its own owning product's campaigns rather than the
-    // parent's, which the repository already handles by keying on each variant's real owner.
     const pricedVariantIds = [
       ...new Set([
         ...product.variants.map((variant) => variant.id),
         ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
       ]),
     ];
-    const { campaignsByVariantId } = await readApplicablePromotionCampaigns({
+    // Keep every DB query inside the candidate repository's 200-id safety cap, while resolving the
+    // complete PDP projection. This is bounded batching, not a per-option lookup.
+    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
       variantIds: pricedVariantIds,
     });
 
@@ -140,8 +138,6 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         parentVariants: product.variants,
         componentGroups,
         hasCompositeGraph,
-        // One instant for the whole page, passed in by the caller, so every option on it agrees
-        // about whether a window is open.
         pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
       }),
     };
