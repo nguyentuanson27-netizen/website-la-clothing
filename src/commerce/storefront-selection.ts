@@ -56,11 +56,14 @@ export function deriveStorefrontSelection(
     ),
   }));
 
+  // Selecting an option and being able to buy it are different questions. A concrete option that
+  // is currently sold out is still the option the shopper is looking at — it has an exact price,
+  // colour and size — so it is *selected* and simply not addable. Conflating the two would make a
+  // deep link to a sold-out variation fall back to a vague "from" price instead of the truth.
   const selected =
     selection.size !== null && (!hasColorOptions || selection.color !== null)
       ? options.find(
           (option) =>
-            option.purchasable &&
             option.size === selection.size &&
             (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
@@ -72,6 +75,8 @@ export function deriveStorefrontSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
-    canAdd: selected !== null,
+    // A selected option that is not purchasable is still selected; only add-to-bag is withheld.
+    selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    canAdd: selected !== null && selected.purchasable,
   };
 }

@@ -61,6 +61,14 @@ export function ProductPurchasePanel({
       ? defaultPriceLabel(options)
       : currency.format(selection.selectedPrice);
   const hasPurchasableVariant = options.some((option) => option.purchasable);
+  // A fully specified but unbuyable option must say so on the option itself. Without this the
+  // panel would show that variant's exact price next to a silently disabled button.
+  const selectedUnavailableMessage =
+    selection.selectedVariantId !== null && !selection.canAdd
+      ? selection.selectedUnavailableReason === "OUT_OF_STOCK"
+        ? "Lựa chọn này đã hết hàng."
+        : "Lựa chọn này hiện chưa mua được."
+      : "";
   const entryPrice = useMemo(() => getStorefrontResolvedPriceRange(options)?.minimum ?? null, [options]);
 
   // ViewContent belongs to the product page rather than this panel, but the panel is the one
@@ -251,6 +259,7 @@ export function ProductPurchasePanel({
 
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
         {message ||
+          selectedUnavailableMessage ||
           (!hasPurchasableVariant
             ? "Không có lựa chọn khả dụng ở thời điểm hiện tại."
             : "")}

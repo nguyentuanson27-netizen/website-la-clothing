@@ -203,3 +203,38 @@ export function resolveStorefrontProductMedia({
     gallery,
   };
 }
+
+/**
+ * Which gallery slot a given variant's own photography occupies.
+ *
+ * The gallery is one deduped list built from the product's primary image followed by each variant's
+ * images, so a variant does not carry an index of its own — it has to be located by URL after the
+ * list is built. A variant with no trusted image of its own, or whose image was deduped away or
+ * dropped past the gallery cap, is simply absent from the map and leaves the gallery on its default.
+ */
+export function resolveVariantGalleryIndexes({
+  gallery,
+  variants,
+}: Readonly<{
+  gallery: readonly TrustedProductImage[];
+  variants: readonly Readonly<{ id: string; imageUrls: readonly unknown[] }>[];
+}>): Map<string, number> {
+  const indexByUrl = new Map<string, number>();
+  gallery.forEach((image, index) => {
+    if (!indexByUrl.has(image.url)) indexByUrl.set(image.url, index);
+  });
+
+  const indexByVariantId = new Map<string, number>();
+  for (const variant of variants) {
+    for (const candidate of variant.imageUrls) {
+      const trusted = parseTrustedProductImageUrl(candidate);
+      if (trusted === null) continue;
+      const index = indexByUrl.get(trusted);
+      if (index === undefined) continue;
+      indexByVariantId.set(variant.id, index);
+      break;
+    }
+  }
+
+  return indexByVariantId;
+}

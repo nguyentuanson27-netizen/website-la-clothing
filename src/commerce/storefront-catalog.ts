@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import {
   resolveStorefrontProductMedia,
+  resolveVariantGalleryIndexes,
   type StorefrontProductMedia,
 } from "./product-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
@@ -183,6 +184,18 @@ function toStorefrontProduct(
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
     })),
+    // Server-resolved, and kept off the variant facts on purpose: it is a product-level mapping
+    // into this product's gallery, not a property of the variant, and it must not widen what the
+    // client option contract carries.
+    galleryIndexByVariantId: Object.fromEntries(
+      resolveVariantGalleryIndexes({
+        gallery: media.gallery,
+        variants: product.variants.map((variant) => ({
+          id: variant.id,
+          imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
+        })),
+      }),
+    ),
   };
 }
 

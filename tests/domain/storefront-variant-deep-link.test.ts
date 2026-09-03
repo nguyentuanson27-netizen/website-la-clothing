@@ -56,7 +56,7 @@ test("U12 a valid standalone variation preselects exactly that option", () => {
     variantQuery: "pv-b",
   });
 
-  assert.deepEqual(selection, { kindKey: null, color: "Đen", size: "L" });
+  assert.deepEqual(selection, { kindKey: null, color: "Đen", size: "L", variantId: "cuid-b" });
 });
 
 test("U12 a different valid variation preselects its own option, not the first", () => {
@@ -65,7 +65,7 @@ test("U12 a different valid variation preselects its own option, not the first",
     variantQuery: "pv-c",
   });
 
-  assert.deepEqual(selection, { kindKey: null, color: "Kem", size: "M" });
+  assert.deepEqual(selection, { kindKey: null, color: "Kem", size: "M", variantId: "cuid-c" });
 });
 
 test("U12 a forged variation id selects nothing", () => {
@@ -110,18 +110,71 @@ test("U12 a variation belonging to another product selects nothing", () => {
   );
 });
 
-test("U12 a non-purchasable option is not preselected", () => {
-  // Out of stock, ambiguous or unpriced options exist in the projection but the selection model
-  // cannot represent them as selected; preselecting one would render a half-state with a size
-  // chosen and no price. Base PDP is the honest fallback.
+test("U12 a valid current variation that is merely sold out stays addressable", () => {
+  // Whether an external identity is valid, current and addressable is a different question from
+  // whether it can be bought right now. A present, active, sold-out variation is still the one the
+  // link names, and refusing it would send the shopper to a vague "from" price instead of that
+  // variant's exact sold-out state. Add-to-bag is blocked by the selection model, not here.
   const projection: StorefrontProductProjection = {
     mode: "standalone",
-    options: [option({ pancakeVariationId: "pv-oos", purchasable: false, unavailableReason: "OUT_OF_STOCK" })],
+    options: [
+      option({
+        id: "cuid-oos",
+        pancakeVariationId: "pv-oos",
+        purchasable: false,
+        unavailableReason: "OUT_OF_STOCK",
+      }),
+    ],
+  };
+
+  assert.deepEqual(
+    resolveDeepLinkedVariantSelection({ projection, variantQuery: "pv-oos" }),
+    { kindKey: null, color: "Đen", size: "M", variantId: "cuid-oos" },
+  );
+});
+
+test("U12 an option the catalog cannot resolve to one concrete choice is refused", () => {
+  // These two are identity problems rather than stock problems: the catalog cannot say which
+  // concrete option the id names, so there is nothing safe to preselect.
+  for (const unresolvable of ["MAPPING_REQUIRED", "AMBIGUOUS_OPTION"] as const) {
+    const projection: StorefrontProductProjection = {
+      mode: "standalone",
+      options: [
+        option({
+          pancakeVariationId: "pv-unresolvable",
+          purchasable: false,
+          unavailableReason: unresolvable,
+        }),
+      ],
+    };
+
+    assert.equal(
+      resolveDeepLinkedVariantSelection({ projection, variantQuery: "pv-unresolvable" }),
+      null,
+      `${unresolvable} must not preselect`,
+    );
+  }
+});
+
+test("U12 a variation whose price cannot be resolved is still addressable", () => {
+  // PRICE_UNRESOLVED is a pricing fact, not an identity one, so the variation remains the one the
+  // link names and the page shows its real unavailable state.
+  const projection: StorefrontProductProjection = {
+    mode: "standalone",
+    options: [
+      option({
+        id: "cuid-unpriced",
+        pancakeVariationId: "pv-unpriced",
+        price: null,
+        purchasable: false,
+        unavailableReason: "PRICE_UNRESOLVED",
+      }),
+    ],
   };
 
   assert.equal(
-    resolveDeepLinkedVariantSelection({ projection, variantQuery: "pv-oos" }),
-    null,
+    resolveDeepLinkedVariantSelection({ projection, variantQuery: "pv-unpriced" })?.variantId,
+    "cuid-unpriced",
   );
 });
 

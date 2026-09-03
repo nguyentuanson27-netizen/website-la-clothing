@@ -50,6 +50,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
     projection: product.projection,
     variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
   });
+  // M2 requires the deep link to match the variant's image too, not only its price/colour/size.
+  const deepLinkedImageIndex =
+    deepLinkedSelection === null
+      ? 0
+      : product.galleryIndexByVariantId[deepLinkedSelection.variantId] ?? 0;
   const structuredData = buildStorefrontProductStructuredData({
     origin: readSearchExposure().origin,
     product,
@@ -82,7 +87,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       </nav>
 
       <div className="mt-7 grid min-w-0 gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-16">
-        <ProductGallery media={product.media} productName={product.name} />
+        <ProductGallery
+          media={product.media}
+          productName={product.name}
+          initialIndex={deepLinkedImageIndex}
+        />
 
         <article className="min-w-0 pb-10 lg:pt-4">
           <p className="eyebrow">LA Clothing / Sản phẩm</p>
