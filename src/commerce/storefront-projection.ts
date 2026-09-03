@@ -65,8 +65,6 @@ function projectOptions(
           kindKey,
           kindLabel,
           purchasable: false,
-          // Forced unavailability also clears the sale flag: an option the shopper cannot pick
-          // must not advertise a discount.
           isDiscounted: false,
           unavailableReason: forcedUnavailableReason,
         },
@@ -82,11 +80,6 @@ export function buildStorefrontProductProjection({
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
   hasCompositeGraph: boolean;
-  /**
-   * Applied to parent and component variants alike. A composite component is priced as the variant
-   * it really is, by its own owning product's campaigns — the presentation grouping carries no
-   * pricing authority of its own.
-   */
   pricingRule?: StorefrontPricingRule;
 }>): StorefrontProductProjection {
   if (!hasCompositeGraph) {
@@ -225,7 +218,6 @@ export function deriveStorefrontProjectionSelection(
     (!hasColorOptions || selection.color !== null)
       ? kindOptions.find(
           (option) =>
-            option.purchasable &&
             option.size === selection.size &&
             (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
@@ -239,11 +231,9 @@ export function deriveStorefrontProjectionSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
-    // Presentation facts for the selected option, so a surface can show a struck-through base
-    // price without recomputing anything. Null/false whenever nothing is selected or the
-    // pricing rule in use has no promotion concept.
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
-    canAdd: selected !== null,
+    selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    canAdd: selected !== null && selected.purchasable,
   };
 }
