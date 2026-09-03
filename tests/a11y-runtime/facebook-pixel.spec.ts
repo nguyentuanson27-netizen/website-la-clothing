@@ -38,6 +38,12 @@ const syncedAt = new Date("2026-08-29T04:00:00.000Z");
 
 const productSlug = `pixel-shirt-${runId}`;
 const productName = `Pixel Test Shirt ${runId}`;
+/**
+ * Purchasable, priced, and unnameable: a blank mirrored name resolves to a line the cart accepts
+ * but the canonical item builder must refuse. This is the split that the previous head got wrong.
+ */
+const namelessSlug = `pixel-nameless-${runId}`;
+const NAMELESS_UNIT_PRICE = 512_000;
 const orderCode = `PIXEL-${runId}`;
 const UNIT_PRICE = 449_000;
 const ORDER_TOTAL = 928_000;
@@ -221,6 +227,41 @@ test.beforeAll(async () => {
     },
   });
 
+  const namelessProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `pixel-nameless-product-${runId}`,
+      slug: namelessSlug,
+      // Whitespace only: every commerce fact resolves, but no vendor item can be named from it.
+      name: "   ",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: { create: { status: "PUBLISHED", collectionSlugs: [] } },
+    },
+  });
+  const namelessVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `pixel-nameless-variant-${runId}`,
+      productId: namelessProduct.id,
+      color: "Ink",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: NAMELESS_UNIT_PRICE,
+      pancakeRetailPriceAfterDiscount: NAMELESS_UNIT_PRICE,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: namelessVariant.id,
+      pancakeWarehouseId: `pixel-nameless-warehouse-${runId}`,
+      quantity: 5,
+      syncedAt,
+    },
+  });
+
   const order = await prisma.orderMirror.create({
     data: {
       publicCode: orderCode,
@@ -258,6 +299,11 @@ test.beforeAll(async () => {
       ...process.env,
       // The whole point of this spec: the rest of CI builds without one.
       NEXT_PUBLIC_FACEBOOK_PIXEL_ID: PIXEL_ID,
+      // Both destinations observable on one server, so a test can prove they succeed and fail
+      // independently rather than assuming it from two separately-passing specs. Publishing the
+      // dataLayer still loads no container: that interlock is separate and still closed.
+      LA_TRACKING_MODE: "preview",
+      LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,
@@ -381,6 +427,66 @@ test("U18 AddToCart reports the price the server committed, once, not the render
       pancakeRetailPriceAfterDiscount: UNIT_PRICE,
     },
   });
+});
+
+test("U18 an accepted add whose canonical item is unbuildable still reports Meta, and only Meta", async ({
+  page,
+  context,
+}) => {
+  // The regression that matters for the client branch: `reportAcceptedAdd` must decide the two
+  // destinations separately. A server-side result-shape test cannot reach this — it was exactly
+  // this branch that previously let the canonical item's failure silence Meta as well.
+  await context.clearCookies();
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${namelessSlug}`, { waitUntil: "networkidle" });
+
+  const canonicalEvents = () =>
+    page.evaluate(() => {
+      const layer = (window as { dataLayer?: unknown[] }).dataLayer ?? [];
+      return layer
+        .filter((entry): entry is Record<string, unknown> =>
+          typeof entry === "object" && entry !== null && "event" in entry)
+        .map((entry) => String(entry.event));
+    });
+
+  // The dataLayer is live on this server, so "no canonical event" is a real observation rather
+  // than an artefact of tracking being switched off.
+  expect(await canonicalEvents()).toContain("page_view");
+  expect(
+    await canonicalEvents(),
+    "an unnameable product cannot describe a product-level view_item either",
+  ).not.toContain("view_item");
+
+  await page.getByText("Ink", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+  await page.getByRole("button", { name: "Thêm vào giỏ hàng" }).click();
+  await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
+
+  const addToCart = await waitForEvent(page, "AddToCart");
+  expect(addToCart[2]).toMatchObject({
+    content_ids: [namelessSlug],
+    content_type: "product",
+    currency: "VND",
+    // Server-committed, and present even though no canonical item could be built from the line.
+    value: NAMELESS_UNIT_PRICE,
+  });
+  expect(
+    trackedEventNames(await readCalls(page)).filter((name) => name === "AddToCart").length,
+    "one accepted add reports exactly one Meta event",
+  ).toBe(1);
+
+  expect(
+    await canonicalEvents(),
+    "the canonical event needs a usable item name and must stay fail-closed",
+  ).not.toContain("add_to_cart");
+
+  // Commerce succeeded regardless: the unit is really in the cart.
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  await expect(page.getByLabel("Số lượng")).toHaveValue("1");
+  expect(
+    await canonicalEvents(),
+    "an unnameable line also takes the whole cart projection down",
+  ).not.toContain("view_cart");
 });
 
 test("checkout reports InitiateCheckout with the totals the buyer is shown", async ({ page }) => {
