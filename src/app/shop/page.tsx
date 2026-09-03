@@ -14,6 +14,7 @@ import {
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
@@ -63,9 +64,8 @@ function collectionLabel(slug: string): string {
 export default async function ShopPage({ searchParams }: ShopPageProps) {
   await connection();
 
-  // One instant for the whole request: the count, the ordering, the SQL projection and the card
-  // prices all agree, so a window opening mid-request cannot rank a product by one price and then
-  // display another.
+  // One instant for the whole request: the count, the ordering, the SQL projection, transition
+  // aggregation and the card prices all agree.
   const requestNow = new Date();
 
   let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
@@ -82,12 +82,13 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     throw error;
   }
 
-  const { page, products, totalCount, totalPages, pricingRule } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
   const filtered = hasActiveDiscovery(discovery);
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <p className="eyebrow">LA Clothing / Cửa hàng</p>
       <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         CỬA HÀNG

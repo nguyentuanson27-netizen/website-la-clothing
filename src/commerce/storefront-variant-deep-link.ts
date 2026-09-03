@@ -39,6 +39,8 @@ export type DeepLinkedVariantSelection = Readonly<{
   kindKey: string | null;
   color: string | null;
   size: string | null;
+  /** Internal id of the matched option, so a caller can align other per-variant facts (media). */
+  variantId: string;
 }>;
 
 /**
@@ -85,14 +87,23 @@ export function resolveDeepLinkedVariantSelection({
   if (matches.length !== 1) return null;
 
   const matched = matches[0]!;
-  // Only an option the shopper could have selected themselves. A non-purchasable option — out of
-  // stock, ambiguous or unpriced — cannot be represented as selected by the selection model, so
-  // preselecting it would render a size with no price and no add-to-bag.
-  if (!matched.purchasable) return null;
+  // Purchasability is deliberately *not* a condition. Whether an external variation identity is
+  // valid, current and addressable is a different question from whether it can be bought right
+  // now: a variation that is present, active and simply sold out is still the one the link names,
+  // and refusing it would send a shopper to a vague "from" price instead of that variant's exact
+  // sold-out state. Add-to-bag stays disabled through the selection model's own `canAdd`.
+  //
+  // Options carrying MAPPING_REQUIRED or AMBIGUOUS_OPTION are excluded, because those mean the
+  // catalog cannot say which concrete option this is — an identity problem, not a stock one.
+  if (matched.unavailableReason === "MAPPING_REQUIRED"
+    || matched.unavailableReason === "AMBIGUOUS_OPTION") {
+    return null;
+  }
 
   return Object.freeze({
     kindKey: matched.kindKey,
     color: matched.color,
     size: matched.size,
+    variantId: matched.id,
   });
 }

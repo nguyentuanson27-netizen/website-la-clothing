@@ -56,11 +56,13 @@ export function deriveStorefrontSelection(
     ),
   }));
 
+  // Selection identity and purchase eligibility are separate. A current sold-out option remains
+  // the concrete option the shopper addressed, so its exact price/promotion state stays visible;
+  // only add-to-bag is withheld.
   const selected =
     selection.size !== null && (!hasColorOptions || selection.color !== null)
       ? options.find(
           (option) =>
-            option.purchasable &&
             option.size === selection.size &&
             (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
@@ -72,11 +74,9 @@ export function deriveStorefrontSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
-    // Presentation facts for the selected option, so a surface can show a struck-through base
-    // price without recomputing anything. Null/false whenever nothing is selected or the
-    // pricing rule in use has no promotion concept.
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
-    canAdd: selected !== null,
+    selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    canAdd: selected !== null && selected.purchasable,
   };
 }

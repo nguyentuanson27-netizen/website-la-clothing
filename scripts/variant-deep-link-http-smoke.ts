@@ -42,6 +42,10 @@ const OTHER_PRODUCT_VARIATION = `u12-pv-foreign-${runId}`;
 
 const MEDIUM_PRICE = 890_000;
 const LARGE_PRICE = 910_000;
+const SOLD_OUT_PRICE = 777_000;
+const PRIMARY_IMAGE = "https://content.pancake.vn/catalog/11/22/33/u12-primary.jpg";
+const MEDIUM_IMAGE = "https://content.pancake.vn/catalog/11/22/33/u12-medium.jpg";
+const LARGE_IMAGE = "https://content.pancake.vn/catalog/11/22/33/u12-large.jpg";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -135,10 +139,26 @@ function assertChoiceChecked(body: string, name: string, value: string, label: s
 }
 
 function assertNoChoiceChecked(body: string, label: string) {
-  assert.equal(
-    /<input[^>]*name="storefront-(?:size|color)"[^>]*checked=""/.test(body),
-    false,
-    `${label}: no option may render preselected`,
+  // Inspected per tag rather than as an ordered string, for the same reason as the positive
+  // assertion: React decides attribute order, and a negative assertion that silently stops
+  // matching is worse than one that fails.
+  const inputs = body.match(/<input\b[^>]*>/g) ?? [];
+  const preselected = inputs.filter(
+    (tag) =>
+      (tag.includes('name="storefront-size"') || tag.includes('name="storefront-color"'))
+      && tag.includes('checked=""'),
+  );
+  assert.deepEqual(preselected, [], `${label}: no option may render preselected`);
+}
+
+/** The gallery renders its opening image as the sole non-thumbnail <img> in the visual frame. */
+function assertGalleryOpensOn(body: string, expectedUrlFragment: string, label: string) {
+  const openingImage = body.match(/<div class="product-visual[^"]*"[\s\S]{0,600}?<img[^>]*>/);
+  assert.ok(openingImage, `${label}: expected a gallery image to render`);
+  assert.ok(
+    openingImage[0].includes(encodeURIComponent(expectedUrlFragment))
+      || openingImage[0].includes(expectedUrlFragment),
+    `${label}: gallery must open on ${expectedUrlFragment}, got ${openingImage[0].slice(0, 400)}`,
   );
 }
 
@@ -151,6 +171,7 @@ try {
       pancakeProductId: productId,
       slug,
       name: "U12 Deep Link Product",
+      primaryImageUrl: PRIMARY_IMAGE,
       isPresent: true,
       isActive: true,
       syncedAt: new Date(),
@@ -174,7 +195,7 @@ try {
     pancakeVariationId: string,
     size: string,
     price: number,
-    options: Readonly<{ stock: number; isActive?: boolean }>,
+    options: Readonly<{ stock: number; isActive?: boolean; imageUrl?: string }>,
   ): Promise<string> {
     const variant = await prisma.variantMirror.create({
       data: {
@@ -184,6 +205,7 @@ try {
         size,
         pancakeRetailPrice: price,
         pancakeRetailPriceAfterDiscount: price,
+        pancakeImageUrls: options.imageUrl ? [options.imageUrl] : undefined,
         isPresent: true,
         isActive: options.isActive ?? true,
         syncedAt: new Date(),
@@ -200,9 +222,16 @@ try {
     return variant.id;
   }
 
-  mediumVariantMirrorId = await seedVariant(product.id, MEDIUM_VARIATION, "M", MEDIUM_PRICE, { stock: 5 });
-  await seedVariant(product.id, LARGE_VARIATION, "L", LARGE_PRICE, { stock: 4 });
-  await seedVariant(product.id, SOLD_OUT_VARIATION, "XL", MEDIUM_PRICE, { stock: 0 });
+  // Distinct per-variant photography so the gallery assertion can tell them apart.
+  mediumVariantMirrorId = await seedVariant(product.id, MEDIUM_VARIATION, "M", MEDIUM_PRICE, {
+    stock: 5,
+    imageUrl: MEDIUM_IMAGE,
+  });
+  await seedVariant(product.id, LARGE_VARIATION, "L", LARGE_PRICE, {
+    stock: 4,
+    imageUrl: LARGE_IMAGE,
+  });
+  await seedVariant(product.id, SOLD_OUT_VARIATION, "XL", SOLD_OUT_PRICE, { stock: 0 });
   await seedVariant(product.id, INACTIVE_VARIATION, "S", MEDIUM_PRICE, { stock: 6, isActive: false });
   await seedVariant(otherProduct.id, OTHER_PRODUCT_VARIATION, "M", MEDIUM_PRICE, { stock: 3 });
 
@@ -230,7 +259,6 @@ try {
     ["forged", "u12-pv-forged-does-not-exist"],
     ["another product's variation", OTHER_PRODUCT_VARIATION],
     ["an inactive variation", INACTIVE_VARIATION],
-    ["a sold-out variation", SOLD_OUT_VARIATION],
     ["the internal VariantMirror id", mediumVariantMirrorId],
     ["a repeated parameter", `${MEDIUM_VARIATION}&variant=${LARGE_VARIATION}`],
     ["an oversized value", "x".repeat(400)],
@@ -240,6 +268,25 @@ try {
     assert.equal(page.status, 200, `${label} must still render the product page`);
     assertNoChoiceChecked(page.body, `${label} deep link`);
   }
+
+  // A valid current variation that is merely sold out stays addressable and shows its own exact
+  // state — price included — rather than falling back to the product's "from" range.
+  const soldOutPage = await requestPath(`/shop/${slug}?variant=${SOLD_OUT_VARIATION}`);
+  assert.equal(soldOutPage.status, 200, "a sold-out deep link must still render the product page");
+  assertChoiceChecked(soldOutPage.body, "storefront-size", "XL", "sold-out deep link");
+  assert.ok(
+    soldOutPage.body.includes("777.000"),
+    `a sold-out deep link must show its own exact price\n${soldOutPage.body.slice(0, 3000)}`,
+  );
+  assert.ok(
+    soldOutPage.body.includes("Lựa chọn này đã hết hàng."),
+    "a sold-out deep link must state why it cannot be bought, in the announced status region",
+  );
+
+  // M2 requires the image to match too, not only price/colour/size.
+  assertGalleryOpensOn(mediumPage.body, "u12-medium.jpg", "medium deep link");
+  assertGalleryOpensOn(largePage.body, "u12-large.jpg", "large deep link");
+  assertGalleryOpensOn(basePage.body, "u12-primary.jpg", "base PDP without a variant query");
 
   // Search contract: the query must not mint a second canonical, and must not become indexable.
   for (const path of [`/shop/${slug}`, `/shop/${slug}?variant=${MEDIUM_VARIATION}`]) {
@@ -265,7 +312,7 @@ try {
   );
 
   console.log(
-    "U12 variant deep link HTTP smoke passed: a valid standalone variation preselects its exact option and price, forged/foreign/inactive/sold-out/internal-id/repeated/oversized values all fall back to the base PDP, the base product URL remains the only canonical, and the variant query stays noindex.",
+    "U12 variant deep link HTTP smoke passed: a valid standalone variation preselects its exact option, price and photo; a sold-out one stays addressable and states why it cannot be bought; forged/foreign/inactive/internal-id/repeated/oversized values all fall back to the base PDP; the base product URL remains the only canonical; and the variant query stays noindex.",
   );
 } finally {
   await stopServer();

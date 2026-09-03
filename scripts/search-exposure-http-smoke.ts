@@ -255,6 +255,56 @@ try {
   assert.equal(cartPage.status, 200, "cart must remain browseable while excluded from indexing");
   assertNoIndexHeader(cartPage, "cart page");
 
+  // W15b signal 2 — the temporary production host with indexing *requested*.
+  //
+  // The enabled phase above runs on `shop.example.com`, so it proves the permanent-domain path and
+  // nothing about the host production actually serves today. This phase is the one that matters for
+  // a misconfiguration: a deployment sets `SEARCH_INDEXING_ENABLED=true` on `la.lanadesign.vn`, and
+  // the response must still be noindex with no sitemap advertised. Asserting it over HTTP rather
+  // than in the domain suite is the point — it proves the refusal survives the whole request path,
+  // metadata rendering included, not just the policy function.
+  await restartServer({
+    APP_DOMAIN: "la.lanadesign.vn",
+    SEARCH_INDEXING_ENABLED: "true",
+  });
+
+  const temporaryHostRobots = await requestPath("/robots.txt");
+  assert.equal(temporaryHostRobots.status, 200, "temporary-host robots.txt must return 200");
+  assertRobotsRule(
+    temporaryHostRobots.body,
+    "Allow: /",
+    true,
+    "temporary host must stay crawlable so its noindex is observable",
+  );
+  assert.equal(
+    temporaryHostRobots.body.includes("Sitemap:"),
+    false,
+    "temporary host must not advertise a sitemap even when a deployment requests indexing",
+  );
+
+  const temporaryHostSitemap = await requestPath("/sitemap.xml");
+  assert.equal(temporaryHostSitemap.status, 200, "temporary-host sitemap.xml must return 200");
+  assert.equal(
+    temporaryHostSitemap.body.includes("<loc>"),
+    false,
+    "temporary host must expose no canonical URLs even when a deployment requests indexing",
+  );
+
+  for (const indexablePathOnPermanentDomain of ["/lookbook", "/shop", "/"]) {
+    const requestedIndexingPage = await requestPath(indexablePathOnPermanentDomain);
+    assert.equal(
+      requestedIndexingPage.status,
+      200,
+      `temporary-host ${indexablePathOnPermanentDomain} must remain browseable`,
+    );
+    assertNoIndexHeader(requestedIndexingPage, `temporary host ${indexablePathOnPermanentDomain}`);
+    assert.ok(
+      requestedIndexingPage.body.includes('name="robots"')
+        && requestedIndexingPage.body.includes("noindex"),
+      `temporary-host ${indexablePathOnPermanentDomain} HTML must keep robots noindex despite the requested indexing`,
+    );
+  }
+
   await restartServer({
     APP_DOMAIN: "la.lanadesign.vn",
     SEARCH_INDEXING_ENABLED: "false",
@@ -275,7 +325,7 @@ try {
   );
 
   console.log(
-    "Search exposure HTTP smoke passed: staging/rollback remain crawlable-noindex, enabled robots/sitemap use server-owned canonical origin, API stays crawl-blocked, and HTML utility/query surfaces remain noindex.",
+    "Search exposure HTTP smoke passed: staging/rollback remain crawlable-noindex, enabled robots/sitemap use server-owned canonical origin, the temporary production host stays noindex even when a deployment requests indexing, API stays crawl-blocked, and HTML utility/query surfaces remain noindex.",
   );
 } finally {
   await stopServer();

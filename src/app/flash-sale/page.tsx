@@ -11,9 +11,9 @@ import {
   parseStorefrontDiscoverySearchParams,
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
-import { resolveFlashSaleRefresh } from "@/commerce/flash-sale-freshness";
-import { FlashSaleRefresher } from "@/components/commerce/flash-sale-refresher";
+import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
@@ -41,7 +41,7 @@ export async function generateMetadata({ searchParams }: FlashSalePageProps): Pr
 export default async function FlashSalePage({ searchParams }: FlashSalePageProps) {
   await connection();
 
-  // One instant for membership, pricing, ordering and the refresh window alike.
+  // One server instant for membership, pricing, ordering and the refresh window alike.
   const requestNow = new Date();
 
   let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
@@ -51,22 +51,24 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
     discovery = parseStorefrontDiscoverySearchParams(await searchParams);
     [flashPage, nextBoundaryAt] = await Promise.all([
       listConfiguredFlashSalePage({ discovery, pageSize: PAGE_SIZE, now: requestNow }),
-      // Read even when the page is empty: an empty Flash route still needs to know when it stops
-      // being empty, otherwise a scheduled sale would open to nobody already on the page.
+      // Read even when the page is empty: a scheduled Flash window still has to wake an already
+      // open route when it starts.
       readConfiguredNextFlashSaleBoundary(requestNow),
     ]);
   } catch (error) {
-    // The shared page/offset bounds refuse an out-of-window page before any listing work.
     if (error instanceof RangeError) notFound();
     throw error;
   }
 
   const { page, products, totalCount, totalPages, pricingRule } = flashPage;
-  const { refreshAfterMs } = resolveFlashSaleRefresh({ now: requestNow, nextBoundaryAt });
+  const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
+    now: requestNow,
+    nextBoundaryAt,
+  });
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
-      <FlashSaleRefresher refreshAfterMs={refreshAfterMs} />
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
 
       <header>
         <p className="eyebrow">LA Clothing / Khuyến mãi</p>
@@ -81,8 +83,6 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
           Sản phẩm đang giảm giá
         </h2>
 
-        {/* Announced politely so a shopper using a screen reader hears the count change when the
-            page revalidates across a Flash boundary, rather than silently seeing new products. */}
         <p aria-live="polite" className="text-xs uppercase tracking-[0.14em] text-black/55">
           {totalCount === 0
             ? "Hiện chưa có sản phẩm nào trong khung giờ Flash Sale."
