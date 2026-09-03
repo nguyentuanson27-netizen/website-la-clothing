@@ -1,11 +1,10 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T6 IMPLEMENTED; M1 partially delivered. T7 onward remain proposed and require human
-approval before `/build`.**
+Status: **T1–T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
 T1–T3 (PR #157), T4 (PR #164 + #165) and the durability half of M1 (PR #175) are merged on
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `tasks/marketing-analytics-shopping-todo.md` for per-item
-state. T5/T6 landed with Wave 3. **T7, T8, M2, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
+state. T5/T6 landed with Wave 3 in PR #186, and M2 landed via U12 / PR #180. **T7, T8, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
 GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
@@ -33,7 +32,9 @@ Core invariants:
 - `view_cart` / `begin_checkout` require one complete canonical cart analytics projection; unsafe mixed carts fail the whole analytics event rather than emitting partial items/totals;
 - Merchant output is fail-closed when identity, price, landing context, serialization, cache, backoff, or resource limits are unsafe.
 
-## 2. Repository facts that shape implementation
+## 2. Planning-base repository facts that shaped implementation
+
+The bullets in this section record the pre-T5/T6 planning baseline used to derive the contracts below. Delivered slices supersede any former-gap wording here; current delivery status is the status block above, `tasks/marketing-analytics-shopping-todo.md`, and the integrated evidence in `docs/audits/wave-2-checkpoint-b.md`.
 
 - `next.config.mjs` currently has no Cache Components opt-in and builds a fail-closed CSP from build-time tracking configuration.
 - `src/app/layout.tsx` owns the direct Meta mount point and is the app-level location where future GTM loading can be enabled.
@@ -477,11 +478,13 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ## M2 — Standalone variant deep link and search contract
 
+**Delivery status:** **IMPLEMENTED AND MERGED** via U12 / PR #180.
+
 **Build:** `/shop/<slug>?variant=<pancakeVariationId>` only for valid current standalone variation.
 
 **Acceptance:** exact preselection/matching price/color/size/image; forged/stale/inactive/private/composite query cannot expose unauthorized option; base PDP canonical/search exposure remains authoritative; variant query does not independently enable indexing.
 
-**Verification:** valid/stale/forged/composite-rejected tests + browser regression + SEO canonical/query regression.
+**Verification:** valid/stale/forged/composite-rejected tests + browser regression + SEO canonical/query regression. PR #180 exact-head evidence is recorded in the merged PR; integrated M2 compatibility is also covered by `docs/audits/wave-2-checkpoint-b.md`.
 
 ### Checkpoint C
 
