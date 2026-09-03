@@ -132,12 +132,12 @@ function buildFlashSaleCte(now: Date) {
     "flash_variant_dimension" AS (
       SELECT
         vs.*,
-        vp."basePrice",
-        vp."candidateCount",
+        vc."basePrice",
+        vc."candidateCount",
         BOOL_OR(NULLIF(BTRIM(vs."color"), '') IS NOT NULL)
           OVER (PARTITION BY vs."productId") AS "hasColorDimension"
       FROM "variant_stock" vs
-      JOIN "variant_priced" vp ON vp."id" = vs."id"
+      JOIN "variant_candidate" vc ON vc."id" = vs."id"
     ),
     "flash_variant_mapping" AS (
       SELECT
