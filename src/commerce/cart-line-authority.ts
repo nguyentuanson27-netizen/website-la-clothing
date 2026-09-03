@@ -15,9 +15,13 @@
  * The two outputs are deliberately independent:
  *
  *   - `available` is commerce authority and decides whether the write is accepted;
- *   - `snapshot` is the bounded non-PII analytics fact set, and is `null` whenever a safe one
- *     cannot be produced. A null snapshot never rejects a mutation. Tracking fails closed; commerce
- *     does not fail with it.
+ *   - `snapshot` carries the bounded non-PII facts a caller may report, and never rejects a
+ *     mutation. Tracking fails closed; commerce does not fail with it.
+ *
+ * The snapshot separates the committed unit price from the canonical item on purpose. They fail
+ * independently: a line whose mirrored name is blank is perfectly purchasable and has a perfectly
+ * good server price, but cannot name a vendor item. Collapsing them would make the richer contract's
+ * failure silence a destination that only ever needed the money.
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
@@ -32,6 +36,26 @@ import {
   type StorefrontCartReadClient,
 } from "./storefront-cart-repository.ts";
 
+/** What an accepted mutation may report, with each fact failing closed on its own. */
+export type CommittedCartLineFacts = Readonly<{
+  /**
+   * The unit price the mutation accepted, when it is usable money. Available to a destination that
+   * needs only a value even where the canonical item cannot be built.
+   */
+  unitPriceVnd: number | null;
+  /** The complete canonical item, or `null` when one cannot be produced safely. */
+  analyticsItem: CommerceVariantItemFacts | null;
+}>;
+
+const NO_COMMITTED_FACTS: CommittedCartLineFacts = Object.freeze({
+  unitPriceVnd: null,
+  analyticsItem: null,
+});
+
+function committedUnitPriceVnd(price: number | null): number | null {
+  return price !== null && Number.isSafeInteger(price) && price >= 0 ? price : null;
+}
+
 /**
  * Builds the resolver a cart mutation runs under its own lock.
  *
@@ -45,7 +69,7 @@ export function createCartLineAuthorityResolver({
 }: Readonly<{
   shopId: number;
   now: Date;
-}>): CartLineAuthorityResolver<CommerceVariantItemFacts> {
+}>): CartLineAuthorityResolver<CommittedCartLineFacts> {
   return async (tx: Prisma.TransactionClient, { variantId, quantity }) => {
     const repository = createStorefrontCartRepository(
       tx as unknown as StorefrontCartReadClient,
@@ -63,18 +87,21 @@ export function createCartLineAuthorityResolver({
       // Malformed mirrored facts (an unusable warehouse quantity, an out-of-range shop id) mean the
       // line cannot be authorized. Failing closed here refuses the write rather than committing
       // against facts the projection itself refused to produce.
-      return { available: false, snapshot: null };
+      return { available: false, snapshot: NO_COMMITTED_FACTS };
     }
 
     if (line === undefined) {
-      return { available: false, snapshot: null };
+      return { available: false, snapshot: NO_COMMITTED_FACTS };
     }
 
     return {
       available: line.available,
-      snapshot: buildCartAnalyticsItemFacts({
-        line: toCartAnalyticsLineFacts(line),
-        quantity,
+      snapshot: Object.freeze({
+        unitPriceVnd: committedUnitPriceVnd(line.price),
+        analyticsItem: buildCartAnalyticsItemFacts({
+          line: toCartAnalyticsLineFacts(line),
+          quantity,
+        }),
       }),
     };
   };

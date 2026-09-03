@@ -110,15 +110,21 @@ export function ProductPurchasePanel({
    * action returns it is a pre-request value, and a campaign that started or ended in between would
    * make it a report of money nobody was charged.
    *
-   * `analyticsUnavailable` means the mutation succeeded but no safe snapshot could be built. Both
-   * vendors then get nothing: the cart is correct either way, and there is no fallback worth
-   * publishing.
+   * The two destinations fail independently, because they always have.
+   *
+   * Meta reports on every accepted add, as it did before this unit existed. Its value now comes
+   * from `committedUnitPriceVnd` instead of the rendered price, and is omitted when the server has
+   * no usable price — which is exactly the shape the previous code had for an unresolved price.
+   * Making Meta's delivery depend on the newer canonical item would silently narrow a success
+   * boundary that is not this unit's to change.
+   *
+   * The canonical event needs the complete item — identity, name, options, money — so it is the one
+   * that goes silent when `analyticsItem` is absent. No fallback: the cart is correct either way.
    */
   function reportAcceptedAdd(
     result: Awaited<ReturnType<typeof addStorefrontItemToBag>>,
   ) {
-    if (!result.ok || result.analyticsItem === undefined) return;
-    const committed = result.analyticsItem;
+    if (!result.ok) return;
 
     trackFacebookPixelEvent("AddToCart", {
       // Existing direct-Meta content identity is unchanged; only the value moves from the stale
@@ -127,10 +133,13 @@ export function ProductPurchasePanel({
       content_name: productName,
       content_type: "product",
       currency: "VND",
-      value: committed.unitPriceVnd,
+      ...(result.committedUnitPriceVnd === undefined
+        ? {}
+        : { value: result.committedUnitPriceVnd }),
     });
 
-    if (!commerceTrackingEnabled) return;
+    const committed = result.analyticsItem;
+    if (!commerceTrackingEnabled || committed === undefined) return;
     try {
       publishBrowserTrackingEvent(
         buildCommerceItemsEvent("add_to_cart", { items: [buildVariantItem(committed)] }),

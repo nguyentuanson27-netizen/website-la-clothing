@@ -105,6 +105,17 @@ function readCommittedQuantity(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+/**
+ * The canonical item out of a committed-facts snapshot.
+ *
+ * The snapshot also carries the committed unit price on its own, for destinations that need only a
+ * value; the cart editor has no such destination, so it reads the item and nothing else.
+ */
+function readSnapshotItem(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return (value as Record<string, unknown>).analyticsItem;
+}
+
 export function createStorefrontCartPublicActions({
   getLines,
   canSetQuantity,
@@ -155,7 +166,7 @@ export function createStorefrontCartPublicActions({
     const delta = quantity > previousQuantity
       ? quantity - previousQuantity
       : previousQuantity - quantity;
-    const item = toPublicCartAnalyticsItemFacts(result.snapshot, delta);
+    const item = toPublicCartAnalyticsItemFacts(readSnapshotItem(result.snapshot), delta);
 
     return item === null
       ? Object.freeze({ ok: true as const, transition, analyticsUnavailable: true as const })
@@ -192,7 +203,7 @@ export function createStorefrontCartPublicActions({
       return Object.freeze({ ok: true as const, removedQuantity: removedQuantity ?? 0 });
     }
 
-    const item = toPublicCartAnalyticsItemFacts(result.snapshot, removedQuantity);
+    const item = toPublicCartAnalyticsItemFacts(readSnapshotItem(result.snapshot), removedQuantity);
     return item === null
       ? Object.freeze({ ok: true as const, removedQuantity, analyticsUnavailable: true as const })
       : Object.freeze({

@@ -145,7 +145,7 @@ test("T6 an absolute update returns the committed transition in both directions"
     { previous: increased.previousQuantity, committed: increased.item.quantity },
     { previous: 3, committed: 5 },
   );
-  assert.equal(increased.snapshot?.unitPriceVnd, 500_000);
+  assert.equal(increased.snapshot?.analyticsItem?.unitPriceVnd, 500_000);
 
   const decreased = await carts.updateExistingItemQuantity({
     cartId: cart.id,
@@ -187,8 +187,8 @@ test("T6 an update snapshot prices through the promotion resolver", async () => 
   });
 
   assert.ok(result.ok);
-  assert.equal(result.snapshot?.unitPriceVnd, 400_000);
-  assert.equal(result.snapshot?.variantExternalId, `${P}-pv-promoted`);
+  assert.equal(result.snapshot?.analyticsItem?.unitPriceVnd, 400_000);
+  assert.equal(result.snapshot?.analyticsItem?.variantExternalId, `${P}-pv-promoted`);
 });
 
 test("T6 a stock change after the advisory pre-check is refused at the mutation boundary", async () => {
@@ -254,7 +254,7 @@ test("T6 an update that commits but cannot be described emits nothing and still 
   });
 
   assert.ok(result.ok);
-  assert.equal(result.snapshot, null);
+  assert.equal(result.snapshot?.analyticsItem, null);
   assert.equal(await committedQuantity(cart.id, variant.id), 4);
 });
 
@@ -271,7 +271,7 @@ test("T6 a removal captures what left the cart before the row is deleted", async
 
   assert.ok(result.ok);
   assert.equal(result.removedQuantity, 4);
-  assert.deepEqual(result.snapshot, {
+  assert.deepEqual(result.snapshot?.analyticsItem, {
     variantExternalId: `${P}-pv-remove`,
     productExternalId: `${P}-remove`,
     itemName: "U19 Linen Shirt",
@@ -295,7 +295,11 @@ test("T6 removing a line that is already gone is a no-op, not a RemoveFromCart",
     now: NOW,
     resolveLine,
   });
-  assert.deepEqual(second, { ok: true, removedQuantity: 0, snapshot: null });
+  assert.deepEqual(second, {
+    ok: true,
+    removedQuantity: 0,
+    snapshot: null,
+  });
 });
 
 test("T6 an unavailable line can still be removed, and still reports what left", async () => {
@@ -311,7 +315,7 @@ test("T6 an unavailable line can still be removed, and still reports what left",
 
   assert.ok(result.ok, "a shopper must always be able to clear an unavailable line");
   assert.equal(result.removedQuantity, 2);
-  assert.equal(result.snapshot?.unitPriceVnd, 500_000);
+  assert.equal(result.snapshot?.analyticsItem?.unitPriceVnd, 500_000);
 });
 
 test("T6 concurrent absolute updates leave a committed quantity matching the last transition", async () => {

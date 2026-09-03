@@ -36,7 +36,7 @@ test("cart update requires an existing line and reauthorizes the requested quant
         cartId: "internal",
         item: input,
         previousQuantity: 1,
-        snapshot: { ...snapshot, quantity: input.quantity },
+        snapshot: { unitPriceVnd: snapshot.unitPriceVnd, analyticsItem: { ...snapshot, quantity: input.quantity } },
       };
     },
     async remove() {
@@ -102,7 +102,7 @@ test("T6 an absolute update reports the direction and size of the committed delt
           ok: true as const,
           item: input,
           previousQuantity,
-          snapshot: { ...snapshot, quantity: input.quantity },
+          snapshot: { unitPriceVnd: snapshot.unitPriceVnd, analyticsItem: { ...snapshot, quantity: input.quantity } },
         };
       },
       async remove() {
@@ -166,7 +166,7 @@ test("T6 a committed update with an unusable snapshot stays successful and emits
       return true;
     },
     async setQuantity(input) {
-      return { ok: true as const, item: input, previousQuantity: 1, snapshot: null };
+      return { ok: true as const, item: input, previousQuantity: 1, snapshot: { unitPriceVnd: 490_000, analyticsItem: null } };
     },
     async remove() {
       throw new Error("remove should not be called");
@@ -199,7 +199,7 @@ test("cart remove allows an existing unavailable line but not an unknown line", 
         ok: true as const,
         internal: "do-not-expose",
         removedQuantity: 3,
-        snapshot: { ...snapshot, quantity: 3 },
+        snapshot: { unitPriceVnd: snapshot.unitPriceVnd, analyticsItem: { ...snapshot, quantity: 3 } },
       };
     },
   });
@@ -251,7 +251,11 @@ test("T6 a committed removal with an unusable snapshot stays successful and emit
       throw new Error("setQuantity should not be called");
     },
     async remove() {
-      return { ok: true as const, removedQuantity: 2, snapshot: { itemName: "Linen Shirt" } };
+      return {
+        ok: true as const,
+        removedQuantity: 2,
+        snapshot: { unitPriceVnd: 490_000, analyticsItem: { itemName: "Linen Shirt" } },
+      };
     },
   });
 
@@ -277,11 +281,14 @@ test("T6 cart mutation responses never carry cart identity, local ids or custome
         item: { variantId: "variant-mirror-cuid", quantity: input.quantity },
         previousQuantity: 1,
         snapshot: {
-          ...snapshot,
-          quantity: input.quantity,
-          variantId: "variant-mirror-cuid",
-          guestPhone: "0900000000",
-          internal: "do-not-expose",
+          unitPriceVnd: snapshot.unitPriceVnd,
+          analyticsItem: {
+            ...snapshot,
+            quantity: input.quantity,
+            variantId: "variant-mirror-cuid",
+            guestPhone: "0900000000",
+            internal: "do-not-expose",
+          },
         },
       };
     },

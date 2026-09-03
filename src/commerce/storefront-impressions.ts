@@ -29,10 +29,25 @@ import {
   type StorefrontVariantOption,
 } from "./storefront-product.ts";
 
+/**
+ * The Flash card's server-authored money, as the card itself renders it.
+ *
+ * A Flash card does not build ordinary options at all: it shows the representative selected before
+ * pagination. Recomputing money from the product's variants here would describe a different set of
+ * prices than the one on screen.
+ */
+export type StorefrontImpressionFlashSale = Readonly<{
+  effectivePriceVnd: number;
+  /** True when a cheaper purchasable non-Flash variant exists, so the card reads "Sale từ X". */
+  hasCheaperCurrentVariant: boolean;
+}>;
+
 export type StorefrontImpressionProduct = Readonly<{
   pancakeProductId: string;
   name: string;
   variants: readonly StorefrontVariantFacts[];
+  /** Present only on the Flash listing, where the card is authored from this rather than options. */
+  flashSale?: StorefrontImpressionFlashSale;
 }>;
 
 export type StorefrontProductListContext = Readonly<{
@@ -54,10 +69,28 @@ function impressionPriceFromOptions(
   return { minimumPriceVnd: range.minimum, maximumPriceVnd: range.maximum };
 }
 
+/**
+ * Flash money, mapped from what the card actually claims.
+ *
+ * With no cheaper current variant the card shows one exact price, and that is the impression's
+ * exact price. Otherwise the card reads "Sale từ X": X is the cheapest *Flash* price, and there is
+ * a cheaper non-Flash variant besides, so X is neither an exact product price nor the bottom of a
+ * range the server has told us the top of. The canonical impression has no minimum-only shape, and
+ * reporting a minimum as though it were exact is the one thing the contract forbids outright — so
+ * this case carries no money rather than a value the card never made.
+ */
+function flashImpressionPrice(flashSale: StorefrontImpressionFlashSale): ImpressionPriceFacts {
+  if (flashSale.hasCheaperCurrentVariant) return {};
+  const { effectivePriceVnd } = flashSale;
+  if (!Number.isSafeInteger(effectivePriceVnd) || effectivePriceVnd < 0) return {};
+  return { exactPriceVnd: effectivePriceVnd };
+}
+
 function impressionPrice(
   product: StorefrontImpressionProduct,
   pricingRule: StorefrontPricingRule | undefined,
 ): ImpressionPriceFacts {
+  if (product.flashSale !== undefined) return flashImpressionPrice(product.flashSale);
   return impressionPriceFromOptions(
     buildStorefrontVariantOptions(product.variants, pricingRule),
   );

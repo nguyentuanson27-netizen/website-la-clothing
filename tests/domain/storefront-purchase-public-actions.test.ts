@@ -3,6 +3,11 @@ import test from "node:test";
 
 import { createStorefrontPurchasePublicActions } from "../../src/commerce/storefront-purchase-public-actions.ts";
 
+/** The shape the cart-line authority returns: committed money and the canonical item, separately. */
+function committed(analyticsItem: unknown, unitPriceVnd: number | null = 490_000) {
+  return { unitPriceVnd, analyticsItem };
+}
+
 const committedSnapshot = {
   variantExternalId: "pancake-variation-1",
   productExternalId: "pancake-product-1",
@@ -23,7 +28,7 @@ test("storefront public action passes only parsed slug and variant identity to t
         previousQuantity: 0,
         quantity: 1,
         addedQuantity: 1 as const,
-        snapshot: committedSnapshot,
+        snapshot: committed(committedSnapshot),
       };
     },
   });
@@ -33,6 +38,7 @@ test("storefront public action passes only parsed slug and variant identity to t
     {
       ok: true,
       transition: { previousQuantity: 0, quantity: 1, addedQuantity: 1 },
+      committedUnitPriceVnd: 490_000,
       analyticsItem: committedSnapshot,
     },
   );
@@ -48,7 +54,7 @@ test("T5 an accepted PDP add reports the committed transition with addedQuantity
           previousQuantity,
           quantity,
           addedQuantity: 1 as const,
-          snapshot: { ...committedSnapshot, quantity: 1 },
+          snapshot: committed({ ...committedSnapshot, quantity: 1 }),
         };
       },
     });
@@ -74,7 +80,7 @@ test("T5 a success that is not a plus-one transition is never reported as an Add
   ]) {
     const actions = createStorefrontPurchasePublicActions({
       async purchase() {
-        return { ok: true as const, ...success, snapshot: committedSnapshot };
+        return { ok: true as const, ...success, snapshot: committed(committedSnapshot) };
       },
     });
 
@@ -86,7 +92,7 @@ test("T5 a success that is not a plus-one transition is never reported as an Add
 });
 
 test("T5 commerce success survives an unusable analytics snapshot and emits nothing", async () => {
-  for (const snapshot of [
+  for (const analyticsItem of [
     undefined,
     null,
     "not-an-object",
@@ -94,6 +100,7 @@ test("T5 commerce success survives an unusable analytics snapshot and emits noth
     { variantExternalId: "v", itemName: "Linen Shirt", unitPriceVnd: "490000", quantity: 1 },
     { itemName: "Linen Shirt", unitPriceVnd: 490_000, quantity: 1 },
   ]) {
+    const snapshot = { unitPriceVnd: null, analyticsItem };
     const actions = createStorefrontPurchasePublicActions({
       async purchase() {
         return {
@@ -113,6 +120,55 @@ test("T5 commerce success survives an unusable analytics snapshot and emits noth
   }
 });
 
+test("T5 an unusable canonical item still carries the committed price for the direct Meta path", async () => {
+  // A blank mirrored name: purchasable, priced, and unnameable. The canonical event needs the name
+  // and goes silent; the existing Meta integration needs only the value and must keep reporting.
+  const actions = createStorefrontPurchasePublicActions({
+    async purchase() {
+      return {
+        ok: true as const,
+        previousQuantity: 0,
+        quantity: 1,
+        addedQuantity: 1 as const,
+        snapshot: {
+          unitPriceVnd: 490_000,
+          analyticsItem: { ...committedSnapshot, itemName: "   " },
+        },
+      };
+    },
+  });
+
+  const result = await actions.add({ slug: "linen-shirt", variantId: "variant-1" });
+  assert.ok(result.ok);
+  assert.equal(result.analyticsItem, undefined, "no canonical event without a usable name");
+  assert.equal(result.analyticsUnavailable, true);
+  assert.equal(
+    result.committedUnitPriceVnd,
+    490_000,
+    "the committed price survives the canonical item's failure",
+  );
+});
+
+test("T5 a committed price that is not usable money is omitted rather than guessed", async () => {
+  for (const unitPriceVnd of [null, undefined, -1, 490_000.5, "490000"]) {
+    const actions = createStorefrontPurchasePublicActions({
+      async purchase() {
+        return {
+          ok: true as const,
+          previousQuantity: 0,
+          quantity: 1,
+          addedQuantity: 1 as const,
+          snapshot: { unitPriceVnd, analyticsItem: null },
+        };
+      },
+    });
+
+    const result = await actions.add({ slug: "linen-shirt", variantId: "variant-1" });
+    assert.ok(result.ok);
+    assert.equal(result.committedUnitPriceVnd, undefined);
+  }
+});
+
 test("storefront public action owns its response shape instead of leaking downstream fields", async () => {
   const successActions = createStorefrontPurchasePublicActions({
     async purchase() {
@@ -123,12 +179,12 @@ test("storefront public action owns its response shape instead of leaking downst
         quantity: 1,
         addedQuantity: 1 as const,
         item: { variantId: "variant-mirror-cuid", quantity: 1 },
-        snapshot: {
+        snapshot: committed({
           ...committedSnapshot,
           variantId: "variant-mirror-cuid",
           guestPhone: "0900000000",
           internal: "do-not-expose",
-        },
+        }),
       };
     },
   });
@@ -136,6 +192,7 @@ test("storefront public action owns its response shape instead of leaking downst
   assert.deepEqual(success, {
     ok: true,
     transition: { previousQuantity: 0, quantity: 1, addedQuantity: 1 },
+    committedUnitPriceVnd: 490_000,
     analyticsItem: committedSnapshot,
   });
   const serialized = JSON.stringify(success);
@@ -169,7 +226,7 @@ test("storefront public action rejects malformed browser input before runtime as
         previousQuantity: 0,
         quantity: 1,
         addedQuantity: 1 as const,
-        snapshot: committedSnapshot,
+        snapshot: committed(committedSnapshot),
       };
     },
   });

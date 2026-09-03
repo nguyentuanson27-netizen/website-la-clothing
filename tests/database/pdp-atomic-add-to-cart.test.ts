@@ -175,7 +175,7 @@ test("T5 the accepted snapshot carries external identity and server-current mone
 
   const result = await carts.addItemUnit({ cartId: cart.id, variantId: variant.id, now: NOW, resolveLine });
   assert.ok(result.ok);
-  assert.deepEqual(result.snapshot, {
+  assert.deepEqual(result.snapshot?.analyticsItem, {
     variantExternalId: `${P}-pv-snapshot`,
     productExternalId: `${P}-snapshot`,
     itemName: "U18 Linen Shirt",
@@ -323,7 +323,14 @@ test("T5 commerce succeeds and analytics fails closed when the snapshot cannot b
 
   assert.ok(result.ok, "an unusable snapshot must not roll back the cart mutation");
   assert.equal(result.quantity, 1);
-  assert.equal(result.snapshot, null, "no event facts rather than fabricated ones");
+  assert.equal(
+    result.snapshot?.analyticsItem,
+    null,
+    "no canonical event facts rather than fabricated ones",
+  );
+  // The committed price survives that failure on its own, so the destination that needs only a
+  // value keeps the success boundary it has always had.
+  assert.equal(result.snapshot?.unitPriceVnd, 500_000);
   assert.equal(await committedQuantity(cart.id, variant.id), 1, "the unit is genuinely in the cart");
 });
 

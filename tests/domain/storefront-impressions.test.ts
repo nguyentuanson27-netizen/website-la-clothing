@@ -159,3 +159,76 @@ test("T5 a product page impression uses the projection the page rendered", () =>
 
   assert.equal(impression?.exactPriceVnd, 450_000, "an unpriceable option does not widen a range");
 });
+
+test("T5 a Flash card's impression uses the Flash representative, not the ordinary variant set", () => {
+  // The U17 mixed case: an ordinary variant at 300k and a Flash variant at 500k discounted 20% to
+  // 400k. The card renders the 400k representative; the ordinary option set would say 300k–500k.
+  const mixed = {
+    pancakeProductId: "pancake-product-1",
+    name: "Linen Shirt",
+    variants: [
+      variant({
+        id: "ordinary",
+        pancakeVariationId: "pv-ordinary",
+        size: "S",
+        retailPrice: 300_000,
+        retailPriceAfterDiscount: 300_000,
+      }),
+      variant({
+        id: "flash",
+        pancakeVariationId: "pv-flash",
+        size: "M",
+        retailPrice: 500_000,
+        retailPriceAfterDiscount: 500_000,
+      }),
+    ],
+  };
+
+  const withoutFlash = buildStorefrontProductImpression({ product: mixed });
+  assert.deepEqual(
+    { minimum: withoutFlash?.minimumPriceVnd, maximum: withoutFlash?.maximumPriceVnd },
+    { minimum: 300_000, maximum: 500_000 },
+    "the ordinary listing keeps its ordinary option range",
+  );
+
+  // The Flash card reads "Sale từ 400.000": 400k is the cheapest Flash price and something cheaper
+  // exists besides, so it is neither an exact price nor a range the server has bounded. Reporting
+  // 300k–500k here would publish money the Flash card never showed.
+  const flashFrom = buildStorefrontProductImpression({
+    product: {
+      ...mixed,
+      flashSale: { effectivePriceVnd: 400_000, hasCheaperCurrentVariant: true },
+    },
+  });
+  assert.deepEqual(flashFrom, {
+    productExternalId: "pancake-product-1",
+    itemName: "Linen Shirt",
+  });
+
+  // With nothing cheaper the card shows one exact Flash price, and so does the impression.
+  const flashExact = buildStorefrontProductImpression({
+    product: {
+      ...mixed,
+      flashSale: { effectivePriceVnd: 400_000, hasCheaperCurrentVariant: false },
+    },
+  });
+  assert.equal(flashExact?.exactPriceVnd, 400_000);
+  assert.equal(flashExact?.minimumPriceVnd, undefined);
+});
+
+test("T5 an unusable Flash representative price carries no money rather than a bad one", () => {
+  for (const effectivePriceVnd of [Number.NaN, -1, 400_000.5, Number.MAX_SAFE_INTEGER + 2]) {
+    const impression = buildStorefrontProductImpression({
+      product: {
+        pancakeProductId: "pancake-product-1",
+        name: "Linen Shirt",
+        variants: [variant()],
+        flashSale: { effectivePriceVnd, hasCheaperCurrentVariant: false },
+      },
+    });
+    assert.deepEqual(impression, {
+      productExternalId: "pancake-product-1",
+      itemName: "Linen Shirt",
+    });
+  }
+});
