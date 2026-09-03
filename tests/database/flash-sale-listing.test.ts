@@ -170,7 +170,7 @@ test("U17 only currently active, valid, discounting Flash campaigns qualify", as
     await seedVariant(notCheaper.id, "not-cheaper", { price: 500_000 });
     await campaign("c-not-cheaper", { productId: notCheaper.id }, {
       kind: "FLASH_SALE",
-      fixedPriceVnd: 500_000n,
+      fixedPriceVnd: BigInt(500_000),
     });
 
     const rounding = await seedProduct("rounding");
