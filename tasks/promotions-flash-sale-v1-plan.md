@@ -1,11 +1,10 @@
 # Promotions & Flash Sale v1 — implementation plan
 
-Status: **P1–P4, P6, P7a and P7b IMPLEMENTED AND MERGED; Checkpoint A PASS. P5 is delivered across P5a (PR #184, merged) + P5b (PR #185, this branch). Checkpoint B remains OPEN pending P5b integration/reconciliation; P8 onward remain planned.**
+Status: **P1–P7b IMPLEMENTED AND MERGED; Checkpoint A PASS; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54` via PR #187. P8 onward remain planned.**
 
 P1 (PR #158), P2 (PR #162 + #163 + #174), P3 (PR #167/#168/#169) and P4 (PR #170/#171/#172) are merged and
 integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` and the
-per-item state in `tasks/promotions-flash-sale-v1-todo.md`. P5a (PR #184) is merged on `main@3de4c825dcce42cbde2f42fd10612d6a069c8097`, while P5b is delivered by PR #185 and must merge before P5 is integrated on `main`.
-P6 (PR #181), P7a (PR #182) and P7b (PR #183) are already merged. Checkpoint B is deliberately not claimed by this PR: P5b integration plus fresh integrated verification/review are still required. The promotion activation gate remains default-off.
+per-item state in `tasks/promotions-flash-sale-v1-todo.md`. P5 is integrated through P5a PR #184 + P5b PR #185. P6 (PR #181), P7a (PR #182) and P7b (PR #183) are merged. Checkpoint B passed after PR #185 and PR #186 were integrated in order on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`; the integrated evidence is recorded in `docs/audits/wave-2-checkpoint-b.md`. The promotion activation gate remains default-off.
 
 Source of truth: `docs/specs/promotions-flash-sale-v1.md`.
 
@@ -94,12 +93,10 @@ Checkpoint A
                               ↓
                            P7b /flash-sale/freshness
                               ↓
-                           Checkpoint B
-                              ↓
-                 shared #153 T5/T6 cart contract
-                              ↓
-                           P8 DRAFT quote/audit
-                              ↓
+                           Checkpoint B ───────────────┐
+                                                     ├→ P8 DRAFT quote/audit
+                 shared #153 T5/T6 cart contract ────┘
+                                                       ↓
                            P9a stateless render→DRAFT proof/reconfirm
                               ↓
                            P9b DRAFT→fresh Pancake reconfirm
@@ -212,7 +209,7 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ## P5 — admin UX
 
-**Delivery status:** **DELIVERED** across P5a PR #184 (merged) + P5b PR #185 (this branch). P5b supplies the remaining lifecycle-valid create/edit surface and product-admin related-campaign summary/link. P5 is not considered integrated on `main` until #185 merges.
+**Delivery status:** **IMPLEMENTED AND MERGED** across P5a PR #184 + P5b PR #185. P5b supplies the lifecycle-valid create/edit surface and product-admin related-campaign summary/link.
 
 **Description:** `/admin/promotions` is implemented over the P4 service boundary.
 
@@ -221,7 +218,7 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 - [x] typed overlap/validation/expansion/activation feedback;
 - [x] product admin links to campaigns instead of duplicating editor; no pricing math in React.
 
-**Verification:** P5a/P5b service/action/component coverage; non-admin rejection; keyboard/Axe/mobile. Exact-head PR #185 verification is recorded in the PR description and must be green on the current head before merge.
+**Verification:** P5a/P5b service/action/component coverage; non-admin rejection; keyboard/Axe/mobile. PR #185 exact-head evidence is recorded in the merged PR; integrated promotion-admin verification is recorded in `docs/audits/wave-2-checkpoint-b.md`.
 
 **Dependencies:** P4.
 
@@ -283,11 +280,13 @@ Migration clean; focused P1–P4 tests green; activation gate default-off; secur
 
 ### Checkpoint B
 
-**Status: OPEN.** P6/P7a/P7b are merged, but P5b/#185 is not yet integrated on `main`. Do not claim Checkpoint B until P5b merges and fresh integrated verification/review confirms the full checkpoint.
+**Status: PASS.** P5–P7b are integrated on `main`, and the fresh integrated verification/review at `main@649e04c328353c016e4ba41831b6eec7d49d1d54` recorded **0 Critical / 0 Required**. See `docs/audits/wave-2-checkpoint-b.md`.
 
-PDP/cards/shop/Flash share one pricing authority; #153 identity contract remains intact; SQL↔TS parity + browser freshness/a11y green; 0 Critical/Required.
+PDP/cards/shop/Flash share one pricing authority; #153 identity contract remains intact; SQL↔TS parity + browser freshness/a11y are green; promotion activation remains default-off. Checkpoint B does not itself enable promotion activation, GTM, Merchant, search indexing or later launch gates.
 
 ## Shared cart checkpoint — #153 T5/T6
+
+**Delivery status:** **IMPLEMENTED AND MERGED** via U18/U19 / PR #186.
 
 Before P8/P9 modifies checkout orchestration, converge on one shared API:
 - PDP add is atomic `+1`;
@@ -296,7 +295,7 @@ Before P8/P9 modifies checkout orchestration, converge on one shared API:
 - cart/checkout analytics projection is complete/all-or-nothing;
 - current server unit price comes from the central promotion resolver when promotion exists.
 
-If #151 reaches this boundary first, implement the shared contract once and make #153 consume it. Do not create a temporary duplicate mutation/projection path.
+The shared contract is implemented once and consumed by both promotion checkout work and #153 analytics; no temporary duplicate mutation/projection path is permitted.
 
 ## P8 — mutable DRAFT quote + promotion audit
 
@@ -309,7 +308,7 @@ If #151 reaches this boundary first, implement the shared contract once and make
 
 **Verification:** no-promo/%/fixed snapshots; composite identity; invalid base; retryable DRAFT replacement; unsigned quote facts alone cannot create submit-capable DRAFT.
 
-**Dependencies:** P7b + shared T5/T6 contract.
+**Dependencies:** Checkpoint B + shared T5/T6 contract.
 
 **Scope:** M.
 
