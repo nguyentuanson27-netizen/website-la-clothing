@@ -1,19 +1,17 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5 and T6 IMPLEMENTED; M1 partially delivered. T7 onward remain proposed and
+Status: **PR-A (T1–T3), T4, T5, T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
-+ PR #165 product/option facts), and the durability half of **M1** (U9, PR #175). Verified on
-`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` for the T4 record.
++ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), and the durability half of **M1** (U9, PR #175). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
 
-T7, T8, M2, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
+T7, T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 itself is docs-only; runtime work lands in the focused PRs below, of which PR-A (T1–T3), T4 and part of M1
-have merged.
+PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T6 and M2 are now merged; M1 remains partially delivered.
 
 ## Owner/account gates
 
@@ -26,23 +24,23 @@ have merged.
 
 ### Review `5061555088`
 - [ ] **R1 Preview isolation:** production destination tags require `la_tracking_mode=live`; preview never relies on Tag Assistant as a sandbox.
-- [ ] **R2 Atomic cart deltas:** update/remove transaction returns committed old/new/removed quantities from inside the cart lock.
+- [x] **R2 Atomic cart deltas:** update/remove transaction returns committed old/new/removed quantities from inside the cart lock. *(Delivered T6 / PR #186.)*
 - [ ] **R3 Merchant composite:** composite Merchant offers deferred in v1; standalone IDs require durability proof.
 - [ ] **R4 Merchant envelope:** max 5,000 offers, 16 MiB, ≤8 DB round trips; overflow never partial `200`.
 
 ### Review `5062244480`
 - [ ] **R5 GTM live interlock:** PR-A contains **no GTM loader**. Requested preview/live stay operationally disabled until T8 has an exact saved GTM version + reviewed export. PR-C owns first GTM script/CSP opening.
-- [ ] **R6 Server-truth AddToCart:** successful server purchase action returns canonical bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price.
-- [ ] **R7 Product vs variant identity:** list/select/initial unselected PDP use product-level `pancakeProductId`; exact variant `pancakeVariationId` begins only when a concrete variant is selected/committed. Price ranges are never reported as an exact selected price.
+- [x] **R6 Server-truth AddToCart:** successful server purchase action returns canonical bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price. *(Delivered T5 / PR #186.)*
+- [x] **R7 Product vs variant identity:** list/select/initial unselected PDP use product-level `pancakeProductId`; exact variant `pancakeVariationId` begins only when a concrete variant is selected/committed. Price ranges are never reported as an exact selected price. *(Delivered T5 / PR #186.)*
 - [ ] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight for current one-app-service topology; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation. Multi-replica deployment requires shared cross-replica protection before activation.
 
 ### Review `5062693858`
-- [ ] **R9 PDP atomic add semantics:** PDP “Thêm vào giỏ hàng” uses a distinct server mutation that atomically increments the existing line by exactly `+1` under the cart lock; it must not reuse absolute `setItemQuantity(..., 1)` semantics. Success returns `previousQuantity`, committed `quantity`, and `addedQuantity=1`; no successful no-op/decrease may be reported as `add_to_cart`.
-- [ ] **R10 Mutation event snapshot:** PDP add, cart absolute update, and remove return a bounded non-PII `CommerceVariantItem` snapshot captured/resolved server-side at the accepted mutation truth point under the same serialized cart transaction. It includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item name, color/size where available, and the relevant committed delta quantity. Any pre-transaction availability check is advisory only; accepted absolute update must revalidate current eligibility/stock under the serialized mutation. If a safe snapshot cannot be resolved, the commerce mutation remains authoritative but analytics fails closed with no stale client fallback.
+- [x] **R9 PDP atomic add semantics:** PDP “Thêm vào giỏ hàng” uses a distinct server mutation that atomically increments the existing line by exactly `+1` under the cart lock; it must not reuse absolute `setItemQuantity(..., 1)` semantics. Success returns `previousQuantity`, committed `quantity`, and `addedQuantity=1`; no successful no-op/decrease may be reported as `add_to_cart`. *(Delivered T5 / PR #186.)*
+- [x] **R10 Mutation event snapshot:** PDP add, cart absolute update, and remove return a bounded non-PII `CommerceVariantItem` snapshot captured/resolved server-side at the accepted mutation truth point under the same serialized cart transaction. It includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item name, color/size where available, and the relevant committed delta quantity. Any pre-transaction availability check is advisory only; accepted absolute update must revalidate current eligibility/stock under the serialized mutation. If a safe snapshot cannot be resolved, the commerce mutation remains authoritative but analytics fails closed with no stale client fallback. *(Delivered T5/T6 / PR #186.)*
 - [ ] **R11 Merchant failure backoff:** a failed/overflow heavy rebuild installs a fixed-key negative backoff sentinel for `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS=60`. Sequential or concurrent requests during backoff return a cheap bounded `503` (with bounded `Retry-After`) and do not invoke heavy generation. Failure state never overwrites/poisons a valid successful feed cache entry.
 
 ### Review `5062818394`
-- [ ] **R12 Canonical cart/checkout analytics projection:** propagate `pancakeVariationId` through canonical resolved cart facts used by cart/checkout (or one dedicated equivalent projection). `view_cart` and `begin_checkout` are **all-or-nothing**: if any non-empty line lacks safe external variant identity, authoritative price, positive quantity, or item name, suppress the whole event. Never substitute local `VariantMirror.id`, never drop only the unsafe line, and never report a partial merchandise total.
+- [x] **R12 Canonical cart/checkout analytics projection:** propagate `pancakeVariationId` through canonical resolved cart facts used by cart/checkout (or one dedicated equivalent projection). `view_cart` and `begin_checkout` are **all-or-nothing**: if any non-empty line lacks safe external variant identity, authoritative price, positive quantity, or item name, suppress the whole event. Never substitute local `VariantMirror.id`, never drop only the unsafe line, and never report a partial merchandise total. *(Delivered T6 / PR #186.)*
 
 ## PR-A — tracking preparation; zero new GTM/vendor network delivery
 
@@ -120,8 +118,7 @@ have merged.
 - [x] `pnpm test`, `pnpm typecheck`, `pnpm lint` green.
 - [x] Review product-vs-variant IDs, canonical cart/checkout external identity, exact full-cart values, committed delta, server snapshot and all-or-nothing failure-closed tracking semantics.
 
-This is the PR-B tracking checkpoint only. The growth-commerce master programme has a separate
-storefront Checkpoint B covering U12–U17; nothing here marks that one.
+This is the PR-B tracking checkpoint. The separate growth-commerce storefront Checkpoint B covering U12–U17 has also now passed on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`; see `docs/audits/wave-2-checkpoint-b.md`.
 
 ## PR-C — confirmed Purchase + immutable GTM activation
 
@@ -163,15 +160,16 @@ storefront Checkpoint B covering U12–U17; nothing here marks that one.
 - [ ] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready.
 
 ### M2 Standalone variant deep link + canonical/query contract
-- [ ] Implement `/shop/<slug>?variant=<pancakeVariationId>` only for valid current standalone options.
-- [ ] Exact selected price/color/size/image matches feed facts.
-- [ ] Stale/forged/inactive/private/composite query cannot expose/select unauthorized option.
-- [ ] Base PDP remains organic canonical; variant query does not create independent indexing policy.
-- [ ] Regression aligns with merged SEO/GEO audit W4 dependency order.
+*(Delivered via U12 / PR #180, merged.)*
+- [x] Implement `/shop/<slug>?variant=<pancakeVariationId>` only for valid current standalone options.
+- [x] Exact selected price/color/size/image matches the authorized current option projection used by downstream feed facts.
+- [x] Stale/forged/inactive/private/composite query cannot expose/select unauthorized option.
+- [x] Base PDP remains organic canonical; variant query does not create independent indexing policy.
+- [x] Regression aligns with merged SEO/GEO audit W4 dependency order; browser coverage includes `variant-deep-link.spec.ts`.
 
 ### Checkpoint D
 - [ ] Real-catalog identity/MPN/durability audit green for every intended standalone launch record.
-- [ ] Representative Merchant deep links show exact variant facts.
+- [x] Standalone deep-link contract and representative variant addressability regressions are green via U12/M2.
 - [ ] Composite products intentionally absent, not silently regrouped.
 
 ## PR-E — Merchant feed

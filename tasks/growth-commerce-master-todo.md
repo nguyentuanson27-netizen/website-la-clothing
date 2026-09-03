@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 1 COMPLETE — U7–U11 merged and integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint A PASS. Wave 2 U12–U17 implementation is delivered: U12/U13/U15/U16/U17 are merged, while U14/P5 is delivered via P5a PR #184 (merged) + P5b PR #185 (this branch). Checkpoint B remains OPEN pending #185 integration and fresh integrated review.**
+Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is now unblocked; later launch gates remain independent.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -71,20 +71,25 @@ At the Checkpoint A head, the owning source checklists were reconciled to the sa
 
 - [x] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link. *(PR #180, merged; consumes U8 identity and accepted U9 evidence.)*
 - [x] **U13** #152 W15b — wire only the two missing SEO HTTP/runtime signals from U5 coverage map. *(PR #179, merged; no duplicate smoke suite.)*
-- [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 merged + P5b PR #185 this branch; not integrated on `main` until #185 merges.)*
+- [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 + P5b PR #185; both merged.)*
 - [x] **U15** #151 P6 — PDP promotion projection using central pricing + U8/T4 selected-variant state. *(PR #181, merged; consumes U12 deep-link state rather than defining a second query/canonical contract.)*
 - [x] **U16** #151 P7a — `/shop` effective-price discovery; SQL↔TS parity and product-level analytics identity preserved. *(PR #182, merged.)*
 - [x] **U17** #151 P7b — `/flash-sale` via same projection; bounded pagination and ≤60s server-relative freshness. *(PR #183, merged.)*
 
 ### Checkpoint B
 
-- [ ] **Integration blocker:** P5b / PR #185 must merge into current `main`, then fresh exact integrated verification/review must pass before Checkpoint B is declared complete.
-- [ ] **Blocker:** U20/P8 and later promotion checkout/order convergence must not start before Checkpoint B passes; U18/U19 canonical analytics/cart work may proceed from their own prerequisites.
+**PASS** — integrated evidence recorded in `docs/audits/wave-2-checkpoint-b.md`, verified at exact head
+`main@649e04c328353c016e4ba41831b6eec7d49d1d54` after PR #185 and PR #186 were merged in order.
+
+- [x] P5b / PR #185 integrated on `main`; U18/U19 / PR #186 integrated afterward.
 - [x] PDP/cards/shop/Flash share one pricing authority.
-- [x] T4 identity regressions and merged U12/M2 addressability regressions are green on their owning PR evidence.
-- [x] SQL↔TS parity + required browser freshness/a11y are green on merged U16/U17 evidence.
+- [x] T4 identity regressions and merged U12/M2 addressability regressions are green.
+- [x] SQL↔TS parity + required browser freshness/a11y are green.
 - [x] Activation remains off.
-- [ ] Fresh integrated review: 0 Critical / 0 Required.
+- [x] Exact-head CI `33739762266`, Catalog runtime `33739762252`, and VPS verification `33739762271` succeeded.
+- [x] Fresh integrated review: **0 Critical / 0 Required**.
+
+Checkpoint B no longer blocks U20/P8. Later promotion activation and downstream launch work remain gated by their own acceptance criteria and Checkpoint C.
 
 ## Wave 3 — canonical analytics/cart APIs
 
@@ -94,8 +99,7 @@ At the Checkpoint A head, the owning source checklists were reconciled to the sa
 Wave 3 also converged cart, checkout render and the order snapshot onto the central promotion
 resolver, which the #151 shared cart checkpoint required. Before this, a promotion was visible on
 the PDP and on `/shop` but the cart and the submitted order still quoted the undiscounted base
-price. U20/P8 remains blocked on the master storefront Checkpoint B (U12–U17 + P5b), which Wave 3
-does **not** mark.
+price. U20/P8 is now unblocked because the master storefront Checkpoint B has passed; U20 still owns its own DRAFT quote/audit acceptance criteria.
 
 ## Wave 4 — checkout/order convergence
 
@@ -237,7 +241,7 @@ pnpm release:check
 ```
 
 - [ ] `pnpm pancake:catalog:audit` only in approved real-catalog context with sanitized evidence.
-- [ ] Browser/runtime/a11y/SEO checks run where the owning source task requires them.
+- [x] Browser/runtime/a11y/SEO checks required by Checkpoint B are green on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`; see `docs/audits/wave-2-checkpoint-b.md`.
 - [ ] GTM/Merchant/Pancake external acceptance uses approved credentials/context only.
 
 # Final program Definition of Done

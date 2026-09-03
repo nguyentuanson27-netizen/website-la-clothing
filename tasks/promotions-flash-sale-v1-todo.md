@@ -1,13 +1,12 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P7b IMPLEMENTED. P1–P4, P6, P7a and P7b are merged; P5 is delivered via P5a (PR #184, merged) + P5b (PR #185, this branch). Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. Checkpoint B remains OPEN pending P5b integration and fresh integrated review; P8 onward remain planned.**
+Status: **P1–P7b IMPLEMENTED AND MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 onward remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
 real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
-evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; the W3 pricing evidence is in
-`docs/audits/pricing-evidence-w3.md`.
+evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; Checkpoint B evidence is in `docs/audits/wave-2-checkpoint-b.md`; the W3 pricing evidence is in `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**. P6/P7 storefront projection is merged, but P5b is not yet integrated on `main`; therefore Checkpoint B is not claimed by this branch update. P8 onward remain planned.
+The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work and the shared T5/T6 cart contract are integrated, but P8/P9/P10 and later activation gates remain open.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -132,7 +131,7 @@ Verification:
 - [x] 0 Critical / 0 Required. Three non-blocking observations carried to P5.
 
 ## P5 — admin UX
-*(Delivered across P5a PR #184 and P5b PR #185; P5b is not integrated on `main` until #185 merges.)*
+*(Delivered across P5a PR #184 and P5b PR #185; both merged and integrated.)*
 - [x] Protected `/admin/promotions`.
 - [x] List/search bounded 50.
 - [x] Lifecycle-valid create/edit/publish/re-enable/disable/copy.
@@ -206,12 +205,19 @@ Verification:
 - [x] pagination/query budget.
 
 ### Checkpoint B
-- [ ] **Integration blocker:** merge P5b / PR #185 into current `main`, then require fresh exact integrated verification/review before declaring Checkpoint B PASS.
+
+**PASS** on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Full record: `docs/audits/wave-2-checkpoint-b.md`.
+
+- [x] P5b / PR #185 is merged and integrated; PR #186 followed it on `main`.
 - [x] PDP/cards/shop/Flash share one price authority.
 - [x] #153 identity contract remains green, including merged U12/M2 addressability regressions.
 - [x] SQL parity green.
 - [x] Browser freshness/a11y green.
-- [ ] 0 Critical / 0 Required on the fresh integrated checkpoint review.
+- [x] Activation remains default-off.
+- [x] Exact-head CI `33739762266`, Catalog runtime `33739762252`, and VPS verification `33739762271` succeeded.
+- [x] Fresh integrated review: **0 Critical / 0 Required**.
+
+Checkpoint B unblocks P8/U20; it does not enable promotion activation or bypass later Checkpoint C requirements.
 
 ## Shared #153 T5/T6 cart contract
 - [x] PDP AddToCart is atomic `+1`, never absolute set-to-1.
@@ -221,7 +227,7 @@ Verification:
 - [x] `view_cart` / `begin_checkout` are complete all-or-nothing projections.
 - [x] If #151 reaches this boundary first, implement this API once and make #153 consume it; no duplicate temporary path.
 
-Delivered by Wave 3 (U18/U19). Cart, checkout render and the order snapshot now price through
+Delivered by Wave 3 (U18/U19, PR #186). Cart, checkout render and the order snapshot now price through
 `resolvePromotionPricing`, so the enabled-consumer convergence rule holds for the currently enabled
 price-bearing consumers. P8/P9/P10 remain unimplemented and consume this contract rather than
 extending it.
@@ -371,12 +377,12 @@ Activation rule:
 - [x] A2 P2 pricing/evidence. *(U7, PR #162 + #163 + #174)*
 - [x] B1 P3 repository/lifecycle. *(U10, PR #167 + #168 + #169)*
 - [x] B2 P4 concurrency/admin domain + atomic revision advance. *(U11, PR #170 + #171 + #172)*
-- [x] C P5 admin UX. *(P5a PR #184 merged + P5b PR #185 this branch)*
+- [x] C P5 admin UX. *(P5a PR #184 + P5b PR #185, merged)*
 - [x] Converge #153 T4 identity. *(U8, PR #164 + #165)*
 - [x] D1 P6 PDP/composite. *(U15, PR #181 merged)*
 - [x] D2 P7a shop/cards. *(U16, PR #182 merged)*
 - [x] D3 P7b Flash/freshness. *(U17, PR #183 merged)*
-- [ ] Converge shared #153 T5/T6 cart API.
+- [x] Converge shared #153 T5/T6 cart API. *(U18/U19, PR #186 merged)*
 - [ ] E1 P8 DRAFT.
 - [ ] E2 P9a stateless rendered quote proof/reconfirmation.
 - [ ] E3 P9b fresh-Pancake reconfirmation.
