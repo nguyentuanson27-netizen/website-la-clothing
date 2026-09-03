@@ -4,12 +4,9 @@ import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
-import {
-  resolvePromotionPricing,
-  type PromotionPricingResult,
-} from "./promotion-pricing.ts";
+import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
-import type { StorefrontPricingRule } from "./storefront-product.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
@@ -261,6 +258,8 @@ function toStorefrontProduct(product: SelectedProduct) {
     });
   }
   return {
+    // Checkout never renders a public product link, so the slug is a placeholder rather than a
+    // public fact. The external product identity is real and comes straight from the mirror.
     slug: "checkout-snapshot",
     pancakeProductId: product.pancakeProductId,
     name: product.name,
@@ -310,25 +309,28 @@ export function createGuestCheckoutSnapshotService(
         }
 
         const activeCheckout = await lockActiveCheckout(tx, cartId);
-        const mutableDraft = activeCheckout && isMutableDraft(activeCheckout)
+        let mutableDraft = activeCheckout && isMutableDraft(activeCheckout)
           ? activeCheckout
           : null;
-        if (activeCheckout) {
-          if (mutableDraft) {
-            if (!checkoutInputValidated) {
-              return { ok: false, reason: "INVALID_INPUT" };
-            }
-            if (mutableDraft.pancakeShopId !== safeShopId) {
-              return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
-            }
-          } else {
-            return toSnapshotResult(activeCheckout) ?? {
-              ok: false,
-              reason: "MONEY_UNSUPPORTED",
-            };
-          }
-        } else if (!checkoutInputValidated) {
+        // An active checkout that has already left DRAFT is frozen: report it as-is.
+        if (activeCheckout && !mutableDraft) {
+          return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+        }
+        if (!checkoutInputValidated) {
           return { ok: false, reason: "INVALID_INPUT" };
+        }
+        if (mutableDraft && mutableDraft.pancakeShopId !== safeShopId) {
+          // The configured shop moved out from under an open DRAFT. Refusing the refresh would
+          // strand this cart permanently: DRAFT is the one active state stranded-checkout recovery
+          // never sweeps, and returning a failure here means `pancake-order-submit` — which owns
+          // the `SHOP_SCOPE_UNVERIFIED` rejection — is never reached to clear it. Reject the
+          // mismatched DRAFT with that same vocabulary and snapshot a fresh one under the current
+          // shop, which is what the pre-mutable supersede path did.
+          await tx.orderMirror.update({
+            where: { id: mutableDraft.id },
+            data: { state: "REJECTED", syncErrorCode: "SHOP_SCOPE_UNVERIFIED" },
+          });
+          mutableDraft = null;
         }
 
         const items = await tx.cartItem.findMany({
@@ -368,24 +370,21 @@ export function createGuestCheckoutSnapshotService(
           ),
           client: tx as unknown as PromotionCandidateReadClient,
         });
+        // The order snapshot prices through the same projection object the cart and the checkout
+        // render use, resolved inside this transaction. A buyer is charged the money they were
+        // shown; a campaign that starts or ends between render and submission is caught here rather
+        // than committing a price nobody quoted. The audit needs the campaign behind the price too,
+        // so it observes the resolver answer through `onResolved` instead of rebuilding a second
+        // projection that could drift from this one.
         const pricingByVariantId = new Map<string, PromotionPricingResult>();
-        const pricingRule: StorefrontPricingRule = (variant) => {
-          const pricing = resolvePromotionPricing({
-            basePriceVnd: variant.retailPrice,
-            campaigns: campaignsByVariantId.get(variant.id) ?? [],
-            now,
-          });
-          pricingByVariantId.set(variant.id, pricing);
-          return Object.freeze({
-            price: pricing.effectivePriceVnd,
-            basePriceVnd: pricing.basePriceVnd,
-            isDiscounted: pricing.isDiscounted,
-          });
-        };
         const lines = buildStorefrontCartLines({
           items,
           products: storefrontProducts,
-          pricingRule,
+          pricingRule: buildPromotionalStorefrontPricing({
+            campaignsByVariantId,
+            now,
+            onResolved: (variantId, pricing) => pricingByVariantId.set(variantId, pricing),
+          }),
         });
         const snapshots: Array<{
           variantId: string;
@@ -408,6 +407,11 @@ export function createGuestCheckoutSnapshotService(
         let totalQuantity = 0;
 
         for (const line of lines) {
+          // Identity comes from the resolved line, which is the one projection that knows whether a
+          // real variation was resolved at all. Re-deriving it here from a side map was a second
+          // identity path that could disagree with the line it is describing. `pricingByVariantId`
+          // is deliberately not that: it carries money the line already agrees with (asserted
+          // below), never identity.
           const pancakeVariationId = line.pancakeVariationId;
           const pricing = pricingByVariantId.get(line.variantId);
           if (

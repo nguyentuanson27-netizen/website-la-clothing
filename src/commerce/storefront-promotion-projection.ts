@@ -25,16 +25,28 @@
 import {
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
+  type PromotionPricingResult,
 } from "./promotion-pricing.ts";
 import type { StorefrontPricingRule } from "./storefront-product.ts";
 
 export function buildPromotionalStorefrontPricing({
   campaignsByVariantId,
   now,
+  onResolved,
 }: Readonly<{
   /** Keyed by internal `VariantMirror.id`, which is how the candidate repository reports them. */
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
   now: Date;
+  /**
+   * Observes the full resolver answer for each variant this rule prices.
+   *
+   * The rule itself only surfaces the three fields a storefront option needs, but the order
+   * snapshot must also persist *which* campaign produced the price. Handing that consumer the
+   * result it already computed here is what keeps a second copy of this projection — and therefore
+   * a second chance to disagree about money — from existing. It is an observer, never an input:
+   * nothing it does can change the price this rule returns.
+   */
+  onResolved?: (variantId: string, pricing: PromotionPricingResult) => void;
 }>): StorefrontPricingRule {
   return (variant) => {
     const pricing = resolvePromotionPricing({
@@ -42,6 +54,7 @@ export function buildPromotionalStorefrontPricing({
       campaigns: campaignsByVariantId.get(variant.id) ?? [],
       now,
     });
+    onResolved?.(variant.id, pricing);
 
     return Object.freeze({
       // `effectivePriceVnd` is base when nothing applies and stays null when the base itself is

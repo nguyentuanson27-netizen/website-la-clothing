@@ -225,8 +225,9 @@ test("P8 unsigned browser quote facts alone cannot create a DRAFT or become pric
   });
   const publicCode = `${prefix}-browser-only-order`;
 
+  // Quote-shaped fields with no valid checkout input behind them cannot open a DRAFT at all.
   assert.deepEqual(
-    await snapshot(cart.id, publicCode, {
+    await snapshot(cart.id, `${publicCode}-alone`, {
       items: [{ variantExternalId: product.variants[0]!.pancakeVariationId, quantity: 1, unitPriceVnd: 1 }],
       merchandiseSubtotalVnd: 1,
       shippingFeeVnd: 0,
@@ -235,5 +236,110 @@ test("P8 unsigned browser quote facts alone cannot create a DRAFT or become pric
     }),
     { ok: false, reason: "INVALID_INPUT" },
   );
-  assert.equal(await prisma.orderMirror.count({ where: { publicCode } }), 0);
+  assert.equal(await prisma.orderMirror.count({ where: { publicCode: `${publicCode}-alone` } }), 0);
+
+  // The load-bearing half: the same forged quote riding a *valid* checkout input is accepted as a
+  // checkout, and still contributes nothing to money. A DRAFT that quoted the browser's 1 VND
+  // instead of the server's 500,000 would pass the assertion above and fail this one.
+  const result = await snapshot(cart.id, publicCode, {
+    ...checkoutInput,
+    items: [{ variantExternalId: product.variants[0]!.pancakeVariationId, quantity: 1, unitPriceVnd: 1 }],
+    merchandiseSubtotalVnd: 1,
+    shippingFeeVnd: 0,
+    totalVnd: 1,
+    unitPriceVnd: 1,
+    promotionCampaignId: "forged",
+    promotionName: "forged campaign",
+    promotionPercentageValue: 99,
+  });
+  assert.equal(result.ok, true);
+
+  const persisted = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(persisted.merchandiseSubtotalVnd, BigInt(500_000));
+  assert.equal(persisted.lines.length, 1);
+  assert.equal(persisted.lines[0]!.unitPriceVnd, BigInt(500_000));
+  assert.equal(persisted.lines[0]!.baseUnitPriceVnd, BigInt(500_000));
+  assert.equal(persisted.lines[0]!.lineTotalVnd, BigInt(500_000));
+  assert.equal(persisted.lines[0]!.promotionCampaignId, null);
+  assert.equal(persisted.lines[0]!.promotionName, null);
+  assert.equal(persisted.lines[0]!.promotionPercentageValue, null);
+});
+
+test("P8 a DRAFT whose shop scope no longer matches is rejected rather than stranding the cart", async () => {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: `${prefix}-scope-product`,
+      slug: `${prefix}-scope-product`,
+      name: "Shop scope product",
+      isPresent: true,
+      isActive: true,
+      syncedAt: now,
+      variants: {
+        create: {
+          pancakeVariationId: `${prefix}-scope-variation`,
+          color: "Black",
+          size: "M",
+          isPresent: true,
+          isActive: true,
+          pancakeRetailPrice: 500_000,
+          pancakeRetailPriceAfterDiscount: 500_000,
+          syncedAt: now,
+          warehouseStocks: {
+            create: {
+              pancakeWarehouseId: `${prefix}-scope-warehouse`,
+              quantity: 5,
+              syncedAt: now,
+            },
+          },
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  const cart = await prisma.cart.create({
+    data: {
+      expiresAt: new Date(now.getTime() + 60_000),
+      items: { create: { variantId: product.variants[0]!.id, quantity: 1 } },
+    },
+  });
+
+  const stalePublicCode = `${prefix}-scope-stale-order`;
+  assert.equal((await snapshot(cart.id, stalePublicCode)).ok, true);
+  const stale = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: stalePublicCode } });
+
+  // The configured shop moves after the DRAFT was written. Stranded-checkout recovery never sweeps
+  // DRAFT, so if this refresh merely failed, the cart could never check out again.
+  await prisma.orderMirror.update({
+    where: { id: stale.id },
+    data: { pancakeShopId: shopId + 1 },
+  });
+
+  const freshPublicCode = `${prefix}-scope-fresh-order`;
+  const retry = await snapshot(cart.id, freshPublicCode);
+  assert.equal(retry.ok, true);
+  if (!retry.ok) return;
+  assert.equal(retry.order.publicCode, freshPublicCode);
+  assert.equal(retry.order.state, "DRAFT");
+
+  const rejected = await prisma.orderMirror.findUniqueOrThrow({ where: { id: stale.id } });
+  assert.equal(rejected.state, "REJECTED");
+  assert.equal(rejected.syncErrorCode, "SHOP_SCOPE_UNVERIFIED");
+
+  const fresh = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: freshPublicCode },
+    include: { lines: true },
+  });
+  assert.notEqual(fresh.id, stale.id);
+  assert.equal(fresh.pancakeShopId, shopId);
+  assert.equal(fresh.lines.length, 1);
+  assert.equal(fresh.lines[0]!.pancakeVariationId, product.variants[0]!.pancakeVariationId);
+  assert.equal(
+    await prisma.orderMirror.count({ where: { sourceCartId: cart.id, state: "DRAFT" } }),
+    1,
+    "exactly one active DRAFT must remain after the scope recovery",
+  );
 });
