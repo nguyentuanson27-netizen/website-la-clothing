@@ -278,7 +278,7 @@ test("U14 P5b browser creates campaign and persists exact Draft row without adva
   // Wait for redirect to /admin/promotions?status=ok
   await expect(page).toHaveURL(`${BASE_URL}/admin/promotions?status=ok`);
   await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
-  await expect(page.getByRole("cell", { name: newCampaignName })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(newCampaignName) })).toBeVisible();
 
   // Direct database assertions
   const created = await prisma.promotionCampaign.findFirst({
