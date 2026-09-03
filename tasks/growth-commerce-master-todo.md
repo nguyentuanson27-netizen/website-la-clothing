@@ -103,8 +103,8 @@ price. U20/P8 is now unblocked because the master storefront Checkpoint B has pa
 
 ## Wave 4 — checkout/order convergence
 
-- [ ] **U20** #151 P8 — mutable DRAFT quote/audit after U17 + U19.
-- [ ] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context.
+- [x] **U20** #151 P8 — mutable DRAFT quote/audit after U17 + U19. Merged via PR #189.
+- [x] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context.
 - [ ] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create.
 - [ ] **U23** #151 P10 — final Pancake convergence; all three raw-`livePrice` regressions + controlled custom-price acceptance.
 - [ ] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID.

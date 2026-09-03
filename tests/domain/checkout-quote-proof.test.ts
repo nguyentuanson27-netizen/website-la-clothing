@@ -7,6 +7,7 @@ import {
   verifyRenderedQuoteProof,
   type RenderedQuoteProofFacts,
 } from "../../src/commerce/checkout-quote-proof.ts";
+import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "../../src/commerce/anonymous-cart.ts";
 
 const secret = "test-server-secret-at-least-32-characters-long";
 const otherSecret = "another-server-secret-at-least-32-characters-long";
@@ -141,6 +142,35 @@ test("P9a the byte ceiling accepts max and rejects max+1 before decode/MAC work"
     ok: false,
     reason: "PROOF_OVERSIZED",
   });
+});
+
+test("P9a the 16 KiB envelope genuinely fits a full 50-line cart", () => {
+  // The spec sizes this bound against the current `ANONYMOUS_CART_MAX_DISTINCT_ITEMS`, so the claim
+  // is measured rather than asserted in a comment. If the cart ceiling rises, this fails and the
+  // envelope gets re-proven instead of being quietly raised.
+  const items = Array.from({ length: ANONYMOUS_CART_MAX_DISTINCT_ITEMS }, (_unused, index) => ({
+    // Deliberately generous: a UUID-shaped external id with room to spare over what Pancake mirrors.
+    variantExternalId: `${String(index).padStart(4, "0")}-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee`,
+    quantity: 999,
+    unitPriceVnd: 999_999_999,
+  }));
+  const full: RenderedQuoteProofFacts = {
+    items,
+    merchandiseSubtotalVnd: Number.MAX_SAFE_INTEGER - 1,
+    shippingFeeVnd: 999_999,
+    totalVnd: Number.MAX_SAFE_INTEGER,
+    totalQuantity: 999 * ANONYMOUS_CART_MAX_DISTINCT_ITEMS,
+  };
+
+  const proof = issueRenderedQuoteProof({ quote: full, cartId, secret });
+  assert.ok(
+    Buffer.byteLength(proof, "utf8") <= MAX_RENDERED_QUOTE_PROOF_BYTES,
+    `a full cart must fit the envelope, got ${Buffer.byteLength(proof, "utf8")} bytes`,
+  );
+  assert.deepEqual(
+    verifyRenderedQuoteProof({ proof, cartId, currentQuote: full, secret }),
+    { ok: true },
+  );
 });
 
 test("P9a a stale proof reports PRICE_CHANGED against the current quote", () => {
