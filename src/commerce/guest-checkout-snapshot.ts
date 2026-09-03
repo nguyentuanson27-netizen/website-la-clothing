@@ -371,11 +371,18 @@ export function createGuestCheckoutSnapshotService(
           client: tx as unknown as PromotionCandidateReadClient,
         });
         // The order snapshot prices through the same projection object the cart and the checkout
-        // render use, resolved inside this transaction. A buyer is charged the money they were
-        // shown; a campaign that starts or ends between render and submission is caught here rather
-        // than committing a price nobody quoted. The audit needs the campaign behind the price too,
-        // so it observes the resolver answer through `onResolved` instead of rebuilding a second
-        // projection that could drift from this one.
+        // render use, resolved inside this transaction, so the persisted DRAFT quote is current
+        // server truth at snapshot time and never a browser-supplied or stale-cached number.
+        //
+        // What this deliberately does *not* establish: that the buyer is charged the money they
+        // were shown. A campaign that starts or ends between render and submission is re-resolved
+        // here to the new price, not compared against the rendered one — so this path can persist a
+        // DRAFT at a price the buyer never saw. Binding the rendered quote and refusing an unseen
+        // price is P9a's rendered-quote proof plus stale comparison; P8 only persists the current
+        // authoritative quote and its audit. Do not read this block as that guarantee.
+        //
+        // The audit needs the campaign behind the price too, so it observes the resolver answer
+        // through `onResolved` instead of rebuilding a second projection that could drift.
         const pricingByVariantId = new Map<string, PromotionPricingResult>();
         const lines = buildStorefrontCartLines({
           items,
