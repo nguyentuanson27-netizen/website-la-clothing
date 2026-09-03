@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "../../src/commerce/anonymous-cart.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 
@@ -51,6 +52,34 @@ test("P8 rendered checkout quote is deterministic, bounded and contains only ext
   });
   assert.equal(JSON.stringify(quote).includes("local-a"), false, "internal variant ids stay out");
   assert.equal(JSON.stringify(quote).includes("Product"), false, "names/PII-like text stay out");
+});
+
+test("P8 rendered checkout quote accepts the cart ceiling and rejects max+1 before projection", () => {
+  const atLimit = Array.from({ length: ANONYMOUS_CART_MAX_DISTINCT_ITEMS }, (_, index) =>
+    line({
+      variantId: `local-${index}`,
+      variationId: `variation-${index}`,
+      price: 1,
+      quantity: 1,
+    }),
+  );
+
+  const quote = buildRenderedCheckoutQuoteFacts(atLimit);
+  assert.notEqual(quote, null);
+  assert.equal(quote?.items.length, ANONYMOUS_CART_MAX_DISTINCT_ITEMS);
+
+  assert.equal(
+    buildRenderedCheckoutQuoteFacts([
+      ...atLimit,
+      line({
+        variantId: "local-over-limit",
+        variationId: "variation-over-limit",
+        price: 1,
+        quantity: 1,
+      }),
+    ]),
+    null,
+  );
 });
 
 test("P8 rendered checkout quote fails closed for partial, duplicated or unsafe cart facts", () => {
