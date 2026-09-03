@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { calculateGuestShippingFeeVnd } from "@/commerce/guest-shipping-policy";
+import { buildRenderedCheckoutQuoteFacts } from "@/commerce/checkout-quote";
 import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
 import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
@@ -20,41 +20,6 @@ const currency = new Intl.NumberFormat("vi-VN", {
   currency: "VND",
   maximumFractionDigits: 0,
 });
-
-function checkoutTotals(
-  lines: Awaited<ReturnType<typeof getCurrentStorefrontCartLines>>,
-) {
-  let subtotalVnd = 0;
-  let totalQuantity = 0;
-  for (const line of lines) {
-    if (!line.available || line.price === null) return null;
-    const lineTotal = line.price * line.quantity;
-    const nextSubtotal = subtotalVnd + lineTotal;
-    const nextQuantity = totalQuantity + line.quantity;
-    if (
-      !Number.isSafeInteger(line.price) ||
-      !Number.isSafeInteger(line.quantity) ||
-      line.quantity <= 0 ||
-      !Number.isSafeInteger(lineTotal) ||
-      !Number.isSafeInteger(nextSubtotal) ||
-      !Number.isSafeInteger(nextQuantity)
-    ) {
-      return null;
-    }
-    subtotalVnd = nextSubtotal;
-    totalQuantity = nextQuantity;
-  }
-
-  if (totalQuantity <= 0) return null;
-  const shippingFeeVnd = calculateGuestShippingFeeVnd({
-    subtotalVnd,
-    totalQuantity,
-  });
-  const totalVnd = subtotalVnd + shippingFeeVnd;
-  if (!Number.isSafeInteger(totalVnd)) return null;
-
-  return { subtotalVnd, shippingFeeVnd, totalVnd, totalQuantity };
-}
 
 export default async function CheckoutPage() {
   await connection();
@@ -101,7 +66,7 @@ export default async function CheckoutPage() {
     );
   }
 
-  const totals = checkoutTotals(lines);
+  const totals = buildRenderedCheckoutQuoteFacts(lines);
   if (!totals) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -182,7 +147,7 @@ export default async function CheckoutPage() {
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <GuestCheckoutForm />
-        {/* Emitted only on this branch: the totals gate above already established that every line
+        {/* Emitted only on this branch: the quote gate above already established that every line
             resolved, priced and had sufficient stock. Analytics never gates checkout itself — an
             unavailable projection suppresses the event and changes nothing else. */}
         <CommerceEventReporter event={buildCheckoutBeginEvent(lines)} />
@@ -253,7 +218,7 @@ export default async function CheckoutPage() {
           <dl className="mt-5 space-y-3 text-sm">
             <div className="flex justify-between gap-5">
               <dt className="text-black/75">Tạm tính</dt>
-              <dd>{currency.format(totals.subtotalVnd)}</dd>
+              <dd>{currency.format(totals.merchandiseSubtotalVnd)}</dd>
             </div>
             <div className="flex justify-between gap-5">
               <dt className="text-black/75">Phí vận chuyển</dt>

@@ -4,13 +4,12 @@ import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
-const RETRYABLE_DRAFT_ERROR = "VALIDATION_UNAVAILABLE";
-const SUPERSEDED_RETRY_ERROR = "VALIDATION_RETRY_SUPERSEDED";
 const ACTIVE_CHECKOUT_STATES = [
   "DRAFT",
   "VALIDATING",
@@ -51,6 +50,7 @@ const snapshotOrderSelection = {
   publicCode: true,
   state: true,
   syncErrorCode: true,
+  pancakeShopId: true,
   merchandiseSubtotalVnd: true,
   shippingFeeVnd: true,
   totalVnd: true,
@@ -123,8 +123,8 @@ function isActiveCheckoutState(state: string): state is ActiveCheckoutState {
   return (ACTIVE_CHECKOUT_STATES as readonly string[]).includes(state);
 }
 
-function isRetryableDraft(order: SelectedSnapshotOrder): boolean {
-  return order.state === "DRAFT" && order.syncErrorCode === RETRYABLE_DRAFT_ERROR;
+function isMutableDraft(order: SelectedSnapshotOrder): boolean {
+  return order.state === "DRAFT";
 }
 
 function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult | null {
@@ -192,13 +192,23 @@ async function lockLiveAnonymousCart(
   return rows.length === 1;
 }
 
-async function findActiveCheckout(tx: TransactionClient, cartId: string) {
-  return tx.orderMirror.findFirst({
-    where: {
-      sourceCartId: cartId,
-      state: { in: [...ACTIVE_CHECKOUT_STATES] },
-    },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+async function lockActiveCheckout(
+  tx: TransactionClient,
+  cartId: string,
+): Promise<SelectedSnapshotOrder | null> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "OrderMirror"
+    WHERE "sourceCartId" = ${cartId}
+      AND "state" IN ('DRAFT', 'VALIDATING', 'POS_SUBMITTING', 'CONFIRMED', 'SYNC_UNKNOWN')
+    ORDER BY "createdAt" ASC, "id" ASC
+    LIMIT 1
+    FOR UPDATE
+  `;
+  const id = rows[0]?.id;
+  if (!id) return null;
+  return tx.orderMirror.findUnique({
+    where: { id },
     select: snapshotOrderSelection,
   });
 }
@@ -220,29 +230,7 @@ export async function requiresFreshGuestCheckoutSnapshot(
     select: snapshotOrderSelection,
   });
 
-  return !activeCheckout || isRetryableDraft(activeCheckout);
-}
-
-async function supersedeRetryableDraft(
-  tx: TransactionClient,
-  order: SelectedSnapshotOrder,
-): Promise<boolean> {
-  if (!isRetryableDraft(order)) {
-    return false;
-  }
-
-  const result = await tx.orderMirror.updateMany({
-    where: {
-      id: order.id,
-      state: "DRAFT",
-      syncErrorCode: RETRYABLE_DRAFT_ERROR,
-    },
-    data: {
-      state: "REJECTED",
-      syncErrorCode: SUPERSEDED_RETRY_ERROR,
-    },
-  });
-  return result.count === 1;
+  return !activeCheckout || isMutableDraft(activeCheckout);
 }
 
 function toStorefrontProduct(product: SelectedProduct) {
@@ -320,27 +308,29 @@ export function createGuestCheckoutSnapshotService(
           return { ok: false, reason: "CART_UNAVAILABLE" };
         }
 
-        const activeCheckout = await findActiveCheckout(tx, cartId);
-        if (activeCheckout) {
-          if (isRetryableDraft(activeCheckout)) {
-            if (!checkoutInputValidated) {
-              return { ok: false, reason: "INVALID_INPUT" };
-            }
-            const superseded = await supersedeRetryableDraft(tx, activeCheckout);
-            if (!superseded) {
-              return toSnapshotResult(activeCheckout) ?? {
-                ok: false,
-                reason: "MONEY_UNSUPPORTED",
-              };
-            }
-          } else {
-            return toSnapshotResult(activeCheckout) ?? {
-              ok: false,
-              reason: "MONEY_UNSUPPORTED",
-            };
-          }
-        } else if (!checkoutInputValidated) {
+        const activeCheckout = await lockActiveCheckout(tx, cartId);
+        let mutableDraft = activeCheckout && isMutableDraft(activeCheckout)
+          ? activeCheckout
+          : null;
+        // An active checkout that has already left DRAFT is frozen: report it as-is.
+        if (activeCheckout && !mutableDraft) {
+          return toSnapshotResult(activeCheckout) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+        }
+        if (!checkoutInputValidated) {
           return { ok: false, reason: "INVALID_INPUT" };
+        }
+        if (mutableDraft && mutableDraft.pancakeShopId !== safeShopId) {
+          // The configured shop moved out from under an open DRAFT. Refusing the refresh would
+          // strand this cart permanently: DRAFT is the one active state stranded-checkout recovery
+          // never sweeps, and returning a failure here means `pancake-order-submit` — which owns
+          // the `SHOP_SCOPE_UNVERIFIED` rejection — is never reached to clear it. Reject the
+          // mismatched DRAFT with that same vocabulary and snapshot a fresh one under the current
+          // shop, which is what the pre-mutable supersede path did.
+          await tx.orderMirror.update({
+            where: { id: mutableDraft.id },
+            data: { state: "REJECTED", syncErrorCode: "SHOP_SCOPE_UNVERIFIED" },
+          });
+          mutableDraft = null;
         }
 
         const items = await tx.cartItem.findMany({
@@ -374,20 +364,34 @@ export function createGuestCheckoutSnapshotService(
           storefrontProducts.push(storefrontProduct);
         }
 
-        // The order snapshot prices through the same central authority as the cart and the
-        // checkout render, resolved inside this transaction. A buyer is charged the money they
-        // were shown; a campaign that starts or ends between render and submission is caught here
-        // rather than committing a price nobody quoted.
         const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
           variantIds: storefrontProducts.flatMap((product) =>
             product.variants.map((variant) => variant.id),
           ),
           client: tx as unknown as PromotionCandidateReadClient,
         });
+        // The order snapshot prices through the same projection object the cart and the checkout
+        // render use, resolved inside this transaction, so the persisted DRAFT quote is current
+        // server truth at snapshot time and never a browser-supplied or stale-cached number.
+        //
+        // What this deliberately does *not* establish: that the buyer is charged the money they
+        // were shown. A campaign that starts or ends between render and submission is re-resolved
+        // here to the new price, not compared against the rendered one — so this path can persist a
+        // DRAFT at a price the buyer never saw. Binding the rendered quote and refusing an unseen
+        // price is P9a's rendered-quote proof plus stale comparison; P8 only persists the current
+        // authoritative quote and its audit. Do not read this block as that guarantee.
+        //
+        // The audit needs the campaign behind the price too, so it observes the resolver answer
+        // through `onResolved` instead of rebuilding a second projection that could drift.
+        const pricingByVariantId = new Map<string, PromotionPricingResult>();
         const lines = buildStorefrontCartLines({
           items,
           products: storefrontProducts,
-          pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+          pricingRule: buildPromotionalStorefrontPricing({
+            campaignsByVariantId,
+            now,
+            onResolved: (variantId, pricing) => pricingByVariantId.set(variantId, pricing),
+          }),
         });
         const snapshots: Array<{
           variantId: string;
@@ -398,6 +402,13 @@ export function createGuestCheckoutSnapshotService(
           quantity: number;
           unitPriceVnd: bigint;
           lineTotalVnd: bigint;
+          baseUnitPriceVnd: bigint;
+          promotionCampaignId: string | null;
+          promotionName: string | null;
+          promotionKind: "PROMOTION" | "FLASH_SALE" | null;
+          promotionDiscountType: "PERCENTAGE" | "FIXED_PRICE" | null;
+          promotionPercentageValue: number | null;
+          promotionFixedPriceVnd: bigint | null;
         }> = [];
         let merchandiseSubtotalVnd = 0;
         let totalQuantity = 0;
@@ -405,14 +416,21 @@ export function createGuestCheckoutSnapshotService(
         for (const line of lines) {
           // Identity comes from the resolved line, which is the one projection that knows whether a
           // real variation was resolved at all. Re-deriving it here from a side map was a second
-          // identity path that could disagree with the line it is describing.
+          // identity path that could disagree with the line it is describing. `pricingByVariantId`
+          // is deliberately not that: it carries money the line already agrees with (asserted
+          // below), never identity.
           const pancakeVariationId = line.pancakeVariationId;
+          const pricing = pricingByVariantId.get(line.variantId);
           if (
             !line.available ||
             line.price === null ||
             line.productName === null ||
             line.size === null ||
-            !pancakeVariationId
+            !pancakeVariationId ||
+            !pricing ||
+            pricing.basePriceVnd === null ||
+            pricing.effectivePriceVnd === null ||
+            line.price !== pricing.effectivePriceVnd
           ) {
             return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
           }
@@ -426,6 +444,12 @@ export function createGuestCheckoutSnapshotService(
           if (nextSubtotal === null || !Number.isSafeInteger(nextQuantity) || nextQuantity <= 0) {
             return { ok: false, reason: "MONEY_UNSUPPORTED" };
           }
+
+          const promotion = pricing.promotion;
+          if (pricing.isDiscounted && promotion === null) {
+            return { ok: false, reason: "MONEY_UNSUPPORTED" };
+          }
+
           merchandiseSubtotalVnd = nextSubtotal;
           totalQuantity = nextQuantity;
           snapshots.push({
@@ -435,8 +459,15 @@ export function createGuestCheckoutSnapshotService(
             color: line.color,
             size: line.size,
             quantity: line.quantity,
+            baseUnitPriceVnd: BigInt(pricing.basePriceVnd),
             unitPriceVnd: BigInt(line.price),
             lineTotalVnd: BigInt(lineTotalVnd),
+            promotionCampaignId: promotion?.id ?? null,
+            promotionName: promotion?.name ?? null,
+            promotionKind: promotion?.kind ?? null,
+            promotionDiscountType: promotion?.discountType ?? null,
+            promotionPercentageValue: promotion?.percentageValue ?? null,
+            promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
           });
         }
 
@@ -449,28 +480,42 @@ export function createGuestCheckoutSnapshotService(
           return { ok: false, reason: "MONEY_UNSUPPORTED" };
         }
 
-        const order = await tx.orderMirror.create({
-          data: {
-            publicCode: safePublicCode,
-            userId: null,
-            sourceCartId: cartId,
-            pancakeShopId: safeShopId,
-            state: "DRAFT",
-            checkoutSnapshottedAt: now,
-            guestName: parsedCheckout.value.name,
-            guestPhone: parsedCheckout.value.phone,
-            provinceRef: parsedCheckout.value.provinceRef,
-            districtRef: parsedCheckout.value.districtRef,
-            communeRef: parsedCheckout.value.communeRef,
-            addressDetail: parsedCheckout.value.detail,
-            note: parsedCheckout.value.note,
-            merchandiseSubtotalVnd: BigInt(merchandiseSubtotalVnd),
-            shippingFeeVnd: BigInt(shippingFeeVnd),
-            totalVnd: BigInt(totalVnd),
-            lines: { create: snapshots },
-          },
-          select: snapshotOrderSelection,
-        });
+        const draftFacts = {
+          syncErrorCode: null,
+          checkoutSnapshottedAt: now,
+          guestName: parsedCheckout.value.name,
+          guestPhone: parsedCheckout.value.phone,
+          provinceRef: parsedCheckout.value.provinceRef,
+          districtRef: parsedCheckout.value.districtRef,
+          communeRef: parsedCheckout.value.communeRef,
+          addressDetail: parsedCheckout.value.detail,
+          note: parsedCheckout.value.note,
+          merchandiseSubtotalVnd: BigInt(merchandiseSubtotalVnd),
+          shippingFeeVnd: BigInt(shippingFeeVnd),
+          totalVnd: BigInt(totalVnd),
+        };
+
+        const order = mutableDraft
+          ? await tx.orderMirror.update({
+              where: { id: mutableDraft.id },
+              data: {
+                ...draftFacts,
+                lines: { deleteMany: {}, create: snapshots },
+              },
+              select: snapshotOrderSelection,
+            })
+          : await tx.orderMirror.create({
+              data: {
+                publicCode: safePublicCode,
+                userId: null,
+                sourceCartId: cartId,
+                pancakeShopId: safeShopId,
+                state: "DRAFT",
+                ...draftFacts,
+                lines: { create: snapshots },
+              },
+              select: snapshotOrderSelection,
+            });
 
         return toSnapshotResult(order) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
       });
@@ -489,7 +534,7 @@ export function createGuestCheckoutSnapshotService(
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: snapshotOrderSelection,
         });
-        if (!activeCheckout || isRetryableDraft(activeCheckout)) {
+        if (!activeCheckout || isMutableDraft(activeCheckout)) {
           return { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" };
         }
         return toSnapshotResult(activeCheckout) ?? {
