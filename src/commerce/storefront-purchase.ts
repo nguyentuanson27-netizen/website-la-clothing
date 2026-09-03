@@ -11,6 +11,7 @@ type StorefrontPurchaseCatalog = {
   getProductBySlug(input: {
     shopId: number;
     slug: string;
+    now?: Date;
   }): Promise<
     | {
         variants: StorefrontVariantFacts[];
@@ -20,9 +21,8 @@ type StorefrontPurchaseCatalog = {
   >;
 };
 
-type AddToCartInput = {
+type AddUnitInput = {
   variantId: string;
-  quantity: number;
 };
 
 type StorefrontPurchaseFailure =
@@ -33,21 +33,36 @@ function isBoundedTrimmed(value: string, maxLength: number): boolean {
   return value.length > 0 && value.length <= maxLength && value === value.trim();
 }
 
+/**
+ * The PDP purchase path.
+ *
+ * `addUnit` takes no quantity by design. "Thêm vào giỏ hàng" means one more unit, and a quantity
+ * parameter here is what let this path be wired to an absolute set-quantity mutation, where a line
+ * already holding several units would be silently reset to the value passed in.
+ *
+ * The option lookup below authorizes the request against the current public projection, but it is
+ * not the authority: it runs before the cart row is locked. The mutation re-resolves the same facts
+ * inside its transaction, so this exists to reject obviously invalid input cheaply and to map the
+ * browser's option id onto the authorized internal id.
+ */
 export function createStorefrontPurchaseService<TResult>({
   catalog,
-  addToCart,
+  addUnit,
 }: {
   catalog: StorefrontPurchaseCatalog;
-  addToCart(input: AddToCartInput): Promise<TResult>;
+  addUnit(input: AddUnitInput): Promise<TResult>;
 }) {
   async function add({
     shopId,
     slug,
     variantId,
+    now,
   }: {
     shopId: number;
     slug: string;
     variantId: string;
+    /** Fixed by the caller so this pre-check and the mutation resolve one campaign instant. */
+    now?: Date;
   }): Promise<TResult | StorefrontPurchaseFailure> {
     if (
       typeof slug !== "string" ||
@@ -58,7 +73,7 @@ export function createStorefrontPurchaseService<TResult>({
       return { ok: false, reason: "INVALID_SELECTION" };
     }
 
-    const product = await catalog.getProductBySlug({ shopId, slug });
+    const product = await catalog.getProductBySlug({ shopId, slug, now });
     if (!product) {
       return { ok: false, reason: "VARIANT_UNAVAILABLE" };
     }
@@ -72,7 +87,7 @@ export function createStorefrontPurchaseService<TResult>({
       return { ok: false, reason: "VARIANT_UNAVAILABLE" };
     }
 
-    return addToCart({ variantId: selected.id, quantity: 1 });
+    return addUnit({ variantId: selected.id });
   }
 
   return { add };

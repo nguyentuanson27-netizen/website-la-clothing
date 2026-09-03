@@ -42,6 +42,7 @@ const orderCode = `PIXEL-${runId}`;
 const UNIT_PRICE = 449_000;
 const ORDER_TOTAL = 928_000;
 
+let pixelVariantId = "";
 let server: ChildProcess | undefined;
 let serverOutput = "";
 
@@ -210,6 +211,7 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  pixelVariantId = variant.id;
   await prisma.warehouseStock.create({
     data: {
       variantId: variant.id,
@@ -331,6 +333,53 @@ test("the product page reports ViewContent, and adding to the bag reports AddToC
     content_ids: [productSlug],
     currency: "VND",
     value: UNIT_PRICE,
+  });
+});
+
+test("U18 AddToCart reports the price the server committed, once, not the rendered one", async ({
+  page,
+}) => {
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await page.getByText("Ink", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+
+  // The catalog moves after this page was rendered. Meta's AddToCart value used to come from the
+  // price captured in the browser before the request; it now comes from the mutation's own
+  // committed snapshot, so this must report the new price rather than the stale one.
+  const raisedPriceVnd = UNIT_PRICE + 100_000;
+  await prisma.variantMirror.update({
+    where: { id: pixelVariantId },
+    data: {
+      pancakeRetailPrice: raisedPriceVnd,
+      pancakeRetailPriceAfterDiscount: raisedPriceVnd,
+    },
+  });
+
+  await page.getByRole("button", { name: "Thêm vào giỏ hàng" }).click();
+  await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
+
+  const addToCart = await waitForEvent(page, "AddToCart");
+  expect(addToCart[2]).toMatchObject({
+    // Content identity semantics are unchanged; only the value's source moved.
+    content_ids: [productSlug],
+    content_name: productName,
+    content_type: "product",
+    currency: "VND",
+    value: raisedPriceVnd,
+  });
+
+  const addToCartCalls = trackedEventNames(await readCalls(page)).filter(
+    (name) => name === "AddToCart",
+  );
+  expect(addToCartCalls.length, "one accepted add reports exactly one Meta event").toBe(1);
+
+  await prisma.variantMirror.update({
+    where: { id: pixelVariantId },
+    data: {
+      pancakeRetailPrice: UNIT_PRICE,
+      pancakeRetailPriceAfterDiscount: UNIT_PRICE,
+    },
   });
 });
 

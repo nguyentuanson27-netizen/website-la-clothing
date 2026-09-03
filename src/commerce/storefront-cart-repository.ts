@@ -1,6 +1,9 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -121,19 +124,41 @@ function toCartProduct(product: SelectedProduct) {
   };
 }
 
-export function createStorefrontCartRepository(client: PrismaClient) {
+/**
+ * The read surface this repository needs.
+ *
+ * Widened from `PrismaClient` to the structural minimum so the same resolution can run inside a
+ * cart mutation's transaction. That is the point: the facts a mutation validates against and the
+ * facts the cart page renders come from one projection, not two that can drift apart.
+ */
+export type StorefrontCartReadClient = Pick<Prisma.TransactionClient, "productMirror">
+  & PromotionCandidateReadClient;
+
+export function createStorefrontCartRepository(client: PrismaClient | StorefrontCartReadClient) {
+  const readClient = client as StorefrontCartReadClient;
+
+  /**
+   * Resolves current cart lines against the central effective-price authority.
+   *
+   * Campaign candidates are read for every variant of every owning product, because the projection
+   * prices the whole option set to decide mapping/ambiguity/stock — pricing only the requested ids
+   * would leave the rest on a different rule. The lookup is batched at the candidate repository's
+   * safety cap, so this stays a fixed small number of queries rather than one per line.
+   */
   async function getLines({
     shopId,
     items,
+    now = new Date(),
   }: {
     shopId: number;
     items: readonly CartItemIdentity[];
+    now?: Date;
   }) {
     const safeItems = parseItems(items);
     if (safeItems.length === 0) return [];
 
     const variantIds = safeItems.map(({ variantId }) => variantId);
-    const products = await client.productMirror.findMany({
+    const products = await readClient.productMirror.findMany({
       where: {
         pancakeShopId: parseShopId(shopId),
         variants: {
@@ -145,9 +170,18 @@ export function createStorefrontCartRepository(client: PrismaClient) {
       select: productSelection,
     });
 
+    const cartProducts = products.map(toCartProduct);
+    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+      variantIds: cartProducts.flatMap((product) =>
+        product.variants.map((variant) => variant.id),
+      ),
+      client: readClient,
+    });
+
     return buildStorefrontCartLines({
       items: safeItems,
-      products: products.map(toCartProduct),
+      products: cartProducts,
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     });
   }
 

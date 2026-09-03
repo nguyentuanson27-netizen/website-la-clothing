@@ -13,6 +13,8 @@ import {
   STOREFRONT_DISCOVERY_LIMITS,
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
@@ -83,6 +85,12 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
   }
 
   const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
+  // One impression per rendered card, priced by the rule that ordered and rendered the grid.
+  const listTracking = buildProductListTracking({
+    products,
+    list: { listId: "shop", listName: SHOP_TITLE },
+    pricingRule,
+  });
   if (page > Math.max(totalPages, 1)) notFound();
   const filtered = hasActiveDiscovery(discovery);
 
@@ -258,6 +266,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               {totalCount} sản phẩm · Trang {page}/{totalPages}
             </p>
           </div>
+          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
             {products.map((product, index) => (
               <StorefrontProductCard
@@ -267,6 +276,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
                 media={product.media}
                 variants={product.variants}
                 pricingRule={pricingRule}
+                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
             ))}

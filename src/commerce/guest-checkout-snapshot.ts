@@ -2,7 +2,10 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
@@ -371,7 +374,21 @@ export function createGuestCheckoutSnapshotService(
           storefrontProducts.push(storefrontProduct);
         }
 
-        const lines = buildStorefrontCartLines({ items, products: storefrontProducts });
+        // The order snapshot prices through the same central authority as the cart and the
+        // checkout render, resolved inside this transaction. A buyer is charged the money they
+        // were shown; a campaign that starts or ends between render and submission is caught here
+        // rather than committing a price nobody quoted.
+        const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+          variantIds: storefrontProducts.flatMap((product) =>
+            product.variants.map((variant) => variant.id),
+          ),
+          client: tx as unknown as PromotionCandidateReadClient,
+        });
+        const lines = buildStorefrontCartLines({
+          items,
+          products: storefrontProducts,
+          pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+        });
         const snapshots: Array<{
           variantId: string;
           pancakeVariationId: string;

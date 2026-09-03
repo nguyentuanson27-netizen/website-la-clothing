@@ -23,6 +23,7 @@ type FlashSaleIdRow = {
 
 const flashProductSelection = {
   id: true,
+  pancakeProductId: true,
   slug: true,
   name: true,
   primaryImageUrl: true,
@@ -105,6 +106,9 @@ function toFlashProduct(product: SelectedFlashProduct) {
 
   return {
     id: product.id,
+    // Product-level external identity: one Flash card is one product impression, independent of
+    // which variant the representative price came from.
+    pancakeProductId: product.pancakeProductId,
     slug: product.slug,
     name: product.name,
     media,

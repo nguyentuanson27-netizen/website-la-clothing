@@ -13,6 +13,8 @@ import {
   listConfiguredStorefrontDiscoveryFacets,
   listConfiguredStorefrontDiscoveryPage,
 } from "@/commerce/storefront-catalog-runtime";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { prisma } from "@/db/prisma";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
@@ -97,6 +99,10 @@ export default async function CollectionPage({ params, searchParams }: Collectio
 
   const { page, products, totalCount, totalPages } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
+  const listTracking = buildProductListTracking({
+    products,
+    list: { listId: `collection:${collection.slug}`, listName: collection.title },
+  });
 
   const filtered = discovery.size !== null;
   const hrefFor = (
@@ -237,6 +243,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
               {totalCount} sản phẩm · Trang {page}/{totalPages}
             </p>
           </div>
+          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
             {products.map((product, index) => (
               <StorefrontProductCard
@@ -245,6 +252,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
             ))}

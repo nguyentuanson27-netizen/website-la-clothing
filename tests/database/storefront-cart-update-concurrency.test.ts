@@ -10,6 +10,7 @@ import {
 import { createAnonymousCartMutationService } from "../../src/commerce/anonymous-cart-mutation.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { allowAnyCartLine } from "../fixtures/cart-line-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -163,7 +164,7 @@ test("update-existing cannot resurrect a line removed after the storefront prech
   // This models the public precheck having already observed the line. The remove
   // commits before the later update mutation can acquire the same cart row lock.
   await installPauseTrigger();
-  const removePromise = removeCarts.removeItem({ cartId: cart.id, variantId, now });
+  const removePromise = removeCarts.removeItem({ cartId: cart.id, variantId, now, resolveLine: allowAnyCartLine });
   await waitForRemoveToPause();
 
   const updatePromise = carts.updateExistingItemQuantity({
@@ -171,11 +172,16 @@ test("update-existing cannot resurrect a line removed after the storefront prech
     variantId,
     quantity: 2,
     now,
+    resolveLine: allowAnyCartLine,
   });
 
   const [removeResult, updateResult] = await Promise.all([removePromise, updatePromise]);
 
-  assert.deepEqual(removeResult, { ok: true });
+  assert.deepEqual(removeResult, {
+    ok: true,
+    removedQuantity: PAUSE_DELETE_QUANTITY,
+    snapshot: null,
+  });
   assert.deepEqual(updateResult, { ok: false, reason: "CART_ITEM_UNAVAILABLE" });
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id, variantId } }), 0);
 });
@@ -196,6 +202,7 @@ test("storefront update-existing never rotates an unavailable cart into a new an
     variantId,
     quantity: 2,
     now: cart.expiresAt,
+    resolveLine: allowAnyCartLine,
   });
 
   assert.deepEqual(result, { ok: false, reason: "CART_UNAVAILABLE" });

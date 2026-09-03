@@ -1,7 +1,8 @@
 import Image from "next/image";
-import Link from "next/link";
 
+import { ProductSelectLink } from "@/components/analytics/product-select-link";
 import type { StorefrontProductMedia } from "@/commerce/product-media";
+import type { TrackingEvent } from "@/tracking/commerce-events";
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
@@ -38,6 +39,12 @@ type StorefrontProductCardProps = {
   pricingRule?: StorefrontPricingRule;
   /** Exact Flash representative selected server-side from purchasable active Flash variants. */
   flashSale?: StorefrontFlashSalePresentation;
+  /**
+   * The prebuilt product-level `select_item` for this card, or absent where the deployment
+   * publishes no commerce events. Built on the server so a click handler never has to read an
+   * identity or a price back out of the rendered card.
+   */
+  selectEvent?: TrackingEvent | null;
 };
 
 function describePrice(options: readonly StorefrontVariantOption[]): string {
@@ -76,6 +83,7 @@ export function StorefrontProductCard({
   media,
   pricingRule,
   flashSale,
+  selectEvent = null,
 }: StorefrontProductCardProps) {
   // Flash cards receive the exact representative selected before pagination. Other listings keep
   // their existing option-range path and can still inject a promotion-aware pricing rule.
@@ -90,10 +98,11 @@ export function StorefrontProductCard({
 
   return (
     <article className="group">
-      <Link
-        aria-label={`Xem ${name}`}
+      <ProductSelectLink
+        ariaLabel={`Xem ${name}`}
         className="product-visual-link block"
         href={productHref}
+        event={selectEvent}
       >
         <div
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
@@ -150,7 +159,7 @@ export function StorefrontProductCard({
             <p className="product-price">{describePrice(options ?? [])}</p>
           )}
         </div>
-      </Link>
+      </ProductSelectLink>
     </article>
   );
 }

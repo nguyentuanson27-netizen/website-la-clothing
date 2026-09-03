@@ -8,6 +8,12 @@ import {
 } from "@/commerce/storefront-catalog-runtime";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
+import {
+  CommerceEventReporter,
+  isCommerceTrackingEnabled,
+} from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
+import { buildProductPageViewEvent } from "@/components/analytics/product-page-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import {
   VARIANT_QUERY_PARAM,
@@ -40,6 +46,10 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   if (!product) notFound();
 
   const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
+  const relatedTracking = buildProductListTracking({
+    products: relatedProducts,
+    list: { listId: "related-products", listName: "Hoàn thiện phối đồ" },
+  });
   const options = product.projection.options;
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
     projection: product.projection,
@@ -49,6 +59,12 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
     deepLinkedSelection === null
       ? 0
       : product.galleryIndexByVariantId[deepLinkedSelection.variantId] ?? 0;
+  const productViewEvent = buildProductPageViewEvent({
+    pancakeProductId: product.pancakeProductId,
+    name: product.name,
+    options,
+    deepLinkedSelection,
+  });
   const structuredData = buildStorefrontProductStructuredData({
     origin: readSearchExposure().origin,
     product,
@@ -60,6 +76,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
+      <CommerceEventReporter event={productViewEvent} />
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
@@ -109,6 +126,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               productName={product.name}
               options={options}
               initialSelection={deepLinkedSelection}
+              commerceTrackingEnabled={isCommerceTrackingEnabled()}
             />
           </div>
 
@@ -142,6 +160,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
             <h2 id="related-products-title">Hoàn thiện phối đồ</h2>
             <p className="eyebrow">Cùng bộ sưu tập</p>
           </div>
+          <CommerceEventReporter event={relatedTracking.listEvent} />
           <div className="product-grid">
             {relatedProducts.map((related, index) => (
               <StorefrontProductCard
@@ -150,6 +169,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                 name={related.name}
                 media={related.media}
                 variants={related.variants}
+                selectEvent={relatedTracking.selectEventBySlug.get(related.slug) ?? null}
                 tone={relatedTones[index % relatedTones.length]!}
               />
             ))}

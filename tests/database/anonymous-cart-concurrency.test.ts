@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { allowAnyCartLine } from "../fixtures/cart-line-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -259,7 +260,12 @@ test("remove holds the anonymous ownership boundary until the mutation commits",
 
   await installPauseTrigger();
 
-  const mutationPromise = carts.removeItem({ cartId: cart.id, variantId, now });
+  const mutationPromise = carts.removeItem({
+    cartId: cart.id,
+    variantId,
+    now,
+    resolveLine: allowAnyCartLine,
+  });
   await waitForPausedCartItemMutation();
 
   let claimCompleted = false;
@@ -277,7 +283,11 @@ test("remove holds the anonymous ownership boundary until the mutation commits",
   const [mutationResult, claimedCart] = await Promise.all([mutationPromise, claimPromise]);
 
   assert.equal(claimState, "blocked");
-  assert.deepEqual(mutationResult, { ok: true });
+  assert.deepEqual(mutationResult, {
+    ok: true,
+    removedQuantity: PAUSE_DELETE_QUANTITY,
+    snapshot: null,
+  });
   assert.equal(claimedCart.userId, accountUserId);
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
 });

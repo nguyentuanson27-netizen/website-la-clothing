@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
+import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
+import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import {
   deriveStorefrontProjectionSelection,
   type StorefrontProjectionOption,
@@ -22,6 +24,8 @@ type ProductPurchasePanelProps = {
   productName: string;
   options: StorefrontProjectionOption[];
   initialSelection?: DeepLinkedVariantSelection | null;
+  /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
+  commerceTrackingEnabled?: boolean;
 };
 
 function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
@@ -37,6 +41,7 @@ export function ProductPurchasePanel({
   productName,
   options,
   initialSelection = null,
+  commerceTrackingEnabled = false,
 }: ProductPurchasePanelProps) {
   const [kindKey, setKindKey] = useState<string | null>(initialSelection?.kindKey ?? null);
   const [color, setColor] = useState<string | null>(initialSelection?.color ?? null);
@@ -96,23 +101,55 @@ export function ProductPurchasePanel({
     setMessage("");
   }
 
+  /**
+   * Reports one accepted add, from the facts the server committed.
+   *
+   * Everything measurable here comes back from the mutation: the variation's external identity, the
+   * price the cart actually accepted, the name and options, and a quantity of exactly the one unit
+   * that was added. The price rendered on this panel is deliberately not used — by the time the
+   * action returns it is a pre-request value, and a campaign that started or ended in between would
+   * make it a report of money nobody was charged.
+   *
+   * `analyticsUnavailable` means the mutation succeeded but no safe snapshot could be built. Both
+   * vendors then get nothing: the cart is correct either way, and there is no fallback worth
+   * publishing.
+   */
+  function reportAcceptedAdd(
+    result: Awaited<ReturnType<typeof addStorefrontItemToBag>>,
+  ) {
+    if (!result.ok || result.analyticsItem === undefined) return;
+    const committed = result.analyticsItem;
+
+    trackFacebookPixelEvent("AddToCart", {
+      // Existing direct-Meta content identity is unchanged; only the value moves from the stale
+      // rendered price to the price the server committed.
+      content_ids: [slug],
+      content_name: productName,
+      content_type: "product",
+      currency: "VND",
+      value: committed.unitPriceVnd,
+    });
+
+    if (!commerceTrackingEnabled) return;
+    try {
+      publishBrowserTrackingEvent(
+        buildCommerceItemsEvent("add_to_cart", { items: [buildVariantItem(committed)] }),
+      );
+    } catch {
+      // Tracking never interrupts a shopper.
+    }
+  }
+
   function addToBag() {
     if (!selection.canAdd || !selection.selectedVariantId || isPending) return;
     const variantId = selection.selectedVariantId;
-    const addedPrice = selection.selectedPrice;
     setMessage("");
     startTransition(async () => {
       try {
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
           setMessage("Đã thêm sản phẩm vào giỏ hàng.");
-          trackFacebookPixelEvent("AddToCart", {
-            content_ids: [slug],
-            content_name: productName,
-            content_type: "product",
-            currency: "VND",
-            ...(addedPrice === null ? {} : { value: addedPrice }),
-          });
+          reportAcceptedAdd(result);
           return;
         }
         setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");

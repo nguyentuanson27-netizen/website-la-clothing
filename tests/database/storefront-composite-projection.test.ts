@@ -10,6 +10,7 @@ import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-che
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { allowAnyCartLine } from "../fixtures/cart-line-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -292,6 +293,7 @@ test("admin activation converges inactive real parent and child through PDP, car
       variantId: componentVariant.id,
       quantity: 2,
       now,
+      resolveLine: allowAnyCartLine,
     }),
     {
       ok: false,

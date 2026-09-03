@@ -13,6 +13,7 @@ import {
 } from "../../src/commerce/anonymous-cart.ts";
 import { createAnonymousCartMutationService } from "../../src/commerce/anonymous-cart-mutation.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { allowAnyCartLine } from "../fixtures/cart-line-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -262,7 +263,7 @@ test("remove clears a valid stale cookie but never mutates an unavailable cart",
   const mutations = createAnonymousCartMutationService(prisma, cookies.store);
 
   assert.deepEqual(
-    await mutations.removeItem({ variantId: variantIds[0], now: cart.expiresAt }),
+    await mutations.removeItem({ variantId: variantIds[0], now: cart.expiresAt, resolveLine: allowAnyCartLine }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(cookies.writes.length, 1);

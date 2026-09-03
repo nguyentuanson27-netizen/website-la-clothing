@@ -2,6 +2,7 @@ import {
   MAX_CANDIDATE_VARIANTS_PER_LOOKUP,
   readApplicablePromotionCampaigns,
   type ApplicableCampaignLookup,
+  type PromotionCandidateReadClient,
 } from "./promotion-candidate-repository.ts";
 
 export type PromotionCandidateBatchReader = typeof readApplicablePromotionCampaigns;
@@ -17,9 +18,12 @@ export type PromotionCandidateBatchReader = typeof readApplicablePromotionCampai
  */
 export async function readApplicablePromotionCampaignsBatched({
   variantIds,
+  client,
   readBatch = readApplicablePromotionCampaigns,
 }: Readonly<{
   variantIds: readonly string[];
+  /** Passed through so a cart mutation can resolve candidates inside its own transaction. */
+  client?: PromotionCandidateReadClient;
   readBatch?: PromotionCandidateBatchReader;
 }>): Promise<ApplicableCampaignLookup> {
   if (!Array.isArray(variantIds)) {
@@ -48,7 +52,7 @@ export async function readApplicablePromotionCampaignsBatched({
     offset += MAX_CANDIDATE_VARIANTS_PER_LOOKUP
   ) {
     const batch = requested.slice(offset, offset + MAX_CANDIDATE_VARIANTS_PER_LOOKUP);
-    const result = await readBatch({ variantIds: batch });
+    const result = await readBatch({ variantIds: batch, client });
 
     for (const [variantId, campaigns] of result.campaignsByVariantId) {
       campaignsByVariantId.set(variantId, campaigns);
