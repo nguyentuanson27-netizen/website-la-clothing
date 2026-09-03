@@ -45,9 +45,11 @@ export async function listConfiguredStorefrontDiscoveryFacets() {
   return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({ shopId });
 }
 
-export async function getConfiguredStorefrontProductBySlug(slug: string) {
+export async function getConfiguredStorefrontProductBySlug(slug: string, now?: Date) {
   const shopId = readPancakeShopId();
-  return createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug });
+  // `now` is threaded rather than defaulted deeper so a caller that already owns a request clock
+  // can price every surface of one request against the same instant.
+  return createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug, now });
 }
 
 export async function listConfiguredRelatedStorefrontProducts(

@@ -26,6 +26,7 @@ export default defineConfig({
     "footer-support.spec.ts",
     "homepage-taxonomy.spec.ts",
     "pdp-language.spec.ts",
+    "pdp-promotion.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",
     "storefront-composite.spec.ts",

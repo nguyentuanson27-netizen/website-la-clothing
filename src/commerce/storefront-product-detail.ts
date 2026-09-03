@@ -5,6 +5,8 @@ import {
   type StorefrontCompositeComponentGroup,
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -23,7 +25,11 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
 export function createStorefrontProductDetailRepository(client: PrismaClient) {
   const catalog = createStorefrontCatalogRepository(client);
 
-  async function getProductBySlug({ shopId, slug }: { shopId: number; slug: string }) {
+  async function getProductBySlug({
+    shopId,
+    slug,
+    now = new Date(),
+  }: { shopId: number; slug: string; now?: Date }) {
     const product = await catalog.getProductBySlug({ shopId, slug });
     if (!product) return null;
 
@@ -114,12 +120,25 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         variants: [...group.variants.values()],
       }));
 
+    const pricedVariantIds = [
+      ...new Set([
+        ...product.variants.map((variant) => variant.id),
+        ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
+      ]),
+    ];
+    // Keep every DB query inside the candidate repository's 200-id safety cap, while resolving the
+    // complete PDP projection. This is bounded batching, not a per-option lookup.
+    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+      variantIds: pricedVariantIds,
+    });
+
     return {
       ...product,
       projection: buildStorefrontProductProjection({
         parentVariants: product.variants,
         componentGroups,
         hasCompositeGraph,
+        pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
       }),
     };
   }

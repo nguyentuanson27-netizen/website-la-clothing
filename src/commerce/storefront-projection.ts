@@ -1,7 +1,9 @@
 import { sortClothingSizes } from "./clothing-size.ts";
 import {
   buildStorefrontVariantOptions,
+  defaultStorefrontPricingRule,
   toStorefrontSelectableOptions,
+  type StorefrontPricingRule,
   type StorefrontSelectableOption,
   type StorefrontVariantFacts,
   type StorefrontVariantUnavailableReason,
@@ -53,8 +55,9 @@ function projectOptions(
   kindKey: string | null,
   kindLabel: string | null,
   forcedUnavailableReason: StorefrontVariantUnavailableReason | null = null,
+  pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
 ): StorefrontProjectionOption[] {
-  return toStorefrontSelectableOptions(buildStorefrontVariantOptions(variants)).map((option) =>
+  return toStorefrontSelectableOptions(buildStorefrontVariantOptions(variants, pricingRule)).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
       : {
@@ -62,6 +65,7 @@ function projectOptions(
           kindKey,
           kindLabel,
           purchasable: false,
+          isDiscounted: false,
           unavailableReason: forcedUnavailableReason,
         },
   );
@@ -71,15 +75,17 @@ export function buildStorefrontProductProjection({
   parentVariants,
   componentGroups,
   hasCompositeGraph,
+  pricingRule = defaultStorefrontPricingRule,
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
   hasCompositeGraph: boolean;
+  pricingRule?: StorefrontPricingRule;
 }>): StorefrontProductProjection {
   if (!hasCompositeGraph) {
     return {
       mode: "standalone",
-      options: projectOptions(parentVariants, null, null),
+      options: projectOptions(parentVariants, null, null, null, pricingRule),
     };
   }
 
@@ -90,7 +96,7 @@ export function buildStorefrontProductProjection({
   }
 
   const options: StorefrontProjectionOption[] = [
-    ...projectOptions(parentVariants, "parent", "Set"),
+    ...projectOptions(parentVariants, "parent", "Set", null, pricingRule),
   ];
 
   componentGroups.forEach((group, index) => {
@@ -102,6 +108,7 @@ export function buildStorefrontProductProjection({
         `component-${index + 1}`,
         label,
         ambiguousLabel ? "AMBIGUOUS_OPTION" : null,
+        pricingRule,
       ),
     );
   });
@@ -224,7 +231,8 @@ export function deriveStorefrontProjectionSelection(
     sizes,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
-    // A selected option that is not purchasable is still selected; only add-to-bag is withheld.
+    selectedBasePriceVnd: selected?.basePriceVnd ?? null,
+    selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
     canAdd: selected !== null && selected.purchasable,
   };
