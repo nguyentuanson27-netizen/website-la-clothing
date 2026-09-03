@@ -209,9 +209,8 @@ test("U14 P5b create and edit campaign form renders with zero Axe violations", a
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "Tạo chiến dịch mới", level: 2 })).toBeVisible();
-  await expect(page.getByLabel(/Tên chiến dịch/i)).toBeVisible();
-  await expect(page.getByLabel(/Loại chiến dịch/i)).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Tên chiến dịch" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Loại chiến dịch" })).toBeVisible();
 
   const newFormAxe = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(newFormAxe.violations).toEqual([]);
