@@ -19,6 +19,27 @@ import { prisma } from "../db/prisma.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
 /**
+ * The subset of the client this lookup needs.
+ *
+ * Declaring it structurally is what lets a caller pass a `Prisma.TransactionClient` instead of the
+ * shared singleton. A cart mutation must resolve candidates inside the same serialized transaction
+ * that commits the write, or the price it validates and the price it commits can come from two
+ * different instants of the campaign table.
+ */
+export type PromotionCandidateReadClient = {
+  variantMirror: { findMany: (args: unknown) => Promise<Array<{ id: string; productId: string }>> };
+  promotionTarget: {
+    findMany: (args: unknown) => Promise<
+      Array<{
+        productId: string | null;
+        variantId: string | null;
+        campaign: ApplicablePromotionCampaign;
+      }>
+    >;
+  };
+};
+
+/**
  * Bounded because this runs on storefront and cart paths. The current anonymous cart caps at 50
  * distinct items and a catalog page at 48, so this leaves generous headroom while keeping a single
  * malformed request from turning into an unbounded scan.
@@ -49,7 +70,11 @@ const campaignSelection = {
 
 export async function readApplicablePromotionCampaigns({
   variantIds,
-}: Readonly<{ variantIds: readonly string[] }>): Promise<ApplicableCampaignLookup> {
+  client = prisma as unknown as PromotionCandidateReadClient,
+}: Readonly<{
+  variantIds: readonly string[];
+  client?: PromotionCandidateReadClient;
+}>): Promise<ApplicableCampaignLookup> {
   if (!Array.isArray(variantIds)) {
     throw new PromotionCandidateLookupError("Variant identities must be a bounded array");
   }
@@ -70,7 +95,7 @@ export async function readApplicablePromotionCampaigns({
   // A variant's owning product is its own `productId`. A composite component therefore follows its
   // real owner rather than the parent set it happens to be sold through, which is what keeps a
   // parent's campaign from silently repricing somebody else's product.
-  const variants = await prisma.variantMirror.findMany({
+  const variants = await client.variantMirror.findMany({
     where: { id: { in: requested } },
     select: { id: true, productId: true },
   });
@@ -82,7 +107,7 @@ export async function readApplicablePromotionCampaigns({
   // Draft and Disabled campaigns are not storefront-effective, so they are never candidates. Window
   // membership is deliberately left to the resolver: it owns the half-open interval contract, and
   // filtering by time here would put that rule in two places.
-  const targets = await prisma.promotionTarget.findMany({
+  const targets = await client.promotionTarget.findMany({
     where: {
       campaign: { isEnabled: true },
       OR: [{ variantId: { in: [...knownVariantIds] } }, { productId: { in: productIds } }],

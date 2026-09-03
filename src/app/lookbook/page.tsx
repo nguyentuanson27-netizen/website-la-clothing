@@ -4,6 +4,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 
@@ -27,6 +29,10 @@ export default async function LookbookPage() {
   await connection();
   const featuredProducts = await loadLookbookProducts();
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
+  const listTracking = buildProductListTracking({
+    products: featuredProducts,
+    list: { listId: "lookbook-edit", listName: "Lookbook edit" },
+  });
   const chapter1Product = productsWithMedia[0];
   const chapter1Image = chapter1Product?.media?.primary ?? null;
   const chapter2Product = productsWithMedia[1] ?? productsWithMedia[0];
@@ -118,6 +124,7 @@ export default async function LookbookPage() {
               Shop collection ↗
             </Link>
           </div>
+          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
             {featuredProducts.map((product, index) => (
               <StorefrontProductCard
@@ -126,6 +133,7 @@ export default async function LookbookPage() {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[index % tones.length]!}
               />
             ))}

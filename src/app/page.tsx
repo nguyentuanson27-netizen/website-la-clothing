@@ -5,6 +5,8 @@ import { connection } from "next/server";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
@@ -30,6 +32,10 @@ export default async function HomePage() {
   ]);
   const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
+  const listTracking = buildProductListTracking({
+    products: featuredProducts,
+    list: { listId: "homepage-edit", listName: "Tuyển chọn" },
+  });
   const heroProduct = productsWithMedia[0];
   const heroImage = heroProduct?.media?.primary ?? null;
   const lookbookLargeProduct = productsWithMedia[1] ?? productsWithMedia[0];
@@ -90,6 +96,8 @@ export default async function HomePage() {
           <Link className="text-link" href="/shop">Xem tất cả</Link>
         </div>
         {featuredProducts.length > 0 ? (
+          <>
+          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
             {featuredProducts.map((product, index) => (
               <StorefrontProductCard
@@ -98,10 +106,12 @@ export default async function HomePage() {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[index % tones.length]!}
               />
             ))}
           </div>
+          </>
         ) : (
           <section
             aria-labelledby="homepage-empty-title"

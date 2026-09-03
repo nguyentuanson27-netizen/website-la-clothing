@@ -12,6 +12,8 @@ import {
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
 import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
@@ -59,6 +61,10 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
   }
 
   const { page, products, totalCount, totalPages } = flashPage;
+  const listTracking = buildProductListTracking({
+    products,
+    list: { listId: "flash-sale", listName: FLASH_TITLE },
+  });
   const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
     now: requestNow,
     nextBoundaryAt,
@@ -88,6 +94,8 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
         </p>
 
         {products.length > 0 ? (
+          <>
+          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid mt-8">
             {products.map((product, index) => (
               <StorefrontProductCard
@@ -97,10 +105,12 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
                 media={product.media}
                 variants={product.variants}
                 flashSale={product.flashSale}
+                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
             ))}
           </div>
+          </>
         ) : (
           <p className="mt-8 max-w-xl text-sm leading-6 text-black/70">
             Hãy quay lại sau — trang này tự cập nhật khi khung giờ Flash Sale bắt đầu.{" "}

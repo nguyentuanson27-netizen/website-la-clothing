@@ -88,8 +88,14 @@ At the Checkpoint A head, the owning source checklists were reconciled to the sa
 
 ## Wave 3 — canonical analytics/cart APIs
 
-- [ ] **U18** #153 T5 — upper-funnel `view_item_list` / `select_item` / initial product-level `view_item` + product-vs-selected-variant semantics + atomic PDP `+1` with authoritative committed event snapshot. Depends U7 + U8; may run in parallel with U15–U17.
-- [ ] **U19** #153 T6 + #151 shared checkpoint — authoritative update/remove facts + complete all-or-nothing cart/checkout projection; one shared API only.
+- [x] **U18** #153 T5 — upper-funnel `view_item_list` / `select_item` / initial product-level `view_item` + product-vs-selected-variant semantics + atomic PDP `+1` with authoritative committed event snapshot. Depends U7 + U8; may run in parallel with U15–U17.
+- [x] **U19** #153 T6 + #151 shared checkpoint — authoritative update/remove facts + complete all-or-nothing cart/checkout projection; one shared API only.
+
+Wave 3 also converged cart, checkout render and the order snapshot onto the central promotion
+resolver, which the #151 shared cart checkpoint required. Before this, a promotion was visible on
+the PDP and on `/shop` but the cart and the submitted order still quoted the undiscounted base
+price. U20/P8 remains blocked on the master storefront Checkpoint B (U12–U17 + P5b), which Wave 3
+does **not** mark.
 
 ## Wave 4 — checkout/order convergence
 

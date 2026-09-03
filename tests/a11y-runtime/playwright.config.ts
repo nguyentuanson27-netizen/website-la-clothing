@@ -20,6 +20,7 @@ export default defineConfig({
     "checkout.spec.ts",
     "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
+    "commerce-events.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
     "facebook-pixel.spec.ts",

@@ -321,7 +321,7 @@ export type CommerceItemsEventInput = Readonly<{
  * larger object — a checkout form model, say — cannot leak customer facts into the dataLayer.
  */
 export function buildCommerceItemsEvent(
-  name: Exclude<CommerceEventName, "page_view" | "begin_checkout" | "purchase">,
+  name: Exclude<CommerceEventName, "page_view" | "view_cart" | "begin_checkout" | "purchase">,
   input: CommerceItemsEventInput,
 ): TrackingEvent {
   const items = requireItems(name, input.items);
@@ -359,6 +359,30 @@ function sumMerchandiseVnd(items: readonly CommerceItem[]): number {
     throw new RangeError("merchandise value must stay inside the safe integer VND domain");
   }
   return Number(total);
+}
+
+/**
+ * `view_cart` is a valued event, not an item list.
+ *
+ * It has its own builder for the same reason `begin_checkout` does: a cart event without a total is
+ * a cart event a destination has to total for itself, and the moment a vendor adds up items it has
+ * become a second pricing authority. The value is the complete emitted item set's merchandise sum —
+ * the caller has already established that the whole cart is safe, because a partial cart has no
+ * total worth reporting.
+ */
+export function buildViewCartEvent(
+  input: Readonly<{ items: readonly CommerceItem[] }>,
+): TrackingEvent {
+  const items = requireItems("view_cart", input.items);
+
+  return Object.freeze({
+    event: "view_cart",
+    ecommerce: Object.freeze({
+      currency: "VND",
+      value: sumMerchandiseVnd(items),
+      items,
+    }),
+  });
 }
 
 /** GA4 checkout value is the merchandise item sum; shipping is reported separately at Purchase. */

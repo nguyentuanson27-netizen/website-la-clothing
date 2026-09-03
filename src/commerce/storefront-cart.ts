@@ -4,6 +4,8 @@ import {
 } from "./product-media.ts";
 import {
   buildStorefrontVariantOptions,
+  defaultStorefrontPricingRule,
+  type StorefrontPricingRule,
   type StorefrontVariantUnavailableReason,
 } from "./storefront-product.ts";
 
@@ -97,12 +99,22 @@ function isCommerceEligibleVariant(
 
 const emptyMedia: StorefrontProductMedia = { primary: null, gallery: [] };
 
+/**
+ * Resolves the current cart lines for a set of requested items.
+ *
+ * `pricingRule` is the same injectable seam the product page and listings use, so a caller that
+ * supplies the promotion-aware rule gets exactly the money the central resolver decides — the cart,
+ * the checkout render, the order snapshot and the analytics projection all read one price for one
+ * variant at one instant. Callers that have not switched keep the default equality-gated rule.
+ */
 export function buildStorefrontCartLines({
   items,
   products,
+  pricingRule = defaultStorefrontPricingRule,
 }: {
   items: readonly StorefrontCartItem[];
   products: readonly StorefrontCartProduct[];
+  pricingRule?: StorefrontPricingRule;
 }): StorefrontCartLine[] {
   const variantOwner = new Map<string, StorefrontCartProduct>();
   const productMediaMap = new Map<string, StorefrontProductMedia>();
@@ -123,7 +135,7 @@ export function buildStorefrontCartLines({
     const currentVariants = product.variants.filter((variant) =>
       isCommerceEligibleVariant(product, variant),
     );
-    for (const option of buildStorefrontVariantOptions(currentVariants)) {
+    for (const option of buildStorefrontVariantOptions(currentVariants, pricingRule)) {
       resolvedOptions.set(option.id, option);
     }
   }

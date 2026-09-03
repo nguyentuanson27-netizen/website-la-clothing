@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCommerceItemsEvent, buildVariantItem } from "../../src/tracking/commerce-events.ts";
+import {
+  buildCommerceItemsEvent,
+  buildVariantItem,
+  buildViewCartEvent,
+} from "../../src/tracking/commerce-events.ts";
 import {
   DATA_LAYER_NAME,
   ensureDataLayer,
@@ -68,7 +72,7 @@ test("T1 every commerce push resets the previous ecommerce object first", () => 
 
 test("T1 sequential events stay isolated so stale ecommerce keys cannot bleed into the next event", () => {
   const win: TestWindow = {};
-  publishTrackingEvent(win, buildCommerceItemsEvent("view_cart", { items: [buildVariantItem(variantItem)] }));
+  publishTrackingEvent(win, buildViewCartEvent({ items: [buildVariantItem(variantItem)] }));
   publishTrackingEvent(win, { event: "page_view", page_path: "/cart" });
 
   const pushed = win.dataLayer as Array<Record<string, unknown>>;

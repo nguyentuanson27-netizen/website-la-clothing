@@ -1,11 +1,11 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T4 IMPLEMENTED AND MERGED; M1 partially delivered. T5 onward remain proposed and require human
+Status: **T1–T6 IMPLEMENTED; M1 partially delivered. T7 onward remain proposed and require human
 approval before `/build`.**
 
 T1–T3 (PR #157), T4 (PR #164 + #165) and the durability half of M1 (PR #175) are merged on
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `tasks/marketing-analytics-shopping-todo.md` for per-item
-state. **T5, T6, T7, T8, M2, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
+state. T5/T6 landed with Wave 3. **T7, T8, M2, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
 GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.

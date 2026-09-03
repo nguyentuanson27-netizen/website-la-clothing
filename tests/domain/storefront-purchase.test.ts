@@ -18,14 +18,14 @@ function variant(overrides: Partial<StorefrontVariantFacts> = {}): StorefrontVar
 }
 
 test("storefront purchase authorizes only a currently purchasable mirrored variant", async () => {
-  const added: Array<{ variantId: string; quantity: number }> = [];
+  const added: Array<{ variantId: string }> = [];
   const service = createStorefrontPurchaseService({
     catalog: {
       async getProductBySlug() {
         return { variants: [variant()] };
       },
     },
-    async addToCart(input) {
+    async addUnit(input: { variantId: string }) {
       added.push(input);
       return { ok: true as const, cartId: "cart-1" };
     },
@@ -34,7 +34,7 @@ test("storefront purchase authorizes only a currently purchasable mirrored varia
   const result = await service.add({ shopId: 910_050, slug: "linen-shirt", variantId: "variant-available" });
 
   assert.deepEqual(result, { ok: true, cartId: "cart-1" });
-  assert.deepEqual(added, [{ variantId: "variant-available", quantity: 1 }]);
+  assert.deepEqual(added, [{ variantId: "variant-available" }]);
 });
 
 test("storefront purchase fails closed before cart mutation for unavailable selections", async () => {
@@ -52,7 +52,7 @@ test("storefront purchase fails closed before cart mutation for unavailable sele
         return slug === "linen-shirt" ? { variants } : null;
       },
     },
-    async addToCart() {
+    async addUnit() {
       addCalls += 1;
       return { ok: true as const, cartId: "unexpected" };
     },
@@ -88,7 +88,7 @@ test("storefront purchase rejects malformed public selection input without reads
         return { variants: [variant()] };
       },
     },
-    async addToCart() {
+    async addUnit() {
       addCalls += 1;
       return { ok: true as const, cartId: "unexpected" };
     },

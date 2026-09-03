@@ -3,7 +3,10 @@ import {
   createAnonymousCartCookieSession,
   type AnonymousCartCookieWrite,
 } from "./anonymous-cart-cookie.ts";
-import { createAnonymousCartService } from "./anonymous-cart.ts";
+import {
+  createAnonymousCartService,
+  type CartLineAuthorityResolver,
+} from "./anonymous-cart.ts";
 
 type WritableCartCookieStore = {
   get(name: string): { value: string } | undefined;
@@ -26,10 +29,12 @@ type SetMutationResult =
       reason: "INVALID_QUANTITY" | "VARIANT_UNAVAILABLE" | "CART_LINE_LIMIT";
     };
 
-type UpdateExistingMutationResult =
+type UpdateExistingMutationResult<TSnapshot> =
   | {
       ok: true;
       item: { variantId: string; quantity: number };
+      previousQuantity: number;
+      snapshot: TSnapshot | null;
     }
   | {
       ok: false;
@@ -40,7 +45,24 @@ type UpdateExistingMutationResult =
         | "CART_ITEM_UNAVAILABLE";
     };
 
-type RemoveMutationResult = { ok: true } | { ok: false; reason: "CART_UNAVAILABLE" };
+type AddUnitMutationResult<TSnapshot> =
+  | {
+      ok: true;
+      cartId: string;
+      expiresAt?: Date;
+      previousQuantity: number;
+      quantity: number;
+      addedQuantity: 1;
+      snapshot: TSnapshot | null;
+    }
+  | {
+      ok: false;
+      reason: "INVALID_QUANTITY" | "VARIANT_UNAVAILABLE" | "CART_LINE_LIMIT";
+    };
+
+type RemoveMutationResult<TSnapshot> =
+  | { ok: true; removedQuantity: number; snapshot: TSnapshot | null }
+  | { ok: false; reason: "CART_UNAVAILABLE" };
 
 export function createAnonymousCartMutationService(
   client: PrismaClient,
@@ -94,15 +116,78 @@ export function createAnonymousCartMutationService(
     };
   }
 
-  async function updateExistingItemQuantity({
+  /**
+   * Adds exactly one unit, creating the anonymous cart only when the shopper has none.
+   *
+   * An expired or foreign cart id in the cookie behaves the same way it does for the absolute
+   * mutation: the increment falls through to a fresh cart rather than failing, so the transition
+   * reported is `0 → 1` for a cart that genuinely started empty.
+   */
+  async function addItemUnit<TSnapshot>({
+    variantId,
+    now,
+    resolveLine,
+  }: {
+    variantId: string;
+    now: Date;
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }): Promise<AddUnitMutationResult<TSnapshot>> {
+    const currentCartId = cookie.read();
+    if (currentCartId) {
+      const existingResult = await carts.addItemUnit({
+        cartId: currentCartId,
+        variantId,
+        now,
+        resolveLine,
+      });
+
+      if (existingResult.ok) {
+        return {
+          ok: true,
+          cartId: currentCartId,
+          previousQuantity: existingResult.previousQuantity,
+          quantity: existingResult.quantity,
+          addedQuantity: 1,
+          snapshot: existingResult.snapshot,
+        };
+      }
+      if (existingResult.reason !== "CART_UNAVAILABLE") {
+        return existingResult;
+      }
+    }
+
+    const createdResult = await carts.createWithUnit({ variantId, now, resolveLine });
+    if (!createdResult.ok) {
+      return createdResult;
+    }
+
+    cookie.write({
+      cartId: createdResult.cart.id,
+      expiresAt: createdResult.cart.expiresAt,
+    });
+
+    return {
+      ok: true,
+      cartId: createdResult.cart.id,
+      expiresAt: createdResult.cart.expiresAt,
+      previousQuantity: 0,
+      quantity: 1,
+      addedQuantity: 1,
+      snapshot: createdResult.snapshot,
+    };
+  }
+
+  async function updateExistingItemQuantity<TSnapshot>({
     variantId,
     quantity,
     now,
+    resolveLine,
   }: {
     variantId: string;
     quantity: number;
     now: Date;
-  }): Promise<UpdateExistingMutationResult> {
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }): Promise<UpdateExistingMutationResult<TSnapshot>> {
     const cartId = cookie.read();
     if (!cartId) {
       return { ok: false, reason: "CART_UNAVAILABLE" };
@@ -113,6 +198,7 @@ export function createAnonymousCartMutationService(
       variantId,
       quantity,
       now,
+      resolveLine,
     });
 
     if (!result.ok && result.reason === "CART_UNAVAILABLE") {
@@ -122,24 +208,26 @@ export function createAnonymousCartMutationService(
     return result;
   }
 
-  async function removeItem({
+  async function removeItem<TSnapshot>({
     variantId,
     now,
+    resolveLine,
   }: {
     variantId: string;
     now: Date;
-  }): Promise<RemoveMutationResult> {
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }): Promise<RemoveMutationResult<TSnapshot>> {
     const cartId = cookie.read();
     if (!cartId) {
       return { ok: false, reason: "CART_UNAVAILABLE" };
     }
 
-    const result = await carts.removeItem({ cartId, variantId, now });
+    const result = await carts.removeItem({ cartId, variantId, now, resolveLine });
     if (!result.ok) {
       cookie.clear();
     }
     return result;
   }
 
-  return { setItemQuantity, updateExistingItemQuantity, removeItem };
+  return { setItemQuantity, addItemUnit, updateExistingItemQuantity, removeItem };
 }

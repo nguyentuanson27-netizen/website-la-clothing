@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
+import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
+import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import {
   deriveStorefrontProjectionSelection,
   type StorefrontProjectionOption,
@@ -22,6 +24,8 @@ type ProductPurchasePanelProps = {
   productName: string;
   options: StorefrontProjectionOption[];
   initialSelection?: DeepLinkedVariantSelection | null;
+  /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
+  commerceTrackingEnabled?: boolean;
 };
 
 function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
@@ -37,6 +41,7 @@ export function ProductPurchasePanel({
   productName,
   options,
   initialSelection = null,
+  commerceTrackingEnabled = false,
 }: ProductPurchasePanelProps) {
   const [kindKey, setKindKey] = useState<string | null>(initialSelection?.kindKey ?? null);
   const [color, setColor] = useState<string | null>(initialSelection?.color ?? null);
@@ -96,23 +101,64 @@ export function ProductPurchasePanel({
     setMessage("");
   }
 
+  /**
+   * Reports one accepted add, from the facts the server committed.
+   *
+   * Everything measurable here comes back from the mutation: the variation's external identity, the
+   * price the cart actually accepted, the name and options, and a quantity of exactly the one unit
+   * that was added. The price rendered on this panel is deliberately not used — by the time the
+   * action returns it is a pre-request value, and a campaign that started or ended in between would
+   * make it a report of money nobody was charged.
+   *
+   * The two destinations fail independently, because they always have.
+   *
+   * Meta reports on every accepted add, as it did before this unit existed. Its value now comes
+   * from `committedUnitPriceVnd` instead of the rendered price, and is omitted when the server has
+   * no usable price — which is exactly the shape the previous code had for an unresolved price.
+   * Making Meta's delivery depend on the newer canonical item would silently narrow a success
+   * boundary that is not this unit's to change.
+   *
+   * The canonical event needs the complete item — identity, name, options, money — so it is the one
+   * that goes silent when `analyticsItem` is absent. No fallback: the cart is correct either way.
+   */
+  function reportAcceptedAdd(
+    result: Awaited<ReturnType<typeof addStorefrontItemToBag>>,
+  ) {
+    if (!result.ok) return;
+
+    trackFacebookPixelEvent("AddToCart", {
+      // Existing direct-Meta content identity is unchanged; only the value moves from the stale
+      // rendered price to the price the server committed.
+      content_ids: [slug],
+      content_name: productName,
+      content_type: "product",
+      currency: "VND",
+      ...(result.committedUnitPriceVnd === undefined
+        ? {}
+        : { value: result.committedUnitPriceVnd }),
+    });
+
+    const committed = result.analyticsItem;
+    if (!commerceTrackingEnabled || committed === undefined) return;
+    try {
+      publishBrowserTrackingEvent(
+        buildCommerceItemsEvent("add_to_cart", { items: [buildVariantItem(committed)] }),
+      );
+    } catch {
+      // Tracking never interrupts a shopper.
+    }
+  }
+
   function addToBag() {
     if (!selection.canAdd || !selection.selectedVariantId || isPending) return;
     const variantId = selection.selectedVariantId;
-    const addedPrice = selection.selectedPrice;
     setMessage("");
     startTransition(async () => {
       try {
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
           setMessage("Đã thêm sản phẩm vào giỏ hàng.");
-          trackFacebookPixelEvent("AddToCart", {
-            content_ids: [slug],
-            content_name: productName,
-            content_type: "product",
-            currency: "VND",
-            ...(addedPrice === null ? {} : { value: addedPrice }),
-          });
+          reportAcceptedAdd(result);
           return;
         }
         setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");

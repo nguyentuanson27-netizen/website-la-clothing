@@ -22,7 +22,14 @@ const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist
 const runId = `${Date.now()}-${process.pid}`;
 const productExternalId = `cart-action-http-smoke-product-${runId}`;
 const variationExternalId = `cart-action-http-smoke-variation-${runId}`;
+const warehouseExternalId = `cart-action-http-smoke-warehouse-${runId}`;
 const slug = `cart-action-http-smoke-${runId}`;
+/**
+ * The probe drives the real PDP add action, which is shop-scoped, so the fixture and the spawned
+ * server have to agree on one shop. Passed into the server's environment rather than assumed from
+ * the ambient one, the same way the browser specs do it.
+ */
+const PROBE_SHOP_ID = 920_011;
 
 let server: ChildProcess | undefined;
 let variantId: string | undefined;
@@ -87,17 +94,27 @@ async function cleanupDatabase() {
 }
 
 try {
+  const syncedAt = new Date();
+  // Purchasable for real: the add action authorizes against current catalog, price and stock before
+  // it commits anything, so a fixture that skips those would prove nothing about the cookie.
   const product = await prisma.productMirror.create({
     data: {
+      pancakeShopId: PROBE_SHOP_ID,
       pancakeProductId: productExternalId,
       slug,
       name: "Cart Server Action HTTP Smoke",
-      syncedAt: new Date(),
+      isPresent: true,
+      isActive: true,
+      syncedAt,
       variants: {
         create: {
           pancakeVariationId: variationExternalId,
+          size: "M",
+          isPresent: true,
           isActive: true,
-          syncedAt: new Date(),
+          pancakeRetailPrice: 490_000,
+          pancakeRetailPriceAfterDiscount: 490_000,
+          syncedAt,
         },
       },
     },
@@ -105,12 +122,20 @@ try {
   });
   variantId = product.variants[0]?.id;
   assert.ok(variantId, "probe variant must exist");
+  await prisma.warehouseStock.create({
+    data: {
+      variantId,
+      pancakeWarehouseId: warehouseExternalId,
+      quantity: 5,
+      syncedAt,
+    },
+  });
 
   originalTsconfig = await readFile(tsconfigPath, "utf-8");
   await mkdir(probeDirectory, { recursive: true });
   await writeFile(
     probePage,
-    `import { setAnonymousCartItemQuantity } from "../../commerce/anonymous-cart-actions.ts";\n\nexport const dynamic = "force-dynamic";\n\nexport default function CartActionHttpSmokePage() {\n  async function mutateCart() {\n    "use server";\n    await setAnonymousCartItemQuantity({ variantId: ${JSON.stringify(variantId)}, quantity: 1 });\n  }\n\n  return (\n    <form action={mutateCart}>\n      <button type="submit">Mutate cart</button>\n    </form>\n  );\n}\n`,
+    `import { addStorefrontItemToBag } from "../../commerce/storefront-actions.ts";\n\nexport const dynamic = "force-dynamic";\n\nexport default function CartActionHttpSmokePage() {\n  async function mutateCart() {\n    "use server";\n    await addStorefrontItemToBag({ slug: ${JSON.stringify(slug)}, variantId: ${JSON.stringify(variantId)} });\n  }\n\n  return (\n    <form action={mutateCart}>\n      <button type="submit">Mutate cart</button>\n    </form>\n  );\n}\n`,
     "utf-8",
   );
 
@@ -118,7 +143,11 @@ try {
     process.execPath,
     [nextCliPath, "dev", "--hostname", HOST, "--port", String(PORT)],
     {
-      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+      env: {
+        ...process.env,
+        NEXT_TELEMETRY_DISABLED: "1",
+        PANCAKE_SHOP_ID: String(PROBE_SHOP_ID),
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

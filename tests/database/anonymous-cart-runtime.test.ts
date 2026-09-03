@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { allowAnyCartLine } from "../fixtures/cart-line-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -194,7 +195,12 @@ test("rejects mutations at and after the absolute cart expiry", async () => {
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.deepEqual(
-    await carts.removeItem({ cartId: cart.id, variantId: activeVariantId, now: cart.expiresAt }),
+    await carts.removeItem({
+      cartId: cart.id,
+      variantId: activeVariantId,
+      now: cart.expiresAt,
+      resolveLine: allowAnyCartLine,
+    }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
@@ -227,7 +233,12 @@ test("never mutates an account-owned cart through the anonymous cart service", a
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.deepEqual(
-    await carts.removeItem({ cartId: accountCart.id, variantId: activeVariantId, now }),
+    await carts.removeItem({
+      cartId: accountCart.id,
+      variantId: activeVariantId,
+      now,
+      resolveLine: allowAnyCartLine,
+    }),
     { ok: false, reason: "CART_UNAVAILABLE" },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: accountCart.id } }), 0);
@@ -241,8 +252,13 @@ test("removes an item only from a live anonymous cart", async () => {
   await carts.setItemQuantity({ cartId: cart.id, variantId: activeVariantId, quantity: 2, now });
 
   assert.deepEqual(
-    await carts.removeItem({ cartId: cart.id, variantId: activeVariantId, now }),
-    { ok: true },
+    await carts.removeItem({
+      cartId: cart.id,
+      variantId: activeVariantId,
+      now,
+      resolveLine: allowAnyCartLine,
+    }),
+    { ok: true, removedQuantity: 2, snapshot: null },
   );
   assert.equal(await prisma.cartItem.count({ where: { cartId: cart.id } }), 0);
 });

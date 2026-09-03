@@ -50,7 +50,7 @@ const projection: StorefrontProductProjection = {
 };
 
 test("storefront purchase authorizes a real component variant only through the parent PDP projection", async () => {
-  const added: Array<{ variantId: string; quantity: number }> = [];
+  const added: Array<{ variantId: string }> = [];
   const service = createStorefrontPurchaseService({
     catalog: {
       async getProductBySlug({ slug }) {
@@ -59,7 +59,7 @@ test("storefront purchase authorizes a real component variant only through the p
           : null;
       },
     },
-    async addToCart(input) {
+    async addUnit(input: { variantId: string }) {
       added.push(input);
       return { ok: true as const, cartId: "cart-composite" };
     },
@@ -69,7 +69,7 @@ test("storefront purchase authorizes a real component variant only through the p
     await service.add({ shopId: 910_050, slug: "set-a", variantId: "shirt-m" }),
     { ok: true, cartId: "cart-composite" },
   );
-  assert.deepEqual(added, [{ variantId: "shirt-m", quantity: 1 }]);
+  assert.deepEqual(added, [{ variantId: "shirt-m" }]);
 });
 
 test("storefront purchase rejects a forged real variant that is not in the current parent projection", async () => {
@@ -80,7 +80,7 @@ test("storefront purchase rejects a forged real variant that is not in the curre
         return { variants: [variant("set-m")], projection };
       },
     },
-    async addToCart() {
+    async addUnit() {
       addCalls += 1;
       return { ok: true as const, cartId: "unexpected" };
     },
