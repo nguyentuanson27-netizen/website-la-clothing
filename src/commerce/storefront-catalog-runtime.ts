@@ -1,5 +1,6 @@
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
+import { createFlashSaleCatalogRepository } from "./flash-sale-catalog.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import {
   parseStorefrontDiscoverySearchParams,
@@ -54,7 +55,7 @@ export async function listConfiguredFlashSalePage({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  return createStorefrontCatalogRepository(prisma).listFlashSalePage({
+  return createFlashSaleCatalogRepository(prisma).listFlashSalePage({
     shopId,
     discovery,
     pageSize,
@@ -63,7 +64,7 @@ export async function listConfiguredFlashSalePage({
 }
 
 export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
-  return createStorefrontCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
+  return createFlashSaleCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
 }
 
 export async function listConfiguredStorefrontDiscoveryFacets() {

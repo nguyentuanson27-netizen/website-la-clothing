@@ -217,18 +217,16 @@ function visibleProductWhere(shopId: number) {
  * #151 permits exactly one SQL mirror of the pricing contract, and only because `/shop` must filter
  * and order by effective price *before* it paginates — a TypeScript pass over one page cannot do
  * that, and paging first would show the wrong products. It is a projection of the central rule, not
- * a second rule: every pricing branch below has a named counterpart in `promotion-pricing.ts`, and
- * the parity suite pins them together on the same fixtures, including the mandated rounding cases.
+ * a second rule: every branch below has a named counterpart in `promotion-pricing.ts`, and the
+ * parity suite pins them together on the same fixtures, including the mandated rounding cases.
  *
- * Money never touches floating point during arithmetic here. The mirrored column is `double
- * precision`, so the base is validated as a positive safe integer and then cast through `int8` to
- * `numeric` before multiplication/division; that preserves the upper-safe fixture exactly.
+ * Money never touches floating point here. The mirrored column is `double precision`, so the base
+ * is validated as a positive safe integer and then cast to `numeric` before any arithmetic; the
+ * percentage is exact decimal division floored half-up, which is the same value the `BigInt`
+ * expression produces because both operands are non-negative.
  *
- * `now` is the caller's request clock, so count, ordering, page membership, query-wide transition
- * aggregation and card hydration all decide campaign windows against one instant.
- *
- * U17 extends this same CTE with campaign kind and derives Flash membership only after the single
- * pricing CASE has produced `resolvedPrice`; `/flash-sale` does not introduce a second formula.
+ * `now` is the caller's request clock, so the count, the ordering, the page and transition
+ * aggregation all decide window membership against one instant.
  */
 export function buildVariantStockCte(now: Date) {
   return Prisma.sql`
@@ -272,7 +270,6 @@ export function buildVariantStockCte(now: Date) {
     SELECT
       vb."id" AS "variantId",
       c."id" AS "campaignId",
-      c."kind"::text AS "kind",
       c."discountType"::text AS "discountType",
       c."percentageValue" AS "percentageValue",
       c."fixedPriceVnd" AS "fixedPriceVnd"
@@ -283,13 +280,7 @@ export function buildVariantStockCte(now: Date) {
     WHERE c."isEnabled" = TRUE
       AND (c."startsAt" IS NULL OR c."startsAt" <= ${now})
       AND (c."endsAt" IS NULL OR c."endsAt" > ${now})
-    GROUP BY
-      vb."id",
-      c."id",
-      c."kind",
-      c."discountType",
-      c."percentageValue",
-      c."fixedPriceVnd"
+    GROUP BY vb."id", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
   ),
   "variant_candidate" AS (
     SELECT
@@ -300,7 +291,6 @@ export function buildVariantStockCte(now: Date) {
       vb."basePrice",
       vb."sellableStock",
       COUNT(vc."campaignId") AS "candidateCount",
-      MIN(vc."kind") AS "kind",
       MIN(vc."discountType") AS "discountType",
       MIN(vc."percentageValue") AS "percentageValue",
       MIN(vc."fixedPriceVnd") AS "fixedPriceVnd"
@@ -308,9 +298,13 @@ export function buildVariantStockCte(now: Date) {
     LEFT JOIN "variant_campaign" vc ON vc."variantId" = vb."id"
     GROUP BY vb."id", vb."productId", vb."color", vb."size", vb."basePrice", vb."sellableStock"
   ),
-  "variant_priced" AS (
+  "variant_stock" AS (
     SELECT
-      vc.*,
+      vc."id",
+      vc."productId",
+      vc."color",
+      vc."size",
+      vc."sellableStock",
       CASE
         WHEN vc."basePrice" IS NULL THEN NULL
         WHEN vc."candidateCount" <> 1 THEN vc."basePrice"
@@ -327,22 +321,6 @@ export function buildVariantStockCte(now: Date) {
         ELSE vc."basePrice"
       END::float8 AS "resolvedPrice"
     FROM "variant_candidate" vc
-  ),
-  "variant_stock" AS (
-    SELECT
-      vp."id",
-      vp."productId",
-      vp."color",
-      vp."size",
-      vp."sellableStock",
-      vp."resolvedPrice",
-      (
-        vp."basePrice" IS NOT NULL
-        AND vp."candidateCount" = 1
-        AND vp."kind" = 'FLASH_SALE'
-        AND vp."resolvedPrice" < vp."basePrice"
-      ) AS "isFlashSale"
-    FROM "variant_priced" vp
   )
 `;
 }
@@ -651,128 +629,6 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     };
   }
 
-  /**
-   * Flash membership is only a filter over `variant_stock`. The pricing CASE ran once in
-   * `variant_priced`; a row is Flash only when that already-resolved decision is a strict discount
-   * from one applicable FLASH_SALE campaign.
-   */
-  async function listFlashSalePage({
-    shopId,
-    pageSize,
-    discovery,
-    now = new Date(),
-  }: {
-    shopId: number;
-    pageSize: number;
-    discovery: StorefrontDiscoveryQuery;
-    now?: Date;
-  }) {
-    const safePageSize = parseListLimit(pageSize);
-    const offset = parsePageOffset(discovery.page, safePageSize);
-    const safeShopId = parseShopId(shopId);
-    const variantStockCte = buildVariantStockCte(now);
-
-    const flashPredicate = Prisma.sql`
-      p."pancakeShopId" = ${safeShopId}
-      AND p."isPresent" = TRUE
-      AND p."isActive" = TRUE
-      AND EXISTS (
-        SELECT 1
-        FROM "variant_stock" vf
-        WHERE vf."productId" = p."id" AND vf."isFlashSale" = TRUE
-      )
-    `;
-    const sortPrice = Prisma.sql`
-      (
-        SELECT MIN(vf."resolvedPrice")
-        FROM "variant_stock" vf
-        WHERE vf."productId" = p."id" AND vf."isFlashSale" = TRUE
-      )
-    `;
-
-    const [countRows, idRows] = await Promise.all([
-      client.$queryRaw<DiscoveryCountRow[]>(Prisma.sql`
-        ${variantStockCte}
-        SELECT COUNT(*)::bigint AS "count"
-        FROM "ProductMirror" p
-        WHERE ${flashPredicate}
-      `),
-      client.$queryRaw<DiscoveryIdRow[]>(Prisma.sql`
-        ${variantStockCte}
-        SELECT p."id", ${sortPrice} AS "sortPrice"
-        FROM "ProductMirror" p
-        WHERE ${flashPredicate}
-        ORDER BY "sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
-        LIMIT ${safePageSize}
-        OFFSET ${offset}
-      `),
-    ]);
-
-    const totalCount = countRows[0] ? bigintToSafeNumber(countRows[0].count) : 0;
-    const ids = idRows.map(({ id }) => id);
-    const products =
-      ids.length === 0
-        ? []
-        : await client.productMirror.findMany({
-            where: { ...visibleProductWhere(safeShopId), id: { in: ids } },
-            select: productSelection,
-          });
-    const byId = new Map(products.map((product) => [product.id, product]));
-    const allSlugs = products.flatMap((product) =>
-      product.content ? parseJsonStringArray(product.content.collectionSlugs) : [],
-    );
-    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
-    const orderedProducts = ids.map((id) => {
-      const product = byId.get(id);
-      if (!product) throw new Error("Flash sale result changed during read");
-      return toStorefrontProduct(product, collectionMap);
-    });
-
-    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
-      variantIds: orderedProducts.flatMap((product) =>
-        product.variants.map((variant) => variant.id),
-      ),
-    });
-
-    return {
-      products: orderedProducts,
-      page: discovery.page,
-      pageSize: safePageSize,
-      totalCount,
-      totalPages: Math.ceil(totalCount / safePageSize),
-      hasPrevious: discovery.page > 1,
-      hasNext: offset + orderedProducts.length < totalCount,
-      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
-    };
-  }
-
-  /**
-   * The next instant at which Flash membership could change, server-side. The route converts this
-   * boundary to the shared relative <=60s freshness fact; the browser never receives the deadline.
-   */
-  async function readNextFlashSaleBoundary({
-    now = new Date(),
-  }: { now?: Date } = {}): Promise<Date | null> {
-    const rows = await client.$queryRaw<Array<{ boundary: Date | null }>>(Prisma.sql`
-      SELECT MIN("boundary") AS "boundary" FROM (
-        SELECT "startsAt" AS "boundary"
-        FROM "PromotionCampaign"
-        WHERE "isEnabled" = TRUE
-          AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
-          AND "startsAt" IS NOT NULL
-          AND "startsAt" > ${now}
-        UNION ALL
-        SELECT "endsAt" AS "boundary"
-        FROM "PromotionCampaign"
-        WHERE "isEnabled" = TRUE
-          AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
-          AND "endsAt" IS NOT NULL
-          AND "endsAt" > ${now}
-      ) AS "boundaries"
-    `);
-    return rows[0]?.boundary ?? null;
-  }
-
   async function listDiscoveryFacets({ shopId }: { shopId: number }) {
     const safeShopId = parseShopId(shopId);
     const [colorRows, sizeRows, collectionRows] = await Promise.all([
@@ -845,8 +701,6 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     listProducts,
     listProductPage,
     listDiscoveryPage,
-    listFlashSalePage,
-    readNextFlashSaleBoundary,
     listDiscoveryFacets,
     getProductBySlug,
   };

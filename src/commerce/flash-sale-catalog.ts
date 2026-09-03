@@ -1,0 +1,350 @@
+import { buildVariantStockCte } from "./storefront-catalog.ts";
+import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
+import {
+  resolveStorefrontProductMedia,
+  type StorefrontProductMedia,
+} from "./product-media.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+
+const MAX_FLASH_SALE_PAGE_SIZE = 48;
+const MAX_STOREFRONT_OFFSET = 50_000;
+const MAX_POSTGRES_INTEGER = 2_147_483_647;
+
+type FlashSaleCountRow = { count: bigint };
+type FlashSaleBoundaryRow = { boundary: Date | null };
+type FlashSaleIdRow = {
+  id: string;
+  representativeVariantId: string;
+  basePrice: number;
+  sortPrice: number;
+  endsAt: Date;
+  hasCheaperCurrentVariant: boolean;
+};
+
+const flashProductSelection = {
+  id: true,
+  slug: true,
+  name: true,
+  primaryImageUrl: true,
+  variants: {
+    where: { isPresent: true, isActive: true },
+    orderBy: [{ pancakeVariationId: "asc" }],
+    select: {
+      id: true,
+      pancakeVariationId: true,
+      color: true,
+      size: true,
+      pancakeRetailPrice: true,
+      pancakeRetailPriceAfterDiscount: true,
+      pancakeImageUrls: true,
+      warehouseStocks: {
+        orderBy: [{ pancakeWarehouseId: "asc" }],
+        select: { quantity: true },
+      },
+    },
+  },
+} satisfies Prisma.ProductMirrorSelect;
+
+type SelectedFlashProduct = Prisma.ProductMirrorGetPayload<{ select: typeof flashProductSelection }>;
+
+function parseShopId(shopId: number): number {
+  if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
+    throw new RangeError("Storefront shop id must fit a positive PostgreSQL INTEGER");
+  }
+  return shopId;
+}
+
+function parsePageSize(pageSize: number): number {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > MAX_FLASH_SALE_PAGE_SIZE) {
+    throw new RangeError(
+      `Flash Sale page size must be between 1 and ${MAX_FLASH_SALE_PAGE_SIZE}`,
+    );
+  }
+  return pageSize;
+}
+
+function parsePageOffset(page: number, pageSize: number): number {
+  if (!Number.isSafeInteger(page) || page < 1) {
+    throw new RangeError("Storefront product page must be a positive integer");
+  }
+  const offset = (page - 1) * pageSize;
+  if (!Number.isSafeInteger(offset) || offset > MAX_STOREFRONT_OFFSET) {
+    throw new RangeError("Storefront product page is outside the supported catalog window");
+  }
+  return offset;
+}
+
+function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
+  let total = 0;
+  for (const stock of stocks) {
+    if (!Number.isFinite(stock.quantity)) {
+      throw new Error("Flash Sale catalog contains malformed warehouse quantity");
+    }
+    total += stock.quantity;
+    if (!Number.isFinite(total)) {
+      throw new Error("Flash Sale catalog stock total is outside numeric bounds");
+    }
+  }
+  return total;
+}
+
+function toFlashProduct(product: SelectedFlashProduct) {
+  const media: StorefrontProductMedia = resolveStorefrontProductMedia({
+    productName: product.name,
+    primaryImageUrl: product.primaryImageUrl,
+    variantImageUrls: product.variants.map((variant) =>
+      parseJsonStringArray(variant.pancakeImageUrls),
+    ),
+  });
+
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    media,
+    variants: product.variants.map((variant) => ({
+      id: variant.id,
+      pancakeVariationId: variant.pancakeVariationId,
+      color: variant.color,
+      size: variant.size,
+      retailPrice: variant.pancakeRetailPrice,
+      retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
+      sellableStock: sumWarehouseStocks(variant.warehouseStocks),
+    })),
+  };
+}
+
+/**
+ * U17 adds only Flash membership/purchasability on top of U16's sanctioned pricing projection.
+ * Price arithmetic stays entirely inside `buildVariantStockCte`; these CTEs only decide whether the
+ * already-priced variant can actually be selected/bought and whether its one active campaign is a
+ * valid Flash Sale.
+ */
+function buildFlashSaleCte(now: Date) {
+  return Prisma.sql`
+    ${buildVariantStockCte(now)},
+    "flash_variant_dimension" AS (
+      SELECT
+        vs.*,
+        vp."basePrice",
+        vp."candidateCount",
+        BOOL_OR(NULLIF(BTRIM(vs."color"), '') IS NOT NULL)
+          OVER (PARTITION BY vs."productId") AS "hasColorDimension"
+      FROM "variant_stock" vs
+      JOIN "variant_priced" vp ON vp."id" = vs."id"
+    ),
+    "flash_variant_mapping" AS (
+      SELECT
+        fvd.*,
+        COUNT(*) OVER (
+          PARTITION BY
+            fvd."productId",
+            CASE
+              WHEN fvd."hasColorDimension" THEN LOWER(BTRIM(fvd."color"))
+              ELSE ''
+            END,
+            LOWER(BTRIM(fvd."size"))
+        ) AS "optionCount"
+      FROM "flash_variant_dimension" fvd
+    ),
+    "flash_variant_eligible" AS (
+      SELECT
+        fvm.*,
+        (
+          NULLIF(BTRIM(fvm."size"), '') IS NOT NULL
+          AND (
+            NOT fvm."hasColorDimension"
+            OR NULLIF(BTRIM(fvm."color"), '') IS NOT NULL
+          )
+          AND fvm."optionCount" = 1
+          AND fvm."sellableStock" > 0
+          AND fvm."resolvedPrice" IS NOT NULL
+        ) AS "isPurchasable"
+      FROM "flash_variant_mapping" fvm
+    ),
+    "flash_sale_variant" AS (
+      SELECT
+        fve."id",
+        fve."productId",
+        fve."basePrice"::float8 AS "basePrice",
+        fve."resolvedPrice",
+        c."endsAt"
+      FROM "flash_variant_eligible" fve
+      JOIN "variant_campaign" vc ON vc."variantId" = fve."id"
+      JOIN "PromotionCampaign" c ON c."id" = vc."campaignId"
+      WHERE fve."isPurchasable" = TRUE
+        AND fve."candidateCount" = 1
+        AND fve."basePrice" IS NOT NULL
+        AND fve."resolvedPrice" < fve."basePrice"::float8
+        AND c."kind" = 'FLASH_SALE'::"PromotionCampaignKind"
+        AND c."startsAt" IS NOT NULL
+        AND c."endsAt" IS NOT NULL
+        AND c."endsAt" > c."startsAt"
+    )
+  `;
+}
+
+function assertProjectedMoney(row: FlashSaleIdRow) {
+  if (
+    !Number.isSafeInteger(row.basePrice)
+    || !Number.isSafeInteger(row.sortPrice)
+    || row.basePrice <= 0
+    || row.sortPrice <= 0
+    || row.sortPrice >= row.basePrice
+  ) {
+    throw new Error("Flash Sale projection returned invalid representative money");
+  }
+}
+
+export function createFlashSaleCatalogRepository(client: PrismaClient) {
+  async function listFlashSalePage({
+    shopId,
+    pageSize,
+    discovery,
+    now = new Date(),
+  }: {
+    shopId: number;
+    pageSize: number;
+    discovery: StorefrontDiscoveryQuery;
+    now?: Date;
+  }) {
+    const safeShopId = parseShopId(shopId);
+    const safePageSize = parsePageSize(pageSize);
+    const offset = parsePageOffset(discovery.page, safePageSize);
+    const cte = buildFlashSaleCte(now);
+
+    const [countRows, idRows] = await Promise.all([
+      client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
+        ${cte}
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "ProductMirror" p
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+          AND EXISTS (
+            SELECT 1
+            FROM "flash_sale_variant" fsv
+            WHERE fsv."productId" = p."id"
+          )
+      `),
+      client.$queryRaw<FlashSaleIdRow[]>(Prisma.sql`
+        ${cte}
+        SELECT
+          p."id",
+          representative."representativeVariantId",
+          representative."basePrice",
+          representative."sortPrice",
+          representative."endsAt",
+          representative."hasCheaperCurrentVariant"
+        FROM "ProductMirror" p
+        JOIN LATERAL (
+          SELECT
+            fsv."id" AS "representativeVariantId",
+            fsv."basePrice",
+            fsv."resolvedPrice" AS "sortPrice",
+            fsv."endsAt",
+            EXISTS (
+              SELECT 1
+              FROM "flash_variant_eligible" current_variant
+              WHERE current_variant."productId" = p."id"
+                AND current_variant."isPurchasable" = TRUE
+                AND current_variant."resolvedPrice" < fsv."resolvedPrice"
+            ) AS "hasCheaperCurrentVariant"
+          FROM "flash_sale_variant" fsv
+          WHERE fsv."productId" = p."id"
+          ORDER BY fsv."resolvedPrice" ASC, fsv."id" ASC
+          LIMIT 1
+        ) representative ON TRUE
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+        ORDER BY representative."sortPrice" ASC, p."name" ASC, p."id" ASC
+        LIMIT ${safePageSize}
+        OFFSET ${offset}
+      `),
+    ]);
+
+    const totalCount = countRows[0] ? Number(countRows[0].count) : 0;
+    if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+      throw new Error("Flash Sale result count is outside safe integer bounds");
+    }
+
+    for (const row of idRows) assertProjectedMoney(row);
+
+    const ids = idRows.map((row) => row.id);
+    const products = ids.length === 0
+      ? []
+      : await client.productMirror.findMany({
+          where: {
+            pancakeShopId: safeShopId,
+            isPresent: true,
+            isActive: true,
+            id: { in: ids },
+          },
+          select: flashProductSelection,
+        });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const rowById = new Map(idRows.map((row) => [row.id, row]));
+
+    const orderedProducts = ids.map((id) => {
+      const product = byId.get(id);
+      const row = rowById.get(id);
+      if (!product || !row) throw new Error("Flash Sale result changed during read");
+
+      return {
+        ...toFlashProduct(product),
+        flashSale: Object.freeze({
+          representativeVariantId: row.representativeVariantId,
+          basePriceVnd: row.basePrice,
+          effectivePriceVnd: row.sortPrice,
+          hasCheaperCurrentVariant: row.hasCheaperCurrentVariant,
+          remainingMs: Math.max(0, row.endsAt.getTime() - now.getTime()),
+        }),
+      };
+    });
+
+    return {
+      products: orderedProducts,
+      page: discovery.page,
+      pageSize: safePageSize,
+      totalCount,
+      totalPages: Math.ceil(totalCount / safePageSize),
+      hasPrevious: discovery.page > 1,
+      hasNext: offset + orderedProducts.length < totalCount,
+    };
+  }
+
+  async function readNextFlashSaleBoundary({
+    now = new Date(),
+  }: { now?: Date } = {}): Promise<Date | null> {
+    const rows = await client.$queryRaw<FlashSaleBoundaryRow[]>(Prisma.sql`
+      SELECT MIN("boundary") AS "boundary" FROM (
+        SELECT "startsAt" AS "boundary"
+        FROM "PromotionCampaign"
+        WHERE "isEnabled" = TRUE
+          AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
+          AND "startsAt" IS NOT NULL
+          AND "startsAt" > ${now}
+        UNION ALL
+        SELECT "endsAt" AS "boundary"
+        FROM "PromotionCampaign"
+        WHERE "isEnabled" = TRUE
+          AND "kind" = 'FLASH_SALE'::"PromotionCampaignKind"
+          AND "endsAt" IS NOT NULL
+          AND "endsAt" > ${now}
+      ) boundaries
+    `);
+    return rows[0]?.boundary ?? null;
+  }
+
+  return {
+    listFlashSalePage,
+    readNextFlashSaleBoundary,
+  };
+}

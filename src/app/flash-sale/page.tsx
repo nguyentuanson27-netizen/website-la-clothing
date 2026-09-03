@@ -41,7 +41,7 @@ export async function generateMetadata({ searchParams }: FlashSalePageProps): Pr
 export default async function FlashSalePage({ searchParams }: FlashSalePageProps) {
   await connection();
 
-  // One server instant for membership, pricing, ordering and the refresh window alike.
+  // One server instant for membership, pricing, representative selection and refresh alike.
   const requestNow = new Date();
 
   let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
@@ -51,8 +51,6 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
     discovery = parseStorefrontDiscoverySearchParams(await searchParams);
     [flashPage, nextBoundaryAt] = await Promise.all([
       listConfiguredFlashSalePage({ discovery, pageSize: PAGE_SIZE, now: requestNow }),
-      // Read even when the page is empty: a scheduled Flash window still has to wake an already
-      // open route when it starts.
       readConfiguredNextFlashSaleBoundary(requestNow),
     ]);
   } catch (error) {
@@ -60,7 +58,7 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
     throw error;
   }
 
-  const { page, products, totalCount, totalPages, pricingRule } = flashPage;
+  const { page, products, totalCount, totalPages } = flashPage;
   const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
     now: requestNow,
     nextBoundaryAt,
@@ -98,7 +96,7 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
-                pricingRule={pricingRule}
+                flashSale={product.flashSale}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
             ))}
