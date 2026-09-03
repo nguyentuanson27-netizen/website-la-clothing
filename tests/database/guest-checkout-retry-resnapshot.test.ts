@@ -132,24 +132,24 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("retryable DRAFT is superseded so retry snapshots current cart and address before Pancake POST", async () => {
+test("P8 retryable DRAFT refreshes in place so current cart/address reach the later Pancake POST", async () => {
   await cleanup();
   const productA = await createProduct("a", 400_000);
   const productB = await createProduct("b", 650_000);
   const variantA = productA.variants[0]!;
   const variantB = productB.variants[0]!;
   const { cart, first, snapshot } = await makeRetryableDraft({ suffix: "fresh", variantId: variantA.id });
+  const before = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: first.order.publicCode } });
 
   await prisma.$transaction([
     prisma.cartItem.deleteMany({ where: { cartId: cart.id } }),
     prisma.cartItem.create({ data: { cartId: cart.id, variantId: variantB.id, quantity: 1 } }),
   ]);
 
-  const retryPublicCode = `${key}-retry`;
   const retry = await snapshot.create({
     cartId: cart.id,
     shopId,
-    publicCode: retryPublicCode,
+    publicCode: `${key}-unused-retry-code`,
     checkoutInput: {
       name: "Nguyễn Văn B",
       phone: "0987654321",
@@ -163,13 +163,18 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
   });
   assert.equal(retry.ok, true);
   if (!retry.ok) return;
-  assert.equal(retry.order.publicCode, retryPublicCode);
+  assert.equal(retry.order.publicCode, first.order.publicCode);
 
-  const superseded = await prisma.orderMirror.findUniqueOrThrow({
+  const refreshed = await prisma.orderMirror.findUniqueOrThrow({
     where: { publicCode: first.order.publicCode },
+    include: { lines: true },
   });
-  assert.equal(superseded.state, "REJECTED");
-  assert.equal(superseded.syncErrorCode, "VALIDATION_RETRY_SUPERSEDED");
+  assert.equal(refreshed.id, before.id);
+  assert.equal(refreshed.state, "DRAFT");
+  assert.equal(refreshed.syncErrorCode, null);
+  assert.equal(refreshed.lines.length, 1);
+  assert.equal(refreshed.lines[0]!.pancakeVariationId, variantB.pancakeVariationId);
+  assert.equal(await prisma.orderMirror.count({ where: { sourceCartId: cart.id } }), 1);
 
   let request: PancakeCreateOrderRequest | undefined;
   const healthy = createPancakeOrderSubmissionService(prisma, {
@@ -185,7 +190,7 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
     },
   });
 
-  assert.deepEqual(await healthy.submit({ publicCode: retry.order.publicCode, shopId }), {
+  assert.deepEqual(await healthy.submit({ publicCode: first.order.publicCode, shopId }), {
     ok: true,
     state: "CONFIRMED",
     pancakeOrderId: "800001",
@@ -201,14 +206,15 @@ test("retryable DRAFT is superseded so retry snapshots current cart and address 
   assert.deepEqual(request.items.map(({ variation_id }) => variation_id), [variantB.pancakeVariationId]);
 });
 
-test("retry resnapshot fails closed instead of returning stale DRAFT when the proposed public code collides", async () => {
+test("P8 retry ignores a colliding proposed public code because the existing DRAFT identity is preserved", async () => {
   await cleanup();
   const product = await createProduct("collision", 500_000);
   const variant = product.variants[0]!;
   const { cart, first, snapshot } = await makeRetryableDraft({ suffix: "collision", variantId: variant.id });
+  const original = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: first.order.publicCode } });
   const collidingPublicCode = `${key}-occupied`;
 
-  await prisma.orderMirror.create({
+  const occupied = await prisma.orderMirror.create({
     data: {
       publicCode: collidingPublicCode,
       state: "REJECTED",
@@ -216,28 +222,33 @@ test("retry resnapshot fails closed instead of returning stale DRAFT when the pr
     },
   });
 
-  assert.deepEqual(
-    await snapshot.create({
-      cartId: cart.id,
-      shopId,
-      publicCode: collidingPublicCode,
-      checkoutInput: {
-        name: "Nguyễn Văn B",
-        phone: "0987654321",
-        provinceRef: "province-y",
-        districtRef: "district-y",
-        communeRef: "commune-y",
-        detail: "34 Đường Y",
-        note: "Địa chỉ mới",
-      },
-      now: new Date(now.getTime() + 1_000),
-    }),
-    { ok: false, reason: "PUBLIC_CODE_UNAVAILABLE" },
-  );
-
-  const original = await prisma.orderMirror.findUniqueOrThrow({
-    where: { publicCode: first.order.publicCode },
+  const retry = await snapshot.create({
+    cartId: cart.id,
+    shopId,
+    publicCode: collidingPublicCode,
+    checkoutInput: {
+      name: "Nguyễn Văn B",
+      phone: "0987654321",
+      provinceRef: "province-y",
+      districtRef: "district-y",
+      communeRef: "commune-y",
+      detail: "34 Đường Y",
+      note: "Địa chỉ mới",
+    },
+    now: new Date(now.getTime() + 1_000),
   });
-  assert.equal(original.state, "DRAFT");
-  assert.equal(original.syncErrorCode, "VALIDATION_UNAVAILABLE");
+  assert.equal(retry.ok, true);
+  if (!retry.ok) return;
+  assert.equal(retry.order.publicCode, first.order.publicCode);
+
+  const after = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: first.order.publicCode } });
+  assert.equal(after.id, original.id);
+  assert.equal(after.state, "DRAFT");
+  assert.equal(after.syncErrorCode, null);
+  assert.equal(after.guestName, "Nguyễn Văn B");
+  assert.equal(await prisma.orderMirror.count({ where: { sourceCartId: cart.id } }), 1);
+
+  const occupiedAfter = await prisma.orderMirror.findUniqueOrThrow({ where: { id: occupied.id } });
+  assert.equal(occupiedAfter.state, "REJECTED");
+  assert.equal(occupiedAfter.syncErrorCode, "TEST_COLLISION");
 });
