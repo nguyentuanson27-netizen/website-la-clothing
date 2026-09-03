@@ -37,6 +37,8 @@ export function parseAdminTargetSearchLimit(requested: number): number {
 export type PromotionAdminFailure =
   | ActivationFailure
   | { reason: "DUPLICATE_TARGET" }
+  | { reason: "MALFORMED_FIXED_PRICE" }
+  | { reason: "INVALID_PERCENTAGE" }
   /** The caller was not an admin when the Server Action re-checked. */
   | { reason: "FORBIDDEN" };
 
@@ -65,6 +67,8 @@ const MESSAGES: Record<PromotionAdminFailure["reason"], string> = {
   OVERLAPPING_CAMPAIGN:
     "Khoảng thời gian này trùng với một chiến dịch khác đang bật trên cùng phiên bản sản phẩm.",
   DUPLICATE_TARGET: "Danh sách áp dụng đang bị trùng. Mỗi sản phẩm hoặc phiên bản chỉ được chọn một lần.",
+  MALFORMED_FIXED_PRICE: "Giá cố định không hợp lệ. Vui lòng nhập số tiền nguyên dương bằng VNĐ.",
+  INVALID_PERCENTAGE: "Mức giảm phần trăm không hợp lệ. Vui lòng nhập số nguyên từ 1% đến 99%.",
   FORBIDDEN: "Bạn không có quyền thực hiện thao tác này.",
 };
 

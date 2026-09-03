@@ -56,6 +56,8 @@ test("P5 every typed activation failure gets an operator-facing message", () => 
     { reason: "UNUSABLE_BASE_PRICE", variantIds: ["v1"] },
     { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: ["c1"] },
     { reason: "DUPLICATE_TARGET" },
+    { reason: "MALFORMED_FIXED_PRICE" },
+    { reason: "INVALID_PERCENTAGE" },
   ] as const;
 
   for (const failure of failures) {

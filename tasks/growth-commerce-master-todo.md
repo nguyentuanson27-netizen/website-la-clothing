@@ -71,7 +71,7 @@ The owning source checklists are reconciled to the same truth, so there is one e
 
 - [ ] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link; requires U8 + accepted U9 evidence.
 - [ ] **U13** #152 W15b — wire only missing SEO HTTP/runtime signals from U5 coverage map: a negative `release:check` case for the temporary-host indexing block, and an HTTP case proving that host stays noindex when a deployment requests indexing. Do not re-invoke the five smokes that already run in `pnpm test`.
-- [ ] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React.
+- [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 and P5b PR #185)*
 - [ ] **U15** #151 P6 — PDP promotion projection using central pricing + **U8/T4 selected-variant state (`pancakeVariationId`)**; do not define a query/canonical contract. If U12 has landed, consume it directly.
 - [ ] **U16** #151 P7a — `/shop` effective-price discovery; SQL↔TS parity and product-level analytics identity preserved.
 - [ ] **U17** #151 P7b — `/flash-sale` via same projection; bounded pagination and ≤60s server-relative freshness.

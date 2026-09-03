@@ -15,13 +15,13 @@ import {
   publishPromotionCampaign,
   type CampaignPatch,
 } from "@/commerce/promotion-activation-service";
-import {
-  MAX_PROMOTION_IDENTIFIER_LENGTH,
-  MAX_TARGETS_PER_CAMPAIGN,
-  type CampaignTargetInput,
-} from "@/commerce/promotion-activation";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
+import {
+  parseDiscountInputs,
+  parseTargets,
+  parseVietnamDateTime,
+} from "@/commerce/promotion-admin-input";
 import {
   describePromotionFailure,
   translatePromotionWriteError,
@@ -133,82 +133,18 @@ export async function copyPromotionAction(formData: FormData): Promise<void> {
   completeWith(outcome);
 }
 
-function parseVietnamDateTime(raw: unknown): Date | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
-    const parsed = new Date(`${trimmed}:00+07:00`.slice(0, 25));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function parseDiscountInputs(formData: FormData): {
-  discountType: "PERCENTAGE" | "FIXED_PRICE";
-  percentageValue: number | null;
-  fixedPriceVnd: bigint | null;
-} {
-  const discountType = formData.get("discountType") === "FIXED_PRICE" ? "FIXED_PRICE" : "PERCENTAGE";
-  if (discountType === "PERCENTAGE") {
-    const raw = formData.get("percentageValue");
-    const num = typeof raw === "string" && raw.trim().length > 0 ? Number(raw.trim()) : null;
-    return {
-      discountType,
-      percentageValue: num !== null && Number.isSafeInteger(num) ? num : null,
-      fixedPriceVnd: null,
-    };
-  }
-
-  const raw = formData.get("fixedPriceVnd");
-  if (typeof raw === "string") {
-    const cleaned = raw.replace(/\D/g, "");
-    if (cleaned.length > 0) {
-      try {
-        return {
-          discountType,
-          percentageValue: null,
-          fixedPriceVnd: BigInt(cleaned),
-        };
-      } catch {
-        // fall through to null
-      }
-    }
-  }
-
-  return {
-    discountType,
-    percentageValue: null,
-    fixedPriceVnd: null,
-  };
-}
-
-function parseTargets(formData: FormData): CampaignTargetInput[] {
-  const targetProductIds = formData
-    .getAll("targetProductId")
-    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-    .map((v) => v.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH));
-
-  const targetVariantIds = formData
-    .getAll("targetVariantId")
-    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-    .map((v) => v.trim().slice(0, MAX_PROMOTION_IDENTIFIER_LENGTH));
-
-  const targets: CampaignTargetInput[] = [
-    ...targetProductIds.map((id) => ({ productId: id, variantId: null })),
-    ...targetVariantIds.map((id) => ({ productId: null, variantId: id })),
-  ];
-
-  return targets.slice(0, MAX_TARGETS_PER_CAMPAIGN + 1);
-}
-
 export async function createPromotionAction(formData: FormData): Promise<void> {
+  const discountResult = parseDiscountInputs(formData);
+  if (!discountResult.ok) {
+    completeWith({
+      ok: false,
+      failure: describePromotionFailure({ reason: discountResult.reason }),
+    });
+  }
+
+  const { discountType, percentageValue, fixedPriceVnd } = discountResult;
   const name = typeof formData.get("name") === "string" ? (formData.get("name") as string) : "";
   const kind = formData.get("kind") === "FLASH_SALE" ? "FLASH_SALE" : "PROMOTION";
-  const { discountType, percentageValue, fixedPriceVnd } = parseDiscountInputs(formData);
   const startsAt = parseVietnamDateTime(formData.get("startsAt"));
   const endsAt = parseVietnamDateTime(formData.get("endsAt"));
   const targets = parseTargets(formData);
@@ -232,9 +168,17 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
 
 export async function editPromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
+  const discountResult = parseDiscountInputs(formData);
+  if (!discountResult.ok) {
+    completeWith({
+      ok: false,
+      failure: describePromotionFailure({ reason: discountResult.reason }),
+    });
+  }
+
+  const { discountType, percentageValue, fixedPriceVnd } = discountResult;
   const name = typeof formData.get("name") === "string" ? (formData.get("name") as string) : "";
   const kind = formData.get("kind") === "FLASH_SALE" ? "FLASH_SALE" : "PROMOTION";
-  const { discountType, percentageValue, fixedPriceVnd } = parseDiscountInputs(formData);
   const startsAt = parseVietnamDateTime(formData.get("startsAt"));
   const endsAt = parseVietnamDateTime(formData.get("endsAt"));
   const targets = parseTargets(formData);

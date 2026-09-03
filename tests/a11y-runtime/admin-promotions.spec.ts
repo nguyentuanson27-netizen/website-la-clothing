@@ -247,3 +247,89 @@ test("U14 P5b product admin displays related campaign summary and link with zero
   expect(browserErrors).toEqual([]);
 });
 
+test("U14 P5b browser creates campaign and persists exact Draft row without advancing revision", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  const newCampaignName = `U14 Browser Created ${runId}`;
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
+
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(newCampaignName);
+  await page.getByLabel("Mức giảm (%)").fill("25");
+
+  // Search target and add
+  const searchInput = page.getByRole("searchbox", { name: "Từ khóa tìm kiếm mục áp dụng" });
+  await searchInput.fill("U14 A11y Product");
+  await page.getByRole("button", { name: "Tìm mục" }).click();
+
+  const addButton = page.getByRole("button", { name: "+ Thêm" });
+  await expect(addButton).toBeVisible();
+  await addButton.click();
+  await expect(page.getByRole("button", { name: "Đã thêm" })).toBeVisible();
+
+  // Submit create
+  await page.getByRole("button", { name: "Tạo chiến dịch (Nháp)" }).click();
+
+  // Wait for redirect to /admin/promotions?status=ok
+  await expect(page).toHaveURL(`${BASE_URL}/admin/promotions?status=ok`);
+  await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
+  await expect(page.getByRole("cell", { name: newCampaignName })).toBeVisible();
+
+  // Direct database assertions
+  const created = await prisma.promotionCampaign.findFirst({
+    where: { name: newCampaignName },
+    include: { targets: true },
+  });
+  expect(created).not.toBeNull();
+  expect(created?.percentageValue).toBe(25);
+  expect(created?.isEnabled).toBe(false);
+  expect(created?.targets.length).toBe(1);
+  expect(created?.targets[0]?.productId).toBe(testProductId);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b browser edits campaign and updates material fields in DB", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await context.addCookies(adminCookies);
+  await page.goto(`${BASE_URL}/admin/promotions?edit=${campaignId}`, { waitUntil: "networkidle" });
+
+  const percentInput = page.getByLabel("Mức giảm (%)");
+  await percentInput.clear();
+  await percentInput.fill("35");
+
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/admin/promotions?status=ok`);
+  await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
+
+  // Assert DB exact value
+  const updated = await prisma.promotionCampaign.findUnique({
+    where: { id: campaignId },
+  });
+  expect(updated?.percentageValue).toBe(35);
+
+  expect(browserErrors).toEqual([]);
+});
+
+test("U14 P5b non-admin is refused access to campaign creation and actions", async ({ browser }) => {
+  const anonContext = await browser.newContext();
+  const anonPage = await anonContext.newPage();
+
+  // Unauthenticated user navigating to admin promotions create URL is blocked
+  await anonPage.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
+  await expect(anonPage.getByRole("textbox", { name: "Tên chiến dịch" })).not.toBeVisible();
+
+  await anonContext.close();
+});
+

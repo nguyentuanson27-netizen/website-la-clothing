@@ -258,75 +258,61 @@ export function createPromotionAdminRepository(client: PrismaClient) {
 
     const take = Math.min(Math.max(1, limit), 50);
 
-    const targets = await client.promotionTarget.findMany({
+    const targetFilter = {
+      OR: [
+        { productId: cleanProductId },
+        ...(cleanVariantIds.length > 0
+          ? [{ variantId: { in: cleanVariantIds } }]
+          : [{ variant: { productId: cleanProductId } }]),
+      ],
+    };
+
+    const campaigns = await client.promotionCampaign.findMany({
       where: {
-        OR: [
-          { productId: cleanProductId },
-          ...(cleanVariantIds.length > 0 ? [{ variantId: { in: cleanVariantIds } }] : []),
-        ],
+        targets: {
+          some: targetFilter,
+        },
       },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take,
       select: {
-        productId: true,
-        variantId: true,
-        campaign: {
+        id: true,
+        name: true,
+        kind: true,
+        startsAt: true,
+        endsAt: true,
+        isEnabled: true,
+        enabledAt: true,
+        disabledAt: true,
+        targets: {
+          where: targetFilter,
           select: {
-            id: true,
-            name: true,
-            kind: true,
-            startsAt: true,
-            endsAt: true,
-            isEnabled: true,
-            enabledAt: true,
-            disabledAt: true,
+            productId: true,
+            variantId: true,
           },
         },
       },
     });
 
-    const campaignsById = new Map<
-      string,
-      {
-        campaign: (typeof targets)[number]["campaign"];
-        hasProductTarget: boolean;
-        hasVariantTarget: boolean;
+    return campaigns.map((campaign) => {
+      const lifecycle = deriveCampaignLifecycle({ ...campaign, now });
+      const hasProductTarget = campaign.targets.some((t) => t.productId === cleanProductId);
+      const hasVariantTarget = campaign.targets.some((t) => t.variantId !== null);
+      let targetScope: "PRODUCT" | "VARIANT" | "BOTH" = "PRODUCT";
+      if (hasProductTarget && hasVariantTarget) {
+        targetScope = "BOTH";
+      } else if (hasVariantTarget) {
+        targetScope = "VARIANT";
       }
-    >();
 
-    for (const target of targets) {
-      const campaign = target.campaign;
-      let entry = campaignsById.get(campaign.id);
-      if (!entry) {
-        entry = { campaign, hasProductTarget: false, hasVariantTarget: false };
-        campaignsById.set(campaign.id, entry);
-      }
-      if (target.productId === cleanProductId) {
-        entry.hasProductTarget = true;
-      }
-      if (target.variantId !== null && cleanVariantIds.includes(target.variantId)) {
-        entry.hasVariantTarget = true;
-      }
-    }
-
-    return Array.from(campaignsById.values()).map(
-      ({ campaign, hasProductTarget, hasVariantTarget }) => {
-        const lifecycle = deriveCampaignLifecycle({ ...campaign, now });
-        let targetScope: "PRODUCT" | "VARIANT" | "BOTH" = "PRODUCT";
-        if (hasProductTarget && hasVariantTarget) {
-          targetScope = "BOTH";
-        } else if (hasVariantTarget) {
-          targetScope = "VARIANT";
-        }
-
-        return {
-          id: campaign.id,
-          name: campaign.name,
-          kind: campaign.kind,
-          status: lifecycle.status,
-          targetScope,
-        };
-      },
-    );
+      return {
+        id: campaign.id,
+        name: campaign.name,
+        kind: campaign.kind,
+        status: lifecycle.status,
+        targetScope,
+      };
+    });
   }
 
   return {

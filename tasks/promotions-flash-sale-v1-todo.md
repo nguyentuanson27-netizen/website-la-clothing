@@ -1,15 +1,15 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P4 IMPLEMENTED AND MERGED; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. P5 onward remain planned.**
+Status: **P1–P5 IMPLEMENTED; P1–P4 merged, P5 delivered via P5a (PR #184) and P5b (PR #185). Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`. P6 onward remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
-real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172). Integrated Checkpoint A
+real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; the W3 pricing evidence is in
 `docs/audits/pricing-evidence-w3.md`.
 
 The promotion activation gate remains **default-off**, and the storefront
 `retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place — its removal is P6
-work. Nothing from P5 onward is implemented.
+work. P6 onward remain planned.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -134,13 +134,14 @@ Verification:
 - [x] 0 Critical / 0 Required. Three non-blocking observations carried to P5.
 
 ## P5 — admin UX
-- [ ] Protected `/admin/promotions`.
-- [ ] List/search bounded 50.
-- [ ] Lifecycle-valid create/edit/publish/re-enable/disable/copy.
-- [ ] Typed invalid/overlap/expansion/activation feedback.
-- [ ] Product admin only shows related-campaign summary/link.
-- [ ] No price/overlap math in React.
-- [ ] Keyboard/Axe/mobile + non-admin rejection.
+*(Delivered across P5a PR #184 and P5b PR #185)*
+- [x] Protected `/admin/promotions`.
+- [x] List/search bounded 50.
+- [x] Lifecycle-valid create/edit/publish/re-enable/disable/copy.
+- [x] Typed invalid/overlap/expansion/activation feedback.
+- [x] Product admin only shows related-campaign summary/link.
+- [x] No price/overlap math in React.
+- [x] Keyboard/Axe/mobile + non-admin rejection.
 
 ## #153 T4 identity prerequisite
 
