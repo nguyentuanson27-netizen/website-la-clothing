@@ -80,11 +80,18 @@ export type RenderedQuoteProofVerification =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: RenderedQuoteProofRejection }>;
 
+/**
+ * The same bound the order snapshot calls supported money (`isSupportedVndAmount`), deliberately
+ * matching rather than tightening it. This module attests what a quote *said*; deciding that some
+ * amount is not sellable belongs to the pricing authority. Requiring more here than the code that
+ * produces these facts would mean a quote the snapshot happily persists could not be proven, which
+ * is a disagreement between two modules about the same numbers.
+ */
 function isUsableVnd(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
-function requireUsableFacts(quote: RenderedQuoteProofFacts): void {
+function areUsableFacts(quote: RenderedQuoteProofFacts): boolean {
   if (
     !quote ||
     !Array.isArray(quote.items) ||
@@ -95,7 +102,7 @@ function requireUsableFacts(quote: RenderedQuoteProofFacts): void {
     !Number.isSafeInteger(quote.totalQuantity) ||
     quote.totalQuantity <= 0
   ) {
-    throw new TypeError("Rendered quote proof facts must be bounded website money");
+    return false;
   }
 
   const seen = new Set<string>();
@@ -106,12 +113,18 @@ function requireUsableFacts(quote: RenderedQuoteProofFacts): void {
       seen.has(item.variantExternalId) ||
       !Number.isSafeInteger(item.quantity) ||
       item.quantity <= 0 ||
-      !Number.isSafeInteger(item.unitPriceVnd) ||
-      item.unitPriceVnd <= 0
+      !isUsableVnd(item.unitPriceVnd)
     ) {
-      throw new TypeError("Rendered quote proof lines must carry one usable price per variant");
+      return false;
     }
     seen.add(item.variantExternalId);
+  }
+  return true;
+}
+
+function requireUsableFacts(quote: RenderedQuoteProofFacts): void {
+  if (!areUsableFacts(quote)) {
+    throw new TypeError("Rendered quote proof facts must be bounded website money");
   }
 }
 
@@ -162,8 +175,12 @@ function deriveProofKey(secret: string): Buffer {
   return createHmac("sha256", secret).update(PROOF_KEY_CONTEXT).digest();
 }
 
+function isUsableCartId(cartId: string): boolean {
+  return typeof cartId === "string" && cartId.length > 0;
+}
+
 function requireCartId(cartId: string): string {
-  if (typeof cartId !== "string" || cartId.length === 0) {
+  if (!isUsableCartId(cartId)) {
     throw new TypeError("Rendered quote proof requires a server-read cart identity");
   }
   return cartId;
@@ -218,6 +235,14 @@ export function verifyRenderedQuoteProof({
   currentQuote: RenderedQuoteProofFacts;
   secret: string;
 }>): RenderedQuoteProofVerification {
+  // Everything below fails closed rather than throwing. This runs inside the snapshot transaction,
+  // where an exception aborts a database transaction and surfaces to the buyer as a generic outage
+  // for what is really an ordinary "re-confirm the price" outcome. The one deliberate exception is
+  // the server secret: a misconfigured key must be loud, because failing closed on it would turn
+  // every checkout into an unexplained permanent price-change loop.
+  if (!isUsableCartId(cartId)) {
+    return Object.freeze({ ok: false as const, reason: "PROOF_UNVERIFIED" as const });
+  }
   if (typeof proof !== "string" || proof.length === 0) {
     return Object.freeze({ ok: false as const, reason: "PROOF_MISSING" as const });
   }
@@ -237,7 +262,7 @@ export function verifyRenderedQuoteProof({
   }
 
   const key = deriveProofKey(secret);
-  const expectedMac = computeMac(key, requireCartId(cartId), payload);
+  const expectedMac = computeMac(key, cartId, payload);
   if (!timingSafeEqual(presentedMac, expectedMac)) {
     return Object.freeze({ ok: false as const, reason: "PROOF_UNVERIFIED" as const });
   }
@@ -245,7 +270,9 @@ export function verifyRenderedQuoteProof({
   // Authentic and bound to this cart. Only now does staleness become a meaningful question: the
   // comparison is byte equality against the canonicalization of what the server just computed, so
   // no value from the token is ever read back out as a fact.
-  requireUsableFacts(currentQuote);
+  if (!areUsableFacts(currentQuote)) {
+    return Object.freeze({ ok: false as const, reason: "PRICE_CHANGED" as const });
+  }
   if (!payload.equals(canonicalQuoteBytes(currentQuote))) {
     return Object.freeze({ ok: false as const, reason: "PRICE_CHANGED" as const });
   }

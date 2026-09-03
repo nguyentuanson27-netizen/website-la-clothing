@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -44,6 +45,7 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
     submitGuestCheckoutAction,
     null,
   );
+  const router = useRouter();
   const [provinces, setProvinces] = useState<PancakeProvince[]>([]);
   const [districts, setDistricts] = useState<PancakeDistrict[]>([]);
   const [communes, setCommunes] = useState<PancakeCommune[]>([]);
@@ -189,10 +191,22 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
   // into state would be a second copy that can disagree with it. When the server refused a stale
   // quote it handed back a proof for the price it just showed, and that is the one the explicit
   // re-submission must carry; otherwise the page's own proof still stands.
+  const priceChanged = Boolean(
+    submitState && !submitState.ok && submitState.status === "PRICE_CHANGED",
+  );
   const activeQuoteProof =
     submitState && !submitState.ok && submitState.status === "PRICE_CHANGED"
       ? submitState.priceChange.quoteProof
       : quoteProof;
+
+  // The order summary beside this form is a server component holding the price the page was
+  // rendered with. After a refusal it is the stale number, sitting next to a warning quoting the
+  // new one — two different totals on one checkout screen. Refreshing re-renders the summary from
+  // the server without discarding what the buyer has typed, so the whole screen agrees before they
+  // are asked to confirm.
+  useEffect(() => {
+    if (priceChanged) router.refresh();
+  }, [priceChanged, router]);
 
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;

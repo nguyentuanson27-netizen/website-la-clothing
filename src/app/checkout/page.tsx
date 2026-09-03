@@ -26,9 +26,8 @@ const currency = new Intl.NumberFormat("vi-VN", {
 export default async function CheckoutPage() {
   await connection();
   const checkoutContext = await getCurrentStorefrontCheckoutContext();
-  const lines = checkoutContext?.lines ?? [];
 
-  if (lines.length === 0) {
+  if (!checkoutContext || checkoutContext.lines.length === 0) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
@@ -69,18 +68,9 @@ export default async function CheckoutPage() {
     );
   }
 
-  const totals = checkoutContext ? buildRenderedCheckoutQuoteFacts(lines) : null;
-  // Issued over exactly the facts rendered below, bound to the cart the cookie names. Submission
-  // will recompute this quote server-side and refuse to create a submit-capable DRAFT unless this
-  // token still describes it, so what the buyer sees here is what they can be charged.
-  const quoteProof = totals && checkoutContext
-    ? issueRenderedQuoteProof({
-        quote: totals,
-        cartId: checkoutContext.cartId,
-        secret: readAuthServerConfig().secret,
-      })
-    : null;
-  if (!totals || !quoteProof) {
+  const { cartId, lines } = checkoutContext;
+  const totals = buildRenderedCheckoutQuoteFacts(lines);
+  if (!totals) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
@@ -123,6 +113,15 @@ export default async function CheckoutPage() {
       </div>
     );
   }
+
+  // Issued over exactly the facts rendered below, bound to the cart the cookie names. Submission
+  // recomputes this quote server-side and refuses to create a submit-capable DRAFT unless this
+  // token still describes it, so what the buyer sees here is what they can be charged.
+  const quoteProof = issueRenderedQuoteProof({
+    quote: totals,
+    cartId,
+    secret: readAuthServerConfig().secret,
+  });
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">

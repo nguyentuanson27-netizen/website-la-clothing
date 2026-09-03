@@ -235,7 +235,6 @@ test("P9a variant ids containing the field delimiters cannot forge a different q
 test("P9a issuing refuses facts that are not usable website money", () => {
   const invalid = [
     { ...quote, items: [{ variantExternalId: "var-a", quantity: 0, unitPriceVnd: 1 }] },
-    { ...quote, items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 0 }] },
     { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1 }] },
     { ...quote, items: [{ variantExternalId: "var-a", quantity: 1.5, unitPriceVnd: 1 }] },
     { ...quote, totalVnd: Number.NaN },
@@ -261,4 +260,55 @@ test("P9a issuing refuses facts that are not usable website money", () => {
 test("P9a issuing refuses an unusable cart identity or secret", () => {
   assert.throws(() => issue({ cartId: "" }), TypeError);
   assert.throws(() => issue({ secret: "too-short" }), TypeError);
+});
+
+test("P9a a free line is provable, because the order snapshot treats zero as supported money", () => {
+  // The proof attests what a quote said; whether an amount is sellable belongs to the pricing
+  // authority. Tightening past `isSupportedVndAmount` would make a quote the snapshot persists
+  // unprovable, and this module throws where the snapshot does not.
+  const free: RenderedQuoteProofFacts = {
+    items: [{ variantExternalId: "gift", quantity: 1, unitPriceVnd: 0 }],
+    merchandiseSubtotalVnd: 0,
+    shippingFeeVnd: 0,
+    totalVnd: 0,
+    totalQuantity: 1,
+  };
+  const proof = issueRenderedQuoteProof({ quote: free, cartId, secret });
+  assert.deepEqual(
+    verifyRenderedQuoteProof({ proof, cartId, currentQuote: free, secret }),
+    { ok: true },
+  );
+});
+
+test("P9a verification is total, because it runs inside the snapshot transaction", () => {
+  const proof = issue();
+  // An exception here would abort a database transaction and reach the buyer as a generic outage
+  // for what is really an ordinary re-confirm. Every one of these must fail closed instead.
+  const unusable: RenderedQuoteProofFacts[] = [
+    { ...quote, items: [] },
+    { ...quote, totalQuantity: 0 },
+    { ...quote, totalVnd: Number.NaN },
+    { ...quote, merchandiseSubtotalVnd: -1 },
+    { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1 }] },
+    { ...quote, items: [{ variantExternalId: "v", quantity: 0, unitPriceVnd: 1 }] },
+  ];
+  for (const currentQuote of unusable) {
+    assert.deepEqual(
+      verifyRenderedQuoteProof({ proof, cartId, currentQuote, secret }),
+      { ok: false, reason: "PRICE_CHANGED" },
+      `unusable current facts must fail closed, not throw: ${JSON.stringify(currentQuote.items)}`,
+    );
+  }
+
+  assert.deepEqual(verifyRenderedQuoteProof({ proof, cartId: "", currentQuote: quote, secret }), {
+    ok: false,
+    reason: "PROOF_UNVERIFIED",
+  });
+
+  // A misconfigured server secret stays loud: failing closed on it would turn every checkout into
+  // an unexplained permanent price-change loop with nothing pointing at the cause.
+  assert.throws(
+    () => verifyRenderedQuoteProof({ proof, cartId, currentQuote: quote, secret: "short" }),
+    TypeError,
+  );
 });
