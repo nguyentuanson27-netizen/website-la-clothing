@@ -165,7 +165,10 @@ function toStorefrontProduct(
     : [];
 
   return {
+    // Internal identity, used for joins and admin routes. Not vendor-facing.
     id: product.id,
+    // Product-level external identity. One card is one product impression regardless of which
+    // variant a shopper later selects, so this never varies with selection.
     pancakeProductId: product.pancakeProductId,
     slug: product.slug,
     name: product.name,
@@ -185,6 +188,9 @@ function toStorefrontProduct(
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
     })),
+    // Server-resolved, and kept off the variant facts on purpose: it is a product-level mapping
+    // into this product's gallery, not a property of the variant, and it must not widen what the
+    // client option contract carries.
     galleryIndexByVariantId: Object.fromEntries(
       resolveVariantGalleryIndexes({
         gallery: media.gallery,
@@ -206,8 +212,23 @@ function visibleProductWhere(shopId: number) {
 }
 
 /**
- * The one sanctioned SQL mirror of the central promotion pricing contract. `/shop` needs effective
- * price before pagination, and `/flash-sale` must derive membership from that exact same decision.
+ * The sanctioned SQL pricing projection.
+ *
+ * #151 permits exactly one SQL mirror of the pricing contract, and only because `/shop` must filter
+ * and order by effective price *before* it paginates — a TypeScript pass over one page cannot do
+ * that, and paging first would show the wrong products. It is a projection of the central rule, not
+ * a second rule: every pricing branch below has a named counterpart in `promotion-pricing.ts`, and
+ * the parity suite pins them together on the same fixtures, including the mandated rounding cases.
+ *
+ * Money never touches floating point during arithmetic here. The mirrored column is `double
+ * precision`, so the base is validated as a positive safe integer and then cast through `int8` to
+ * `numeric` before multiplication/division; that preserves the upper-safe fixture exactly.
+ *
+ * `now` is the caller's request clock, so count, ordering, page membership, query-wide transition
+ * aggregation and card hydration all decide campaign windows against one instant.
+ *
+ * U17 extends this same CTE with campaign kind and derives Flash membership only after the single
+ * pricing CASE has produced `resolvedPrice`; `/flash-sale` does not introduce a second formula.
  */
 export function buildVariantStockCte(now: Date) {
   return Prisma.sql`
@@ -357,8 +378,9 @@ function buildTransitionVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   if (discovery.availability === "in-stock") {
     filters.push(Prisma.sql`vb."sellableStock" > 0`);
   }
-  // Price filters are intentionally absent: a scheduled discount can move a currently excluded
-  // product into the requested price band, and that off-page transition must still wake the route.
+  // Price filters are intentionally absent. A promotion transition can make a product that is
+  // currently outside the requested price band enter it; filtering transition candidates by the
+  // current resolved price would miss exactly that off-page change.
   return filters;
 }
 
@@ -521,6 +543,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     shopId: number;
     pageSize: number;
     discovery: StorefrontDiscoveryQuery;
+    /**
+     * One request clock. Count, ordering, hydration and query-wide transition aggregation all use
+     * this instant so a window cannot open halfway through one response.
+     */
     now?: Date;
   }) {
     const safePageSize = parseListLimit(pageSize);
@@ -618,7 +644,9 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       totalPages: Math.ceil(totalCount / safePageSize),
       hasPrevious: discovery.page > 1,
       hasNext: offset + orderedProducts.length < totalCount,
+      /** Server-relative freshness only; the browser never receives a promotion deadline. */
       refreshAfterMs,
+      /** Apply to a card's variants so its displayed price matches the projection that ranked it. */
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     };
   }
@@ -718,6 +746,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     };
   }
 
+  /**
+   * The next instant at which Flash membership could change, server-side. The route converts this
+   * boundary to the shared relative <=60s freshness fact; the browser never receives the deadline.
+   */
   async function readNextFlashSaleBoundary({
     now = new Date(),
   }: { now?: Date } = {}): Promise<Date | null> {
