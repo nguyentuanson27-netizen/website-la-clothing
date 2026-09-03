@@ -21,11 +21,6 @@ type ProductPurchasePanelProps = {
   slug: string;
   productName: string;
   options: StorefrontProjectionOption[];
-  /**
-   * Server-resolved preselection from the `?variant=` deep link, or `null` for an ordinary product
-   * page. It is a plain initial value, not a controlled prop: once the shopper touches a control,
-   * their choice owns the state and the URL no longer overrides it.
-   */
   initialSelection?: DeepLinkedVariantSelection | null;
 };
 
@@ -43,9 +38,6 @@ export function ProductPurchasePanel({
   options,
   initialSelection = null,
 }: ProductPurchasePanelProps) {
-  // Seeded once from the server-resolved deep link. The server has already refused anything it
-  // could not match to a purchasable option on this product, so an unresolvable `?variant=` arrives
-  // here as `null` and the page simply renders as it always did.
   const [kindKey, setKindKey] = useState<string | null>(initialSelection?.kindKey ?? null);
   const [color, setColor] = useState<string | null>(initialSelection?.color ?? null);
   const [size, setSize] = useState<string | null>(initialSelection?.size ?? null);
@@ -60,18 +52,20 @@ export function ProductPurchasePanel({
     selection.selectedPrice === null
       ? defaultPriceLabel(options)
       : currency.format(selection.selectedPrice);
-  // Both facts come from the server-resolved option. The panel never computes a discount, and a
-  // base equal to or below the effective price is not shown as one.
   const showsDiscount =
     selection.selectedIsDiscounted
     && selection.selectedPrice !== null
     && selection.selectedBasePriceVnd !== null
     && selection.selectedBasePriceVnd > selection.selectedPrice;
   const hasPurchasableVariant = options.some((option) => option.purchasable);
+  const selectedUnavailableMessage =
+    selection.selectedVariantId !== null && !selection.canAdd
+      ? selection.selectedUnavailableReason === "OUT_OF_STOCK"
+        ? "Lựa chọn này đã hết hàng."
+        : "Lựa chọn này hiện chưa mua được."
+      : "";
   const entryPrice = useMemo(() => getStorefrontResolvedPriceRange(options)?.minimum ?? null, [options]);
 
-  // ViewContent belongs to the product page rather than this panel, but the panel is the one
-  // client component mounted exactly once per product page and it already holds the pricing.
   useEffect(() => {
     trackFacebookPixelEvent("ViewContent", {
       content_ids: [slug],
@@ -95,13 +89,8 @@ export function ProductPurchasePanel({
   }
 
   function chooseSize(value: string) {
-    const next = deriveStorefrontProjectionSelection(options, {
-      kindKey,
-      color,
-      size: value,
-    });
-    const currentColor =
-      color === null ? null : next.colors.find((choice) => choice.value === color);
+    const next = deriveStorefrontProjectionSelection(options, { kindKey, color, size: value });
+    const currentColor = color === null ? null : next.colors.find((choice) => choice.value === color);
     setSize(value);
     if (currentColor?.disabled) setColor(null);
     setMessage("");
@@ -109,7 +98,6 @@ export function ProductPurchasePanel({
 
   function addToBag() {
     if (!selection.canAdd || !selection.selectedVariantId || isPending) return;
-
     const variantId = selection.selectedVariantId;
     const addedPrice = selection.selectedPrice;
     setMessage("");
@@ -118,8 +106,6 @@ export function ProductPurchasePanel({
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
           setMessage("Đã thêm sản phẩm vào giỏ hàng.");
-          // Reported only after the server confirms the line, so the funnel counts carts that
-          // actually exist rather than every click on the button.
           trackFacebookPixelEvent("AddToCart", {
             content_ids: [slug],
             content_name: productName,
@@ -141,22 +127,9 @@ export function ProductPurchasePanel({
       <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Loại</legend>
       <div className="mt-3 flex flex-wrap gap-2">
         {selection.kinds.map((choice) => (
-          <label
-            key={choice.key}
-            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
-          >
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-kind"
-              value={choice.key}
-              checked={kindKey === choice.key}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseKind(choice.key)}
-            />
-            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-              {choice.label}
-            </span>
+          <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <input className="peer sr-only" type="radio" name="storefront-kind" value={choice.key} checked={kindKey === choice.key} disabled={choice.disabled || isPending} onChange={() => chooseKind(choice.key)} />
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">{choice.label}</span>
           </label>
         ))}
       </div>
@@ -168,22 +141,9 @@ export function ProductPurchasePanel({
       <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Màu</legend>
       <div className="mt-3 flex flex-wrap gap-2">
         {selection.colors.map((choice) => (
-          <label
-            key={choice.value}
-            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
-          >
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-color"
-              value={choice.value}
-              checked={color === choice.value}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseColor(choice.value)}
-            />
-            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-              {choice.value}
-            </span>
+          <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <input className="peer sr-only" type="radio" name="storefront-color" value={choice.value} checked={color === choice.value} disabled={choice.disabled || isPending} onChange={() => chooseColor(choice.value)} />
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">{choice.value}</span>
           </label>
         ))}
       </div>
@@ -195,22 +155,9 @@ export function ProductPurchasePanel({
       <legend className="text-xs font-semibold uppercase tracking-[0.14em]">Kích cỡ</legend>
       <div className="mt-3 flex flex-wrap gap-2">
         {selection.sizes.map((choice) => (
-          <label
-            key={choice.value}
-            className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}
-          >
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-size"
-              value={choice.value}
-              checked={size === choice.value}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseSize(choice.value)}
-            />
-            <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
-              {choice.value}
-            </span>
+          <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <input className="peer sr-only" type="radio" name="storefront-size" value={choice.value} checked={size === choice.value} disabled={choice.disabled || isPending} onChange={() => chooseSize(choice.value)} />
+            <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">{choice.value}</span>
           </label>
         ))}
       </div>
@@ -223,8 +170,6 @@ export function ProductPurchasePanel({
         <p className="text-xl font-medium tracking-[-0.02em]">
           {showsDiscount ? (
             <>
-              {/* The base price is announced as "Giá gốc" rather than left as bare struck-through
-                  text, so the comparison is available to a screen reader and not only visually. */}
               <span className="sr-only">Giá gốc </span>
               <span className="mr-2 align-baseline text-base font-normal text-black/45 line-through">
                 {currency.format(selection.selectedBasePriceVnd as number)}
@@ -232,35 +177,18 @@ export function ProductPurchasePanel({
               <span className="sr-only">Giá khuyến mãi </span>
               <span>{priceLabel}</span>
             </>
-          ) : (
-            priceLabel
-          )}
+          ) : priceLabel}
         </p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/55">
           {hasPurchasableVariant
             ? selection.hasKindOptions
-              ? selection.hasColorOptions
-                ? "Chọn loại × kích cỡ × màu"
-                : "Chọn loại × kích cỡ"
-              : selection.hasColorOptions
-                ? "Chọn màu × kích cỡ"
-                : "Chọn kích cỡ"
+              ? selection.hasColorOptions ? "Chọn loại × kích cỡ × màu" : "Chọn loại × kích cỡ"
+              : selection.hasColorOptions ? "Chọn màu × kích cỡ" : "Chọn kích cỡ"
             : "Chưa thể mua online"}
         </p>
       </div>
 
-      {selection.hasKindOptions ? (
-        <>
-          {kindFieldset}
-          {sizeFieldset}
-          {colorFieldset}
-        </>
-      ) : (
-        <>
-          {colorFieldset}
-          {sizeFieldset}
-        </>
-      )}
+      {selection.hasKindOptions ? <>{kindFieldset}{sizeFieldset}{colorFieldset}</> : <>{colorFieldset}{sizeFieldset}</>}
 
       <button
         className="mt-8 min-h-12 w-full border border-black bg-black px-6 text-sm font-semibold uppercase tracking-[0.12em] text-white hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
@@ -272,10 +200,7 @@ export function ProductPurchasePanel({
       </button>
 
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
-        {message ||
-          (!hasPurchasableVariant
-            ? "Không có lựa chọn khả dụng ở thời điểm hiện tại."
-            : "")}
+        {message || selectedUnavailableMessage || (!hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : "")}
       </p>
     </div>
   );
