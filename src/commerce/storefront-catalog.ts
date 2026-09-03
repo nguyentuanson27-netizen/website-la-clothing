@@ -1,3 +1,6 @@
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import {
@@ -72,17 +75,17 @@ const productSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
-    content: {
-      select: {
-        status: true,
-        editorialDescription: true,
-        careInstructions: true,
-        sizeGuide: true,
-        seoTitle: true,
-        seoDescription: true,
-        collectionSlugs: true,
-      },
+  content: {
+    select: {
+      status: true,
+      editorialDescription: true,
+      careInstructions: true,
+      sizeGuide: true,
+      seoTitle: true,
+      seoDescription: true,
+      collectionSlugs: true,
     },
+  },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -110,6 +113,7 @@ export type StorefrontProductCollection = {
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 type DiscoveryIdRow = { id: string; sortPrice: number | null };
 type DiscoveryCountRow = { count: bigint };
+type DiscoveryTransitionRow = { nextTransitionAt: Date | null };
 type FacetRow = { value: string };
 
 function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
@@ -207,8 +211,26 @@ function visibleProductWhere(shopId: number) {
   } satisfies Prisma.ProductMirrorWhereInput;
 }
 
-const variantStockCte = Prisma.sql`
-  WITH "variant_stock" AS (
+/**
+ * The sanctioned SQL pricing projection.
+ *
+ * #151 permits exactly one SQL mirror of the pricing contract, and only because `/shop` must filter
+ * and order by effective price *before* it paginates — a TypeScript pass over one page cannot do
+ * that, and paging first would show the wrong products. It is a projection of the central rule, not
+ * a second rule: every branch below has a named counterpart in `promotion-pricing.ts`, and the
+ * parity suite pins them together on the same fixtures, including the mandated rounding cases.
+ *
+ * Money never touches floating point here. The mirrored column is `double precision`, so the base
+ * is validated as a positive safe integer and then cast to `numeric` before any arithmetic; the
+ * percentage is exact decimal division floored half-up, which is the same value the `BigInt`
+ * expression produces because both operands are non-negative.
+ *
+ * `now` is the caller's request clock, so the count, the ordering, the page and transition
+ * aggregation all decide window membership against one instant.
+ */
+export function buildVariantStockCte(now: Date) {
+  return Prisma.sql`
+  WITH "variant_base" AS (
     SELECT
       v."id",
       v."productId",
@@ -216,15 +238,15 @@ const variantStockCte = Prisma.sql`
       v."size",
       CASE
         WHEN v."pancakeRetailPrice" IS NOT NULL
-          AND v."pancakeRetailPriceAfterDiscount" IS NOT NULL
-          AND v."pancakeRetailPrice" = v."pancakeRetailPriceAfterDiscount"
-          AND v."pancakeRetailPrice" >= 0
+          AND v."pancakeRetailPrice" > 0
           AND v."pancakeRetailPrice" <> 'NaN'::float8
           AND v."pancakeRetailPrice" <> 'Infinity'::float8
           AND v."pancakeRetailPrice" <> '-Infinity'::float8
-        THEN v."pancakeRetailPrice"
+          AND v."pancakeRetailPrice" <= 9007199254740991::float8
+          AND FLOOR(v."pancakeRetailPrice") = v."pancakeRetailPrice"
+        THEN v."pancakeRetailPrice"::int8::numeric
         ELSE NULL
-      END AS "resolvedPrice",
+      END AS "basePrice",
       CASE
         WHEN COUNT(ws."id") = 0 THEN 0::float8
         WHEN BOOL_AND(
@@ -242,10 +264,66 @@ const variantStockCte = Prisma.sql`
       v."productId",
       v."color",
       v."size",
-      v."pancakeRetailPrice",
-      v."pancakeRetailPriceAfterDiscount"
+      v."pancakeRetailPrice"
+  ),
+  "variant_campaign" AS (
+    SELECT
+      vb."id" AS "variantId",
+      c."id" AS "campaignId",
+      c."discountType"::text AS "discountType",
+      c."percentageValue" AS "percentageValue",
+      c."fixedPriceVnd" AS "fixedPriceVnd"
+    FROM "variant_base" vb
+    JOIN "PromotionTarget" t
+      ON t."variantId" = vb."id" OR t."productId" = vb."productId"
+    JOIN "PromotionCampaign" c ON c."id" = t."campaignId"
+    WHERE c."isEnabled" = TRUE
+      AND (c."startsAt" IS NULL OR c."startsAt" <= ${now})
+      AND (c."endsAt" IS NULL OR c."endsAt" > ${now})
+    GROUP BY vb."id", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
+  ),
+  "variant_candidate" AS (
+    SELECT
+      vb."id",
+      vb."productId",
+      vb."color",
+      vb."size",
+      vb."basePrice",
+      vb."sellableStock",
+      COUNT(vc."campaignId") AS "candidateCount",
+      MIN(vc."discountType") AS "discountType",
+      MIN(vc."percentageValue") AS "percentageValue",
+      MIN(vc."fixedPriceVnd") AS "fixedPriceVnd"
+    FROM "variant_base" vb
+    LEFT JOIN "variant_campaign" vc ON vc."variantId" = vb."id"
+    GROUP BY vb."id", vb."productId", vb."color", vb."size", vb."basePrice", vb."sellableStock"
+  ),
+  "variant_stock" AS (
+    SELECT
+      vc."id",
+      vc."productId",
+      vc."color",
+      vc."size",
+      vc."sellableStock",
+      CASE
+        WHEN vc."basePrice" IS NULL THEN NULL
+        WHEN vc."candidateCount" <> 1 THEN vc."basePrice"
+        WHEN vc."discountType" = 'PERCENTAGE'
+          AND vc."percentageValue" BETWEEN 1 AND 99
+          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) > 0
+          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) < vc."basePrice"
+        THEN FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100)
+        WHEN vc."discountType" = 'FIXED_PRICE'
+          AND vc."fixedPriceVnd" IS NOT NULL
+          AND vc."fixedPriceVnd"::numeric > 0
+          AND vc."fixedPriceVnd"::numeric < vc."basePrice"
+        THEN vc."fixedPriceVnd"::numeric
+        ELSE vc."basePrice"
+      END::float8 AS "resolvedPrice"
+    FROM "variant_candidate" vc
   )
 `;
+}
 
 function buildVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   const filters: Prisma.Sql[] = [];
@@ -267,7 +345,24 @@ function buildVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   return filters;
 }
 
-function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
+function buildTransitionVariantPredicate(discovery: StorefrontDiscoveryQuery) {
+  const filters: Prisma.Sql[] = [];
+  if (discovery.color) {
+    filters.push(Prisma.sql`LOWER(BTRIM(vb."color")) = LOWER(${discovery.color})`);
+  }
+  if (discovery.size) {
+    filters.push(Prisma.sql`LOWER(BTRIM(vb."size")) = LOWER(${discovery.size})`);
+  }
+  if (discovery.availability === "in-stock") {
+    filters.push(Prisma.sql`vb."sellableStock" > 0`);
+  }
+  // Price filters are intentionally absent. A promotion transition can make a product that is
+  // currently outside the requested price band enter it; filtering transition candidates by the
+  // current resolved price would miss exactly that off-page change.
+  return filters;
+}
+
+function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQuery) {
   const safeShopId = parseShopId(shopId);
   const filters: Prisma.Sql[] = [
     Prisma.sql`p."pancakeShopId" = ${safeShopId}`,
@@ -289,7 +384,11 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
       )
     `);
   }
+  return filters;
+}
 
+function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
+  const filters = buildBaseProductFilters(shopId, discovery);
   const variantFilters = buildVariantPredicate(discovery);
   if (variantFilters.length > 0) {
     filters.push(Prisma.sql`
@@ -306,6 +405,22 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
     productPredicate: Prisma.join(filters, " AND "),
     variantFilters,
   };
+}
+
+function buildTransitionProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
+  const filters = buildBaseProductFilters(shopId, discovery);
+  const variantFilters = buildTransitionVariantPredicate(discovery);
+  if (variantFilters.length > 0) {
+    filters.push(Prisma.sql`
+      EXISTS (
+        SELECT 1
+        FROM "variant_base" vb
+        WHERE vb."productId" = p."id"
+          AND ${Prisma.join(variantFilters, " AND ")}
+      )
+    `);
+  }
+  return Prisma.join(filters, " AND ");
 }
 
 function buildSortPrice(variantFilters: readonly Prisma.Sql[]) {
@@ -401,18 +516,26 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     shopId,
     pageSize,
     discovery,
+    now = new Date(),
   }: {
     shopId: number;
     pageSize: number;
     discovery: StorefrontDiscoveryQuery;
+    /**
+     * One request clock. Count, ordering, hydration and query-wide transition aggregation all use
+     * this instant so a window cannot open halfway through one response.
+     */
+    now?: Date;
   }) {
     const safePageSize = parseListLimit(pageSize);
     const offset = parsePageOffset(discovery.page, safePageSize);
     const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery);
+    const transitionProductPredicate = buildTransitionProductPredicate(shopId, discovery);
     const sortPrice = buildSortPrice(variantFilters);
     const orderBy = buildDiscoveryOrder(discovery.sort);
+    const variantStockCte = buildVariantStockCte(now);
 
-    const [countRows, idRows] = await Promise.all([
+    const [countRows, idRows, transitionRows] = await Promise.all([
       client.$queryRaw<DiscoveryCountRow[]>(Prisma.sql`
         ${variantStockCte}
         SELECT COUNT(*)::bigint AS "count"
@@ -429,6 +552,33 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
         ORDER BY ${orderBy}
         LIMIT ${safePageSize}
         OFFSET ${offset}
+      `),
+      client.$queryRaw<DiscoveryTransitionRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT MIN(boundary) AS "nextTransitionAt"
+        FROM (
+          SELECT c."startsAt" AS boundary
+          FROM "PromotionCampaign" c
+          INNER JOIN "PromotionTarget" t ON t."campaignId" = c."id"
+          INNER JOIN "variant_base" vb
+            ON t."variantId" = vb."id" OR t."productId" = vb."productId"
+          INNER JOIN "ProductMirror" p ON p."id" = vb."productId"
+          LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+          WHERE c."isEnabled" = TRUE
+            AND c."startsAt" > ${now}
+            AND ${transitionProductPredicate}
+          UNION ALL
+          SELECT c."endsAt" AS boundary
+          FROM "PromotionCampaign" c
+          INNER JOIN "PromotionTarget" t ON t."campaignId" = c."id"
+          INNER JOIN "variant_base" vb
+            ON t."variantId" = vb."id" OR t."productId" = vb."productId"
+          INNER JOIN "ProductMirror" p ON p."id" = vb."productId"
+          LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+          WHERE c."isEnabled" = TRUE
+            AND c."endsAt" > ${now}
+            AND ${transitionProductPredicate}
+        ) boundaries
       `),
     ]);
 
@@ -453,6 +603,17 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       return toStorefrontProduct(product, collectionMap);
     });
 
+    const pageVariantIds = orderedProducts.flatMap((product) =>
+      product.variants.map((variant) => variant.id),
+    );
+    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+      variantIds: pageVariantIds,
+    });
+    const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
+      now,
+      nextBoundaryAt: transitionRows[0]?.nextTransitionAt ?? null,
+    });
+
     return {
       products: orderedProducts,
       page: discovery.page,
@@ -461,6 +622,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       totalPages: Math.ceil(totalCount / safePageSize),
       hasPrevious: discovery.page > 1,
       hasNext: offset + orderedProducts.length < totalCount,
+      /** Server-relative freshness only; the browser never receives a promotion deadline. */
+      refreshAfterMs,
+      /** Apply to a card's variants so its displayed price matches the projection that ranked it. */
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     };
   }
 

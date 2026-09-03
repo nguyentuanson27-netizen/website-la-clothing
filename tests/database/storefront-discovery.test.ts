@@ -274,7 +274,11 @@ test("discovery requires color, size, stock and price to match the same live var
   assert.equal(combined.products.some(({ name }) => name === "Split Match Jacket"), false);
 });
 
-test("price discovery uses only the existing fail-closed resolved storefront price", async () => {
+test("U16 price discovery selects on the website-owned effective price", async () => {
+  // Olive Shirt carries a Pancake after-discount field (650,000) below its retail price
+  // (700,000). The old equality gate treated that as unpriceable, so it was invisible to every
+  // price filter. W3's accepted evidence established the after-discount field is not authoritative
+  // for website pricing, so the product now filters at its real 700,000 base and appears here.
   const discovery = parseStorefrontDiscoverySearchParams({
     minPrice: "600000",
     maxPrice: "800000",
@@ -283,10 +287,10 @@ test("price discovery uses only the existing fail-closed resolved storefront pri
   });
 
   const page = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery });
-  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt"]);
+  assert.deepEqual(page.products.map(({ name }) => name), ["Linen Overshirt", "Olive Shirt"]);
 });
 
-test("price sorting keeps unresolved-price products browseable but places them last", async () => {
+test("U16 price sorting ranks every priceable product on its effective price", async () => {
   const ascending = await repository.listDiscoveryPage({
     shopId,
     pageSize: 24,
@@ -303,10 +307,12 @@ test("price sorting keeps unresolved-price products browseable but places them l
     pageSize: 24,
     discovery: parseStorefrontDiscoverySearchParams({ sort: "price-desc" }),
   });
+  // Descending now leads with Olive Shirt at its real 700,000 rather than stranding it behind the
+  // priced products, which is the same W3 consequence seen from the other end of the sort.
   assert.deepEqual(descending.products.map(({ name }) => name), [
+    "Olive Shirt",
     "Linen Overshirt",
     "Stone Trouser",
-    "Olive Shirt",
   ]);
 });
 

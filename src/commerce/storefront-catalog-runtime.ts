@@ -28,15 +28,19 @@ export async function listConfiguredStorefrontProductPage({
 export async function listConfiguredStorefrontDiscoveryPage({
   discovery,
   pageSize,
+  now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
+  /** The caller's request clock, so counting, ordering and card pricing share one instant. */
+  now?: Date;
 }) {
   const shopId = readPancakeShopId();
   return createStorefrontCatalogRepository(prisma).listDiscoveryPage({
     shopId,
     discovery,
     pageSize,
+    now,
   });
 }
 
