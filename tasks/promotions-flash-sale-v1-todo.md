@@ -211,12 +211,17 @@ Verification:
 - [ ] 0 Critical / 0 Required.
 
 ## Shared #153 T5/T6 cart contract
-- [ ] PDP AddToCart is atomic `+1`, never absolute set-to-1.
-- [ ] Update/remove return committed transition + bounded authoritative item snapshot.
-- [ ] Snapshot includes real `pancakeVariationId` and server-current resolver price.
-- [ ] No stale browser fallback.
-- [ ] `view_cart` / `begin_checkout` are complete all-or-nothing projections.
-- [ ] If #151 reaches this boundary first, implement this API once and make #153 consume it; no duplicate temporary path.
+- [x] PDP AddToCart is atomic `+1`, never absolute set-to-1.
+- [x] Update/remove return committed transition + bounded authoritative item snapshot.
+- [x] Snapshot includes real `pancakeVariationId` and server-current resolver price.
+- [x] No stale browser fallback.
+- [x] `view_cart` / `begin_checkout` are complete all-or-nothing projections.
+- [x] If #151 reaches this boundary first, implement this API once and make #153 consume it; no duplicate temporary path.
+
+Delivered by Wave 3 (U18/U19). Cart, checkout render and the order snapshot now price through
+`resolvePromotionPricing`, so the enabled-consumer convergence rule holds for the currently enabled
+price-bearing consumers. P8/P9/P10 remain unimplemented and consume this contract rather than
+extending it.
 
 ## P8 — DRAFT quote + promotion audit
 - [ ] DRAFT stores purchased external variant identity + quantity/name/options + base/final/promotion audit.

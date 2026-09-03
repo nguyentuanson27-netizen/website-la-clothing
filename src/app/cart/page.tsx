@@ -5,6 +5,11 @@ import { connection } from "next/server";
 
 import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
 import type { StorefrontCartLine } from "@/commerce/storefront-cart";
+import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
+import {
+  CommerceEventReporter,
+  isCommerceTrackingEnabled,
+} from "@/components/analytics/commerce-event-reporter";
 import { CartLineControls } from "@/components/commerce/cart-line-controls";
 
 export const metadata: Metadata = {
@@ -91,9 +96,12 @@ export default async function CartPage() {
 
   const subtotal = currentSubtotal(lines);
   const hasUnavailableLines = lines.some((line) => !line.available);
+  const viewCartEvent = buildCartViewEvent(lines);
+  const commerceTrackingEnabled = isCommerceTrackingEnabled();
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <CommerceEventReporter event={viewCartEvent} />
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
         <ol className="flex items-center gap-2">
           <li>
@@ -208,6 +216,7 @@ export default async function CartPage() {
                     variantId={line.variantId}
                     initialQuantity={line.quantity}
                     canUpdate={canUpdate}
+                    commerceTrackingEnabled={commerceTrackingEnabled}
                   />
                 </div>
               </article>

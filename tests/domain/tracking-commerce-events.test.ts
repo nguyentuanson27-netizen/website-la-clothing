@@ -8,6 +8,7 @@ import {
   buildProductImpression,
   buildPurchaseEvent,
   buildVariantItem,
+  buildViewCartEvent,
   COMMERCE_EVENT_NAMES,
   MAX_COMMERCE_IDENTIFIER_LENGTH,
 } from "../../src/tracking/commerce-events.ts";
@@ -157,7 +158,7 @@ test("T1 the generic commerce payload carries no customer PII", () => {
 });
 
 test("T1 committed-stage events reject upper-funnel product impressions", () => {
-  for (const name of ["add_to_cart", "remove_from_cart", "view_cart"] as const) {
+  for (const name of ["add_to_cart", "remove_from_cart"] as const) {
     assert.throws(
       () => buildCommerceItemsEvent(name, { items: [buildProductImpression(impression)] }),
       /variant identity/,
@@ -165,6 +166,10 @@ test("T1 committed-stage events reject upper-funnel product impressions", () => 
     );
   }
 
+  assert.throws(
+    () => buildViewCartEvent({ items: [buildProductImpression(impression)] }),
+    /variant identity/,
+  );
   assert.throws(
     () => buildBeginCheckoutEvent({ items: [buildProductImpression(impression)] }),
     /variant identity/,
@@ -381,7 +386,7 @@ test("T1 a published event cannot be widened after it was validated", () => {
 
 test("T1 the caller's own array is never aliased into a published event", () => {
   const items = [buildVariantItem(variantItem)];
-  const event = buildCommerceItemsEvent("view_cart", { items });
+  const event = buildViewCartEvent({ items });
 
   items.push(buildVariantItem({ ...variantItem, variantExternalId: "pancake-variation-2" }));
 

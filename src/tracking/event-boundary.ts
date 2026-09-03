@@ -3,6 +3,7 @@ import {
   buildCommerceItemsEvent,
   buildPageViewEvent,
   buildPurchaseEvent,
+  buildViewCartEvent,
   type CommerceItem,
   type TrackingEvent,
 } from "./commerce-events.ts";
@@ -68,12 +69,14 @@ export function canonicalizeTrackingEvent(event: unknown): TrackingEvent {
     case "view_item":
     case "add_to_cart":
     case "remove_from_cart":
-    case "view_cart":
       return buildCommerceItemsEvent(name, {
         items,
         itemListId: optionalString(ecommerce.item_list_id, "list identity"),
         itemListName: optionalString(ecommerce.item_list_name, "list name"),
       });
+
+    case "view_cart":
+      return buildViewCartEvent({ items });
 
     case "begin_checkout":
       return buildBeginCheckoutEvent({ items });

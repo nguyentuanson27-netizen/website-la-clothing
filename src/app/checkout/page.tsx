@@ -5,6 +5,8 @@ import { connection } from "next/server";
 
 import { calculateGuestShippingFeeVnd } from "@/commerce/guest-shipping-policy";
 import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
+import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
 import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 
@@ -180,6 +182,10 @@ export default async function CheckoutPage() {
 
       <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <GuestCheckoutForm />
+        {/* Emitted only on this branch: the totals gate above already established that every line
+            resolved, priced and had sufficient stock. Analytics never gates checkout itself — an
+            unavailable projection suppresses the event and changes nothing else. */}
+        <CommerceEventReporter event={buildCheckoutBeginEvent(lines)} />
         <FacebookPixelEvent
           name="InitiateCheckout"
           parameters={{

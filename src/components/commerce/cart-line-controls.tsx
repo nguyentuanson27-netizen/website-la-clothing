@@ -7,6 +7,9 @@ import {
   removeStorefrontCartLine,
   updateStorefrontCartLine,
 } from "@/commerce/storefront-cart-actions";
+import type { CartMutationAnalytics } from "@/commerce/storefront-cart-public-actions";
+import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
+import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -14,12 +17,15 @@ type CartLineControlsProps = {
   variantId: string;
   initialQuantity: number;
   canUpdate: boolean;
+  /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
+  commerceTrackingEnabled?: boolean;
 };
 
 export function CartLineControls({
   variantId,
   initialQuantity,
   canUpdate,
+  commerceTrackingEnabled = false,
 }: CartLineControlsProps) {
   const inputId = useId();
   const router = useRouter();
@@ -33,6 +39,29 @@ export function CartLineControls({
     parsedQuantity > 0 &&
     parsedQuantity <= MAX_POSTGRES_INTEGER;
 
+  /**
+   * Publishes the quantity event the server said this mutation produced.
+   *
+   * Direction and size were both decided under the cart lock from the committed transition, and the
+   * item facts carry the server's own identity, name and current price. Nothing here reads the
+   * input box, the rendered price or the quantity this component started with: those are all
+   * pre-mutation values, and an event built from them would describe a cart that no longer exists.
+   *
+   * An absent `analytics` means the mutation committed but produced no safe event — an unchanged
+   * quantity, a line that was already gone, or a snapshot that could not be built. All three emit
+   * nothing rather than something approximate.
+   */
+  function reportCommittedMutation(analytics: CartMutationAnalytics | undefined) {
+    if (!commerceTrackingEnabled || analytics === undefined) return;
+    try {
+      publishBrowserTrackingEvent(
+        buildCommerceItemsEvent(analytics.event, { items: [buildVariantItem(analytics.item)] }),
+      );
+    } catch {
+      // Tracking never interrupts a shopper.
+    }
+  }
+
   function updateLine() {
     if (!canUpdate || !quantityValid || isPending) return;
     setMessage("");
@@ -45,6 +74,7 @@ export function CartLineControls({
         });
         if (result.ok) {
           setMessage("Đã cập nhật số lượng.");
+          reportCommittedMutation(result.analytics);
           router.refresh();
           return;
         }
@@ -68,6 +98,7 @@ export function CartLineControls({
       try {
         const result = await removeStorefrontCartLine({ variantId });
         if (result.ok) {
+          reportCommittedMutation(result.analytics);
           router.refresh();
           return;
         }

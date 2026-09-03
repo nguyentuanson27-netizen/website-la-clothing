@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: T1–T4 implemented and merged (PR #157, #164, #165); M1 partially delivered (PR #175). T5 onward remain proposed and self-reviewed, with the implementation plan added and human review required before `/build`
+Status: T1–T6 implemented (T1–T4 via PR #157, #164, #165; T5/T6 with Wave 3); M1 partially delivered (PR #175). T7 onward remain proposed and self-reviewed, with the implementation plan added and human review required before `/build`
 
 This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 
@@ -58,7 +58,7 @@ Compatibility constraints:
 
 Storefront visibility follows current active/present storefront rules, not editorial `ProductContent.status === PUBLISHED`.
 
-Current storefront sell price is authoritative. Where `pancakeRetailPrice` and `pancakeRetailPriceAfterDiscount` differ, current storefront behavior remains `PRICE_UNRESOLVED` until the upstream pricing contract is separately proven and canonical commerce logic changes first.
+Current storefront sell price is authoritative. Where `pancakeRetailPrice` and `pancakeRetailPriceAfterDiscount` differ, storefront behaviour was `PRICE_UNRESOLVED` until the upstream pricing contract was separately proven. That proof landed (`#152` W3 real-catalog evidence, verdict PASS): Pancake evaluates promotions as dynamic order rules rather than catalog price mutations, so the differing after-discount field is not website pricing authority. The equality gate was removed for the product page and `/shop` in Wave 2, and for the cart, the checkout render and the order snapshot in Wave 3, so every currently enabled price-bearing consumer now resolves through `src/commerce/promotion-pricing.ts`. `resolveStorefrontPrice` remains the default only for surfaces that have not opted in.
 
 ### Structural eligibility vs availability
 

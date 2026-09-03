@@ -1,13 +1,13 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3) and T4 IMPLEMENTED AND MERGED; M1 partially delivered. T5 onward remain proposed and
+Status: **PR-A (T1–T3), T4, T5 and T6 IMPLEMENTED; M1 partially delivered. T7 onward remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), and the durability half of **M1** (U9, PR #175). Verified on
 `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` for the T4 record.
 
-T5, T6, T7, T8, M2, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
+T7, T8, M2, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
@@ -87,38 +87,41 @@ have merged.
 - [x] RED/GREEN projection tests cover standalone cart line, composite component cart line, and unresolvable/private line without fabricating external identity.
 
 ### T5 Product-level list/PDP/select + atomic server-authoritative AddToCart
-- [ ] `view_item_list` emits exactly one product impression per visible card.
-- [ ] `select_item` uses clicked product identity even though no size/color is selected yet.
-- [ ] Initial unselected `view_item` uses product identity.
-- [ ] Equal resolved product price may map as exact price; multi-price range does **not** map minimum as selected exact price; unresolved price omits monetary fields.
-- [ ] Introduce a dedicated PDP atomic add mutation; do not call the cart’s absolute set-quantity path with `quantity=1`.
-- [ ] Under the existing cart lock, absent line → `0→1`; existing quantity `q` → `q→q+1`, subject to current stock/integer bounds. Each successful repeated/concurrent PDP add against the same live cart identity contributes exactly one committed unit.
-- [ ] Successful PDP add returns `previousQuantity`, committed `quantity`, `addedQuantity=1`, plus bounded canonical item snapshot from the same accepted transaction.
-- [ ] `add_to_cart.quantity = addedQuantity`; a no-op/decrease/failure can never emit PDP `add_to_cart`.
-- [ ] AddToCart event uses server-returned `pancakeVariationId`, `unitPriceVnd`, item name/color/size and accepted delta; never stale `selection.selectedPrice` or rendered cart data.
-- [ ] Direct Meta event name/content IDs/direct-delivery/success boundary remain compatible; any Meta value-source correction has regression coverage.
-- [ ] RED/GREEN tests: absent→1, existing 1→2, existing >1 increments rather than resetting, stock-bound failure, concurrent repeated PDP clicks against the same live cart identity, stale browser price vs current server snapshot, failed snapshot → no canonical tracking, no duplicate Meta behavior.
+- [x] `view_item_list` emits exactly one product impression per visible card.
+- [x] `select_item` uses clicked product identity even though no size/color is selected yet.
+- [x] Initial unselected `view_item` uses product identity.
+- [x] Equal resolved product price may map as exact price; multi-price range does **not** map minimum as selected exact price; unresolved price omits monetary fields.
+- [x] Introduce a dedicated PDP atomic add mutation; do not call the cart’s absolute set-quantity path with `quantity=1`.
+- [x] Under the existing cart lock, absent line → `0→1`; existing quantity `q` → `q→q+1`, subject to current stock/integer bounds. Each successful repeated/concurrent PDP add against the same live cart identity contributes exactly one committed unit.
+- [x] Successful PDP add returns `previousQuantity`, committed `quantity`, `addedQuantity=1`, plus bounded canonical item snapshot from the same accepted transaction.
+- [x] `add_to_cart.quantity = addedQuantity`; a no-op/decrease/failure can never emit PDP `add_to_cart`.
+- [x] AddToCart event uses server-returned `pancakeVariationId`, `unitPriceVnd`, item name/color/size and accepted delta; never stale `selection.selectedPrice` or rendered cart data.
+- [x] Direct Meta event name/content IDs/direct-delivery/success boundary remain compatible; any Meta value-source correction has regression coverage.
+- [x] RED/GREEN tests: absent→1, existing 1→2, existing >1 increments rather than resetting, stock-bound failure, concurrent repeated PDP clicks against the same live cart identity, stale browser price vs current server snapshot, failed snapshot → no canonical tracking, no duplicate Meta behavior.
 
 ### T6 Atomic cart delta + authoritative mutation snapshot + checkout events
-- [ ] Any `canSetQuantity`/rendered pre-check outside the mutation is advisory only; re-resolve current commerce eligibility and requested-quantity stock sufficiency inside the serialized mutation before accepting an absolute update.
-- [ ] Under existing cart lock, update returns `previousQuantity` + committed `quantity`.
-- [ ] Under the same lock, remove captures `removedQuantity` before destructive delete; already-missing line is not a real removal.
-- [ ] The transaction also captures/resolves bounded non-PII event item facts: `pancakeVariationId`, authoritative `unitPriceVnd`, product/item name, color/size where available, plus optional safe product/projection context.
-- [ ] Increase → delta `add_to_cart`; decrease/remove → delta `remove_from_cart`; zero delta/failure → no event.
-- [ ] Browser builds quantity events only from the returned server snapshot + delta. It never falls back to server-rendered/client-cached name, price, variant ID, or quantity after a mutation.
-- [ ] If safe identity/price snapshot resolution fails, cart mutation result remains commerce truth but tracking emits nothing and must not throw into cart UX.
-- [ ] Build one pure canonical cart analytics projection from current resolved cart facts. It succeeds only when **every** non-empty line has safe `pancakeVariationId`, authoritative non-negative unit price, positive integer quantity, and item name; otherwise it returns unavailable without a partial items array.
-- [ ] `view_cart` and `begin_checkout` use only that complete projection. Event merchandise `value` is the sum of `unitPriceVnd × quantity` across the exact full emitted line set. If projection is unavailable, suppress the whole event; do not drop unsafe lines or recalculate/report a partial total.
-- [ ] `view_cart` may emit only from current cart truth. `begin_checkout` may emit only after the existing checkout commerce-validity gates pass; analytics projection failure never blocks cart/checkout UI.
-- [ ] Local CUID/`VariantMirror.id` is forbidden as GA4/Ads/TikTok item identity fallback.
-- [ ] RED/GREEN mutation tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog/stock change between render/pre-check and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
-- [ ] RED/GREEN cart/checkout projection tests: all-safe standalone lines → complete `view_cart`; all-safe composite component line → real component `pancakeVariationId`; multiple safe lines → full item set and exact full merchandise sum; one safe + one unresolvable/private/missing-external-ID line → **no whole `view_cart`** and **no `begin_checkout` tracking event**; no partial totals.
-- [ ] Keep `add_shipping_info` / `add_payment_info` absent until a real accepted milestone exists.
+- [x] Any `canSetQuantity`/rendered pre-check outside the mutation is advisory only; re-resolve current commerce eligibility and requested-quantity stock sufficiency inside the serialized mutation before accepting an absolute update.
+- [x] Under existing cart lock, update returns `previousQuantity` + committed `quantity`.
+- [x] Under the same lock, remove captures `removedQuantity` before destructive delete; already-missing line is not a real removal.
+- [x] The transaction also captures/resolves bounded non-PII event item facts: `pancakeVariationId`, authoritative `unitPriceVnd`, product/item name, color/size where available, plus optional safe product/projection context.
+- [x] Increase → delta `add_to_cart`; decrease/remove → delta `remove_from_cart`; zero delta/failure → no event.
+- [x] Browser builds quantity events only from the returned server snapshot + delta. It never falls back to server-rendered/client-cached name, price, variant ID, or quantity after a mutation.
+- [x] If safe identity/price snapshot resolution fails, cart mutation result remains commerce truth but tracking emits nothing and must not throw into cart UX.
+- [x] Build one pure canonical cart analytics projection from current resolved cart facts. It succeeds only when **every** non-empty line has safe `pancakeVariationId`, authoritative non-negative unit price, positive integer quantity, and item name; otherwise it returns unavailable without a partial items array.
+- [x] `view_cart` and `begin_checkout` use only that complete projection. Event merchandise `value` is the sum of `unitPriceVnd × quantity` across the exact full emitted line set. If projection is unavailable, suppress the whole event; do not drop unsafe lines or recalculate/report a partial total.
+- [x] `view_cart` may emit only from current cart truth. `begin_checkout` may emit only after the existing checkout commerce-validity gates pass; analytics projection failure never blocks cart/checkout UI.
+- [x] Local CUID/`VariantMirror.id` is forbidden as GA4/Ads/TikTok item identity fallback.
+- [x] RED/GREEN mutation tests: two absolute updates, remove/already-removed, same quantity, failed mutation; price/catalog/stock change between render/pre-check and mutation; full remove snapshot captured before delete; enrichment disappearance/snapshot failure → no stale event.
+- [x] RED/GREEN cart/checkout projection tests: all-safe standalone lines → complete `view_cart`; all-safe composite component line → real component `pancakeVariationId`; multiple safe lines → full item set and exact full merchandise sum; one safe + one unresolvable/private/missing-external-ID line → **no whole `view_cart`** and **no `begin_checkout` tracking event**; no partial totals.
+- [x] Keep `add_shipping_info` / `add_payment_info` absent until a real accepted milestone exists.
 
 ### Checkpoint B
-- [ ] Focused cart/PDP/checkout tests green.
-- [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` green.
-- [ ] Review product-vs-variant IDs, canonical cart/checkout external identity, exact full-cart values, committed delta, server snapshot and all-or-nothing failure-closed tracking semantics.
+- [x] Focused cart/PDP/checkout tests green.
+- [x] `pnpm test`, `pnpm typecheck`, `pnpm lint` green.
+- [x] Review product-vs-variant IDs, canonical cart/checkout external identity, exact full-cart values, committed delta, server snapshot and all-or-nothing failure-closed tracking semantics.
+
+This is the PR-B tracking checkpoint only. The growth-commerce master programme has a separate
+storefront Checkpoint B covering U12–U17; nothing here marks that one.
 
 ## PR-C — confirmed Purchase + immutable GTM activation
 
