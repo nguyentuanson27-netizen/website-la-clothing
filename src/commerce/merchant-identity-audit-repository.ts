@@ -43,23 +43,17 @@ export async function readMerchantIdentityRows(
       isActive: true,
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
+      pancakeImageUrls: true,
       // Availability is a Merchant fact, so it is summed here rather than treated as an exclusion.
       warehouseStocks: { select: { quantity: true } },
       product: {
         select: {
+          id: true,
           pancakeProductId: true,
           isPresent: true,
           isActive: true,
           name: true,
           primaryImageUrl: true,
-          // Storefront product media is product-level: primary image, then all active/present
-          // variant image arrays ordered by pancakeVariationId. Every audited offer for this product
-          // therefore receives the same candidate sequence instead of only its own variant images.
-          variants: {
-            where: { isPresent: true, isActive: true },
-            orderBy: { pancakeVariationId: "asc" },
-            select: { pancakeImageUrls: true },
-          },
           // Only a PUBLISHED description is a fact the storefront would show, so only that is a
           // Merchant fact; a Draft is work in progress and auditing it would overstate readiness.
           content: { select: { status: true, editorialDescription: true } },
@@ -70,6 +64,8 @@ export async function readMerchantIdentityRows(
       compositeParents: { select: { parentVariantId: true }, take: 1 },
       compositeComponents: { select: { componentVariantId: true }, take: 1 },
     },
+    // This is also the storefront's variant-media order. Grouping the bounded result below therefore
+    // preserves pancakeVariationId ASC within every product without issuing one sibling query/row.
     orderBy: { pancakeVariationId: "asc" },
     take: MAX_AUDITED_VARIATIONS + 1,
   });
@@ -78,6 +74,18 @@ export async function readMerchantIdentityRows(
     throw new MerchantIdentityAuditError(
       `Catalog exceeds the audited bound of ${MAX_AUDITED_VARIATIONS} variations; raise it deliberately rather than truncating evidence`,
     );
+  }
+
+  const activeVariantImagesByProductId = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!row.isPresent || !row.isActive || !row.product.isPresent || !row.product.isActive) continue;
+
+    const images = parseVariantImageUrls(row.pancakeImageUrls);
+    if (images.length === 0) continue;
+
+    const existing = activeVariantImagesByProductId.get(row.product.id);
+    if (existing) existing.push(...images);
+    else activeVariantImagesByProductId.set(row.product.id, [...images]);
   }
 
   return rows.map((row) => ({
@@ -93,9 +101,9 @@ export async function readMerchantIdentityRows(
     // positive warehouse hide a negative mirrored quantity (for example -3 + 4 => 1).
     stockQuantity: aggregateWarehouseStock(row.warehouseStocks.map((stock) => stock.quantity)),
     primaryImageUrl: row.product.primaryImageUrl,
-    variantImageUrls: row.product.variants.flatMap((variant) =>
-      parseVariantImageUrls(variant.pancakeImageUrls),
-    ),
+    // Product-level storefront semantics: every active/present sibling gets the same ordered
+    // variant-image candidate set. Hidden/inactive siblings never contribute media.
+    variantImageUrls: activeVariantImagesByProductId.get(row.product.id) ?? [],
     title: row.product.name,
     publishedDescription: row.product.content?.status === "PUBLISHED"
       ? row.product.content.editorialDescription
