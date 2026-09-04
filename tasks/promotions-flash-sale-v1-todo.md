@@ -320,6 +320,16 @@ than raw live price, because comparing against the effective quote while sending
 charge full price for a discounted line. P10 still owns the totals-integrity regressions and the
 controlled authorized Pancake acceptance evidence.
 
+Price drift and provenance drift are handled separately. `drifted` compares only the effective unit
+price, which is the right test for the buyer-facing handshake but not for the finalized audit: a
+fresher Pancake base behind a still-valid fixed price, or one campaign handing over to another at the
+same final price, moves no money the buyer agreed to yet would finalize a line recording a base no
+upstream reported or naming a campaign that was already over. Those now refresh the line audit and
+the mirror under the guarded `VALIDATING` transition, before the outbound claim and without asking
+the buyer to reconfirm anything; money columns are deliberately untouched there, since rewriting them
+would turn an audit correction into a silent repricing. A submission with nothing stale writes
+nothing, which is pinned by its own regression so the comparison cannot quietly become eager.
+
 Two verification boxes above were checked ahead of their evidence and have since been earned. The
 start/end boundaries are now driven by two regressions that submit the *same* fixture on either side
 of the window edge, so the submission instant is the only variable; evaluating campaigns at snapshot

@@ -594,3 +594,151 @@ test("P9b a promotion-candidate read failure returns the order to retryable DRAF
   assert.equal(recovered.state, "DRAFT", "the buyer can retry immediately, without a 15-minute wait");
   assert.equal(recovered.syncErrorCode, "VALIDATION_UNAVAILABLE");
 });
+
+test("P9b a fresher base behind an unchanged fixed price still refreshes the audit and the mirror", async () => {
+  // Provenance drift with no money drift. The buyer's 400k is a FIXED_PRICE campaign, and it stays
+  // 400k when Pancake's base moves 500k -> 600k because 400k is still a discount against the higher
+  // base. Nothing the buyer agreed to has changed, so this must NOT become a PRICE_CHANGED
+  // handshake — but the submission has just observed a fresher trusted base, and finalizing a line
+  // that records 500k would put a number in the immutable audit that no upstream ever reported.
+  const { product, variant } = await seedVariant("provenance-base", 500_000);
+  await seedCampaign(variant.id, { discountType: "FIXED_PRICE", fixedPriceVnd: BigInt(400_000) });
+  const publicCode = `${prefix}-provenance-base-order`;
+  await createDraft(variant.id, publicCode);
+
+  const draft = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(draft.lines[0]!.unitPriceVnd, BigInt(400_000));
+  assert.equal(draft.lines[0]!.baseUnitPriceVnd, BigInt(500_000), "the DRAFT saw the older base");
+
+  const { created, gateway } = gatewayWithFreshBase(
+    variant.pancakeVariationId,
+    product.pancakeProductId,
+    600_000,
+  );
+  const result = await submissionService(gateway).submit({ publicCode, shopId });
+
+  assert.equal(result.ok, true, "unchanged buyer money must not force a reconfirmation");
+  assert.equal(created.length, 1, "the order must still reach Pancake");
+
+  const finalized = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(
+    finalized.lines[0]!.unitPriceVnd,
+    BigInt(400_000),
+    "the price the buyer agreed to is untouched",
+  );
+  assert.equal(
+    finalized.lines[0]!.baseUnitPriceVnd,
+    BigInt(600_000),
+    "the finalized audit records the base this submission actually observed",
+  );
+  assert.equal(finalized.merchandiseSubtotalVnd, BigInt(400_000), "money is unchanged");
+
+  const mirrored = await prisma.variantMirror.findUniqueOrThrow({ where: { id: variant.id } });
+  assert.equal(
+    mirrored.pancakeRetailPrice,
+    600_000,
+    "a fresher trusted base is not observed and then thrown away",
+  );
+});
+
+test("P9b a same-price campaign handover records the campaign that actually applied", async () => {
+  // Two campaigns meeting at one half-open boundary with the same final price: A ends exactly as B
+  // begins. The money never moves, so this is invisible to a price comparison — but the finalized
+  // line would name campaign A while campaign B is what was live at submission, which is a false
+  // answer to "which promotion sold this item".
+  const { product, variant } = await seedVariant("provenance-campaign", 500_000);
+  const handover = new Date(now.getTime() + 120_000);
+  const campaignA = await seedCampaign(variant.id, {
+    discountType: "FIXED_PRICE",
+    fixedPriceVnd: BigInt(400_000),
+    startsAt: new Date(now.getTime() - 60_000),
+    endsAt: handover,
+  });
+  const campaignB = await seedCampaign(variant.id, {
+    discountType: "FIXED_PRICE",
+    fixedPriceVnd: BigInt(400_000),
+    startsAt: handover,
+    endsAt: new Date(now.getTime() + 900_000),
+  });
+  const publicCode = `${prefix}-provenance-campaign-order`;
+  await createDraft(variant.id, publicCode);
+
+  const draft = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(draft.lines[0]!.unitPriceVnd, BigInt(400_000));
+  assert.equal(
+    draft.lines[0]!.promotionCampaignId,
+    campaignA.id,
+    "campaign A was live when the quote was rendered",
+  );
+
+  const { created, gateway } = gatewayWithFreshBase(
+    variant.pancakeVariationId,
+    product.pancakeProductId,
+    500_000,
+  );
+  const result = await submissionService(gateway, handover).submit({ publicCode, shopId });
+
+  assert.equal(result.ok, true, "identical money must not force a reconfirmation");
+  assert.equal(created.length, 1);
+
+  const finalized = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(finalized.lines[0]!.unitPriceVnd, BigInt(400_000));
+  assert.equal(
+    finalized.lines[0]!.promotionCampaignId,
+    campaignB.id,
+    "the audit names the campaign the submission-time resolver actually selected",
+  );
+  assert.equal(finalized.lines[0]!.promotionFixedPriceVnd, BigInt(400_000));
+});
+
+test("P9b a submission with nothing stale writes no provenance correction at all", async () => {
+  // Guards the hot path. The provenance refresh must fire only when the finalized line would
+  // actually misreport something; if the comparison were too eager it would be idempotent enough to
+  // keep every other test green while adding a write to every checkout, so this pins the negative.
+  const { product, variant } = await seedVariant("provenance-quiet", 500_000);
+  await seedCampaign(variant.id, { discountType: "PERCENTAGE", percentageValue: 20 });
+  const publicCode = `${prefix}-provenance-quiet-order`;
+  await createDraft(variant.id, publicCode);
+
+  let lineAuditWrites = 0;
+  const countingClient = new Proxy(prisma, {
+    get(target, property, receiver) {
+      if (property === "orderLineSnapshot") {
+        const model = Reflect.get(target, property, receiver) as PrismaClient["orderLineSnapshot"];
+        return new Proxy(model, {
+          get(modelTarget, modelProperty, modelReceiver) {
+            if (modelProperty === "updateMany") lineAuditWrites += 1;
+            return Reflect.get(modelTarget, modelProperty, modelReceiver);
+          },
+        });
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  }) as PrismaClient;
+
+  const { created, gateway } = gatewayWithFreshBase(
+    variant.pancakeVariationId,
+    product.pancakeProductId,
+    500_000,
+  );
+  const result = await submissionService(gateway, now, countingClient).submit({
+    publicCode,
+    shopId,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(created.length, 1);
+  assert.equal(lineAuditWrites, 0, "an unchanged order must not rewrite its own audit");
+});

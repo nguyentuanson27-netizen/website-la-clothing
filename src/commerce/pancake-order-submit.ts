@@ -277,6 +277,48 @@ export function createPancakeOrderSubmissionService(
     }
 
     /**
+     * The pricing provenance a finalized line must carry: what the base actually was, and which
+     * campaign actually applied. Shared by both refresh paths so the reconfirmation write and the
+     * provenance-only write cannot drift apart into two different notions of the audit.
+     */
+    function buildLineAudit(pricing: ReturnType<typeof resolvePromotionPricing>) {
+      const promotion = pricing.promotion;
+      return {
+        baseUnitPriceVnd: pricing.basePriceVnd === null ? null : BigInt(pricing.basePriceVnd),
+        promotionCampaignId: promotion?.id ?? null,
+        promotionName: promotion?.name ?? null,
+        promotionKind: promotion?.kind ?? null,
+        promotionDiscountType: promotion?.discountType ?? null,
+        promotionPercentageValue: promotion?.percentageValue ?? null,
+        promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
+      };
+    }
+
+    /**
+     * Whether a finalized line would misreport how its price was reached.
+     *
+     * Deliberately separate from the money comparison. A fresher base behind a still-valid fixed
+     * price, or one campaign handing over to another at the same final price, moves nothing the
+     * buyer agreed to — so it must not trigger the reconfirmation handshake — but finalizing the
+     * stale answer would write a base no upstream reported, or name a campaign that was already
+     * over, into a snapshot the spec says is immutable and trustworthy.
+     */
+    function provenanceDiffers(
+      line: (typeof order.lines)[number],
+      audit: ReturnType<typeof buildLineAudit>,
+    ): boolean {
+      return (
+        line.baseUnitPriceVnd !== audit.baseUnitPriceVnd ||
+        line.promotionCampaignId !== audit.promotionCampaignId ||
+        line.promotionName !== audit.promotionName ||
+        line.promotionKind !== audit.promotionKind ||
+        line.promotionDiscountType !== audit.promotionDiscountType ||
+        line.promotionPercentageValue !== audit.promotionPercentageValue ||
+        line.promotionFixedPriceVnd !== audit.promotionFixedPriceVnd
+      );
+    }
+
+    /**
      * Hands a drifted order back to the buyer instead of killing it.
      *
      * `reject` is terminal: it is for orders that must not be placed at all. A price that moved
@@ -309,7 +351,7 @@ export function createPancakeOrderSubmissionService(
         id: string;
         unitPriceVnd: bigint;
         lineTotalVnd: bigint;
-        baseUnitPriceVnd: bigint;
+        baseUnitPriceVnd: bigint | null;
         promotionCampaignId: string | null;
         promotionName: string | null;
         promotionKind: "PROMOTION" | "FLASH_SALE" | null;
@@ -338,20 +380,15 @@ export function createPancakeOrderSubmissionService(
         refreshedSubtotalVnd = nextSubtotal;
         refreshedQuantity = nextQuantity;
 
-        const promotion = line.pricing.promotion;
-        if (line.pricing.isDiscounted && promotion === null) return reject("LOCAL_ORDER_INVALID");
+        if (line.pricing.isDiscounted && line.pricing.promotion === null) {
+          return reject("LOCAL_ORDER_INVALID");
+        }
 
         lineWrites.push({
           id: line.id,
           unitPriceVnd: BigInt(unitPriceVnd),
           lineTotalVnd: BigInt(lineTotalVnd),
-          baseUnitPriceVnd: BigInt(basePriceVnd),
-          promotionCampaignId: promotion?.id ?? null,
-          promotionName: promotion?.name ?? null,
-          promotionKind: promotion?.kind ?? null,
-          promotionDiscountType: promotion?.discountType ?? null,
-          promotionPercentageValue: promotion?.percentageValue ?? null,
-          promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
+          ...buildLineAudit(line.pricing),
         });
       }
 
@@ -418,6 +455,53 @@ export function createPancakeOrderSubmissionService(
           totalVnd: refreshedTotalVnd,
         },
       };
+    }
+
+    /**
+     * Corrects the finalized line's pricing provenance without asking the buyer anything.
+     *
+     * The counterpart to `repriceDraft`: that one exists because the buyer's money moved, this one
+     * because it did not. Money columns are deliberately untouched here — `unitPriceVnd`,
+     * `lineTotalVnd` and the order totals are exactly what the buyer confirmed, and rewriting them
+     * would turn an audit correction into a silent repricing.
+     *
+     * The mirror is refreshed for the same reason as in the reconfirmation path: this submission
+     * observed a fresher trusted base, and dropping it would leave the mirror knowingly stale.
+     *
+     * The guarded `updateMany` both proves the claim is still held and locks the row for the rest of
+     * the transaction, so a submission that lost its claim cannot rewrite whatever took it.
+     */
+    async function refreshLineProvenance(
+      refreshed: ReadonlyArray<{
+        id: string;
+        variantId: string;
+        freshBaseVnd: number;
+        freshAfterDiscountVnd: number;
+        pricing: ReturnType<typeof resolvePromotionPricing>;
+      }>,
+    ): Promise<boolean> {
+      return client.$transaction(async (tx) => {
+        const held = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "VALIDATING" },
+          data: { syncErrorCode: null },
+        });
+        if (held.count !== 1) return false;
+
+        for (const line of refreshed) {
+          await tx.orderLineSnapshot.updateMany({
+            where: { id: line.id },
+            data: buildLineAudit(line.pricing),
+          });
+          await tx.variantMirror.updateMany({
+            where: { id: line.variantId },
+            data: {
+              pancakeRetailPrice: line.freshBaseVnd,
+              pancakeRetailPriceAfterDiscount: line.freshAfterDiscountVnd,
+            },
+          });
+        }
+        return true;
+      });
     }
 
     async function resetValidation(): Promise<PancakeOrderSubmissionResult> {
@@ -510,6 +594,7 @@ export function createPancakeOrderSubmissionService(
       pricing: ReturnType<typeof resolvePromotionPricing>;
     }> = [];
     let drifted = false;
+    let provenanceDrifted = false;
     let subtotalVnd = 0;
     let totalQuantity = 0;
 
@@ -549,6 +634,10 @@ export function createPancakeOrderSubmissionService(
       }
       if (line.unitPriceVnd !== BigInt(freshUnitPriceVnd)) {
         drifted = true;
+      } else if (provenanceDiffers(line, buildLineAudit(freshPricing))) {
+        // Same money, different story about how it was reached. Not a buyer-facing change, so it
+        // must not trigger the handshake — but it is still wrong to finalize.
+        provenanceDrifted = true;
       }
       freshLines.push({
         id: line.id,
@@ -599,6 +688,26 @@ export function createPancakeOrderSubmissionService(
       order.totalVnd !== BigInt(totalVnd)
     ) {
       return reject("LOCAL_ORDER_INVALID");
+    }
+
+    // Money is settled and asserted; only the story behind it is stale. Corrected here, before the
+    // outbound claim, so the finalized line is already truthful when it becomes immutable. Inside
+    // the same pre-write recovery boundary as the reads above: nothing has been sent to Pancake yet,
+    // so a transient failure is retryable rather than a stranded claim.
+    if (provenanceDrifted) {
+      let refreshed: boolean;
+      try {
+        refreshed = await refreshLineProvenance(freshLines);
+      } catch {
+        return resetValidation();
+      }
+      if (!refreshed) {
+        const current = await client.orderMirror.findUniqueOrThrow({
+          where: { id: order.id },
+          select: { state: true, pancakeOrderId: true, syncErrorCode: true },
+        });
+        return existingResult(current);
+      }
     }
 
     const request = buildPancakeCreateOrderRequest({
