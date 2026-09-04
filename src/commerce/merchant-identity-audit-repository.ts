@@ -20,19 +20,11 @@ function aggregateWarehouseStock(quantities: readonly number[]): number {
   return quantities.reduce((total, quantity) => total + quantity, 0);
 }
 
-function parseVariantImageUrls(raw: unknown): readonly unknown[] | null {
-  if (raw === null || raw === undefined) return null;
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-      return [raw];
-    } catch {
-      return [raw];
-    }
-  }
-  return [raw];
+/** Mirrors storefront-catalog's JSON-string-array boundary: non-array/non-string entries are ignored. */
+function parseVariantImageUrls(raw: unknown): readonly string[] {
+  return Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 export async function readMerchantIdentityRows(
@@ -51,7 +43,6 @@ export async function readMerchantIdentityRows(
       isActive: true,
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
-      pancakeImageUrls: true,
       // Availability is a Merchant fact, so it is summed here rather than treated as an exclusion.
       warehouseStocks: { select: { quantity: true } },
       product: {
@@ -61,14 +52,21 @@ export async function readMerchantIdentityRows(
           isActive: true,
           name: true,
           primaryImageUrl: true,
+          // Storefront product media is product-level: primary image, then all active/present
+          // variant image arrays ordered by pancakeVariationId. Every audited offer for this product
+          // therefore receives the same candidate sequence instead of only its own variant images.
+          variants: {
+            where: { isPresent: true, isActive: true },
+            orderBy: { pancakeVariationId: "asc" },
+            select: { pancakeImageUrls: true },
+          },
           // Only a PUBLISHED description is a fact the storefront would show, so only that is a
           // Merchant fact; a Draft is work in progress and auditing it would overstate readiness.
           content: { select: { status: true, editorialDescription: true } },
         },
       },
       // Composite is either side of the graph. A variation that *is* a set is as deferred as one
-      // that belongs to a set: Merchant v1 defers all composite projections, and counting a bundle
-      // parent as standalone would audit an offer M3 is not allowed to emit.
+      // that belongs to a set: Merchant v1 defers all composite projections.
       compositeParents: { select: { parentVariantId: true }, take: 1 },
       compositeComponents: { select: { componentVariantId: true }, take: 1 },
     },
@@ -95,7 +93,9 @@ export async function readMerchantIdentityRows(
     // positive warehouse hide a negative mirrored quantity (for example -3 + 4 => 1).
     stockQuantity: aggregateWarehouseStock(row.warehouseStocks.map((stock) => stock.quantity)),
     primaryImageUrl: row.product.primaryImageUrl,
-    variantImageUrls: parseVariantImageUrls(row.pancakeImageUrls),
+    variantImageUrls: row.product.variants.flatMap((variant) =>
+      parseVariantImageUrls(variant.pancakeImageUrls),
+    ),
     title: row.product.name,
     publishedDescription: row.product.content?.status === "PUBLISHED"
       ? row.product.content.editorialDescription
