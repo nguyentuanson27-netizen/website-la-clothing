@@ -168,7 +168,9 @@ test("runControlledT7Acceptance executes complete verified flow with cleanup", a
   assert.equal(report.productCode, EXPECTED_PRODUCT_CODE);
   assert.equal(report.variationId, EXPECTED_VARIATION_ID);
   assert.equal(report.createdPancakeOrderId, "777888");
-  assert.equal(report.finalizedLocalState, "CONFIRMED");
+  assert.equal(report.verifiedOrderState, "CONFIRMED");
+  assert.equal(report.snapshotFactQuantity, 1);
+  assert.equal(report.snapshotFactUnitPriceVnd, EXPECTED_CATALOG_BASE_PRICE);
   assert.equal(report.identityInvariantVerified, true);
   assert.equal(report.itemFactsInvariantVerified, true);
   assert.equal(report.canonicalTransactionId, report.publicCode);
@@ -185,3 +187,176 @@ test("runControlledT7Acceptance executes complete verified flow with cleanup", a
   assert.notEqual(cleanupCall, undefined);
   assert.deepEqual(cleanupCall?.body, { status: 7 });
 });
+
+test("attemptOrderCancellation verifies status 7 via PUT response or GET read-back", async () => {
+  // Direct PUT data.status = 7
+  const directClient = {
+    getJson: async () => ({}),
+    postJson: async () => ({}),
+    putJson: async () => ({ success: true, data: { status: 7 } }),
+  };
+  assert.equal(
+    await attemptOrderCancellation(directClient, EXPECTED_SHOP_ID, "111"),
+    "CANCELED_STATUS_7",
+  );
+
+  // PUT without explicit status 7, but GET read-back confirms status 7
+  const readbackCalls: string[] = [];
+  const readbackClient = {
+    getJson: async (endpoint: string) => {
+      readbackCalls.push(endpoint);
+      return { data: { status: 7 } };
+    },
+    postJson: async () => ({}),
+    putJson: async () => ({ success: true }), // generic success only
+  };
+  assert.equal(
+    await attemptOrderCancellation(readbackClient, EXPECTED_SHOP_ID, "222"),
+    "CANCELED_STATUS_7",
+  );
+  assert.equal(readbackCalls.length, 1);
+  assert.equal(readbackCalls[0], `/shops/${EXPECTED_SHOP_ID}/orders/222`);
+
+  // PUT success: true, but GET read-back returns status 0 (unverified status)
+  const unverifiedClient = {
+    getJson: async () => ({ data: { status: 0 } }),
+    postJson: async () => ({}),
+    putJson: async () => ({ success: true }),
+  };
+  const unverifiedResult = await attemptOrderCancellation(unverifiedClient, EXPECTED_SHOP_ID, "333");
+  assert.notEqual(unverifiedResult, "CANCELED_STATUS_7");
+  assert.match(unverifiedResult, /CLEANUP_STATUS_UNVERIFIED/);
+});
+
+test("runControlledT7Acceptance fails when cleanup returns success: true without verified status 7", async () => {
+  const env = {
+    T7_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  };
+
+  const mockClient = {
+    getJson: async (endpoint: string) => {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: "A132-M",
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 5,
+              product_name: "Áo Polo Nam A132",
+            },
+          ],
+        };
+      }
+      // Read-back for order returns uncancelled status
+      return { data: { status: 0 } };
+    },
+    postJson: async () => ({ success: true, data: { id: 888999 } }),
+    putJson: async () => ({ success: true }), // Generic success: true without status 7
+  };
+
+  await assert.rejects(
+    async () => runControlledT7Acceptance(env, { client: mockClient }),
+    /cleanup could not be verified as status 7/,
+  );
+});
+
+test("runControlledT7Acceptance fails when cleanup request throws", async () => {
+  const env = {
+    T7_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  };
+
+  const mockClient = {
+    getJson: async (endpoint: string) => {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: "A132-M",
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 5,
+              product_name: "Áo Polo Nam A132",
+            },
+          ],
+        };
+      }
+      return {};
+    },
+    postJson: async () => ({ success: true, data: { id: 999111 } }),
+    putJson: async () => {
+      throw new Error("Network timeout during cancel");
+    },
+  };
+
+  await assert.rejects(
+    async () => runControlledT7Acceptance(env, { client: mockClient }),
+    /cleanup could not be verified as status 7/,
+  );
+});
+
+test("verification throws after create → cleanup is still attempted exactly once and original verification error is preserved", async () => {
+  const env = {
+    T7_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  };
+
+  const puts: string[] = [];
+  const mockClient = {
+    getJson: async (endpoint: string) => {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: "A132-M",
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 5,
+              product_name: "Áo Polo Nam A132",
+            },
+          ],
+        };
+      }
+      return {};
+    },
+    postJson: async () => ({ success: true, data: { id: 555666 } }),
+    putJson: async (endpoint: string) => {
+      puts.push(endpoint);
+      return { success: true, status: 7 };
+    },
+  };
+
+  // Inject a dbClient that throws an intentional verification error
+  const failingDbClient = {
+    orderMirror: {
+      findUnique: async () => {
+        throw new Error("Intentional order verification explosion");
+      },
+    },
+    variantMirror: {
+      findMany: async () => [],
+    },
+  };
+
+  await assert.rejects(
+    async () =>
+      runControlledT7Acceptance(env, {
+        client: mockClient,
+        dbClient: failingDbClient as unknown as import("../../src/commerce/canonical-purchase-snapshot.ts").CanonicalPurchaseClient,
+      }),
+    (err: Error) => {
+      assert.equal(err.message, "Intentional order verification explosion");
+      return true;
+    },
+  );
+
+  // Assert cleanup was attempted exactly once
+  assert.equal(puts.length, 1);
+  assert.equal(puts[0], `/shops/${EXPECTED_SHOP_ID}/orders/555666`);
+});
+

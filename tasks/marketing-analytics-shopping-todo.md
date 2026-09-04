@@ -1,12 +1,12 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and
+Status: **PR-A (T1–T3), T4, T5, T6, M2, and T7 (U24, PR #193) IMPLEMENTED; M1 partially delivered. T8 and M3–M5/V1 remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
-+ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), and the durability half of **M1** (U9, PR #175). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
++ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), the durability half of **M1** (U9, PR #175), and **T7** (U24, PR #193 canonical confirmed Purchase). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
 
-T7, T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
+T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`

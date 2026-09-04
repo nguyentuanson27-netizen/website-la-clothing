@@ -8,6 +8,15 @@ import {
   type VariantItem,
 } from "../tracking/commerce-events.ts";
 
+function sanitizeOptionalProductExternalId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_COMMERCE_IDENTIFIER_LENGTH) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 /**
  * The vendor-neutral canonical Purchase snapshot derived from immutable order facts.
  *
@@ -129,8 +138,8 @@ export async function readCanonicalPurchaseSnapshot(
   }
 
   // Optional mutable catalog enrichment: lookup pancakeProductId for item_group_id.
-  // Failure to resolve optional enrichment must never fail or suppress the valid Purchase.
-  let productExternalIdByVariantId = new Map<string, string>();
+  // Failure to resolve optional enrichment or invalid/malformed IDs must never fail or suppress the valid Purchase.
+  const productExternalIdByVariantId = new Map<string, string>();
   try {
     const variantIds = rawLineFacts.map((f) => f.variantId).filter(Boolean);
     if (variantIds.length > 0) {
@@ -141,9 +150,12 @@ export async function readCanonicalPurchaseSnapshot(
           product: { select: { pancakeProductId: true } },
         },
       });
-      productExternalIdByVariantId = new Map(
-        variants.map((v) => [v.id, v.product.pancakeProductId]),
-      );
+      for (const v of variants) {
+        const sanitized = sanitizeOptionalProductExternalId(v.product?.pancakeProductId);
+        if (sanitized !== undefined) {
+          productExternalIdByVariantId.set(v.id, sanitized);
+        }
+      }
     }
   } catch {
     // Optional enrichment failure degrades gracefully to empty map.

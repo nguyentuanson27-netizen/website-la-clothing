@@ -310,3 +310,20 @@ test("Regression G: Meta Pixel + CAPI dedup compatibility", async () => {
   assert.equal(canonicalItem.quantity, 2);
   assert.equal(metaSnapshot!.contents[0].quantity, 2);
 });
+
+test("Regression H: database confirmed order with malformed catalog pancakeProductId still emits valid Purchase", async () => {
+  await seedConfirmedOrderFixture();
+
+  // Update the product in the DB to have whitespace pancakeProductId
+  await prisma.productMirror.updateMany({
+    where: { pancakeShopId: shopId },
+    data: { pancakeProductId: "   " },
+  });
+
+  const snapshot = await readCanonicalPurchaseSnapshot(prisma, orderCode);
+  assert.notEqual(snapshot, null);
+  const item = snapshot!.event.ecommerce.items[0] as TestVariantItem;
+  assert.equal(item.item_id, "canonical-variation-001");
+  assert.equal("item_group_id" in item, false);
+});
+

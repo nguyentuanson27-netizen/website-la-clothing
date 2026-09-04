@@ -213,3 +213,67 @@ test("Regression F: tracking failure isolation ensures errors never leak or affe
   });
   assert.equal(await readCanonicalPurchaseSnapshotSafely(inconsistentClient, "LA-2026-0001"), null);
 });
+
+test("Regression H: malformed optional catalog enrichment never suppresses confirmed Purchase", async () => {
+  type TestVariantItem = {
+    item_id: string;
+    item_name: string;
+    price: number;
+    quantity: number;
+    item_group_id?: string;
+  };
+
+  // Case 1: Empty / whitespace pancakeProductId -> Purchase emitted, item_group_id omitted
+  const blankClient = createMockClient({
+    order: validConfirmedOrder,
+    variants: [
+      {
+        id: "local-cuid-1",
+        product: {
+          pancakeProductId: "   ",
+        },
+      },
+    ],
+  });
+  const blankSnapshot = await readCanonicalPurchaseSnapshot(blankClient, "LA-2026-0001");
+  assert.notEqual(blankSnapshot, null, "Blank pancakeProductId must not suppress Purchase");
+  const blankItem = blankSnapshot!.event.ecommerce.items[0] as TestVariantItem;
+  assert.equal(blankItem.item_id, "pan-var-101");
+  assert.equal("item_group_id" in blankItem, false);
+
+  // Case 2: Over-length (>128 chars) pancakeProductId -> Purchase emitted, item_group_id omitted
+  const overLengthClient = createMockClient({
+    order: validConfirmedOrder,
+    variants: [
+      {
+        id: "local-cuid-1",
+        product: {
+          pancakeProductId: "x".repeat(200),
+        },
+      },
+    ],
+  });
+  const overLengthSnapshot = await readCanonicalPurchaseSnapshot(overLengthClient, "LA-2026-0001");
+  assert.notEqual(overLengthSnapshot, null, "Over-length pancakeProductId must not suppress Purchase");
+  const overLengthItem = overLengthSnapshot!.event.ecommerce.items[0] as TestVariantItem;
+  assert.equal(overLengthItem.item_id, "pan-var-101");
+  assert.equal("item_group_id" in overLengthItem, false);
+
+  // Case 3: Valid pancakeProductId -> item_group_id is present
+  const validClient = createMockClient({
+    order: validConfirmedOrder,
+    variants: [
+      {
+        id: "local-cuid-1",
+        product: {
+          pancakeProductId: "valid-prod-123",
+        },
+      },
+    ],
+  });
+  const validSnapshot = await readCanonicalPurchaseSnapshot(validClient, "LA-2026-0001");
+  assert.notEqual(validSnapshot, null);
+  const validItem = validSnapshot!.event.ecommerce.items[0] as TestVariantItem;
+  assert.equal(validItem.item_group_id, "valid-prod-123");
+});
+

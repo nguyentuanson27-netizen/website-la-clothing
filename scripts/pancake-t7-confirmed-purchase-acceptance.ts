@@ -36,9 +36,9 @@ export type SanitizedT7AcceptanceReport = Readonly<{
   publicCode: string;
   catalogBasePriceVnd: number;
   createdPancakeOrderId: string;
-  finalizedLocalState: "CONFIRMED";
-  persistedSnapshotQuantity: number;
-  persistedSnapshotUnitPriceVnd: number;
+  verifiedOrderState: "CONFIRMED";
+  snapshotFactQuantity: number;
+  snapshotFactUnitPriceVnd: number;
   canonicalTransactionId: string;
   canonicalEventId: string;
   canonicalMerchandiseValueVnd: number;
@@ -194,15 +194,30 @@ export async function attemptOrderCancellation(
       { status: 7 }, // Status 7 = CANCELED
     )) as { success?: boolean; data?: { status?: number }; status?: number } | null | undefined;
 
+    // If PUT response explicitly proves status 7
     if (
       cancelResponse &&
-      (cancelResponse.success === true ||
-        cancelResponse.data?.status === 7 ||
-        cancelResponse.status === 7)
+      (cancelResponse.data?.status === 7 || cancelResponse.status === 7)
     ) {
       return "CANCELED_STATUS_7";
     }
-    return "PUT_RETURNED_UNEXPECTED_BODY";
+
+    // Do not treat generic success: true alone as proof of cancellation.
+    // Perform an explicit read-back of the created Pancake order after the PUT to verify status 7.
+    try {
+      const readBackResponse = (await client.getJson(
+        `/shops/${shopId}/orders/${orderId}`,
+      )) as { data?: { status?: number }; status?: number } | null | undefined;
+
+      const orderStatus = readBackResponse?.data?.status ?? readBackResponse?.status;
+      if (orderStatus === 7) {
+        return "CANCELED_STATUS_7";
+      }
+      return `CLEANUP_STATUS_UNVERIFIED_STATUS_${orderStatus ?? "UNKNOWN"}`;
+    } catch (readBackErr) {
+      const msg = readBackErr instanceof Error ? readBackErr.message : String(readBackErr);
+      return `CLEANUP_READBACK_FAILED_${sanitizeCleanupErrorMessage(msg)}`;
+    }
   } catch (cancelErr) {
     const message = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
     return `CLEANUP_FAILED_${sanitizeCleanupErrorMessage(message)}`;
@@ -349,7 +364,25 @@ export async function runControlledT7Acceptance(
   }
 
   if (executionError !== null) {
+    if (executionError instanceof Error && cleanupResult !== "CANCELED_STATUS_7") {
+      try {
+        (executionError as Error & { cleanupContext?: unknown }).cleanupContext = {
+          createdOrderId,
+          cleanupResult,
+        };
+      } catch {
+        // Ignore if error object cannot have properties attached
+      }
+    }
     throw executionError;
+  }
+
+  // If the main acceptance verification succeeds but cleanup cannot be confirmed as status 7,
+  // the acceptance run must fail rather than print ACCEPTANCE SUCCESS.
+  if (cleanupResult !== "CANCELED_STATUS_7") {
+    throw new Error(
+      `Acceptance failed: Pancake order ${createdOrderId} cleanup could not be verified as status 7 (result: ${cleanupResult})`,
+    );
   }
 
   if (!snapshotVerification) {
@@ -367,9 +400,9 @@ export async function runControlledT7Acceptance(
     publicCode,
     catalogBasePriceVnd: EXPECTED_CATALOG_BASE_PRICE,
     createdPancakeOrderId: createdOrderId,
-    finalizedLocalState: "CONFIRMED" as const,
-    persistedSnapshotQuantity: 1,
-    persistedSnapshotUnitPriceVnd: EXPECTED_CATALOG_BASE_PRICE,
+    verifiedOrderState: "CONFIRMED" as const,
+    snapshotFactQuantity: 1,
+    snapshotFactUnitPriceVnd: EXPECTED_CATALOG_BASE_PRICE,
     canonicalTransactionId: snapshotVerification.snapshot!.event.ecommerce.transaction_id,
     canonicalEventId: snapshotVerification.snapshot!.event.ecommerce.event_id,
     canonicalMerchandiseValueVnd: snapshotVerification.snapshot!.event.ecommerce.value,
