@@ -39,15 +39,20 @@ async function insertVariant(
   suffix: string,
   productSuffix: string,
   externalId: string,
-  sku: string | null,
+  manufacturerMpn: string | null,
   active = true,
   imageUrls: unknown = null,
 ) {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "VariantMirror"
-       ("id","pancakeVariationId","productId","sku","isPresent","isActive","pancakeImageUrls","syncedAt","createdAt","updatedAt")
-     VALUES ($1,$2,$3,$4,TRUE,$5,$6::jsonb,NOW(),NOW(),NOW())`,
-    `${PREFIX}-${suffix}`, externalId, `${PREFIX}-${productSuffix}`, sku, active,
+       ("id","pancakeVariationId","productId","pancakeDisplayId","sku","isPresent","isActive","pancakeImageUrls","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7::jsonb,NOW(),NOW(),NOW())`,
+    `${PREFIX}-${suffix}`,
+    externalId,
+    `${PREFIX}-${productSuffix}`,
+    manufacturerMpn,
+    `LOCAL-${suffix}`,
+    active,
     imageUrls === null ? null : JSON.stringify(imageUrls),
   );
 }
@@ -78,7 +83,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("M1 the audit reports identifier and SKU health over the real mirror", async () => {
+test("M1 the audit reports identifier and manufacturer-MPN health over the real mirror", async () => {
   await insertProduct("p", "external-product-1");
   await insertVariant("v1", "p", "external-variation-1", "LA-A");
   await insertVariant("v2", "p", "external-variation-2", "LA-B");
@@ -91,10 +96,30 @@ test("M1 the audit reports identifier and SKU health over the real mirror", asyn
   assert.equal(summary.productIdentifiers.PRESENT, 1, "one family, counted once");
   assert.equal(summary.sku.PRESENT, 2);
   assert.equal(summary.sku.MISSING, 1);
-  assert.equal(summary.mpnReady, false, "a missing SKU blocks MPN readiness");
+  assert.equal(summary.mpnReady, false, "a missing upstream manufacturer MPN blocks readiness");
 });
 
-test("M1 a duplicate SKU across emitted variations is reported and blocks MPN", async () => {
+test("M1 reads manufacturer MPN from pancakeDisplayId and never falls back to website-owned sku", async () => {
+  await insertProduct("p", "external-product-1");
+  await insertVariant("v1", "p", "external-variation-1", "LA-A");
+  await insertVariant("v2", "p", "external-variation-2", null);
+
+  await prisma.variantMirror.updateMany({
+    where: { id: { in: [`${PREFIX}-v1`, `${PREFIX}-v2`] } },
+    data: { sku: "LOCAL-DUPLICATE" },
+  });
+
+  const rows = await readMerchantIdentityRows(SHOP_ID);
+  assert.deepEqual(rows.map((row) => row.sku), ["LA-A", null]);
+
+  const summary = summarizeMerchantIdentity(rows);
+  assert.equal(summary.sku.PRESENT, 1);
+  assert.equal(summary.sku.MISSING, 1);
+  assert.deepEqual(summary.duplicateSkus, []);
+  assert.equal(summary.mpnReady, false, "local sku must not rescue a missing Pancake manufacturer MPN");
+});
+
+test("M1 a duplicate manufacturer MPN across emitted variations is reported and blocks MPN", async () => {
   await insertProduct("p", "external-product-1");
   await insertVariant("v1", "p", "external-variation-1", "LA-DUP");
   await insertVariant("v2", "p", "external-variation-2", "LA-DUP");
@@ -138,10 +163,10 @@ test("M1 both sides of a composite are deferred; only a true standalone is emitt
   );
   assert.equal(summary.productIdentifiers.PRESENT, 1, "the deferred families are not counted");
   assert.equal(summary.sku.PRESENT, 1);
-  assert.equal(summary.mpnReady, true, "the standalone has a present, unique SKU");
+  assert.equal(summary.mpnReady, true, "the standalone has a present, unique manufacturer MPN");
 });
 
-/** A set whose SKU is missing must not be able to make MPN readiness look worse either. */
+/** A set whose MPN is missing must not be able to make MPN readiness look worse either. */
 test("M1 a composite set is deferred even when nothing else is composite", async () => {
   await insertProduct("parent", "external-product-parent");
   await insertProduct("child", "external-product-child");
@@ -157,7 +182,7 @@ test("M1 a composite set is deferred even when nothing else is composite", async
 
   assert.equal(summary.compositeDeferred, 2);
   assert.equal(summary.emittableStandaloneVariations, 0);
-  assert.equal(summary.sku.MISSING, 0, "the set's missing SKU is not an emittable-offer problem");
+  assert.equal(summary.sku.MISSING, 0, "the set's missing MPN is not an emittable-offer problem");
 });
 
 test("M1 an inactive product's variations are not counted as emittable", async () => {
