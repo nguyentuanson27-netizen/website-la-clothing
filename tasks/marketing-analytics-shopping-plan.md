@@ -1,8 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T7, M1 implementation, and M2 IMPLEMENTED; Checkpoint D remains OPEN pending an attributable post-fix real-catalog M1 rerun. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1, and M2 IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and the M1 implementation (PR #175 durability + PR #194 read-only audit corrections) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is not yet green** because the final corrected M1 implementation still needs one authorized real-catalog run attributable to an exact committed SHA with clean/dirty state recorded. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED**. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
@@ -112,7 +112,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The recorded full intended standalone observation found 149/149 present, valid and unique, but Checkpoint D still requires an attributable post-fix rerun before that observation becomes final operational closure evidence. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
+- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The authoritative exact-tree operational run on `84c99db3de6757c3ded4396644eb4dae25869e09` found all 149 intended standalone MPNs present, valid and unique; **Checkpoint D is GREEN / PASSED**. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -467,7 +467,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ## M1 — Read-only Merchant identity, durability and catalog audit
 
-**Delivery status:** **IMPLEMENTATION DELIVERED** via PR #175 (Option B durability) and PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions). ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Operational M1 closure remains pending** one authorized real-catalog rerun on an exact committed post-fix SHA with clean/dirty state recorded. Evidence and the provenance limitation are recorded in `docs/audits/merchant-identity-m1.md`.
+**Delivery status:** **IMPLEMENTATION + OPERATIONAL CLOSURE DELIVERED** via PR #175 (Option B durability), PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions), and the authoritative production/current-mirror audit on exact committed SHA `84c99db3de6757c3ded4396644eb4dae25869e09` (tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`) with CLEAN worktree provenance. ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Checkpoint D is GREEN / PASSED.** Evidence is recorded in `docs/audits/merchant-identity-m1.md`.
 
 **Build:** bounded audit over current mirrored catalog.
 
@@ -485,9 +485,9 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 **Verification:** valid/stale/forged/composite-rejected tests + browser regression + SEO canonical/query regression. PR #180 exact-head evidence is recorded in the merged PR; integrated M2 compatibility is also covered by `docs/audits/wave-2-checkpoint-b.md`.
 
-### Checkpoint C
+### Checkpoint D
 
-Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. **Because the final post-fix real-catalog M1 run is not yet attributable to an exact committed SHA, M3/M4 remain blocked by this gate even though the M1 implementation itself is reviewed and green.** Composite inventory remains intentionally absent from Merchant v1.
+**GREEN / PASSED.** The authoritative exact-tree M1 audit on `84c99db3de6757c3ded4396644eb4dae25869e09` confirms intended standalone identity/MPN/media/composite readiness for this checkpoint, while PR #175 supplies external-ID durability and U12 / PR #180 supplies standalone deep-link/addressability evidence. Composite inventory remains intentionally absent from Merchant v1. **M3/M4 are no longer blocked by M1/Checkpoint D; they remain unimplemented and must satisfy their own approval, runtime-readiness, feed-safety, and activation gates.**
 
 ---
 
