@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS, Checkpoint B PASS, and Checkpoint D PASS. U9/M1 operational closure is GREEN (executed on `84c99db3de6757c3ded4396644eb4dae25869e09`, tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`). Wave 5 U25–U28 is unblocked on M1 operational evidence and awaits approval before build.**
+Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS, Checkpoint B PASS, and Checkpoint D PASS. U9/M1 operational closure is GREEN (executed on `84c99db3de6757c3ded4396644eb4dae25869e09`, tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`). Wave 5 remains open: U25/M3 is unblocked by M1 operational evidence and awaits approval before build; U26 depends on accepted U25/M3, while U27 and U28 retain their own prerequisites.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -119,7 +119,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 5 — downstream consumers
 
-- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **Blocked until U9/M1 operational exact-SHA real-catalog rerun closes #153 Checkpoint D.**
+- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **M1/Checkpoint D dependency is satisfied; U25 is unblocked by M1 operational evidence and awaits approved `/build`.**
 - [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions. Depends on accepted U25/M3 contract.
 - [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13.
 - [ ] Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency.
