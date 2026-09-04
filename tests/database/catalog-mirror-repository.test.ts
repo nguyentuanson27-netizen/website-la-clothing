@@ -77,7 +77,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("catalog mirror sync is idempotent, maps Pancake options, preserves local activation/sku, and aggregates all warehouses", async () => {
+test("catalog mirror sync is idempotent, maps Pancake options and SKU from displayId, preserves local activation, and aggregates all warehouses", async () => {
   const firstSyncAt = new Date("2026-08-11T00:00:00.000Z");
   const secondSyncAt = new Date("2026-08-11T01:00:00.000Z");
   const firstSnapshot = [
@@ -117,6 +117,7 @@ test("catalog mirror sync is idempotent, maps Pancake options, preserves local a
   assert.equal(firstRead[0]?.isActive, false);
   assert.equal(firstRead[0]?.variants[0]?.pancakeVariationId, "mirror-variation-1");
   assert.equal(firstRead[0]?.variants[0]?.pancakeDisplayId, "DISPLAY-1");
+  assert.equal(firstRead[0]?.variants[0]?.sku, "DISPLAY-1");
   assert.equal(firstRead[0]?.variants[0]?.pancakeBarcode, "BAR-1");
   assert.equal(firstRead[0]?.variants[0]?.pancakeRetailPrice, 500_000);
   assert.equal(firstRead[0]?.variants[0]?.pancakeRetailPriceAfterDiscount, 450_000);
@@ -138,7 +139,6 @@ test("catalog mirror sync is idempotent, maps Pancake options, preserves local a
     where: { id: mirroredProduct.variants[0]!.id },
     data: {
       isActive: true,
-      sku: "LOCAL-SKU",
       color: "Stale Local Color",
       size: "Stale Local Size",
     },
@@ -163,7 +163,7 @@ test("catalog mirror sync is idempotent, maps Pancake options, preserves local a
   assert.equal(secondRead[0]?.isActive, true);
   assert.equal(secondRead[0]?.variants.length, 1);
   assert.equal(secondRead[0]?.variants[0]?.isActive, true);
-  assert.equal(secondRead[0]?.variants[0]?.sku, "LOCAL-SKU");
+  assert.equal(secondRead[0]?.variants[0]?.sku, "DISPLAY-1-UPDATED");
   assert.equal(secondRead[0]?.variants[0]?.color, "Black");
   assert.equal(secondRead[0]?.variants[0]?.size, "M");
   assert.equal(secondRead[0]?.variants[0]?.pancakeDisplayId, "DISPLAY-1-UPDATED");

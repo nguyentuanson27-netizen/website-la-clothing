@@ -1,11 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1, and M2 IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165) and the durability half of M1 (PR #175) are merged on
-`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `tasks/marketing-analytics-shopping-todo.md` for per-item
-state. T5/T6 landed with Wave 3 in PR #186, and M2 landed via U12 / PR #180. **T7, T8, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
-GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. Checkpoint D is green. **T8, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
@@ -115,7 +112,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted Merchant items.
+- SKU is proven as LA Clothing manufacturer MPN: owner authority established that LA Clothing manufacturer SKUs are stored in Pancake variation `display_id`, full-catalog audit proved 149/149 presence, 0 duplicates, format validity, stability across reads (T0–T2), and mirror sync integration was verified on the isolated clone database (`mpnReady = true`).
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -469,6 +466,8 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 ---
 
 ## M1 — Read-only Merchant identity, durability and catalog audit
+
+**Delivery status:** **IMPLEMENTED** via PR #175 (Option B durability) and PR #194 (format, MPN audit, media parity, mirror sync). Evidence recorded in `docs/audits/merchant-identity-m1.md`.
 
 **Build:** bounded audit over current mirrored catalog.
 

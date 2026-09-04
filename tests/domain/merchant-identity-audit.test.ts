@@ -268,6 +268,28 @@ test("M1 SKU is audited as candidate MPN for presence and uniqueness, never inve
   );
 });
 
+test("M1 fails closed on candidate SKU with null, blank, untrimmed, overlong, invalid Unicode, and duplicates", () => {
+  const summary = summarizeMerchantIdentity([
+    row({ pancakeVariationId: "v-null", sku: null }),
+    row({ pancakeVariationId: "v-blank", sku: "   " }),
+    row({ pancakeVariationId: "v-untrimmed", sku: " A132-M " }),
+    row({ pancakeVariationId: "v-overlong", sku: "A".repeat(71) }),
+    row({ pancakeVariationId: "v-invalid-unicode", sku: "A132\u0000M" }),
+    row({ pancakeVariationId: "v-valid-1", sku: "A132-L" }),
+    row({ pancakeVariationId: "v-valid-2", sku: "A132-L" }), // duplicate
+  ]);
+
+  assert.equal(summary.emittableStandaloneVariations, 7);
+  assert.equal(summary.sku.MISSING, 1);
+  assert.equal(summary.sku.BLANK, 1);
+  assert.equal(summary.sku.UNTRIMMED, 1);
+  assert.equal(summary.sku.TOO_LONG, 1);
+  assert.equal(summary.sku.INVALID_FORMAT, 1);
+  assert.equal(summary.sku.PRESENT, 2);
+  assert.deepEqual(summary.duplicateSkus, [{ value: "A132-L", occurrences: 2 }]);
+  assert.equal(summary.mpnReady, false, "M1 must fail closed when any candidate SKU is missing, malformed or duplicate");
+});
+
 test("M1 MPN is only ready when every emitted variation has a present, unique SKU", () => {
   const summary = summarizeMerchantIdentity([
     row({ pancakeVariationId: "v-1", sku: "LA-A" }),
