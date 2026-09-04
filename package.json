@@ -32,7 +32,8 @@
     "pancake:stock:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-stock-probe.ts",
     "pancake:order:inspect-openapi": "node --experimental-strip-types scripts/pancake-order-openapi-inspect.ts",
     "pancake:order-status:inspect-openapi": "node --experimental-strip-types scripts/pancake-order-status-openapi-inspect.ts",
-    "pancake:geo:inspect-openapi": "node --experimental-strip-types scripts/pancake-geo-openapi-inspect.ts"
+    "pancake:geo:inspect-openapi": "node --experimental-strip-types scripts/pancake-geo-openapi-inspect.ts",
+    "pancake:price:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-p10-custom-price-acceptance.ts"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "1.6.25",
