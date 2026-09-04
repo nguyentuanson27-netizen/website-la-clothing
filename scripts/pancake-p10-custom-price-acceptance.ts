@@ -228,15 +228,67 @@ export function extractCreatedOrderId(rawResponse: unknown): string {
   throw new Error("Unable to parse created order ID from Pancake response");
 }
 
+export type ControlledAcceptanceClient = {
+  getJson(
+    endpoint: string,
+    query?: Readonly<Record<string, string | number | boolean>>,
+  ): Promise<unknown>;
+  postJson(endpoint: string, body: unknown): Promise<unknown>;
+  putJson(endpoint: string, body: unknown): Promise<unknown>;
+};
+
+export type ControlledAcceptanceDependencies = Readonly<{
+  client?: ControlledAcceptanceClient;
+}>;
+
+export function sanitizeCleanupErrorMessage(message: string): string {
+  if (typeof message !== "string") {
+    return "UNKNOWN_ERROR";
+  }
+  return message
+    .replace(/[?&]api_key=[^&\s]+/gi, "")
+    .replace(/[?&][a-zA-Z0-9_-]*(?:key|token|secret)[a-zA-Z0-9_-]*=[^&\s]+/gi, "")
+    .replace(/\b(?:api_key|token|secret_key|secret)=[^\s]+/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export async function attemptOrderCancellation(
+  client: ControlledAcceptanceClient,
+  shopId: number,
+  orderId: string,
+): Promise<string> {
+  try {
+    const cancelResponse = (await client.putJson(
+      `/shops/${shopId}/orders/${orderId}`,
+      { status: 7 }, // Status 7 = CANCELED
+    )) as { success?: boolean; data?: { status?: number }; status?: number } | null | undefined;
+
+    if (
+      cancelResponse &&
+      (cancelResponse.success === true ||
+        cancelResponse.data?.status === 7 ||
+        cancelResponse.status === 7)
+    ) {
+      return "CANCELED_STATUS_7";
+    }
+    return "PUT_RETURNED_UNEXPECTED_BODY";
+  } catch (cancelErr) {
+    const message = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+    return `CLEANUP_FAILED_${sanitizeCleanupErrorMessage(message)}`;
+  }
+}
+
 export async function runControlledAcceptance(
   env: NodeJS.ProcessEnv = process.env,
+  dependencies: ControlledAcceptanceDependencies = {},
 ): Promise<SanitizedAcceptanceReport> {
   assertTrustedAcceptanceEnvironment(env);
 
   const config = readPancakeConfig(env);
   assertApprovedShopId(config.shopId);
 
-  const client = new PancakeClient({ apiKey: config.apiKey });
+  const client = dependencies.client ?? new PancakeClient({ apiKey: config.apiKey });
 
   // Step 1: Preflight
   const variationsPayload = await client.getJson(
@@ -267,34 +319,54 @@ export async function runControlledAcceptance(
   );
   const createdOrderId = extractCreatedOrderId(createResponse);
 
-  // Step 4: Read-back verification
-  const orderPayload = await client.getJson(`/shops/${config.shopId}/orders/${createdOrderId}`);
-  const verification = verifyReadBackOrderPricing(
-    orderPayload,
-    EXPECTED_VARIATION_ID,
-    EXPECTED_CUSTOM_PRICE,
-  );
-
-  // Step 5: Safe Cleanup
+  // Critical safety boundary: once createdOrderId exists, order cleanup MUST be attempted
+  // across every exit path (read-back throw, payload malformed, pricing mismatch, etc.).
   let cleanupResult = "NOT_ATTEMPTED";
-  try {
-    const cancelResponse = (await client.putJson(
-      `/shops/${config.shopId}/orders/${createdOrderId}`,
-      { status: 7 }, // Status 7 = CANCELED
-    )) as { success?: boolean; data?: { status?: number }; status?: number };
+  let verification: ReturnType<typeof verifyReadBackOrderPricing> | undefined;
+  let executionError: unknown = null;
 
-    if (
-      cancelResponse.success ||
-      cancelResponse.data?.status === 7 ||
-      cancelResponse.status === 7
-    ) {
-      cleanupResult = "CANCELED_STATUS_7";
-    } else {
-      cleanupResult = "PUT_RETURNED_UNEXPECTED_BODY";
+  try {
+    // Step 4: Read-back verification
+    const orderPayload = await client.getJson(`/shops/${config.shopId}/orders/${createdOrderId}`);
+    verification = verifyReadBackOrderPricing(
+      orderPayload,
+      EXPECTED_VARIATION_ID,
+      EXPECTED_CUSTOM_PRICE,
+    );
+
+    if (!verification.isCustomPricePreserved) {
+      throw new Error(
+        `Pancake failed to preserve custom price: requested ${EXPECTED_CUSTOM_PRICE}, persisted ${verification.persistedRetailPrice}`,
+      );
     }
-  } catch (cancelErr) {
-    const message = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
-    cleanupResult = `CLEANUP_FAILED_${message}`;
+  } catch (err) {
+    executionError = err;
+  } finally {
+    // Step 5: Safe Cleanup - executed in all exit paths once createdOrderId is known
+    cleanupResult = await attemptOrderCancellation(
+      client,
+      config.shopId,
+      createdOrderId,
+    );
+  }
+
+  // Preserve original business / verification error without masking
+  if (executionError !== null) {
+    if (executionError instanceof Error && cleanupResult !== "CANCELED_STATUS_7") {
+      try {
+        (executionError as Error & { cleanupContext?: unknown }).cleanupContext = {
+          createdOrderId,
+          cleanupResult,
+        };
+      } catch {
+        // Ignore if error object cannot have properties attached
+      }
+    }
+    throw executionError;
+  }
+
+  if (!verification) {
+    throw new Error("Verification state is unexpectedly undefined after successful read-back");
   }
 
   const report = buildSanitizedAcceptanceReport({
@@ -312,12 +384,6 @@ export async function runControlledAcceptance(
     orderShippingFeeVnd: verification.orderShippingFee,
     cleanupResult,
   });
-
-  if (!report.customPriceAcceptedAndPreserved) {
-    throw new Error(
-      `Pancake failed to preserve custom price: requested ${EXPECTED_CUSTOM_PRICE}, persisted ${verification.persistedRetailPrice}`,
-    );
-  }
 
   return report;
 }

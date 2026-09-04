@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assertApprovedShopId,
   assertTrustedAcceptanceEnvironment,
+  attemptOrderCancellation,
   buildControlledAcceptanceOrderInput,
   buildSanitizedAcceptanceReport,
   CI_REFUSAL_MESSAGE,
@@ -16,6 +17,8 @@ import {
   EXPECTED_VARIATION_DISPLAY_ID,
   EXPECTED_VARIATION_ID,
   extractCreatedOrderId,
+  runControlledAcceptance,
+  sanitizeCleanupErrorMessage,
   TEST_ADDRESS_DETAIL,
   TEST_COMMUNE_ID,
   TEST_CUSTOMER_NAME,
@@ -24,6 +27,7 @@ import {
   TEST_ORDER_NOTE,
   TEST_PROVINCE_ID,
   TEST_SHIPPING_FEE_VND,
+  type ControlledAcceptanceClient,
   validateVariationPreflight,
   verifyReadBackOrderPricing,
 } from "../../scripts/pancake-p10-custom-price-acceptance.ts";
@@ -237,4 +241,277 @@ test("9. extractCreatedOrderId parses top-level id and data.id correctly", () =>
   assert.throws(() => extractCreatedOrderId({ id: -1 }), /Unable to parse created order ID/);
   assert.throws(() => extractCreatedOrderId({ data: { id: 0 } }), /Unable to parse created order ID/);
 });
+
+test("10. create succeeds -> createdOrderId exists -> read-back throws -> cleanup PUT status=7 is called exactly once, original read-back error propagates", async () => {
+  let postCalls = 0;
+  let putCalls = 0;
+  let cleanupEndpoint = "";
+  let cleanupBody: unknown = null;
+
+  const mockClient: ControlledAcceptanceClient = {
+    async getJson(endpoint: string) {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: EXPECTED_VARIATION_DISPLAY_ID,
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 10,
+            },
+          ],
+        };
+      }
+      if (endpoint.includes("/orders/999")) {
+        throw new Error("Simulated network timeout reading back order 999");
+      }
+      throw new Error(`Unexpected getJson endpoint: ${endpoint}`);
+    },
+    async postJson(endpoint: string) {
+      postCalls += 1;
+      assert.equal(endpoint, `/shops/${EXPECTED_SHOP_ID}/orders`);
+      return { success: true, data: { id: 999 } };
+    },
+    async putJson(endpoint: string, body: unknown) {
+      putCalls += 1;
+      cleanupEndpoint = endpoint;
+      cleanupBody = body;
+      return { success: true, data: { status: 7 } };
+    },
+  };
+
+  const testEnv = {
+    P10_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  } as unknown as NodeJS.ProcessEnv;
+
+  await assert.rejects(
+    () => runControlledAcceptance(testEnv, { client: mockClient }),
+    /Simulated network timeout reading back order 999/,
+  );
+
+  assert.equal(postCalls, 1, "postJson must be called exactly once (no retry)");
+  assert.equal(putCalls, 1, "putJson cleanup must be called exactly once despite read-back throw");
+  assert.equal(cleanupEndpoint, `/shops/${EXPECTED_SHOP_ID}/orders/999`, "cleanup must target exact createdOrderId");
+  assert.deepEqual(cleanupBody, { status: 7 }, "cleanup payload must set status=7 (CANCELED)");
+});
+
+test("11. create succeeds -> createdOrderId exists -> verification throws (malformed items) -> cleanup PUT status=7 is called exactly once, original error propagates", async () => {
+  let postCalls = 0;
+  let putCalls = 0;
+  let cleanupEndpoint = "";
+  let cleanupBody: unknown = null;
+
+  const mockClient: ControlledAcceptanceClient = {
+    async getJson(endpoint: string) {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: EXPECTED_VARIATION_DISPLAY_ID,
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 10,
+            },
+          ],
+        };
+      }
+      if (endpoint.includes("/orders/888")) {
+        // Return malformed order lacking items array
+        return { data: { id: 888, status: 0 } };
+      }
+      throw new Error(`Unexpected getJson endpoint: ${endpoint}`);
+    },
+    async postJson() {
+      postCalls += 1;
+      return { id: 888 };
+    },
+    async putJson(endpoint: string, body: unknown) {
+      putCalls += 1;
+      cleanupEndpoint = endpoint;
+      cleanupBody = body;
+      return { success: true, status: 7 };
+    },
+  };
+
+  const testEnv = {
+    P10_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  } as unknown as NodeJS.ProcessEnv;
+
+  await assert.rejects(
+    () => runControlledAcceptance(testEnv, { client: mockClient }),
+    /Order payload missing items array/,
+  );
+
+  assert.equal(postCalls, 1);
+  assert.equal(putCalls, 1);
+  assert.equal(cleanupEndpoint, `/shops/${EXPECTED_SHOP_ID}/orders/888`);
+  assert.deepEqual(cleanupBody, { status: 7 });
+});
+
+test("12. create succeeds -> createdOrderId exists -> custom price mismatch -> cleanup PUT status=7 is called exactly once, price error propagates", async () => {
+  let postCalls = 0;
+  let putCalls = 0;
+  let cleanupEndpoint = "";
+
+  const mockClient: ControlledAcceptanceClient = {
+    async getJson(endpoint: string) {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: EXPECTED_VARIATION_DISPLAY_ID,
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 10,
+            },
+          ],
+        };
+      }
+      if (endpoint.includes("/orders/777")) {
+        // Return order where retail_price was reset to catalog base 429_000 instead of 399_000
+        return {
+          data: {
+            id: 777,
+            status: 0,
+            items: [
+              {
+                variation_id: EXPECTED_VARIATION_ID,
+                variation_info: { retail_price: EXPECTED_CATALOG_BASE_PRICE },
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`Unexpected getJson endpoint: ${endpoint}`);
+    },
+    async postJson() {
+      postCalls += 1;
+      return { id: 777 };
+    },
+    async putJson(endpoint: string) {
+      putCalls += 1;
+      cleanupEndpoint = endpoint;
+      return { success: true, data: { status: 7 } };
+    },
+  };
+
+  const testEnv = {
+    P10_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  } as unknown as NodeJS.ProcessEnv;
+
+  await assert.rejects(
+    () => runControlledAcceptance(testEnv, { client: mockClient }),
+    /Pancake failed to preserve custom price/,
+  );
+
+  assert.equal(postCalls, 1);
+  assert.equal(putCalls, 1);
+  assert.equal(cleanupEndpoint, `/shops/${EXPECTED_SHOP_ID}/orders/777`);
+});
+
+test("13. read-back throws AND cleanup fails -> original read-back error is NOT replaced, cleanup context attached safely without leaking secrets", async () => {
+  let putCalls = 0;
+
+  const mockClient: ControlledAcceptanceClient = {
+    async getJson(endpoint: string) {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: EXPECTED_VARIATION_DISPLAY_ID,
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 10,
+            },
+          ],
+        };
+      }
+      throw new Error("Original read-back network partition error");
+    },
+    async postJson() {
+      return { id: 666 };
+    },
+    async putJson() {
+      putCalls += 1;
+      throw new Error("Pancake HTTP 500 error for /orders/666?api_key=SECRET_TOKEN_VALUE");
+    },
+  };
+
+  const testEnv = {
+    P10_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  } as unknown as NodeJS.ProcessEnv;
+
+  let capturedError: (Error & { cleanupContext?: { createdOrderId?: string; cleanupResult?: string } }) | null = null;
+  try {
+    await runControlledAcceptance(testEnv, { client: mockClient });
+  } catch (err) {
+    capturedError = err as Error;
+  }
+
+  assert.ok(capturedError !== null, "Error must be thrown");
+  assert.match(capturedError.message, /Original read-back network partition error/);
+  assert.equal(putCalls, 1);
+  assert.equal(capturedError.cleanupContext?.createdOrderId, "666");
+  assert.match(capturedError.cleanupContext?.cleanupResult ?? "", /CLEANUP_FAILED_/);
+  // Ensure sensitive token was sanitized and not present in cleanupResult
+  assert.equal((capturedError.cleanupContext?.cleanupResult ?? "").includes("SECRET_TOKEN_VALUE"), false);
+});
+
+test("14. attemptOrderCancellation handles success, unexpected body, and error states", async () => {
+  // Success with success: true
+  const successClient1: ControlledAcceptanceClient = {
+    async getJson() { throw new Error(); },
+    async postJson() { throw new Error(); },
+    async putJson() { return { success: true, data: { status: 7 } }; },
+  };
+  assert.equal(await attemptOrderCancellation(successClient1, EXPECTED_SHOP_ID, "101"), "CANCELED_STATUS_7");
+
+  // Success with direct status: 7
+  const successClient2: ControlledAcceptanceClient = {
+    async getJson() { throw new Error(); },
+    async postJson() { throw new Error(); },
+    async putJson() { return { status: 7 }; },
+  };
+  assert.equal(await attemptOrderCancellation(successClient2, EXPECTED_SHOP_ID, "102"), "CANCELED_STATUS_7");
+
+  // Unexpected body
+  const unexpectedClient: ControlledAcceptanceClient = {
+    async getJson() { throw new Error(); },
+    async postJson() { throw new Error(); },
+    async putJson() { return { success: false, status: 0 }; },
+  };
+  assert.equal(await attemptOrderCancellation(unexpectedClient, EXPECTED_SHOP_ID, "103"), "PUT_RETURNED_UNEXPECTED_BODY");
+
+  // Rejection/HTTP error
+  const failingClient: ControlledAcceptanceClient = {
+    async getJson() { throw new Error(); },
+    async postJson() { throw new Error(); },
+    async putJson() { throw new Error("HTTP 404 order not found"); },
+  };
+  assert.equal(await attemptOrderCancellation(failingClient, EXPECTED_SHOP_ID, "104"), "CLEANUP_FAILED_HTTP 404 order not found");
+});
+
+test("15. sanitizeCleanupErrorMessage strips sensitive query parameters and secrets", () => {
+  assert.equal(
+    sanitizeCleanupErrorMessage("Failed for /orders/123?api_key=sensitive-secret-token"),
+    "Failed for /orders/123",
+  );
+  assert.equal(
+    sanitizeCleanupErrorMessage("Failed for /orders/123?other=1&api_key=token123&test=2"),
+    "Failed for /orders/123?other=1&test=2",
+  );
+  assert.equal(
+    sanitizeCleanupErrorMessage("Failed with secret_key=mysecret"),
+    "Failed with",
+  );
+});
+
 
