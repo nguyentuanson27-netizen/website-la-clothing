@@ -5,21 +5,52 @@ import {
   classifyExternalIdentifier,
   classifyMerchantMedia,
   MERCHANT_ID_MAX_LENGTH,
+  MERCHANT_MPN_MAX_LENGTH,
 } from "../../src/commerce/merchant-identity-audit.ts";
 
-test("M1 Merchant identifier length counts Unicode code points rather than UTF-16 code units", () => {
+test("M1 Merchant identifiers reject supplementary-plane code points represented by surrogate pairs", () => {
   const astralCharacter = "🧥";
-  assert.equal(astralCharacter.length, 2, "fixture must exercise a surrogate pair");
+  assert.equal(astralCharacter.length, 2, "fixture must exercise a UTF-16 surrogate pair");
 
   assert.equal(
+    classifyExternalIdentifier(astralCharacter, {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    }),
+    "INVALID_FORMAT",
+    "Google Merchant ID guidance lists surrogate pairs among invalid Unicode examples",
+  );
+  assert.equal(
     classifyExternalIdentifier(astralCharacter.repeat(MERCHANT_ID_MAX_LENGTH), {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    }),
+    "INVALID_FORMAT",
+    "a value within the numeric length bound is still invalid when it contains surrogate pairs",
+  );
+  assert.equal(
+    classifyExternalIdentifier(`MPN-${astralCharacter}`, {
+      maxLength: MERCHANT_MPN_MAX_LENGTH,
+      allowWhitespace: true,
+    }),
+    "INVALID_FORMAT",
+    "LA Clothing applies the same conservative Unicode safety boundary to MPN candidates",
+  );
+});
+
+test("M1 accepted BMP Unicode still obeys Merchant character-count boundaries", () => {
+  const bmpCharacter = "đ";
+  assert.equal(bmpCharacter.length, 1);
+
+  assert.equal(
+    classifyExternalIdentifier(bmpCharacter.repeat(MERCHANT_ID_MAX_LENGTH), {
       maxLength: MERCHANT_ID_MAX_LENGTH,
       allowWhitespace: false,
     }),
     "PRESENT",
   );
   assert.equal(
-    classifyExternalIdentifier(astralCharacter.repeat(MERCHANT_ID_MAX_LENGTH + 1), {
+    classifyExternalIdentifier(bmpCharacter.repeat(MERCHANT_ID_MAX_LENGTH + 1), {
       maxLength: MERCHANT_ID_MAX_LENGTH,
       allowWhitespace: false,
     }),
