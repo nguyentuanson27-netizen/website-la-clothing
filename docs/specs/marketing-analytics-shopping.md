@@ -321,21 +321,11 @@ V1 candidate identifiers:
 id            = pancakeVariationId
 item_group_id = pancakeProductId (for standalone variant family)
 brand         = LA Clothing
-mpn           = audited LA Clothing manufacturer SKU (from Pancake variation.display_id)
+mpn           = audited current SKU
 gtin          = omitted unless real assigned valid GTIN exists
 ```
 
-Official Google Merchant Center limits (audited 2026-09-04):
-- `id`: 1–50 Unicode code points (https://support.google.com/merchants/answer/6324405), no whitespace, no control/surrogate characters.
-- `item_group_id`: 1–50 Unicode code points (https://support.google.com/merchants/answer/6324507), no whitespace, no control/surrogate characters.
-- `mpn`: 1–70 Unicode code points (https://support.google.com/merchants/answer/6324482), XML 1.0 valid text.
-
-Owner authority & MPN contract:
-- LA Clothing is the brand owner and manufacturer. Codes such as `A132-S`, `A132-M` are official manufacturer SKUs/MPNs.
-- In Pancake, these codes reside in `variation.display_id` and are mapped directly to `VariantMirror.sku` without fallback (no barcode, UUID, or slug substitution).
-- `identifier_exists=false` is forbidden for this catalog.
-
-Lifecycle durability of `pancakeVariationId` and `pancakeProductId` is proven under §3.3 Option B (PR #175 / `a132`).
+Before activation, `pancakeVariationId` and `pancakeProductId` require evidence of lifecycle durability beyond current DB uniqueness/upsert behavior.
 
 Composite Merchant offers are excluded in v1.
 
