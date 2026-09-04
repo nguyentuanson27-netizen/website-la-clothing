@@ -43,7 +43,12 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-function liveVariation(id: string, productId: string, retailPrice: number): PancakeCatalogVariation {
+function liveVariation(
+  id: string,
+  productId: string,
+  retailPrice: number,
+  retailPriceAfterDiscount = retailPrice,
+): PancakeCatalogVariation {
   return {
     id,
     productId,
@@ -54,7 +59,7 @@ function liveVariation(id: string, productId: string, retailPrice: number): Panc
     isHidden: false,
     isLocked: false,
     retailPrice,
-    retailPriceAfterDiscount: retailPrice,
+    retailPriceAfterDiscount,
     product: { id: productId, name: productId },
     warehouseStocks: [{ warehouseId: `${id}-warehouse`, remainQuantity: 9 }],
     sellableStock: 9,
@@ -278,6 +283,11 @@ test("P9b the fresher base is written back, so reconfirming terminates instead o
     600_000,
     "checkout observed a fresher trusted base and must record it as the latest",
   );
+  assert.equal(
+    mirrored.pancakeRetailPriceAfterDiscount,
+    600_000,
+    "the after-discount column carries what Pancake reported, never a copy of the base",
+  );
 
   // The buyer reconfirms: the snapshot now re-derives the same 600k the submission will check.
   const resnapshot = await createGuestCheckoutSnapshotService(prisma, {
@@ -294,6 +304,33 @@ test("P9b the fresher base is written back, so reconfirming terminates instead o
   const result = await submissionService(second.gateway).submit({ publicCode, shopId });
   assert.equal(result.ok, true, "the second, explicit confirmation must succeed");
   assert.equal(second.created.length, 1);
+});
+
+test("P9b the write-back records Pancake's own after-discount, not a copy of the base", async () => {
+  // The central resolver ignores this column, but the Merchant identity audit and the default
+  // equality-gated price rule read it. Writing the base into it would hand them an observation no
+  // upstream ever sent.
+  const { product, variant } = await seedVariant("afterdiscount", 500_000);
+  const publicCode = `${prefix}-afterdiscount-order`;
+  await createDraft(variant.id, publicCode);
+
+  const created: unknown[] = [];
+  const result = await submissionService({
+    async fetchCompleteCatalog() {
+      return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 600_000, 550_000)];
+    },
+    async createOrder(request: unknown) {
+      created.push(request);
+      return { id: 900_002 };
+    },
+  }).submit({ publicCode, shopId });
+
+  assert.equal(result.ok, false);
+  assert.equal(created.length, 0);
+
+  const mirrored = await prisma.variantMirror.findUniqueOrThrow({ where: { id: variant.id } });
+  assert.equal(mirrored.pancakeRetailPrice, 600_000);
+  assert.equal(mirrored.pancakeRetailPriceAfterDiscount, 550_000);
 });
 
 test("P9b an unusable fresher base fails closed without repricing to nonsense", async () => {

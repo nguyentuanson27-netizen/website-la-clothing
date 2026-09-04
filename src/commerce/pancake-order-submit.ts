@@ -296,6 +296,7 @@ export function createPancakeOrderSubmissionService(
         variantId: string;
         quantity: number;
         freshBaseVnd: number;
+        freshAfterDiscountVnd: number;
         pricing: ReturnType<typeof resolvePromotionPricing>;
       }>,
     ): Promise<PancakeOrderSubmissionResult> {
@@ -381,9 +382,13 @@ export function createPancakeOrderSubmissionService(
         for (const line of refreshed) {
           await tx.variantMirror.updateMany({
             where: { id: line.variantId },
+            // Both columns carry what Pancake actually reported. Copying the base into the
+            // after-discount field would invent an observation: the central resolver ignores that
+            // field, but the Merchant identity audit and the default equality-gated price rule both
+            // read it, and they would be reading a value no upstream ever sent.
             data: {
               pancakeRetailPrice: line.freshBaseVnd,
-              pancakeRetailPriceAfterDiscount: line.freshBaseVnd,
+              pancakeRetailPriceAfterDiscount: line.freshAfterDiscountVnd,
             },
           });
         }
@@ -487,6 +492,7 @@ export function createPancakeOrderSubmissionService(
       variantId: string;
       quantity: number;
       freshBaseVnd: number;
+      freshAfterDiscountVnd: number;
       pricing: ReturnType<typeof resolvePromotionPricing>;
     }> = [];
     let drifted = false;
@@ -535,6 +541,7 @@ export function createPancakeOrderSubmissionService(
         variantId: line.variantId,
         quantity: line.quantity,
         freshBaseVnd: live.retailPrice,
+        freshAfterDiscountVnd: live.retailPriceAfterDiscount,
         pricing: freshPricing,
       });
 
