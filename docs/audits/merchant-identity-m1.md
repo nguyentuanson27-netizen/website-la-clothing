@@ -150,7 +150,7 @@ ADR 0008 records the reviewed ownership boundary:
 
 The external adapter now treats missing/null `display_id` as null and fails closed when a present value is a non-string. Dedicated parser-level regressions pin that trust boundary.
 
-### Current full-catalog MPN observation
+### Historical pre-final full-catalog MPN observation
 
 The authorized read-only Pancake traversal observed 356 total variations over 4 pages and 149 intended standalone launch records:
 
@@ -162,7 +162,7 @@ The authorized read-only Pancake traversal observed 356 total variations over 4 
 - `INVALID_FORMAT`: **0**
 - duplicate manufacturer MPNs: **0**
 
-These counts are retained as supporting observation. Because that run did not capture exact immutable execution-tree provenance after the final implementation corrections, they do not by themselves close Checkpoint D.
+These counts remain historical supporting evidence. That pre-final traversal did not by itself close Checkpoint D because it lacked exact immutable execution-tree provenance; the authoritative exact-tree run in §2 now supplies the closure evidence.
 
 Representative `a132` values:
 
@@ -225,7 +225,7 @@ Regression coverage proves:
 - image only on inactive sibling → does not make active variant READY;
 - >100 untrusted candidates followed by a trusted image beyond the post-query candidate budget → only the first 100 copied candidates are passed to the resolver and the late candidate cannot alter the verdict.
 
-Recorded real-catalog observation: **149 READY / 0 MISSING / 0 UNTRUSTED**. An attributable post-fix rerun is still required before this count closes Checkpoint D.
+Authoritative exact-tree real-catalog result: **149 READY / 0 MISSING / 0 UNTRUSTED**. This media result is part of the §2 operational closure evidence that closes Checkpoint D.
 
 ---
 
