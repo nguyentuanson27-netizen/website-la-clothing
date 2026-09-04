@@ -2,35 +2,46 @@
  * M1 — read-only Merchant identity and durability audit.
  *
  * Answers what the mirrored catalog can prove today about the identifiers a Merchant feed would
- * emit, and is deliberately unable to answer what it cannot. It asserts no vendor format: which
- * shape a Pancake identifier takes is an observation to record, not a rule to enforce, and encoding
- * a guess here would turn an audit into an assumption.
+ * emit, and is deliberately unable to answer what it cannot.
+ *
+ * It enforces Google Merchant Center format and character constraints for offer IDs, combined with
+ * LA Clothing's stricter fail-closed policy: invalid control/format/private-use/unassigned Unicode,
+ * malformed UTF-16, supplementary-plane code points represented by surrogate pairs, and whitespace
+ * in `id` / `item_group_id` are rejected. Length bounds are 50 Unicode code points for ID and 70
+ * Unicode code points for MPN. The same conservative Unicode safety boundary is applied to MPN.
  *
  * Three things it will not do:
  *
  *   - infer a GTIN. `pancakeBarcode` is a field name, not proof of a GTIN, and the audit does not
  *     read it at all rather than tempt a later reader;
  *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3), so
- *     they are reported as an explicit blocked state rather than derived from a name or a category;
- *   - declare identifier durability. Current DB uniqueness and upsert behaviour are explicitly
- *     insufficient evidence, so the verdict stays blocked until upstream lifetime evidence exists.
+ *     they are reported as an explicit blocked state rather than derived from a name or category;
+ *   - synthesize historical upstream-lifecycle evidence into a mirror-only runtime result. The
+ *     runtime summary deliberately reports only what this DB read can prove; the authoritative
+ *     time-separated durability evidence is recorded separately in the reviewed M1 audit document.
  *
- * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`: a component sold through
- * a parent set has no proven durable Merchant family identity, and that is a separate design.
+ * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`.
  */
 
-import { parseTrustedProductImageUrl } from "./product-media.ts";
+import { resolveStorefrontProductMedia } from "./product-media.ts";
 import { resolveStorefrontPrice } from "./storefront-product.ts";
 
-/** Matches the existing Pancake catalog audit bound so one contract governs identifier length. */
+/** Matches the existing Pancake catalog audit bound for generic external identifiers. */
 export const MAX_EXTERNAL_IDENTIFIER_LENGTH = 512;
+
+/** Google Merchant Center specification: offer id and item_group_id are limited to 50 characters. */
+export const MERCHANT_ID_MAX_LENGTH = 50;
+
+/** Google Merchant Center specification: manufacturer part number (mpn) is limited to 70 characters. */
+export const MERCHANT_MPN_MAX_LENGTH = 70;
 
 export type ExternalIdentifierClass =
   | "PRESENT"
   | "MISSING"
   | "BLANK"
   | "UNTRIMMED"
-  | "TOO_LONG";
+  | "TOO_LONG"
+  | "INVALID_FORMAT";
 
 const CLASSES: readonly ExternalIdentifierClass[] = [
   "PRESENT",
@@ -38,12 +49,17 @@ const CLASSES: readonly ExternalIdentifierClass[] = [
   "BLANK",
   "UNTRIMMED",
   "TOO_LONG",
+  "INVALID_FORMAT",
 ];
 
 export type MerchantIdentityRow = Readonly<{
   pancakeVariationId: string | null;
   pancakeProductId: string | null;
-  /** Candidate MPN. Nullable and not database-unique, which is why it needs auditing. */
+  /**
+   * Candidate manufacturer MPN. The M1 repository sources this from mirrored Pancake
+   * `pancakeDisplayId`; it is intentionally not the website-owned `VariantMirror.sku` field.
+   * The summary keeps the historical `sku` key for report compatibility.
+   */
   sku: string | null;
   isComposite: boolean;
   isStorefrontVisible: boolean;
@@ -53,36 +69,17 @@ export type MerchantIdentityRow = Readonly<{
   /** Valid summed stock, or NaN when any source warehouse quantity is unsafe/unresolved. */
   stockQuantity: number;
   primaryImageUrl: string | null;
+  /** Product-level storefront media candidates from all active/present variants, in resolver order. */
+  variantImageUrls?: readonly unknown[] | null;
   title: string | null;
   /** Only what the storefront would actually publish; a Draft description is not a Merchant fact. */
   publishedDescription: string | null;
 }>;
 
-/**
- * Whether a record has a price the website would publish *today*.
- *
- * Deliberately the live `resolveStorefrontPrice` rule and not a second one: an audit that used a
- * different definition of a usable price would report a readiness the storefront does not share.
- * That rule is currently equality-gated on the mirrored Pancake fields pending W3 evidence, so this
- * count moves when that gate does — which is the point of measuring it.
- */
 export type PriceReadiness = "READY" | "PRICE_UNRESOLVED";
-
-/**
- * A real zero is a valid Merchant availability fact (`out_of_stock`). Unsafe source data is not:
- * M3 must exclude unresolved rows rather than publishing a fabricated zero-stock state.
- */
 export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK" | "AVAILABILITY_UNRESOLVED";
-
-/** Media trust is the storefront's own parser; an untrusted host is not a Merchant image. */
 export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
-
-/**
- * `MALFORMED` is not a style judgement. It means text that cannot be serialized as XML 1.0 text;
- * XML-illegal code points and lone surrogates cannot be repaired by escaping.
- */
 export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
-
 export type DuplicateIdentifier = Readonly<{ value: string; occurrences: number }>;
 
 export type MerchantIdentitySummary = Readonly<{
@@ -94,53 +91,73 @@ export type MerchantIdentitySummary = Readonly<{
   sku: Readonly<Record<ExternalIdentifierClass, number>>;
   duplicateVariationIds: readonly DuplicateIdentifier[];
   duplicateSkus: readonly DuplicateIdentifier[];
-  /** True only when every emittable variation has a present, unique SKU. */
+  /** True only when every emittable variation has a present, unique manufacturer SKU/MPN. */
   mpnReady: boolean;
   price: Readonly<Record<PriceReadiness, number>>;
   availability: Readonly<Record<AvailabilityClass, number>>;
   media: Readonly<Record<MediaReadiness, number>>;
   title: Readonly<Record<TextReadiness, number>>;
   description: Readonly<Record<TextReadiness, number>>;
-  /**
-   * Emittable variations with a publishable price, a trusted image, serializable title/description,
-   * and a resolved availability fact. A valid zero-stock row still counts: Merchant can publish it
-   * as `out_of_stock`; only unsafe/unresolved availability fails readiness closed.
-   */
   merchantFactsReady: number;
-  /**
-   * Apparel attributes (O3), split the way ADR 0007 splits them.
-   *
-   * The policy is settled — approved shop defaults plus local product-owned overrides — so reporting
-   * this as an open owner gate would be false. What is missing is the runtime: persistence,
-   * validation, admin editing and effective-fact projection. The verdict stays BLOCKED, for that
-   * reason and not the other one.
-   *
-   * No value appears here, then or now. Deriving `gender` from a product name is the invention ADR
-   * 0007 forbids as firmly as the original gate did, and restating the approved defaults would make
-   * this a second authority for a value the feed publishes — M3 applies them.
-   */
   apparelFacts: Readonly<{
-    /** Settled by ADR 0007. */
     policy: "RESOLVED";
-    /** No local override persistence, validation, admin editing or projection exists yet. */
     productOverrides: "NOT_IMPLEMENTED";
-    /** Blocked by the missing runtime, no longer by an open owner decision. */
     verdict: "BLOCKED";
   }>;
   durability: Readonly<{
-    /** Proven here: the mirror reconciles rows by external id, not by slug, position or local id. */
     mirrorReconcilesByExternalId: boolean;
-    /** Needs upstream contract or repeated-resync evidence from an approved context. */
     upstreamLifetimeProven: boolean;
     verdict: "BLOCKED" | "PROVEN";
   }>;
 }>;
 
-export function classifyExternalIdentifier(value: string | null): ExternalIdentifierClass {
+export type ClassifyIdentifierOptions = {
+  maxLength?: number;
+  allowWhitespace?: boolean;
+};
+
+/**
+ * Google Merchant invalid-Unicode examples for `id` include controls, format characters,
+ * private-use/unassigned code points and surrogate pairs. The shared M1 validator applies that
+ * conservative boundary to every Merchant identifier candidate, including MPN.
+ */
+const INVALID_MERCHANT_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
+const SUPPLEMENTARY_CODE_POINT_REGEX = /[\u{10000}-\u{10FFFF}]/u;
+
+export function hasInvalidMerchantUnicode(value: string): boolean {
+  if (typeof value.isWellFormed === "function" && !value.isWellFormed()) {
+    return true;
+  }
+  if (SUPPLEMENTARY_CODE_POINT_REGEX.test(value)) {
+    return true;
+  }
+  return INVALID_MERCHANT_UNICODE_REGEX.test(value);
+}
+
+function unicodeCodePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
+export function classifyExternalIdentifier(
+  value: string | null,
+  options?: number | ClassifyIdentifierOptions,
+): ExternalIdentifierClass {
+  const maxLength =
+    typeof options === "number" ? options : (options?.maxLength ?? MAX_EXTERNAL_IDENTIFIER_LENGTH);
+  const allowWhitespace =
+    typeof options === "number" ? true : (options?.allowWhitespace ?? true);
+
   if (value === null || value.length === 0) return "MISSING";
   if (value.trim().length === 0) return "BLANK";
-  if (value.length > MAX_EXTERNAL_IDENTIFIER_LENGTH) return "TOO_LONG";
   if (value !== value.trim()) return "UNTRIMMED";
+  if (unicodeCodePointLength(value) > maxLength) return "TOO_LONG";
+
+  // Google says to avoid whitespace and may normalize it. LA Clothing deliberately refuses to rely
+  // on that normalization for offer ID and item_group_id: any whitespace is rejected fail-closed.
+  if (!allowWhitespace && /\s/.test(value)) return "INVALID_FORMAT";
+
+  if (hasInvalidMerchantUnicode(value)) return "INVALID_FORMAT";
+
   return "PRESENT";
 }
 
@@ -183,9 +200,36 @@ export function classifyMerchantAvailability(stockQuantity: number): Availabilit
   return stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
 }
 
-export function classifyMerchantMedia(primaryImageUrl: string | null): MediaReadiness {
-  if (primaryImageUrl === null || primaryImageUrl.trim().length === 0) return "MISSING";
-  return parseTrustedProductImageUrl(primaryImageUrl) === null ? "UNTRUSTED" : "READY";
+function normalizeVariantImageUrls(
+  variantImageUrls: readonly unknown[] | null | undefined,
+): readonly string[] {
+  if (!Array.isArray(variantImageUrls)) return [];
+  return variantImageUrls.filter((candidate): candidate is string => typeof candidate === "string");
+}
+
+/**
+ * Merchant media readiness delegates trusted-image selection to the exact storefront product
+ * resolver. `variantImageUrls` is the ordered product-level candidate set assembled from all
+ * active/present variants of the product, not merely the current variation's own image list.
+ */
+export function classifyMerchantMedia(
+  primaryImageUrl: string | null,
+  variantImageUrls?: readonly unknown[] | null,
+): MediaReadiness {
+  const productVariantImageUrls = normalizeVariantImageUrls(variantImageUrls);
+  const resolved = resolveStorefrontProductMedia({
+    productName: "Merchant audit",
+    primaryImageUrl,
+    variantImageUrls: [productVariantImageUrls],
+  });
+
+  if (resolved.primary !== null) return "READY";
+
+  const hasPrimaryCandidate =
+    typeof primaryImageUrl === "string" && primaryImageUrl.trim().length > 0;
+  const hasVariantCandidate = productVariantImageUrls.some((candidate) => candidate.trim().length > 0);
+
+  return hasPrimaryCandidate || hasVariantCandidate ? "UNTRUSTED" : "MISSING";
 }
 
 function countsFor<TClass extends string>(names: readonly TClass[]): Record<TClass, number> {
@@ -238,30 +282,38 @@ export function summarizeMerchantIdentity(
       compositeDeferred += 1;
       continue;
     }
-    // Only what would actually be emitted is audited. A hidden variation's missing SKU is not a
-    // Merchant problem, and counting it would produce a verdict nobody can act on.
     if (!row.isStorefrontVisible) continue;
 
     emittableStandaloneVariations += 1;
 
-    const variationClass = classifyExternalIdentifier(row.pancakeVariationId);
+    const variationClass = classifyExternalIdentifier(row.pancakeVariationId, {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    });
     variationIdentifiers[variationClass] += 1;
     if (variationClass === "PRESENT") emittableVariationIds.push(row.pancakeVariationId as string);
 
-    // One product family is counted once however many of its variations are emitted.
     const productId = row.pancakeProductId;
     if (productId === null || !seenProductIds.has(productId)) {
-      productIdentifiers[classifyExternalIdentifier(productId)] += 1;
+      productIdentifiers[
+        classifyExternalIdentifier(productId, {
+          maxLength: MERCHANT_ID_MAX_LENGTH,
+          allowWhitespace: false,
+        })
+      ] += 1;
       if (productId !== null) seenProductIds.add(productId);
     }
 
-    const skuClass = classifyExternalIdentifier(row.sku);
+    const skuClass = classifyExternalIdentifier(row.sku, {
+      maxLength: MERCHANT_MPN_MAX_LENGTH,
+      allowWhitespace: true,
+    });
     sku[skuClass] += 1;
     if (skuClass === "PRESENT") emittableSkus.push(row.sku as string);
 
     const priceClass = classifyMerchantPrice(row);
     const availabilityClass = classifyMerchantAvailability(row.stockQuantity);
-    const mediaClass = classifyMerchantMedia(row.primaryImageUrl);
+    const mediaClass = classifyMerchantMedia(row.primaryImageUrl, row.variantImageUrls);
     const titleClass = classifyMerchantText(row.title);
     const descriptionClass = classifyMerchantText(row.publishedDescription);
     price[priceClass] += 1;
@@ -269,6 +321,7 @@ export function summarizeMerchantIdentity(
     media[mediaClass] += 1;
     title[titleClass] += 1;
     description[descriptionClass] += 1;
+
     if (
       priceClass === "READY"
       && availabilityClass !== "AVAILABILITY_UNRESOLVED"
@@ -292,7 +345,10 @@ export function summarizeMerchantIdentity(
     sku: Object.freeze(sku),
     duplicateVariationIds: Object.freeze(duplicateVariationIds),
     duplicateSkus: Object.freeze(duplicateSkus),
-    mpnReady: sku.PRESENT === emittableStandaloneVariations && duplicateSkus.length === 0,
+    mpnReady:
+      emittableStandaloneVariations > 0
+      && sku.PRESENT === emittableStandaloneVariations
+      && duplicateSkus.length === 0,
     price: Object.freeze(price),
     availability: Object.freeze(availability),
     media: Object.freeze(media),
@@ -300,18 +356,12 @@ export function summarizeMerchantIdentity(
     description: Object.freeze(description),
     merchantFactsReady,
     apparelFacts: Object.freeze({
-      // Constants, like the durability verdict: nothing this audit can read decides either of
-      // these. The policy was decided by a human in ADR 0007, and the runtime either exists or
-      // does not — neither is a fact about the mirror.
       policy: "RESOLVED" as const,
       productOverrides: "NOT_IMPLEMENTED" as const,
       verdict: "BLOCKED" as const,
     }),
     durability: Object.freeze({
       mirrorReconcilesByExternalId: true,
-      // Nothing this audit can read establishes that an upstream object keeps its id for its
-      // lifetime. That needs a provider contract or repeated full-catalog resync evidence from an
-      // approved context, so the verdict is a constant here rather than a computed hope.
       upstreamLifetimeProven: false,
       verdict: "BLOCKED" as const,
     }),

@@ -1,17 +1,17 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, and T7 (U24, PR #193) IMPLEMENTED; M1 partially delivered. T8 and M3–M5/V1 remain proposed and
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), and M1 implementation (PR #175 + PR #194) IMPLEMENTED; Checkpoint D remains OPEN pending an attributable exact-SHA real-catalog rerun. T8 and M3–M5/V1 remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
-+ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), the durability half of **M1** (U9, PR #175), and **T7** (U24, PR #193 canonical confirmed Purchase). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
++ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1 implementation** (U9, PR #175 durability + PR #194 identity/MPN/media read-only corrections). Checkpoint D is **not yet green**: the final corrected M1 implementation still needs one authorized current-catalog run attributable to an exact committed SHA with clean/dirty state recorded. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1 implementation/supporting observations are in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
 
-T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
+T8, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T6 and M2 are now merged; M1 remains partially delivered.
+PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1 implementation, and M2 are delivered; **Checkpoint D operational closure remains pending**.
 
 ## Owner/account gates
 
@@ -153,11 +153,12 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-D — Merchant identity + standalone deep link
 
 ### M1 Merchant read-only identity/durability audit
-- [ ] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits.
+- [x] Audit implementation validates `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits. Recorded observation: 149/149 variations and 35/35 products within 50 characters; current values contained no rejected invalid Unicode. LA Clothing rejects whitespace rather than relying on Google normalization.
 - [x] Prove external-ID durability by provider contract, controlled repeated full-catalog resync evidence + repository reconciliation tests, or equivalent approved history. **PROVEN via §3.3 Option B.** A controlled experiment on production product `a132` (`scripts/pancake-m1-durability-experiment.ts`) with independent owner-controlled cryptographic markers at the raw Pancake API boundary proved that the same upstream product and variations retain the exact same `pancakeProductId` and `pancakeVariationId` across controlled reversible mutations and repeated full-catalog observations, with zero remap and verified restoration; combined with repository reconciliation tests (`tests/database/merchant-identity-audit.test.ts`). Recorded in `docs/audits/merchant-identity-m1.md`.
-- [ ] Audit SKU-as-MPN presence/uniqueness/stability.
-- [ ] Every composite projection becomes `COMPOSITE_DEFERRED` in v1.
-- [ ] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready.
+- [x] Audit implementation covers manufacturer MPN presence/uniqueness/stability. **Authority is ADR 0008:** owner-confirmed manufacturer SKU/MPN is Pancake variation `display_id`, mirrored in `VariantMirror.pancakeDisplayId` and audited directly; website-owned `VariantMirror.sku` remains preserved and is not an MPN fallback. Recorded full-catalog observation: 149/149 PRESENT, 0 MISSING/BLANK/UNTRIMMED/TOO_LONG/INVALID_FORMAT, 0 duplicates. Immediate T0–T2 reads provide 356/356 consistency; lifecycle stability is supported separately by the time-separated `a132` evidence from PR #175 (2026-09-02 exact restore) to PR #194 (2026-09-04 same `A132-*` values on the same variation IDs). Intentional owner reassignment is an explicit metadata change, not offer-identity remapping.
+- [x] Every composite projection becomes `COMPOSITE_DEFERRED` in v1. Recorded observation: 116 composite records classified `COMPOSITE_DEFERRED`, 0 leak into standalone set.
+- [x] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready. Recorded observation: Media 149/149 READY with storefront product-level parity; the **post-query copied candidate list** is bounded by the shared 100-candidate limit while raw Prisma JSON materialization occurs earlier. Price 149/149 READY; Availability 77 IN_STOCK, 69 OUT_OF_STOCK, 3 AVAILABILITY_UNRESOLVED reported PARTIAL / NOT READY; Content 0 published, 149 draft/missing; Apparel policy RESOLVED, runtime BLOCKED under M3.
+- [ ] **Operational closure evidence:** rerun `pnpm merchant:identity:audit` in the authorized current-catalog context on an exact committed post-fix SHA; record that SHA, clean/dirty worktree state, timestamp/context, and refreshed identity/MPN/media/composite counts. The earlier `2026-09-04T15:59:15Z` run is supporting observation only because its dirty state was not recorded.
 
 ### M2 Standalone variant deep link + canonical/query contract
 *(Delivered via U12 / PR #180, merged.)*
@@ -168,14 +169,14 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] Regression aligns with merged SEO/GEO audit W4 dependency order; browser coverage includes `variant-deep-link.spec.ts`.
 
 ### Checkpoint D
-- [ ] Real-catalog identity/MPN/durability audit green for every intended standalone launch record.
+- [ ] Real-catalog identity/MPN/durability audit green for every intended standalone launch record **on an attributable exact committed post-fix SHA**.
 - [x] Standalone deep-link contract and representative variant addressability regressions are green via U12/M2.
-- [ ] Composite products intentionally absent, not silently regrouped.
+- [x] Composite products intentionally absent, not silently regrouped at the implementation contract level; current-catalog confirmation is refreshed with the pending M1 rerun above.
 
 ## PR-E — Merchant feed
 
 ### M3 Standalone Merchant mapper
-- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN.
+- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN from `VariantMirror.pancakeDisplayId` per ADR 0008, no inferred GTIN.
 - [ ] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides.
 - [ ] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default.
 - [ ] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output.

@@ -51,7 +51,7 @@ export type PancakeCatalogWarehouseStock = {
 export type PancakeCatalogVariation = {
   id: string;
   productId: string;
-  displayId: string;
+  displayId: string | null;
   barcode: string;
   fields: PancakeCatalogField[];
   imageUrls: string[];
@@ -122,6 +122,22 @@ function requireString(
   message: string,
 ): string {
   const value = record[key];
+  if (typeof value !== "string") {
+    throw new PancakeCatalogContractError(reason, message);
+  }
+  return value;
+}
+
+function requireOptionalString(
+  record: JsonRecord,
+  key: string,
+  reason: PancakeCatalogContractReason,
+  message: string,
+): string | null {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
   if (typeof value !== "string") {
     throw new PancakeCatalogContractError(reason, message);
   }
@@ -429,7 +445,7 @@ function parseVariation(value: unknown): PancakeParsedCatalogVariation {
   return {
     id,
     productId,
-    displayId: requireString(
+    displayId: requireOptionalString(
       record,
       "display_id",
       identityReason,

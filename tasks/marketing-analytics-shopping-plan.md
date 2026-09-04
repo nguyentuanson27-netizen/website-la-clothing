@@ -1,11 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1 implementation, and M2 IMPLEMENTED; Checkpoint D remains OPEN pending an attributable post-fix real-catalog M1 rerun. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165) and the durability half of M1 (PR #175) are merged on
-`main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `tasks/marketing-analytics-shopping-todo.md` for per-item
-state. T5/T6 landed with Wave 3 in PR #186, and M2 landed via U12 / PR #180. **T7, T8, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No
-GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and the M1 implementation (PR #175 durability + PR #194 read-only audit corrections) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is not yet green** because the final corrected M1 implementation still needs one authorized real-catalog run attributable to an exact committed SHA with clean/dirty state recorded. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
@@ -115,7 +112,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted Merchant items.
+- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The recorded full intended standalone observation found 149/149 present, valid and unique, but Checkpoint D still requires an attributable post-fix rerun before that observation becomes final operational closure evidence. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -195,7 +192,7 @@ The application owns vendor-neutral consent state. Current production policy is 
 - Exactly one GA4 page-view authority: application-owned canonical `page_view`; overlapping automatic/history page view must be disabled in the reviewed GTM version/property setup.
 - Before each ecommerce event, clear/reset the prior ecommerce object so stale keys cannot bleed into the next event.
 - Google Ads: Purchase is the only required primary conversion in v1; `transaction_id = publicCode`; conversion-linking functionality is required; Enhanced Conversions are out of scope.
-- TikTok Pixel runs through GTM; Purchase/CompletePayment uses `event_id = publicCode` now so later Events API can share identity.
+- TikTok Pixel runs through GTM; Purchase/CompletePayment uses `event_id=publicCode` now so later Events API can share identity.
 - Existing Meta Pixel + CAPI remain direct and no Meta tag is added to GTM.
 
 ### 3.8 PDP AddToCart is a distinct atomic increment with an authoritative event snapshot
@@ -470,11 +467,13 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ## M1 — Read-only Merchant identity, durability and catalog audit
 
+**Delivery status:** **IMPLEMENTATION DELIVERED** via PR #175 (Option B durability) and PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions). ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Operational M1 closure remains pending** one authorized real-catalog rerun on an exact committed post-fix SHA with clean/dirty state recorded. Evidence and the provenance limitation are recorded in `docs/audits/merchant-identity-m1.md`.
+
 **Build:** bounded audit over current mirrored catalog.
 
-**Acceptance:** validate format/length for `pancakeVariationId` and standalone `pancakeProductId`; prove durability gate; audit SKU-as-MPN; classify composites `COMPOSITE_DEFERRED`; audit price/media/content and apparel **runtime readiness** without PII. ADR 0007 resolves owner policy but does not make runtime apparel facts ready by itself.
+**Acceptance:** validate format/length for `pancakeVariationId` and standalone `pancakeProductId`; prove durability gate; audit the owner-approved manufacturer MPN from `VariantMirror.pancakeDisplayId` per ADR 0008 without changing local `VariantMirror.sku` ownership; classify composites `COMPOSITE_DEFERRED`; audit price/media/content and apparel **runtime readiness** without PII. ADR 0007 resolves owner policy but does not make runtime apparel facts ready by itself.
 
-**Verification:** missing/duplicate/overlong IDs, missing SKU, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, authorized real-catalog evidence.
+**Verification:** missing/duplicate/overlong IDs, missing/blank/malformed/overlong/duplicate manufacturer MPN, local-SKU preservation across Pancake resync, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, bounded product-level media parity, **authorized real-catalog evidence attributable to an exact committed post-fix SHA**, and time-separated representative MPN lifecycle evidence.
 
 ## M2 — Standalone variant deep link and search contract
 
@@ -488,7 +487,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ### Checkpoint C
 
-Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. Composite inventory remains intentionally absent from Merchant v1.
+Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. **Because the final post-fix real-catalog M1 run is not yet attributable to an exact committed SHA, M3/M4 remain blocked by this gate even though the M1 implementation itself is reviewed and green.** Composite inventory remains intentionally absent from Merchant v1.
 
 ---
 
@@ -496,9 +495,9 @@ Do not build/activate Merchant feed until ID/MPN/durability audit is green for i
 
 **Build:** add the local product-owned O3 override support required by ADR 0007, then map canonical standalone product/variation facts into Merchant offers. Keep the actual offer mapper pure; persistence/admin concerns must not leak Pancake-mirror ownership into mapping logic.
 
-**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size and current required variant fields; approved O2; O3 resolves as `explicit product override → approved male/adult/new shop default`; override values are restricted to reviewed Merchant enums, clearing means inheritance, Pancake sync cannot erase local overrides, and no heuristic/text/model inference is allowed; malformed/unavailable apparel policy or override data fails closed with a bounded `APPAREL_FACT_UNRESOLVED`-class diagnostic; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with bounded reasons.
+**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN from `VariantMirror.pancakeDisplayId` per ADR 0008, no inferred GTIN, canonical price, trusted image, exact deep link, color/size and current required variant fields; approved O2; O3 resolves as `explicit product override → approved male/adult/new shop default`; override values are restricted to reviewed Merchant enums, clearing means inheritance, Pancake sync cannot erase local overrides, and no heuristic/text/model inference is allowed; malformed/unavailable apparel policy or override data fails closed with a bounded `APPAREL_FACT_UNRESOLVED`-class diagnostic; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with bounded reasons.
 
-**Verification:** normal variant, out-of-stock, missing content, invalid SKU, price/media mismatch, composite exclusion; inherited O3 defaults, each independent override, mixed overrides, clearing back to inheritance, invalid override values, Pancake-resync preservation and fail-closed unresolved apparel facts; counts reconcile with M1.
+**Verification:** normal variant, out-of-stock, missing content, invalid manufacturer MPN, price/media mismatch, composite exclusion; inherited O3 defaults, each independent override, mixed overrides, clearing back to inheritance, invalid override values, Pancake-resync preservation and fail-closed unresolved apparel facts; counts reconcile with M1.
 
 ## M4 — Cached, single-flight, backoff-protected bounded serializer and public Merchant route
 

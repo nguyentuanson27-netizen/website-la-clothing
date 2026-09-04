@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: T1–T6 implemented (T1–T4 via PR #157, #164, #165; T5/T6 with Wave 3); M1 partially delivered (PR #175). T7 onward remain proposed and self-reviewed, with the implementation plan added and human review required before `/build`
+Status: **T1–T7, M1 implementation, and M2 implemented; M1 operational real-catalog closure / Checkpoint D remains pending an attributable exact-SHA rerun. T8 and M3–M5/V1 remain proposed and require reviewed approval before `/build`.**
 
 This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 
@@ -29,7 +29,7 @@ The storefront and order system remain the source of truth. Tracking/catalog ven
 8. Consent/tracking-policy abstraction is built now; visible consent UI is deferred; current production owner policy grants analytics/advertising tracking immediately.
 9. Merchant Center uses public HTTPS product-data URL + Scheduled Fetch.
 10. Merchant v1 is **standalone product/variant only**. Composite Merchant offers are deferred until a separate durable family/context identity design exists.
-11. `brand = LA Clothing`; current SKU is intended as MPN only after presence/uniqueness/stability audit.
+11. `brand = LA Clothing`; manufacturer MPN authority is the owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` per ADR 0008, only after presence/uniqueness/stability audit. Website-owned `VariantMirror.sku` is a separate local field and is not Merchant MPN authority.
 12. Pancake/internal barcode is not assumed to be GTIN.
 13. Structurally valid zero-stock standalone offer remains in feed as `out_of_stock`.
 14. Search indexing remains separately governed; this feature does not enable `SEARCH_INDEXING_ENABLED`.
@@ -78,7 +78,7 @@ Immutable Purchase facts come from the snapshot. Current catalog enrichment is o
 
 ### SKU/MPN
 
-SKU is nullable and not DB-unique. Merchant activation must prove emitted MPN presence, uniqueness and sufficient stability. Missing/duplicate/invalid values fail closed with diagnostics.
+Manufacturer MPN authority is the owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. Merchant activation must prove emitted MPN presence, uniqueness and sufficient stability; missing/duplicate/invalid values fail closed with diagnostics. Website-owned `VariantMirror.sku` remains nullable, non-DB-unique, locally owned, and **must not** be treated as the Merchant MPN source or overwritten by Pancake sync.
 
 ### Media
 
@@ -321,11 +321,11 @@ V1 candidate identifiers:
 id            = pancakeVariationId
 item_group_id = pancakeProductId (for standalone variant family)
 brand         = LA Clothing
-mpn           = audited current SKU
+mpn           = audited LA Clothing manufacturer MPN from VariantMirror.pancakeDisplayId (Pancake variation display_id), per ADR 0008
 gtin          = omitted unless real assigned valid GTIN exists
 ```
 
-Before activation, `pancakeVariationId` and `pancakeProductId` require evidence of lifecycle durability beyond current DB uniqueness/upsert behavior.
+`VariantMirror.sku` remains website-owned/local and is explicitly **not** the Merchant MPN authority or fallback. Before activation, `pancakeVariationId`, `pancakeProductId`, and the emitted manufacturer MPN require the reviewed durability/stability evidence and an attributable real-catalog gate run.
 
 Composite Merchant offers are excluded in v1.
 
@@ -441,7 +441,7 @@ Implementation is ready for live activation only when:
 6. exact GTM saved version/export has been reviewed and previewed; production tags all have live guard;
 7. one GA4 page view per navigation is demonstrated;
 8. existing Meta direct behavior/dedup remains healthy;
-9. standalone Merchant identity/MPN/durability audit is green;
+9. standalone Merchant identity/MPN/durability audit is green on an attributable exact-SHA real-catalog run;
 10. exact standalone variant deep links match feed-visible facts;
 11. Merchant feed serialization/resource/success-cache/single-flight/failure-backoff tests pass;
 12. repeated sequential failed feed GETs during backoff do not re-run heavy generation;

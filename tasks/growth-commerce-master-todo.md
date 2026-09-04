@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is merged via PR #189 and U21/P9a via PR #190. U22/P9b is in progress; later launch gates remain independent.**
+Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS and Checkpoint B PASS. U9/M1 implementation is delivered by PR #175 + PR #194, but U9 operational acceptance / #153 Checkpoint D remains OPEN pending one attributable exact-SHA real-catalog rerun. Wave 5 U25–U28 remains open and launch gates remain independent.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -41,7 +41,7 @@ not resolve downstream owner or launch gates.
 
 - [x] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence. *(PR #162 resolver, PR #163 mirrored-money audit, PR #174 W3 evidence; merged)* W3 verdict **PASS** — real-catalog evidence does not contradict the approved `retailPrice` ownership assumption, so the U7 stop rule was not triggered. The `retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place and remains U15/P6 work.
 - [x] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only. *(PR #164 cart lines, PR #165 product/option facts; merged)* Composite lines carry the actual purchased component variation ID; unresolvable/private lines fail closed to no external identity.
-- [x] **U9** #153 M1 + #152 W4a — read-only identity/durability/SKU-MPN audit (PR #175); M1 durability **PROVEN via §3.3 Option B** (controlled repeated upstream-object correlation evidence on `a132`); SKU-as-MPN and runtime apparel facts remain pending downstream decisions; no GTIN inference; composites deferred.
+- [ ] **U9** #153 M1 + #152 W4a — **read-only** Merchant identity/durability/catalog audit. **Implementation delivered**: PR #175 proves external-ID durability via §3.3 Option B; PR #194 fixes manufacturer-MPN authority (`display_id` → mirrored `pancakeDisplayId`), media parity, Unicode validation and read-only ownership without repurposing website-owned `VariantMirror.sku`. ADR 0008 records the source/lifecycle contract; no GTIN inference; composites deferred. **Operational acceptance remains open** until `pnpm merchant:identity:audit` is rerun in the authorized current-catalog context on an exact committed post-fix SHA with clean/dirty state and refreshed counts recorded.
 - [x] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery. *(PR #167 lifecycle, PR #168 candidate repository, PR #169 runtime health; merged)* Candidate lookup is two bounded queries with an N+1 guard; lifecycle is derived, so it stays correct across restart and zero traffic.
 - [x] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision. *(PR #170 activation validation, PR #171 activation service, PR #172 admin operations; merged)* Activation gate remains **off**; disable/end-early stay campaign-row bounded so rollback survives coverage above 2000.
 
@@ -69,7 +69,7 @@ At the Checkpoint A head, the owning source checklists were reconciled to the sa
 
 ## Wave 2 — addressability and storefront
 
-- [x] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link. *(PR #180, merged; consumes U8 identity and accepted U9 evidence.)*
+- [x] **U12** #153 M2 + #152 W4b/W4c — exact standalone variant deep link. *(PR #180, merged; consumes U8 identity and previously accepted external-ID durability evidence.)*
 - [x] **U13** #152 W15b — wire only the two missing SEO HTTP/runtime signals from U5 coverage map. *(PR #179, merged; no duplicate smoke suite.)*
 - [x] **U14** #151 P5 — promotion admin UX over P4 service boundary; no pricing/overlap authority in React. *(Delivered via P5a PR #184 + P5b PR #185; both merged.)*
 - [x] **U15** #151 P6 — PDP promotion projection using central pricing + U8/T4 selected-variant state. *(PR #181, merged; consumes U12 deep-link state rather than defining a second query/canonical contract.)*
@@ -107,7 +107,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 - [x] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context. Merged via PR #190.
 - [x] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create. Merged via PR #191.
 - [x] **U23** #151 P10 — final Pancake convergence; all three raw-`livePrice` regressions + controlled custom-price acceptance. Merged via PR #192.
-- [x] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID.
+- [x] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID. Merged via PR #193.
 
 ### Checkpoint C
 
@@ -119,8 +119,8 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 5 — downstream consumers
 
-- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL.
-- [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions.
+- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **Blocked until U9/M1 operational exact-SHA real-catalog rerun closes #153 Checkpoint D.**
+- [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions. Depends on accepted U25/M3 contract.
 - [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13.
 - [ ] Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency.
 - [ ] **U28** #153 T8 — exact saved GTM version/export/checksum; preview isolation; only then actual loader/CSP; live publishes the same reviewed version.
@@ -206,7 +206,7 @@ structured data — and only then build the page or change the contract.
 
 ## Gate M — Merchant activation
 
-- [ ] **Pre-activation:** M1–M4 through U9/U12/U25/U26 + exact variant URL + audited IDs/MPN + canonical pricing + cache/single-flight/backoff/topology proof green.
+- [ ] **Pre-activation:** M1–M4 through U9/U12/U25/U26 + exact variant URL + audited IDs/MPN + canonical pricing + cache/single-flight/backoff/topology proof green. U9 includes the attributable exact-SHA real-catalog rerun; supporting observations without immutable execution provenance do not satisfy this line.
 - [ ] **O2** market approved and **O3** apparel-fact **runtime** implementation verified (ADR 0007 resolves the policy, not the runtime); Merchant site/account/shipping/returns prerequisites satisfied.
 - [ ] If promotions are active, U39/G1 covers Merchant monetary/cache behavior.
 - [ ] Human approves activation, then **U41 executes M5**; Gate M completes only after Scheduled Fetch + Diagnostics/crawler verification succeeds.
@@ -241,6 +241,7 @@ pnpm release:check
 ```
 
 - [ ] `pnpm pancake:catalog:audit` only in approved real-catalog context with sanitized evidence.
+- [ ] `pnpm merchant:identity:audit` M1 operational closure only in approved real-catalog context; record exact committed SHA + clean/dirty state + sanitized counts.
 - [x] Browser/runtime/a11y/SEO checks required by Checkpoint B are green on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`; see `docs/audits/wave-2-checkpoint-b.md`.
 - [ ] GTM/Merchant/Pancake external acceptance uses approved credentials/context only.
 
