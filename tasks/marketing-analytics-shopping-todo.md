@@ -1,23 +1,26 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), and M1 (PR #175 + PR #194 + operational closure) IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), and M3 (U25) IMPLEMENTED; Checkpoint D PASSED. T8 and M4–M5/V1 remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure + exact-SHA operational closure audit). Checkpoint D is **GREEN / PASSED**. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
 
-T8, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
-actual GTM load and CSP opening.
+T8, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
+actual GTM load and CSP opening. **M3 (U25) is implemented**: the standalone Merchant mapper, its
+bounded canonical loader and the ADR 0007 O3 runtime exist and are tested, but nothing is published
+— there is no `/feeds/google-merchant` route, no serializer and no cache, and the O2 market gate is
+still open, so Merchant activation remains blocked.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, and M2 are delivered; **Checkpoint D is passed**.
+PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, M2 and M3 are delivered; **Checkpoint D is passed**.
 
 ## Owner/account gates
 
 - [ ] **O1 Google Ads value:** approve merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish.
 - [ ] **O2 Merchant market:** confirm initial country/language/currency; proposed Vietnam / Vietnamese / VND.
-- [x] **O3 Apparel facts — policy decision resolved by ADR 0007:** Merchant v1 shop defaults are `gender=male`, `age_group=adult`, `condition=new`; standalone products may override each fact through local website-owned product data. Runtime persistence/validation/admin/effective-fact resolution remains open under M3 and Merchant activation stays blocked until that implementation is verified.
+- [x] **O3 Apparel facts — policy decision resolved by ADR 0007, runtime implemented by U25/M3:** Merchant v1 shop defaults are `gender=male`, `age_group=adult`, `condition=new`; standalone products override each fact independently through the website-owned `ProductMerchantFacts` table. Persistence, server-authoritative allowlist validation, admin editing with an explicit inheritance state, effective-fact resolution and fail-closed `APPAREL_FACT_UNRESOLVED` behaviour are implemented and covered by tests, including a Pancake-resync preservation regression. Merchant activation still stays blocked on **O2** and the remaining Gate M prerequisites.
 - [ ] **O4 Vendor config:** provide/review GTM container, GA4 Measurement ID, Google Ads conversion ID/label, TikTok Pixel ID.
 
 ## Review-resolution gates
@@ -176,14 +179,17 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-E — Merchant feed
 
 ### M3 Standalone Merchant mapper
-- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN from `VariantMirror.pancakeDisplayId` per ADR 0008, no inferred GTIN.
-- [ ] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides.
-- [ ] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default.
-- [ ] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output.
-- [ ] Map canonical price, availability, trusted image, description, exact deep link, color/size, current required variant fields and effective O2/O3 values.
-- [ ] Structurally valid zero-stock offers remain `out_of_stock`.
-- [ ] Malformed/unavailable apparel policy or overrides exclude the offer with a bounded `APPAREL_FACT_UNRESOLVED`-class reason; unsafe/unresolved/composite records remain excluded with bounded reasons.
-- [ ] RED/GREEN tests cover inherited defaults, each independent override, mixed overrides, clearing back to inheritance, invalid values, Pancake resync preservation, and fail-closed unresolved apparel facts.
+*(Implemented on the U25 branch; `src/commerce/merchant-offer-mapper.ts` + `merchant-offer-repository.ts` + `merchant-apparel-facts.ts` + `product-merchant-facts-{admin,repository}.ts`. O2 remains an open owner gate, so Merchant activation stays blocked.)*
+- [x] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN from `VariantMirror.pancakeDisplayId` per ADR 0008, no inferred GTIN. `VariantMirror.sku` and `pancakeBarcode` are not selected by the loader at all, so neither can become an MPN fallback or a GTIN.
+- [x] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides. New `ProductMerchantFacts` table plus `MerchantGender` / `MerchantAgeGroup` / `MerchantCondition` database enums; catalog sync writes only `ProductMirror` / `VariantMirror`, proved by a resync regression.
+- [x] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default. Clearing every fact deletes the row.
+- [x] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output. The resolver takes overrides and nothing else.
+- [x] Map canonical price, availability, trusted image, description, exact deep link, color/size, current required variant fields and effective O3 values. Price is the shared promotional storefront rule, availability is the M1 Merchant classifier, media is the trusted storefront resolver, and the landing URL is built **and proved** with U12's own `resolveDeepLinkedVariantSelection`.
+- [x] Structurally valid zero-stock offers remain `out_of_stock`.
+- [x] Malformed/unavailable apparel policy or overrides exclude the offer with a bounded `APPAREL_FACT_UNRESOLVED`-class reason; unsafe/unresolved/composite records remain excluded with bounded reasons in one fixed diagnostic order.
+- [x] RED/GREEN tests cover inherited defaults, each independent override, mixed overrides, clearing back to inheritance, invalid values, Pancake resync preservation, and fail-closed unresolved apparel facts.
+- [ ] **Effective O2 values are not emitted.** Target market, content language and feed currency have no owner approval, so the mapper reports `market: UNRESOLVED` and `activationBlockedReasons: ["MERCHANT_MARKET_UNRESOLVED"]` rather than declaring the proposed Vietnam / Vietnamese / VND values. Offers carry `priceVnd` (the mirrored catalog denomination), not a currency-qualified Merchant `price`.
+- [ ] `docs/audits/merchant-identity-m1.md` and the frozen `MerchantIdentitySummary.apparelFacts` block predate M3 and still read `productOverrides: NOT_IMPLEMENTED`. They are exact-SHA evidence records and were deliberately left unchanged; a fresh M1 run after M3 is the way to restate Merchant readiness.
 
 ### M4 Cached/single-flight serializer + bounded public route + failure backoff
 - [ ] GET-only `/feeds/google-merchant` with safe standards-aware serialization.

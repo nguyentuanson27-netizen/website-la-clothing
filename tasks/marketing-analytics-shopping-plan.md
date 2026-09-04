@@ -1,6 +1,6 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T7, M1, and M2 IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1, M2, and M3 IMPLEMENTED; Checkpoint D PASSED. T8 and M4–M5/V1 remain proposed and require human approval before `/build`.**
 
 T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED**. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
@@ -492,6 +492,8 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 ---
 
 ## M3 — Standalone Merchant mapper and diagnostics
+
+**Delivery status:** **IMPLEMENTED** via U25. `src/commerce/merchant-offer-mapper.ts` is the pure mapper, `merchant-offer-repository.ts` is its bounded canonical loader, `merchant-apparel-facts.ts` owns the ADR 0007 resolution, and `product-merchant-facts-{admin,repository}.ts` plus the product-editor panel own the website-owned override. No public feed route, serializer or cache exists: those stay with M4. **O2 is still unapproved**, so the mapper reports `market: UNRESOLVED` with `activationBlockedReasons: ["MERCHANT_MARKET_UNRESOLVED"]` and emits `priceVnd` rather than a currency-qualified Merchant `price`; Merchant activation stays blocked.
 
 **Build:** add the local product-owned O3 override support required by ADR 0007, then map canonical standalone product/variation facts into Merchant offers. Keep the actual offer mapper pure; persistence/admin concerns must not leak Pancake-mirror ownership into mapping logic.
 

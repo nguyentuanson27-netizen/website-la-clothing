@@ -82,6 +82,16 @@ export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
 export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
 export type DuplicateIdentifier = Readonly<{ value: string; occurrences: number }>;
 
+/**
+ * M1's report shape is frozen against its recorded exact-SHA operational evidence.
+ *
+ * `apparelFacts` describes the O3 state this read-only audit can establish from the mirror, which is
+ * the owner policy plus the absence of any override reading in M1 itself. U25 / M3 implements the
+ * runtime — persistence, validation, admin editing and effective-fact resolution — and reports each
+ * product's resolved facts through `merchant-offer-mapper.ts`. Do not read `productOverrides` here
+ * as a live statement about the repository; re-establishing Merchant readiness after M3 is a fresh
+ * M1 run, recorded as its own attributable evidence.
+ */
 export type MerchantIdentitySummary = Readonly<{
   totalVariations: number;
   compositeDeferred: number;

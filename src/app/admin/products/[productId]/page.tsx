@@ -20,6 +20,7 @@ import {
   type ProductCommerceVariantRow,
 } from "@/components/admin/product-commerce-panel";
 import { ProductEditorialForm } from "@/components/admin/product-editorial-form";
+import { ProductMerchantFactsEditor } from "@/components/admin/product-merchant-facts-editor";
 import {
   ProductPancakeSource,
   type ProductPancakeCompositeParent,
@@ -70,6 +71,8 @@ type ProductEditorPageProps = {
     slugError?: string | string[];
     variantSaved?: string | string[];
     variantError?: string | string[];
+    merchantSaved?: string | string[];
+    merchantError?: string | string[];
   }>;
 };
 
@@ -340,6 +343,8 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const variantError =
     rawVariantError === "invalid" || rawVariantError === "unavailable" ? rawVariantError : null;
   const variantStatus = variantError ? "error" : variantSaved ? "success" : null;
+  const merchantSaved = queryValue(query.merchantSaved) === "1";
+  const merchantError = queryValue(query.merchantError) === "1";
   const variantErrorMessage =
     variantError === "unavailable"
       ? "Không thể cập nhật. Một hoặc nhiều biến thể không còn khả dụng cho sản phẩm này."
@@ -453,6 +458,13 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         action={saveProductContent}
         collectionChoices={collectionChoices}
         content={product.content}
+      />
+
+      <ProductMerchantFactsEditor
+        editorPath={editorPath}
+        error={merchantError}
+        productId={persistedProductId}
+        saved={merchantSaved}
       />
 
       <ProductSlugEditor

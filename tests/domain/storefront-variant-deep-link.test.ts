@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   MAX_VARIANT_QUERY_LENGTH,
   VARIANT_QUERY_PARAM,
+  buildStandaloneVariantDeepLinkPath,
   readVariantQueryValue,
   resolveDeepLinkedVariantSelection,
 } from "../../src/commerce/storefront-variant-deep-link.ts";
@@ -158,4 +159,74 @@ test("U12 absent, empty and repeated query values resolve to no preselection", (
 
 test("U12 a null query resolves to no preselection without touching the projection", () => {
   assert.equal(resolveDeepLinkedVariantSelection({ projection: standalone, variantQuery: null }), null);
+});
+
+test("U12 the exact standalone deep-link path is built from the same owned contract", () => {
+  assert.equal(
+    buildStandaloneVariantDeepLinkPath({ slug: "ao-so-mi-oxford", pancakeVariationId: "pv-a" }),
+    "/shop/ao-so-mi-oxford?variant=pv-a",
+  );
+  assert.equal(
+    buildStandaloneVariantDeepLinkPath({ slug: "ao-so-mi-oxford", pancakeVariationId: "pv a" }),
+    "/shop/ao-so-mi-oxford?variant=pv%20a",
+  );
+  assert.equal(
+    buildStandaloneVariantDeepLinkPath({
+      slug: "ao-so-mi-oxford",
+      pancakeVariationId: "a/b?c#d&e",
+    }),
+    "/shop/ao-so-mi-oxford?variant=a%2Fb%3Fc%23d%26e",
+  );
+});
+
+test("U12 an unsafe slug or variation identity cannot produce a deep-link path", () => {
+  const rejectedSlugs = [
+    "",
+    " ",
+    "Ao-So-Mi",
+    "ao so mi",
+    "ao/so/mi",
+    "../admin",
+    "ao-so-mi/",
+    "-ao",
+    "ao-",
+    "ao--mi",
+    "a".repeat(161),
+  ];
+  for (const slug of rejectedSlugs) {
+    assert.equal(
+      buildStandaloneVariantDeepLinkPath({ slug, pancakeVariationId: "pv-a" }),
+      null,
+      `expected slug ${JSON.stringify(slug)} to be refused`,
+    );
+  }
+
+  assert.equal(
+    buildStandaloneVariantDeepLinkPath({ slug: "ao-so-mi", pancakeVariationId: "" }),
+    null,
+  );
+  assert.equal(
+    buildStandaloneVariantDeepLinkPath({
+      slug: "ao-so-mi",
+      pancakeVariationId: "x".repeat(MAX_VARIANT_QUERY_LENGTH + 1),
+    }),
+    null,
+  );
+});
+
+test("U12 a built deep-link path round-trips through the resolver it was built for", () => {
+  const path = buildStandaloneVariantDeepLinkPath({
+    slug: "ao-so-mi-oxford",
+    pancakeVariationId: "pv-b",
+  });
+  assert.ok(path !== null);
+
+  const url = new URL(path, "https://example.test");
+  assert.deepEqual(
+    resolveDeepLinkedVariantSelection({
+      projection: standalone,
+      variantQuery: readVariantQueryValue(url.searchParams.get(VARIANT_QUERY_PARAM)),
+    }),
+    { kindKey: null, color: "Đen", size: "L", variantId: "cuid-b" },
+  );
 });
