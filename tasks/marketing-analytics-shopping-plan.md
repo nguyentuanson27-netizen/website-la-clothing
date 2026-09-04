@@ -115,7 +115,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted Merchant items (State 1: audited MPN). If the catalog genuinely lacks manufacturer-assigned SKUs (State 2: approved omission contract per spec §6.2), M1 records mpnReady: false truthfully, and downstream M3 omits mpn and sets identifier_exists=false rather than fabricating identifiers.
+- SKU remains intended as LA Clothing MPN only after M1 proves presence, uniqueness and stability for emitted Merchant items.
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -488,7 +488,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ### Checkpoint C
 
-Do not build/activate Merchant feed until ID/durability audit is green for intended standalone records and the identifier contract is established (either State 1 audited MPN or State 2 approved omission contract with downstream identifier_exists=false). Composite inventory remains intentionally absent from Merchant v1.
+Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. Composite inventory remains intentionally absent from Merchant v1.
 
 ---
 
@@ -496,7 +496,7 @@ Do not build/activate Merchant feed until ID/durability audit is green for inten
 
 **Build:** add the local product-owned O3 override support required by ADR 0007, then map canonical standalone product/variation facts into Merchant offers. Keep the actual offer mapper pure; persistence/admin concerns must not leak Pancake-mirror ownership into mapping logic.
 
-**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN (State 1) or approved omitted MPN with `identifier_exists=false` (State 2), no inferred GTIN, canonical price, trusted image, exact deep link, color/size and current required variant fields; approved O2; O3 resolves as `explicit product override → approved male/adult/new shop default`; override values are restricted to reviewed Merchant enums, clearing means inheritance, Pancake sync cannot erase local overrides, and no heuristic/text/model inference is allowed; malformed/unavailable apparel policy or override data fails closed with a bounded `APPAREL_FACT_UNRESOLVED`-class diagnostic; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with bounded reasons.
+**Acceptance:** stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN, canonical price, trusted image, exact deep link, color/size and current required variant fields; approved O2; O3 resolves as `explicit product override → approved male/adult/new shop default`; override values are restricted to reviewed Merchant enums, clearing means inheritance, Pancake sync cannot erase local overrides, and no heuristic/text/model inference is allowed; malformed/unavailable apparel policy or override data fails closed with a bounded `APPAREL_FACT_UNRESOLVED`-class diagnostic; zero-stock remains `out_of_stock`; unsafe/unresolved/composite rows are excluded with bounded reasons.
 
 **Verification:** normal variant, out-of-stock, missing content, invalid SKU, price/media mismatch, composite exclusion; inherited O3 defaults, each independent override, mixed overrides, clearing back to inheritance, invalid override values, Pancake-resync preservation and fail-closed unresolved apparel facts; counts reconcile with M1.
 

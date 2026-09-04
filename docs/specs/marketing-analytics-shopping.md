@@ -313,32 +313,21 @@ TikTok Pixel runs through GTM. Purchase/CompletePayment uses `event_id = publicC
 
 Use a public HTTPS GET-only product-data route and Merchant Center Scheduled Fetch. Do not use Merchant API realtime sync in v1.
 
-### 6.2 Standalone identity and identifier policy
+### 6.2 Standalone identity only
 
 V1 candidate identifiers:
 
 ```text
-id            = pancakeVariationId (1-50 chars, valid Unicode, no whitespace)
-item_group_id = pancakeProductId (for standalone variant family, 1-50 chars, valid Unicode, no whitespace)
+id            = pancakeVariationId
+item_group_id = pancakeProductId (for standalone variant family)
 brand         = LA Clothing
-mpn           = audited current SKU (State 1) OR omitted under approved omission contract (State 2)
-gtin          = omitted unless real assigned valid GTIN exists (never inferred from Pancake barcode)
+mpn           = audited current SKU
+gtin          = omitted unless real assigned valid GTIN exists
 ```
 
 Before activation, `pancakeVariationId` and `pancakeProductId` require evidence of lifecycle durability beyond current DB uniqueness/upsert behavior.
 
-#### MPN / Identifier States
-
-The project formally distinguishes three MPN readiness states:
-
-1. **State 1: Real MPN available and audited**: Truthful manufacturer MPN/SKU is present in the upstream catalog, audited as present, unique, stable, bounded to 1–70 characters, and containing valid Unicode.
-2. **State 2: Real MPN absent under approved omission contract**: Upstream catalog genuinely lacks manufacturer-assigned SKUs/MPNs. In accordance with Google Merchant Center specification for apparel and custom goods without manufacturer MPN, `mpn` is omitted and `identifier_exists = false` is emitted downstream in M3 if both GTIN and MPN are absent. No fabricated MPN or internal proxy (such as Pancake `display_id` or `barcode`) is permitted.
-3. **State 3: MPN state unresolved / blocked**: SKU field is corrupt, untrimmed, duplicate, or unparseable.
-
-**M1 vs M3 gate contract:**
-The M1 audit truthfully evaluates whether State 1 is satisfied (`mpnReady = false` when catalog SKUs are absent). When State 2 is approved by project policy for custom/store-manufactured apparel, M1 passes the launch prerequisite under the approved omission contract, unblocking downstream M3 without falsely asserting `mpnReady === true`.
-
-Composite Merchant offers are excluded in v1 (`COMPOSITE_DEFERRED`).
+Composite Merchant offers are excluded in v1.
 
 ### 6.3 Exact variant landing URL
 
