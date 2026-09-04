@@ -1,8 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T7, M1, and M2 IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1 implementation, and M2 IMPLEMENTED; Checkpoint D remains OPEN pending an attributable post-fix real-catalog M1 rerun. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. Checkpoint D is green. **T8, M3, M4, M5 and V1 are not implemented** and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and the M1 implementation (PR #175 durability + PR #194 read-only audit corrections) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is not yet green** because the final corrected M1 implementation still needs one authorized real-catalog run attributable to an exact committed SHA with clean/dirty state recorded. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
@@ -112,7 +112,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The full intended standalone set audited 149/149 present, valid and unique. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
+- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The recorded full intended standalone observation found 149/149 present, valid and unique, but Checkpoint D still requires an attributable post-fix rerun before that observation becomes final operational closure evidence. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -467,13 +467,13 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ## M1 — Read-only Merchant identity, durability and catalog audit
 
-**Delivery status:** **IMPLEMENTED** via PR #175 (Option B durability) and PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions). ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. Evidence is recorded in `docs/audits/merchant-identity-m1.md`.
+**Delivery status:** **IMPLEMENTATION DELIVERED** via PR #175 (Option B durability) and PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions). ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Operational M1 closure remains pending** one authorized real-catalog rerun on an exact committed post-fix SHA with clean/dirty state recorded. Evidence and the provenance limitation are recorded in `docs/audits/merchant-identity-m1.md`.
 
 **Build:** bounded audit over current mirrored catalog.
 
 **Acceptance:** validate format/length for `pancakeVariationId` and standalone `pancakeProductId`; prove durability gate; audit the owner-approved manufacturer MPN from `VariantMirror.pancakeDisplayId` per ADR 0008 without changing local `VariantMirror.sku` ownership; classify composites `COMPOSITE_DEFERRED`; audit price/media/content and apparel **runtime readiness** without PII. ADR 0007 resolves owner policy but does not make runtime apparel facts ready by itself.
 
-**Verification:** missing/duplicate/overlong IDs, missing/blank/malformed/overlong/duplicate manufacturer MPN, local-SKU preservation across Pancake resync, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, bounded product-level media parity, authorized real-catalog evidence, and time-separated representative MPN lifecycle evidence.
+**Verification:** missing/duplicate/overlong IDs, missing/blank/malformed/overlong/duplicate manufacturer MPN, local-SKU preservation across Pancake resync, composite deferred, out-of-stock, `PRICE_UNRESOLVED`, malformed text, bounded product-level media parity, **authorized real-catalog evidence attributable to an exact committed post-fix SHA**, and time-separated representative MPN lifecycle evidence.
 
 ## M2 — Standalone variant deep link and search contract
 
@@ -487,7 +487,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ### Checkpoint C
 
-Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. Composite inventory remains intentionally absent from Merchant v1.
+Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. **Because the final post-fix real-catalog M1 run is not yet attributable to an exact committed SHA, M3/M4 remain blocked by this gate even though the M1 implementation itself is reviewed and green.** Composite inventory remains intentionally absent from Merchant v1.
 
 ---
 
