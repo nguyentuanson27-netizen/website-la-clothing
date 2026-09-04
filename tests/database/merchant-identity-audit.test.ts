@@ -41,12 +41,14 @@ async function insertVariant(
   externalId: string,
   sku: string | null,
   active = true,
+  imageUrls: unknown = null,
 ) {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "VariantMirror"
-       ("id","pancakeVariationId","productId","sku","isPresent","isActive","syncedAt","createdAt","updatedAt")
-     VALUES ($1,$2,$3,$4,TRUE,$5,NOW(),NOW(),NOW())`,
+       ("id","pancakeVariationId","productId","sku","isPresent","isActive","pancakeImageUrls","syncedAt","createdAt","updatedAt")
+     VALUES ($1,$2,$3,$4,TRUE,$5,$6::jsonb,NOW(),NOW(),NOW())`,
     `${PREFIX}-${suffix}`, externalId, `${PREFIX}-${productSuffix}`, sku, active,
+    imageUrls === null ? null : JSON.stringify(imageUrls),
   );
 }
 
@@ -361,4 +363,25 @@ test("M1 apparel runtime stays blocked over the real catalog even though the pol
     verdict: "BLOCKED",
   });
   assert.equal(summary.durability.verdict, "BLOCKED");
+});
+
+test("M1 variant-level pancakeImageUrls are read from the mirror and make media READY when product primary is missing", async () => {
+  await insertProduct("p", "external-product-1");
+  // Product primary is null
+  await insertVariant(
+    "v1",
+    "p",
+    "external-variation-1",
+    "LA-A",
+    true,
+    ["https://content.pancake.vn/catalog/1/2/3/variant-photo.jpg"],
+  );
+
+  const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
+
+  assert.deepEqual(
+    summary.media,
+    { READY: 1, MISSING: 0, UNTRUSTED: 0 },
+    "variant image makes media READY when product primary image is missing",
+  );
 });

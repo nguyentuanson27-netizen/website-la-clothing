@@ -47,13 +47,13 @@ test("M1 an external identifier is classified without assuming a vendor format",
   );
 });
 
-test("M1 Merchant format and length limits enforce 1-50 chars for offer and product ID, rejecting whitespace and control chars", () => {
+test("M1 Merchant format and length limits enforce 1-50 chars for offer and product ID, rejecting whitespace, controls, and invalid Unicode", () => {
   assert.equal(MERCHANT_ID_MAX_LENGTH, 50);
   assert.equal(MERCHANT_MPN_MAX_LENGTH, 70);
 
-  // Valid Merchant ID
+  // Valid normal ASCII identifier
   assert.equal(
-    classifyExternalIdentifier("v-1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    classifyExternalIdentifier("v-1_abc", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "PRESENT",
   );
   assert.equal(
@@ -61,13 +61,19 @@ test("M1 Merchant format and length limits enforce 1-50 chars for offer and prod
     "PRESENT",
   );
 
-  // Overlong Merchant ID (exceeds 50 chars)
+  // Overlong Merchant ID boundary (50 valid, 51 too long)
   assert.equal(
     classifyExternalIdentifier("a".repeat(51), { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "TOO_LONG",
   );
 
-  // Internal whitespace in Merchant ID
+  // Valid Unicode identifier that Google accepts (letters, numbers, accents)
+  assert.equal(
+    classifyExternalIdentifier("sp-áo-thun-đỏ-123", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "PRESENT",
+  );
+
+  // Current whitespace policy: LA Clothing fail-closed policy rejects all whitespace for ID
   assert.equal(
     classifyExternalIdentifier("v 1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "INVALID_FORMAT",
@@ -81,7 +87,13 @@ test("M1 Merchant format and length limits enforce 1-50 chars for offer and prod
     "INVALID_FORMAT",
   );
 
-  // Control characters
+  // But MPN permits internal whitespace under LA Clothing policy when trimmed and valid
+  assert.equal(
+    classifyExternalIdentifier("SKU 123 M", { maxLength: MERCHANT_MPN_MAX_LENGTH, allowWhitespace: true }),
+    "PRESENT",
+  );
+
+  // ASCII C0 controls, C1 controls, and DEL
   assert.equal(
     classifyExternalIdentifier("v\x001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "INVALID_FORMAT",
@@ -94,11 +106,83 @@ test("M1 Merchant format and length limits enforce 1-50 chars for offer and prod
     classifyExternalIdentifier("v\x7f1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "INVALID_FORMAT",
   );
+  assert.equal(
+    classifyExternalIdentifier("v\u00851", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
 
-  // MPN limits (1-70 chars)
+  // Google invalid Unicode: Zero-width joiner (U+200D) and format characters
+  assert.equal(
+    classifyExternalIdentifier("v\u200D1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "U+200D ZWJ must be rejected per Google Merchant specification",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\u200C1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "U+200C ZWNJ must be rejected",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\uFEFF1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "BOM U+FEFF must be rejected",
+  );
+
+  // Google invalid Unicode: Private-use characters (BMP PUA and Supplementary PUA)
+  assert.equal(
+    classifyExternalIdentifier("v\uE0001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "BMP Private Use Area (U+E000) must be rejected",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\uF8FF1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "BMP Private Use Area (U+F8FF) must be rejected",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\u{F0000}1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "Supplementary Private Use Area-A must be rejected",
+  );
+
+  // Google invalid Unicode: Lone surrogates / malformed UTF-16
+  assert.equal(
+    classifyExternalIdentifier("v\uD8001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "Lone high surrogate U+D800 must be rejected",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\uDC001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "Lone low surrogate U+DC00 must be rejected",
+  );
+
+  // Google invalid Unicode: Unassigned code points and noncharacters
+  assert.equal(
+    classifyExternalIdentifier("v\uFDD01", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "Unicode noncharacter U+FDD0 must be rejected",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\uFFFF1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+    "Unicode noncharacter U+FFFF must be rejected",
+  );
+
+  // MPN limits (1-70 chars boundary) and invalid Unicode rejection
   assert.equal(classifyExternalIdentifier("SKU-1", { maxLength: MERCHANT_MPN_MAX_LENGTH }), "PRESENT");
   assert.equal(classifyExternalIdentifier("a".repeat(70), { maxLength: MERCHANT_MPN_MAX_LENGTH }), "PRESENT");
   assert.equal(classifyExternalIdentifier("a".repeat(71), { maxLength: MERCHANT_MPN_MAX_LENGTH }), "TOO_LONG");
+  assert.equal(
+    classifyExternalIdentifier("SKU\u200D1", { maxLength: MERCHANT_MPN_MAX_LENGTH }),
+    "INVALID_FORMAT",
+    "MPN also rejects invalid Unicode like U+200D",
+  );
+  assert.equal(
+    classifyExternalIdentifier("SKU\uE000", { maxLength: MERCHANT_MPN_MAX_LENGTH }),
+    "INVALID_FORMAT",
+    "MPN also rejects private-use characters",
+  );
 });
 
 test("M1 summarizeMerchantIdentity enforces Merchant-specific bounds on variations, products, and SKU", () => {
@@ -321,16 +405,85 @@ test("M1 availability distinguishes valid stock facts from unresolved source dat
   assert.equal(classifyMerchantAvailability(Number.NaN), "AVAILABILITY_UNRESOLVED");
 });
 
-test("M1 media readiness uses the storefront's own trust parser", () => {
-  assert.equal(classifyMerchantMedia("https://content.pancake.vn/catalog/1/2/3/shirt.jpg"), "READY");
-  assert.equal(classifyMerchantMedia(null), "MISSING");
-  assert.equal(classifyMerchantMedia("   "), "MISSING");
+test("M1 media readiness uses the storefront's own trust parser and resolves product and variant media", () => {
+  const TRUSTED_1 = "https://content.pancake.vn/catalog/1/2/3/shirt.jpg";
+  const TRUSTED_2 = "https://content.pancake.vn/catalog/4/5/6/variant.jpg";
+  const UNTRUSTED_1 = "https://cdn.attacker.example/shirt.jpg";
+  const UNTRUSTED_HTTP = "http://content.pancake.vn/catalog/1/2/3/shirt.jpg";
+  const UNTRUSTED_MALFORMED = "not-a-url";
+
+  // Case A: Product primary missing + valid trusted variant image -> READY
   assert.equal(
-    classifyMerchantMedia("https://cdn.attacker.example/shirt.jpg"),
-    "UNTRUSTED",
-    "an untrusted host is not a Merchant image, however well-formed the URL is",
+    classifyMerchantMedia(null, [TRUSTED_1]),
+    "READY",
+    "Case A: trusted variant image makes media READY even when product primary is missing",
   );
-  assert.equal(classifyMerchantMedia("http://content.pancake.vn/catalog/1/2/3/shirt.jpg"), "UNTRUSTED");
+  assert.equal(
+    classifyMerchantMedia("   ", [TRUSTED_2]),
+    "READY",
+    "Case A: trusted variant image makes media READY when product primary is blank",
+  );
+
+  // Case B: Valid product primary -> READY
+  assert.equal(
+    classifyMerchantMedia(TRUSTED_1, null),
+    "READY",
+    "Case B: valid product primary makes media READY with no variant images",
+  );
+  assert.equal(
+    classifyMerchantMedia(TRUSTED_1, []),
+    "READY",
+    "Case B: valid product primary makes media READY with empty variant images",
+  );
+
+  // Case C: Untrusted / malformed product and variant media -> UNTRUSTED (not READY)
+  assert.equal(
+    classifyMerchantMedia(UNTRUSTED_1, null),
+    "UNTRUSTED",
+    "Case C: untrusted product primary is UNTRUSTED",
+  );
+  assert.equal(
+    classifyMerchantMedia(UNTRUSTED_HTTP, [UNTRUSTED_1, UNTRUSTED_MALFORMED]),
+    "UNTRUSTED",
+    "Case C: untrusted product primary and untrusted variant images are UNTRUSTED",
+  );
+  assert.equal(
+    classifyMerchantMedia(null, [UNTRUSTED_1]),
+    "UNTRUSTED",
+    "Case C: untrusted variant image without product primary is UNTRUSTED",
+  );
+
+  // Case D: Mixture of trusted and untrusted variant candidates -> READY
+  assert.equal(
+    classifyMerchantMedia(null, [UNTRUSTED_1, TRUSTED_2]),
+    "READY",
+    "Case D: trusted variant image in mixture makes media READY",
+  );
+  assert.equal(
+    classifyMerchantMedia(UNTRUSTED_1, [TRUSTED_2]),
+    "READY",
+    "Case D: trusted variant image overrides untrusted product primary",
+  );
+  assert.equal(
+    classifyMerchantMedia(TRUSTED_1, [UNTRUSTED_1]),
+    "READY",
+    "Case D: trusted product primary overrides untrusted variant images",
+  );
+
+  // Case E: No image anywhere -> MISSING
+  assert.equal(classifyMerchantMedia(null, null), "MISSING", "Case E: null on both is MISSING");
+  assert.equal(classifyMerchantMedia(null, []), "MISSING", "Case E: null primary and empty variant array is MISSING");
+  assert.equal(classifyMerchantMedia("   ", []), "MISSING", "Case E: blank primary and empty variant array is MISSING");
+  assert.equal(classifyMerchantMedia(null, [null, "  "]), "MISSING", "Case E: null/blank entries in variant array is MISSING");
+
+  // Bounded scan: candidate scanning is capped at MAX_MEDIA_CANDIDATES_SCANNED (100)
+  // 100 untrusted candidates followed by a trusted candidate beyond the budget must NOT be reached
+  const overflowArray = [...Array.from({ length: 100 }, () => UNTRUSTED_1), TRUSTED_1];
+  assert.equal(
+    classifyMerchantMedia(null, overflowArray),
+    "UNTRUSTED",
+    "Candidates beyond MAX_MEDIA_CANDIDATES_SCANNED budget are not evaluated",
+  );
 });
 
 /** Built from char codes so the fixture itself stays readable and greppable in the source. */

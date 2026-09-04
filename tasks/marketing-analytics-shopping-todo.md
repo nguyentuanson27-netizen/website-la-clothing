@@ -153,11 +153,11 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-D — Merchant identity + standalone deep link
 
 ### M1 Merchant read-only identity/durability audit
-- [x] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits. **PROVEN.** Bounded within Google Merchant Center 50-character limit (`MERCHANT_ID_MAX_LENGTH = 50`), 0 untrimmed, 0 invalid format across all 149 emittable variation IDs and 35 product IDs.
+- [x] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits. **PROVEN.** Bounded within Google Merchant Center 50-character limit (`MERCHANT_ID_MAX_LENGTH = 50`), 0 untrimmed, 0 invalid format across all 149 emittable variation IDs and 35 product IDs. Rejects invalid Unicode (controls, ZWJ U+200D, PUA, lone surrogates, noncharacters) and whitespace.
 - [x] Prove external-ID durability by provider contract, controlled repeated full-catalog resync evidence + repository reconciliation tests, or equivalent approved history. **PROVEN via §3.3 Option B.** A controlled experiment on production product `a132` (`scripts/pancake-m1-durability-experiment.ts`) with independent owner-controlled cryptographic markers at the raw Pancake API boundary proved that the same upstream product and variations retain the exact same `pancakeProductId` and `pancakeVariationId` across controlled reversible mutations and repeated full-catalog observations, with zero remap and verified restoration; combined with repository reconciliation tests (`tests/database/merchant-identity-audit.test.ts`). Recorded in `docs/audits/merchant-identity-m1.md`.
-- [x] Audit SKU-as-MPN presence/uniqueness/stability. **AUDITED — NOT READY.** Authoritative investigation established that Pancake variation API exposes no `sku` or `custom_id` property. Internal `display_id` (`A132-M`) and `barcode` (`145-1`) are internal shop identifiers, not manufacturer-assigned MPNs. Mirror stores `null` in `VariantMirror.sku`. In accordance with spec §6.2 and anti-fabrication rules, MPN is truthfully reported as `false` (`NOT READY`) and feed v1 will omit MPN rather than inventing values.
+- [x] Audit SKU-as-MPN presence/uniqueness/stability. **AUDITED — NOT READY (omission contract approved).** Authoritative investigation established that Pancake variation API exposes no `sku` or `custom_id` property. Internal `display_id` (`A132-M`) and `barcode` (`145-1`) are internal shop identifiers, not manufacturer-assigned MPNs. Mirror stores `null` in `VariantMirror.sku`. In accordance with spec §6.2 and anti-fabrication rules, MPN is truthfully reported as `false` (`NOT READY` under State 1); State 2 approved omission contract governs downstream M3 (omit `g:mpn`, emit `identifier_exists=false`).
 - [x] Every composite projection becomes `COMPOSITE_DEFERRED` in v1. **PROVEN.** 116 composite members are classified `COMPOSITE_DEFERRED` and excluded from emittable standalone offers.
-- [x] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready. **AUDITED.** Price 149 ready, availability 77 in-stock / 71 out-of-stock / 1 unresolved, media 149 missing, title 149 ready XML 1.0, published description 0 ready / 149 missing, apparel runtime BLOCKED.
+- [x] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready. **AUDITED.** Price 149 ready, availability 77 in-stock / 71 out-of-stock / 1 unresolved (partial; downstream M3 excludes unresolved record), media 145 ready / 4 missing / 0 untrusted (storefront authority over product primary + variant images), title 149 ready XML 1.0, published description 0 ready / 149 missing, apparel runtime BLOCKED.
 
 ### M2 Standalone variant deep link + canonical/query contract
 *(Delivered via U12 / PR #180, merged.)*
@@ -168,14 +168,14 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] Regression aligns with merged SEO/GEO audit W4 dependency order; browser coverage includes `variant-deep-link.spec.ts`.
 
 ### Checkpoint D
-- [x] Real-catalog identity/MPN/durability audit green for every intended standalone launch record. Identity bounded and proven durable; MPN truthfully audited as NOT READY (omitted from v1 feed per §6.2).
+- [x] Real-catalog identity/durability audit green for every intended standalone launch record; MPN audited under State 2 approved omission contract (mpnReady=false, 0/149 SKU present; downstream M3 will omit g:mpn and emit identifier_exists=false per spec §6.2).
 - [x] Standalone deep-link contract and representative variant addressability regressions are green via U12/M2.
 - [x] Composite products intentionally absent, not silently regrouped.
 
 ## PR-E — Merchant feed
 
 ### M3 Standalone Merchant mapper
-- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN.
+- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN (State 1) or approved omitted MPN with `identifier_exists=false` (State 2), no inferred GTIN.
 - [ ] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides.
 - [ ] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default.
 - [ ] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output.

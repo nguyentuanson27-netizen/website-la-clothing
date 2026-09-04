@@ -2,9 +2,13 @@
  * M1 — read-only Merchant identity and durability audit.
  *
  * Answers what the mirrored catalog can prove today about the identifiers a Merchant feed would
- * emit, and is deliberately unable to answer what it cannot. It asserts no vendor format: which
- * shape a Pancake identifier takes is an observation to record, not a rule to enforce, and encoding
- * a guess here would turn an audit into an assumption.
+ * emit, and is deliberately unable to answer what it cannot.
+ *
+ * It enforces Google Merchant Center format and character constraints (valid Unicode, no invalid
+ * control characters, format characters like U+200D, PUA, or lone surrogates; length bounds of
+ * 50 characters for ID and 70 characters for MPN) combined with LA Clothing's strict fail-closed
+ * whitespace policy, while avoiding vendor-specific pattern assumptions (e.g. not requiring UUID
+ * or any proprietary vendor prefix).
  *
  * Three things it will not do:
  *
@@ -19,7 +23,10 @@
  * a parent set has no proven durable Merchant family identity, and that is a separate design.
  */
 
-import { parseTrustedProductImageUrl } from "./product-media.ts";
+import {
+  MAX_MEDIA_CANDIDATES_SCANNED,
+  parseTrustedProductImageUrl,
+} from "./product-media.ts";
 import { resolveStorefrontPrice } from "./storefront-product.ts";
 
 /** Matches the existing Pancake catalog audit bound so one contract governs identifier length. */
@@ -61,6 +68,7 @@ export type MerchantIdentityRow = Readonly<{
   /** Valid summed stock, or NaN when any source warehouse quantity is unsafe/unresolved. */
   stockQuantity: number;
   primaryImageUrl: string | null;
+  variantImageUrls?: readonly unknown[] | null;
   title: string | null;
   /** Only what the storefront would actually publish; a Draft description is not a Merchant fact. */
   publishedDescription: string | null;
@@ -149,6 +157,24 @@ export type ClassifyIdentifierOptions = {
   allowWhitespace?: boolean;
 };
 
+/**
+ * Google Merchant Center identifier character restrictions:
+ * Rejects invalid Unicode characters including:
+ * - Control characters (Cc: \u0000-\u001F, \u007F-\u009F)
+ * - Function/format characters (Cf: including zero-width joiner U+200D, ZWNJ U+200C, BOM U+FEFF, etc.)
+ * - Private-use characters (Co: BMP U+E000-U+F8FF, Supplementary PUA-A U+F0000-U+FFFFD, PUA-B U+100000-U+10FFFD)
+ * - Unassigned code points and noncharacters (Cn: e.g. U+FDD0-U+FDEF, U+FFFE, U+FFFF)
+ * - Lone surrogate code points or malformed UTF-16 surrogate sequences (Cs: 0xD800-0xDFFF)
+ */
+const INVALID_MERCHANT_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
+
+export function hasInvalidMerchantUnicode(value: string): boolean {
+  if (typeof value.isWellFormed === "function" && !value.isWellFormed()) {
+    return true;
+  }
+  return INVALID_MERCHANT_UNICODE_REGEX.test(value);
+}
+
 export function classifyExternalIdentifier(
   value: string | null,
   options?: number | ClassifyIdentifierOptions,
@@ -162,9 +188,18 @@ export function classifyExternalIdentifier(
   if (value.trim().length === 0) return "BLANK";
   if (value !== value.trim()) return "UNTRIMMED";
   if (value.length > maxLength) return "TOO_LONG";
+
+  // LA Clothing fail-closed hardening policy:
+  // Strictly reject internal whitespace for offer ID and item_group_id.
+  // Note: Google's product data specification recommends avoiding whitespace and normalizes it to
+  // single spaces; LA Clothing enforces a stricter fail-closed rejection of all whitespace in IDs.
   if (!allowWhitespace && /\s/.test(value)) return "INVALID_FORMAT";
-  // Control characters (#x00-#x1F and #x7F) are invalid across all Merchant identifiers
-  if (/[\x00-\x1f\x7f]/.test(value)) return "INVALID_FORMAT";
+
+  // Google Merchant Center requirement:
+  // Reject invalid Unicode characters (controls, format characters like U+200D, private-use
+  // characters, lone/malformed surrogates, and unassigned/noncharacter code points).
+  if (hasInvalidMerchantUnicode(value)) return "INVALID_FORMAT";
+
   return "PRESENT";
 }
 
@@ -207,9 +242,59 @@ export function classifyMerchantAvailability(stockQuantity: number): Availabilit
   return stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
 }
 
-export function classifyMerchantMedia(primaryImageUrl: string | null): MediaReadiness {
-  if (primaryImageUrl === null || primaryImageUrl.trim().length === 0) return "MISSING";
-  return parseTrustedProductImageUrl(primaryImageUrl) === null ? "UNTRUSTED" : "READY";
+/**
+ * Determines Merchant media readiness using the storefront's existing trusted media authority.
+ *
+ * Rules:
+ * - Scans candidate image URLs from both product primary image and variant image URLs.
+ * - Parses candidates safely and scans at most MAX_MEDIA_CANDIDATES_SCANNED (100) items to stay bounded.
+ * - Tests candidates against parseTrustedProductImageUrl (must match HTTPS, content.pancake.vn host,
+ *   reviewed path structure /:segment/:id/:id/:id/:file.jpg, and no custom port or credentials).
+ * - If at least one candidate is trusted -> "READY".
+ * - If candidates exist but NONE are trusted (untrusted host, malformed path, etc.) -> "UNTRUSTED".
+ * - If no candidates exist anywhere (null, undefined, blank, empty array) -> "MISSING".
+ */
+export function classifyMerchantMedia(
+  primaryImageUrl: string | null,
+  variantImageUrls?: readonly unknown[] | null,
+): MediaReadiness {
+  const candidates: unknown[] = [];
+
+  if (primaryImageUrl !== null) {
+    if (typeof primaryImageUrl === "string") {
+      const trimmed = primaryImageUrl.trim();
+      if (trimmed.length > 0) candidates.push(trimmed);
+    } else {
+      candidates.push(primaryImageUrl);
+    }
+  }
+
+  if (variantImageUrls !== null && variantImageUrls !== undefined) {
+    if (Array.isArray(variantImageUrls)) {
+      for (const item of variantImageUrls) {
+        if (candidates.length >= MAX_MEDIA_CANDIDATES_SCANNED) break;
+        if (item === null || item === undefined) continue;
+        if (typeof item === "string") {
+          const trimmed = item.trim();
+          if (trimmed.length > 0) candidates.push(trimmed);
+        } else {
+          candidates.push(item);
+        }
+      }
+    } else {
+      candidates.push(variantImageUrls);
+    }
+  }
+
+  if (candidates.length === 0) return "MISSING";
+
+  for (const candidate of candidates) {
+    if (parseTrustedProductImageUrl(candidate) !== null) {
+      return "READY";
+    }
+  }
+
+  return "UNTRUSTED";
 }
 
 function countsFor<TClass extends string>(names: readonly TClass[]): Record<TClass, number> {
@@ -296,7 +381,7 @@ export function summarizeMerchantIdentity(
 
     const priceClass = classifyMerchantPrice(row);
     const availabilityClass = classifyMerchantAvailability(row.stockQuantity);
-    const mediaClass = classifyMerchantMedia(row.primaryImageUrl);
+    const mediaClass = classifyMerchantMedia(row.primaryImageUrl, row.variantImageUrls);
     const titleClass = classifyMerchantText(row.title);
     const descriptionClass = classifyMerchantText(row.publishedDescription);
     price[priceClass] += 1;

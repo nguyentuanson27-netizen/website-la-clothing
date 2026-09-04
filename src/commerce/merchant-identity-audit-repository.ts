@@ -20,6 +20,21 @@ function aggregateWarehouseStock(quantities: readonly number[]): number {
   return quantities.reduce((total, quantity) => total + quantity, 0);
 }
 
+function parseVariantImageUrls(raw: unknown): readonly unknown[] | null {
+  if (raw === null || raw === undefined) return null;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      return [raw];
+    } catch {
+      return [raw];
+    }
+  }
+  return [raw];
+}
+
 export async function readMerchantIdentityRows(
   pancakeShopId: number,
 ): Promise<MerchantIdentityRow[]> {
@@ -36,6 +51,7 @@ export async function readMerchantIdentityRows(
       isActive: true,
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
+      pancakeImageUrls: true,
       // Availability is a Merchant fact, so it is summed here rather than treated as an exclusion.
       warehouseStocks: { select: { quantity: true } },
       product: {
@@ -79,6 +95,7 @@ export async function readMerchantIdentityRows(
     // positive warehouse hide a negative mirrored quantity (for example -3 + 4 => 1).
     stockQuantity: aggregateWarehouseStock(row.warehouseStocks.map((stock) => stock.quantity)),
     primaryImageUrl: row.product.primaryImageUrl,
+    variantImageUrls: parseVariantImageUrls(row.pancakeImageUrls),
     title: row.product.name,
     publishedDescription: row.product.content?.status === "PUBLISHED"
       ? row.product.content.editorialDescription

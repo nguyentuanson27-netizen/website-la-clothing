@@ -23,8 +23,8 @@ Emitted offers additionally remain blocked on owner apparel runtime (**O3**) and
 | Does the mirror reconcile rows by external id rather than slug/position/local id? | **PROVEN** — repository tests (`tests/database/merchant-identity-audit.test.ts`). Renaming a product or modifying option text updates the existing rows by external id |
 | Do upstream objects keep those ids for their lifetime? | **PROVEN via §3.3 Option B** — controlled reversible mutations and multi-run raw catalog observations on production product `a132` proved that independently-correlated upstream objects retain the same `pancakeProductId` and `pancakeVariationId` across mutations and resyncs; combined with repository reconciliation tests |
 | Does every emittable record have a price the website would publish? | **READY** — 149/149 emittable prices resolved (`PRICE_UNRESOLVED: 0`) |
-| Is stock status known? | **READY** — 77 `IN_STOCK`, 71 `OUT_OF_STOCK`, 1 `AVAILABILITY_UNRESOLVED` |
-| Does every emittable record have a trusted image? | **NOT READY** — 149/149 missing variant-level media |
+| Is stock status known? | **PARTIAL / NOT READY** — 77 `IN_STOCK`, 71 `OUT_OF_STOCK`, 1 `AVAILABILITY_UNRESOLVED` (148/149 resolved; downstream M3 must exclude the 1 unresolved record with an `AVAILABILITY_UNRESOLVED` diagnostic) |
+| Does every emittable record have a trusted image? | **PARTIAL** — 145 `READY`, 4 `MISSING`, 0 `UNTRUSTED` (storefront media authority over product primary and variant images; downstream M3 excludes the 4 missing records with a `MISSING_IMAGE` diagnostic) |
 | Is title and published description text serializable into a feed? | **READY** (title 149/149 XML 1.0 valid, description 0 published / 149 draft or missing) |
 | Is a GTIN available? | **Not asserted, by design** |
 | Are `gender` / `age_group` / `condition` ready? | **Policy RESOLVED** by ADR 0007; **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists yet |
@@ -54,7 +54,7 @@ Beyond identity, the audit counts the facts an offer needs, for emittable record
 | Fact | Source of truth | Why it is not re-derived here |
 |---|---|---|
 | Price | `resolveStorefrontPrice` | An audit with its own definition of a usable price would report a readiness the storefront does not share. That rule is still equality-gated on the mirrored Pancake fields pending **W3**, so `PRICE_UNRESOLVED` is exactly the number that decides whether the gate can move. |
-| Media | `parseTrustedProductImageUrl` | An untrusted host is not a Merchant image, however well-formed the URL. |
+| Media | `parseTrustedProductImageUrl` via storefront authority | Evaluates candidate photography from both product primary image and variant image lists using the storefront's trusted media authority (`resolveStorefrontProductMedia`). An untrusted host or malformed path is rejected as `UNTRUSTED`. |
 | Description | `ProductContent.status === "PUBLISHED"` | A Draft is work in progress; auditing it would overstate readiness. |
 | Availability | Validated `WarehouseStock.quantity` sources, then aggregate | Every source quantity is validated before aggregation. Valid positive stock is `IN_STOCK`; a real zero total is valid `OUT_OF_STOCK` and may later be emitted as `out_of_stock`. If any source row is non-finite or negative, the fact is `AVAILABILITY_UNRESOLVED` rather than fabricated as zero stock. M3 must exclude that unresolved row with a bounded reason. |
 | Title / description text | XML 1.0 serializability | `MALFORMED` means at least one code point is outside the XML 1.0 `Char` production (including U+FFFE/U+FFFF) or a surrogate is unpaired. XML-legal characters such as U+007F remain `READY`. Not a style judgement. |
@@ -85,9 +85,11 @@ as by one that echoes too much.
   rather than by an open owner decision. It emits no value either way: a product name, a category or
   a size chart is not evidence of who a garment is for, and restating the approved defaults here
   would make this a second authority for a value the feed publishes. M3 applies them.
-- **No vendor format is asserted.** Which shape a Pancake identifier takes is an observation to
-  record, not a rule to enforce. Encoding a guessed format would turn the audit into the assumption
-  it exists to replace.
+- **Enforces Google Merchant specifications without assuming proprietary vendor patterns.** The audit
+  validates Google Merchant Center character constraints (1–50 valid Unicode characters, rejecting
+  controls, format characters like U+200D, PUA, lone surrogates, and noncharacters) and LA Clothing's
+  stricter fail-closed whitespace policy, while avoiding vendor-specific pattern assumptions (e.g. not
+  requiring UUIDs or any proprietary vendor prefix).
 - **`pancakeBarcode` is not read at all.** A field name is not proof of a GTIN. Not selecting it is
   a stronger guard than selecting and ignoring it, because it removes the temptation later.
 
@@ -98,7 +100,7 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
 ```
 
 - **Execution provenance:** Production VPS (PostgreSQL 17, shop `1635185058`).
-- **Executed at:** 2026-09-04T13:24:10Z.
+- **Executed at:** 2026-09-04T14:25:14Z.
 
 ```json
 {
@@ -143,8 +145,8 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
     "AVAILABILITY_UNRESOLVED": 1
   },
   "media": {
-    "READY": 0,
-    "MISSING": 149,
+    "READY": 145,
+    "MISSING": 4,
     "UNTRUSTED": 0
   },
   "title": {
@@ -295,12 +297,12 @@ against the live Pancake API fetched on `2026-09-01T17:16:42.377Z`:
 ## Status of downstream Merchant gates
 
 - **Identifier Durability (M1):** **PROVEN via §3.3 Option B.** Upstream external ID stability under controlled mutation and repeated observations is established, combined with repository reconciliation tests.
-- **Identifier Format & Bounds (M1):** **PROVEN.** Audited against Google Merchant Center specifications: `id` (max 50 chars, no whitespace/control characters) and `item_group_id` (max 50 chars, no whitespace/control characters). All 149 emittable variation IDs and 35 product IDs are 36-char UUIDs cleanly bounded within 50 chars with 0 untrimmed and 0 invalid format.
-- **MPN (SKU readiness):** **NOT READY.** 149/149 standalone variants currently have no manufacturer-assigned SKU in Pancake catalog.
+- **Identifier Format & Bounds (M1):** **PROVEN.** Audited against Google Merchant Center specifications: `id` (max 50 chars, valid Unicode, no whitespace) and `item_group_id` (max 50 chars, valid Unicode, no whitespace). Rejects invalid Unicode (controls, format characters like U+200D, private-use characters, lone surrogates, and noncharacters) and internal whitespace. All 149 emittable variation IDs and 35 product IDs are 36-char UUIDs cleanly bounded within 50 chars with 0 untrimmed, 0 too long, and 0 invalid format.
+- **MPN (SKU readiness):** **NOT READY (State 1) / OMISSION CONTRACT APPROVED (State 2).** 149/149 standalone variants currently have no manufacturer-assigned SKU in Pancake catalog (`mpnReady: false`).
   Authoritative investigation: The Pancake variation API endpoint (`/shops/:shop_id/products/variations`) provides no `sku` or `custom_id` property. Pancake exposes an internal display tag (`display_id`, e.g. `A132-M`) and internal barcode sequence (`barcode`, e.g. `145-1`), neither of which represents an authoritative manufacturer-assigned MPN. The mirror stores `null` in `VariantMirror.sku`.
-  **Specification action (spec §6.2):** Feed mapper (M3) must omit MPN from emitted offers rather than fabricating or guessing MPNs.
+  **Specification action (spec §6.2):** Under approved State 2 omission contract, feed mapper (M3) omits MPN from emitted offers and emits `identifier_exists = false` rather than fabricating or guessing MPNs.
 - **Composite exclusion (M1):** **PROVEN.** 116 composite members are classified `COMPOSITE_DEFERRED` and excluded from the standalone feed.
-- **Media readiness:** 149/149 standalone variants currently lack variant-level media in the mirror.
+- **Media readiness:** **145 READY / 4 MISSING / 0 UNTRUSTED.** 145/149 standalone variants have trusted photography resolved via the storefront media authority (`ProductMirror.primaryImageUrl` + `VariantMirror.pancakeImageUrls`); 4 variants have no photography in either source. Downstream M3 excludes the 4 missing records with a bounded `MISSING_IMAGE` diagnostic.
 - **Editorial description:** 0 published, 149 draft or missing.
 - **Apparel facts (O3):** **Policy RESOLVED** by ADR 0007 (`male` / `adult` / `new` shop defaults with local product overrides); **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists. Offer emission (U25 / M3) cannot proceed until that runtime lands.
 
