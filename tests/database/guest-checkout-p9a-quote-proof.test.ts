@@ -282,6 +282,73 @@ test("P9a a client that re-quotes itself at the current price still cannot bypas
   assert.equal(honest.ok, true);
 });
 
+test("P9a re-submitting the same proof cannot get through before a refreshed render issues a new one", async () => {
+  // The buyer clicks submit again immediately, before the refreshed order summary has installed the
+  // proof for the quote it now shows. The only token the browser holds is still the one the current
+  // render issued, so every such click has to fail closed — otherwise a fast second click would
+  // confirm line facts (here a quantity, which the warning's total alone does not reveal) that the
+  // buyer has not actually seen.
+  const product = await seedProduct("double-click", 500_000);
+  const variant = product.variants[0]!;
+  const cart = await seedCart(variant.id, 1);
+  const publicCode = `${prefix}-double-click-order`;
+
+  const renderedProof = issueRenderedQuoteProof({
+    quote: await renderQuote(cart.id, now),
+    cartId: cart.id,
+    secret,
+  });
+  assert.ok(renderedProof);
+
+  await prisma.cartItem.update({
+    where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
+    data: { quantity: 4 },
+  });
+
+  for (const attempt of [1, 2, 3]) {
+    const result = await snapshotService(renderedProof, cart.id).create({
+      cartId: cart.id,
+      shopId,
+      publicCode,
+      checkoutInput,
+      now,
+    });
+    assert.equal(result.ok, false, `attempt ${attempt} must not authorise a DRAFT`);
+    if (result.ok || result.reason !== "QUOTE_UNPROVEN") return;
+    assert.equal(result.quoteReason, "PRICE_CHANGED");
+    assert.equal(result.refreshedQuote.totalQuantity, 4);
+    assert.equal(
+      await prisma.orderMirror.count({ where: { sourceCartId: cart.id } }),
+      0,
+      `attempt ${attempt} must leave no order behind`,
+    );
+  }
+
+  // Only a proof issued over the quote as it now stands — what a refreshed render would hand over —
+  // lets the buyer through.
+  const refreshedRenderProof = issueRenderedQuoteProof({
+    quote: await renderQuote(cart.id, now),
+    cartId: cart.id,
+    secret,
+  });
+  assert.ok(refreshedRenderProof);
+  assert.notEqual(refreshedRenderProof, renderedProof);
+
+  const accepted = await snapshotService(refreshedRenderProof, cart.id).create({
+    cartId: cart.id,
+    shopId,
+    publicCode,
+    checkoutInput,
+    now,
+  });
+  assert.equal(accepted.ok, true);
+  const persisted = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode },
+    include: { lines: true },
+  });
+  assert.equal(persisted.lines[0]!.quantity, 4);
+});
+
 test("P9a render and submit persist no proof state of any kind", async () => {
   const product = await seedProduct("stateless", 500_000);
   const cart = await seedCart(product.variants[0]!.id);

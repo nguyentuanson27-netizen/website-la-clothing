@@ -35,9 +35,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * The accepted proof envelope, sized for the current 50-line anonymous-cart ceiling with a wide
- * margin. If `ANONYMOUS_CART_MAX_DISTINCT_ITEMS` grows, re-prove this bound against the new worst
- * case rather than quietly raising it — an unbounded token is an unbounded decode.
+ * The accepted proof envelope.
+ *
+ * Verification rejects anything larger before decoding, so issuing must respect the same bound:
+ * `variantExternalId` is a mirrored Pancake value that nothing in this repository length-bounds —
+ * `VariantMirror.pancakeVariationId` is an unbounded column and the catalog contract only requires
+ * non-empty — so a long enough synced id could otherwise make checkout hand out a token its own
+ * verifier always refuses, leaving the buyer in a reconfirm loop no retry can escape. Issuing
+ * therefore refuses to produce a token it could not verify, and the caller fails closed instead.
  */
 export const MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024;
 
@@ -199,6 +204,15 @@ function computeMac(key: Buffer, cartId: string, payload: Buffer): Buffer {
     .digest();
 }
 
+/**
+ * Issues a proof, or `null` when these facts cannot produce a verifiable one.
+ *
+ * The two failure modes are deliberately different shapes. Facts that are not bounded website money
+ * are a programming error at the call site and throw. Exceeding the envelope is a data condition the
+ * caller must handle — it depends on how long an external id the catalog happens to carry — so it
+ * returns `null` and the checkout render refuses to quote rather than issuing a token that could
+ * never be redeemed.
+ */
 export function issueRenderedQuoteProof({
   quote,
   cartId,
@@ -207,7 +221,7 @@ export function issueRenderedQuoteProof({
   quote: RenderedQuoteProofFacts;
   cartId: string;
   secret: string;
-}>): string {
+}>): string | null {
   requireUsableFacts(quote);
   const key = deriveProofKey(secret);
   const safeCartId = requireCartId(cartId);
@@ -215,7 +229,8 @@ export function issueRenderedQuoteProof({
   const payload = canonicalQuoteBytes(quote);
   const mac = computeMac(key, safeCartId, payload);
 
-  return `${payload.toString("base64url")}.${mac.toString("base64url")}`;
+  const proof = `${payload.toString("base64url")}.${mac.toString("base64url")}`;
+  return Buffer.byteLength(proof, "utf8") > MAX_RENDERED_QUOTE_PROOF_BYTES ? null : proof;
 }
 
 /**

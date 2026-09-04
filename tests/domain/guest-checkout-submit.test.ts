@@ -44,7 +44,6 @@ test("snapshot failure stops before Pancake submission and exposes only a stable
       },
     },
     generatePublicCode: () => "LA-proposed",
-    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -73,7 +72,6 @@ test("reused active snapshot submits by the persisted order code rather than a n
       },
     },
     generatePublicCode: () => "LA-proposed",
-    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -118,7 +116,6 @@ test("ambiguous and in-flight outcomes never become browser retry instructions",
       snapshot: { async create() { return snapshotOrder("LA-existing"); } },
       orderSubmission: { async submit() { return entry.submission; } },
       generatePublicCode: () => "LA-unused",
-      issueQuoteProof: () => "fresh-proof",
     });
 
     assert.deepEqual(
@@ -141,7 +138,6 @@ test("only pre-write validation unavailability is presented as a safe retry for 
       },
     },
     generatePublicCode: () => "LA-unused",
-    issueQuoteProof: () => "fresh-proof",
   });
 
   assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -169,7 +165,6 @@ test("live price or stock rejection becomes a cart-changed result while internal
         },
       },
       generatePublicCode: () => "LA-unused",
-      issueQuoteProof: () => "fresh-proof",
     });
 
     assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
@@ -179,4 +174,58 @@ test("live price or stock rejection becomes a cart-changed result while internal
       orderCode: "LA-existing",
     });
   }
+});
+
+test("P9a an unproven quote returns refreshed money and nothing that could authorize the next submit", async () => {
+  let submitCalls = 0;
+  const service = createGuestCheckoutSubmitService({
+    snapshot: {
+      async create() {
+        return {
+          ok: false as const,
+          reason: "QUOTE_UNPROVEN" as const,
+          quoteReason: "PRICE_CHANGED" as const,
+          refreshedQuote: {
+            items: [{ variantExternalId: "var-a", quantity: 3, unitPriceVnd: 500_000 }],
+            merchandiseSubtotalVnd: 1_500_000,
+            shippingFeeVnd: 30_000,
+            totalVnd: 1_530_000,
+            totalQuantity: 3,
+          },
+        };
+      },
+    },
+    orderSubmission: {
+      async submit() {
+        submitCalls += 1;
+        throw new Error("must not submit an unproven quote");
+      },
+    },
+    generatePublicCode: () => "LA-unused",
+  });
+
+  const result = await service.submit({ cartId, shopId, checkoutInput, now });
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: "PRICE_CHANGED",
+    priceChange: {
+      merchandiseSubtotalVnd: 1_500_000,
+      shippingFeeVnd: 30_000,
+      totalVnd: 1_530_000,
+    },
+  });
+  assert.equal(submitCalls, 0, "an unproven quote must never reach Pancake");
+
+  // The load-bearing assertion. Returning a fresh proof here would let the browser authorize its
+  // next submission before the refreshed quote had actually been rendered, and this refusal was
+  // driven by a *quantity* change the warning's total alone does not show. The refreshed render is
+  // the only thing that issues a proof, so there is nothing here to authorize an early re-submit.
+  assert.equal(result.ok, false);
+  if (result.ok || result.status !== "PRICE_CHANGED") return;
+  assert.deepEqual(
+    Object.keys(result.priceChange).sort(),
+    ["merchandiseSubtotalVnd", "shippingFeeVnd", "totalVnd"],
+    "the price-change payload must carry display money only, never a proof",
+  );
 });

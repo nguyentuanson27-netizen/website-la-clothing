@@ -70,7 +70,18 @@ export default async function CheckoutPage() {
 
   const { cartId, lines } = checkoutContext;
   const totals = buildRenderedCheckoutQuoteFacts(lines);
-  if (!totals) {
+  // Issued over exactly the facts rendered below, bound to the cart the cookie names. Submission
+  // recomputes this quote server-side and refuses to create a submit-capable DRAFT unless this
+  // token still describes it, so what the buyer sees here is what they can be charged.
+  //
+  // It comes back null when these facts cannot produce a token within the verifier's envelope,
+  // which a long enough mirrored external id can cause. Quoting anyway would hand the buyer a proof
+  // every submission rejects as oversized — a reconfirm loop no retry escapes — so an unprovable
+  // cart is refused here alongside an unpriceable one.
+  const quoteProof = totals
+    ? issueRenderedQuoteProof({ quote: totals, cartId, secret: readAuthServerConfig().secret })
+    : null;
+  if (!totals || !quoteProof) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
@@ -113,15 +124,6 @@ export default async function CheckoutPage() {
       </div>
     );
   }
-
-  // Issued over exactly the facts rendered below, bound to the cart the cookie names. Submission
-  // recomputes this quote server-side and refuses to create a submit-capable DRAFT unless this
-  // token still describes it, so what the buyer sees here is what they can be charged.
-  const quoteProof = issueRenderedQuoteProof({
-    quote: totals,
-    cartId,
-    secret: readAuthServerConfig().secret,
-  });
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">

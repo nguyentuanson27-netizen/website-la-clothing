@@ -25,8 +25,11 @@ const quote: RenderedQuoteProofFacts = {
   totalQuantity: 3,
 };
 
-function issue(overrides: Partial<Parameters<typeof issueRenderedQuoteProof>[0]> = {}) {
-  return issueRenderedQuoteProof({ quote, cartId, secret, ...overrides });
+/** Issues and asserts a token was produced, for the cases that are not about the size bound. */
+function issue(overrides: Partial<Parameters<typeof issueRenderedQuoteProof>[0]> = {}): string {
+  const proof = issueRenderedQuoteProof({ quote, cartId, secret, ...overrides });
+  assert.ok(proof, "expected these facts to produce a proof");
+  return proof;
 }
 
 function verify(overrides: Partial<Parameters<typeof verifyRenderedQuoteProof>[0]> = {}) {
@@ -162,7 +165,7 @@ test("P9a the 16 KiB envelope genuinely fits a full 50-line cart", () => {
     totalQuantity: 999 * ANONYMOUS_CART_MAX_DISTINCT_ITEMS,
   };
 
-  const proof = issueRenderedQuoteProof({ quote: full, cartId, secret });
+  const proof = issue({ quote: full });
   assert.ok(
     Buffer.byteLength(proof, "utf8") <= MAX_RENDERED_QUOTE_PROOF_BYTES,
     `a full cart must fit the envelope, got ${Buffer.byteLength(proof, "utf8")} bytes`,
@@ -170,6 +173,74 @@ test("P9a the 16 KiB envelope genuinely fits a full 50-line cart", () => {
   assert.deepEqual(
     verifyRenderedQuoteProof({ proof, cartId, currentQuote: full, secret }),
     { ok: true },
+  );
+});
+
+test("P9a issuing refuses a token the verifier could never accept", () => {
+  // The accepted external-id domain is not UUID-shaped: `VariantMirror.pancakeVariationId` is an
+  // unbounded column and the catalog contract only requires non-empty, so a long enough synced id
+  // can push the token past the envelope. Issuing it anyway would hand the buyer a proof every
+  // submission rejects as oversized — a reconfirm loop no retry escapes.
+  const withIdLength = (length: number): RenderedQuoteProofFacts => ({
+    items: [{ variantExternalId: "v".repeat(length), quantity: 1, unitPriceVnd: 100_000 }],
+    merchandiseSubtotalVnd: 100_000,
+    shippingFeeVnd: 0,
+    totalVnd: 100_000,
+    totalQuantity: 1,
+  });
+
+  // Walk the real boundary rather than guessing it: the largest id this domain can still prove.
+  let largestAccepted = 0;
+  for (let length = 1; length <= MAX_RENDERED_QUOTE_PROOF_BYTES * 2; length += 1) {
+    if (issueRenderedQuoteProof({ quote: withIdLength(length), cartId, secret }) === null) break;
+    largestAccepted = length;
+  }
+  assert.ok(largestAccepted > 0, "some id length must be provable");
+
+  const atMax = issueRenderedQuoteProof({ quote: withIdLength(largestAccepted), cartId, secret });
+  assert.ok(atMax, "the largest accepted id must still produce a token");
+  assert.ok(Buffer.byteLength(atMax, "utf8") <= MAX_RENDERED_QUOTE_PROOF_BYTES);
+  assert.deepEqual(
+    verifyRenderedQuoteProof({
+      proof: atMax,
+      cartId,
+      currentQuote: withIdLength(largestAccepted),
+      secret,
+    }),
+    { ok: true },
+    "a token at the boundary must verify, not merely be issued",
+  );
+
+  // max+1 and beyond are refused at issue time, so no unverifiable token ever reaches a buyer.
+  for (const overshoot of [1, 2, 64, 4096]) {
+    assert.equal(
+      issueRenderedQuoteProof({ quote: withIdLength(largestAccepted + overshoot), cartId, secret }),
+      null,
+      `an id ${overshoot} bytes past the boundary must be refused at issue time`,
+    );
+  }
+});
+
+test("P9a many oversized lines are refused at issue time too, not only one long id", () => {
+  // The same bound has to hold when cardinality rather than a single id is what overflows it.
+  const items = Array.from({ length: ANONYMOUS_CART_MAX_DISTINCT_ITEMS }, (_unused, index) => ({
+    variantExternalId: `${index}-${"v".repeat(1_000)}`,
+    quantity: 1,
+    unitPriceVnd: 100_000,
+  }));
+  assert.equal(
+    issueRenderedQuoteProof({
+      quote: {
+        items,
+        merchandiseSubtotalVnd: 100_000 * items.length,
+        shippingFeeVnd: 0,
+        totalVnd: 100_000 * items.length,
+        totalQuantity: items.length,
+      },
+      cartId,
+      secret,
+    }),
+    null,
   );
 });
 

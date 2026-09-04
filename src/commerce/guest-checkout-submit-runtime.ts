@@ -11,7 +11,6 @@ import {
 } from "./checkout-geo.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
-  issueRenderedQuoteProof,
   verifyRenderedQuoteProof,
   type RenderedQuoteProofFacts,
 } from "./checkout-quote-proof.ts";
@@ -142,8 +141,6 @@ export function createGuestCheckoutSubmitRuntime(
       }),
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
-      issueQuoteProof: (facts) =>
-        issueRenderedQuoteProof({ quote: facts, cartId, secret: quoteProofSecret }),
     });
 
     return service.submit({
