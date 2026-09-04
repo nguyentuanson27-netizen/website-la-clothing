@@ -4,9 +4,10 @@ Canonical audit document for **#153 M1 — Merchant read-only identity/durabilit
 
 ## Status
 
-- **M1 Audit Gate:** **COMPLETE / GREEN** for the audited identity/MPN/durability/composite criteria.
-- **Checkpoint D:** **PASSED**.
-- **Downstream Merchant Feed Activation:** Remains **PENDING** under M3 (O3 runtime + offer mapper) and M4 (bounded feed route/cache). M1 does not authorize feed activation.
+- **M1 implementation:** **GREEN** for the reviewed read-only audit behavior, ownership boundaries, validation, media parity and regressions.
+- **M1 operational real-catalog closure:** **PENDING** one authorized rerun on an exact committed post-fix SHA with clean/dirty worktree state recorded.
+- **Checkpoint D:** **OPEN / BLOCKED on attributable real-catalog rerun evidence**. The older catalog counts below remain useful observations but are not relabelled as proof produced by the final implementation tree.
+- **Downstream Merchant Feed Activation:** Remains **PENDING** under M3 (O3 runtime + offer mapper), M4 (bounded feed route/cache), and later activation gates. M1 implementation does not authorize feed activation.
 
 ---
 
@@ -14,21 +15,21 @@ Canonical audit document for **#153 M1 — Merchant read-only identity/durabilit
 
 | Criteria | Status | Evidence |
 |---|---|---|
-| **Offer ID (`id`)** | **PROVEN / GREEN** | 149/149 intended standalone variation IDs present, within the 50-character bound, no rejected invalid Unicode/whitespace, 0 duplicates. |
-| **Product Group ID (`item_group_id`)** | **PROVEN / GREEN** | 35/35 standalone product IDs present and within the 50-character bound. |
+| **Offer ID (`id`)** | **IMPLEMENTATION GREEN / OPERATIONAL RERUN PENDING** | Recorded observation: 149/149 intended standalone variation IDs present, within the 50-character bound, no rejected invalid Unicode/whitespace, 0 duplicates. Final gate requires the same audit on an attributable post-fix SHA. |
+| **Product Group ID (`item_group_id`)** | **IMPLEMENTATION GREEN / OPERATIONAL RERUN PENDING** | Recorded observation: 35/35 standalone product IDs present and within the 50-character bound. Final gate requires an attributable post-fix rerun. |
 | **External-ID durability** | **PROVEN via §3.3 Option B** | PR #175 controlled live experiment on `a132` + repository external-ID reconciliation tests. |
-| **Manufacturer SKU / MPN** | **PROVEN / GREEN** | Owner-confirmed authority is Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` per ADR 0008. Full current catalog: 149/149 PRESENT, 0 MISSING/BLANK/UNTRIMMED/TOO_LONG/INVALID_FORMAT, 0 duplicates. Immediate T0/T1/T2 reads prove consistency; time-separated `a132` observations from 2026-09-02 → 2026-09-04 provide representative lifecycle evidence. |
-| **Local `VariantMirror.sku` ownership** | **UNCHANGED** | Website-owned/local field remains preserved across Pancake resync. M1 does not read it as MPN and Pancake sync does not overwrite it. |
-| **Media parity** | **PROVEN / GREEN** | Product primary + all active/present sibling variant images in storefront order, delegated to `resolveStorefrontProductMedia`; 149/149 READY. Materialization is capped at the shared 100-candidate budget per product. |
-| **Composite isolation** | **PROVEN / GREEN** | 116 composite members classified `COMPOSITE_DEFERRED`; 0 standalone leakage. |
-| **Price readiness** | **READY** | 149/149 resolved by the storefront pricing authority. |
+| **Manufacturer SKU / MPN** | **IMPLEMENTATION GREEN / OPERATIONAL RERUN PENDING** | Owner-confirmed authority is Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` per ADR 0008. Recorded observation: 149/149 PRESENT, 0 MISSING/BLANK/UNTRIMMED/TOO_LONG/INVALID_FORMAT, 0 duplicates. Immediate T0/T1/T2 reads prove consistency; time-separated `a132` observations from 2026-09-02 → 2026-09-04 provide representative lifecycle evidence. Final Checkpoint D still needs an attributable post-fix catalog run. |
+| **Local `VariantMirror.sku` ownership** | **UNCHANGED / GREEN** | Website-owned/local field remains preserved across Pancake resync. M1 does not read it as MPN and Pancake sync does not overwrite it. |
+| **Media parity** | **IMPLEMENTATION GREEN / OPERATIONAL RERUN PENDING** | Product primary + all active/present sibling variant images in storefront order, delegated to `resolveStorefrontProductMedia`. Recorded observation: 149/149 READY. The post-query per-product candidate list is capped at the shared 100-candidate budget before resolver scanning; raw Prisma JSON materialization occurs before that cap. |
+| **Composite isolation** | **IMPLEMENTATION GREEN / OPERATIONAL RERUN PENDING** | Recorded observation: 116 composite members classified `COMPOSITE_DEFERRED`; 0 standalone leakage. Final gate requires attributable current-catalog confirmation. |
+| **Price readiness** | **RECORDED OBSERVATION** | 149/149 resolved by the storefront pricing authority in the recorded run. |
 | **Availability** | **PARTIAL / NOT READY** | 77 `IN_STOCK`, 69 `OUT_OF_STOCK`, 3 `AVAILABILITY_UNRESOLVED`. M3 must exclude unresolved rows fail-closed. |
-| **Editorial descriptions** | **NOT READY** | 0 published descriptions, 149 draft/missing in the recorded closure run. |
+| **Editorial descriptions** | **NOT READY** | 0 published descriptions, 149 draft/missing in the recorded run. |
 | **Apparel facts (O3)** | **Policy RESOLVED / Runtime BLOCKED** | ADR 0007 settles defaults/override policy; persistence/admin/effective resolution remains M3 scope. |
 
 ---
 
-## 2. Recorded real-catalog closure run
+## 2. Recorded pre-final real-catalog run — supporting observation, not Checkpoint D closure evidence
 
 Command:
 
@@ -41,8 +42,10 @@ Recorded environment/evidence:
 - production VPS / Pancake shop `1635185058`;
 - isolated PostgreSQL mirror clone `la_clothing_m1_audit`; production DB was not intentionally mutated by the M1 branch;
 - timestamp: `2026-09-04T15:59:15Z`;
-- the committed PR branch head at that timestamp was `ee98bd10e04e73df3d9bf1183d0c38eddf687c5d`; the run record did **not** capture worktree dirty state, so this is explicitly **not relabelled as exact immutable execution-SHA evidence** for later commits;
-- later PR #194 tests/CI verify the corrected read-only ownership/media/Unicode implementation separately. A future trusted-host rerun should record exact committed SHA + clean/dirty state if this operational evidence is refreshed.
+- the committed PR branch head at that timestamp was `ee98bd10e04e73df3d9bf1183d0c38eddf687c5d`; the run record did **not** capture worktree dirty state;
+- therefore the run cannot be attributed to an immutable exact execution tree and is **not** sufficient to close the final post-fix M1/Checkpoint D operational gate;
+- later PR #194 tests/CI verify the corrected read-only ownership/media/Unicode implementation separately, but CI fixtures do not substitute for the required authorized real-catalog rerun;
+- the required closure rerun must record exact committed SHA, clean/dirty worktree state, command/context, timestamp and refreshed counts.
 
 Recorded summary:
 
@@ -149,6 +152,8 @@ The authorized read-only Pancake traversal observed 356 total variations over 4 
 - `INVALID_FORMAT`: **0**
 - duplicate manufacturer MPNs: **0**
 
+These counts are retained as supporting observation. Because that run did not capture exact immutable execution-tree provenance after the final implementation corrections, they do not by themselves close Checkpoint D.
+
 Representative `a132` values:
 
 | Size | Pancake Variation ID | Manufacturer MPN (`display_id`) | Barcode |
@@ -202,15 +207,15 @@ M1 uses the same product-level candidate scope as the storefront:
 4. source order preserved inside each variant image array;
 5. trusted selection delegated to `resolveStorefrontProductMedia()`.
 
-The audit performs one bounded variation query and groups candidates in memory; it does not issue a sibling query per row. **Before the resolver is called, materialized variant image strings are capped at `MAX_MEDIA_CANDIDATES_SCANNED = 100` per product**, matching the resolver scan budget. Thus a 50,000-variation audit cannot retain an unbounded number of raw image strings per product merely to discard them later.
+The audit performs one bounded variation query and groups candidates in memory; it does not issue a sibling query per row. Prisma has already materialized each selected row's raw `pancakeImageUrls` JSON before the grouping helper runs. **After that DB materialization boundary, the copied per-product candidate list is capped at `MAX_MEDIA_CANDIDATES_SCANNED = 100` before the storefront resolver scans it.** This bounds the post-query candidate list and resolver work; it does **not** claim a per-array cap on raw JSON materialization inside Prisma.
 
 Regression coverage proves:
 
 - variant A with no image + active sibling B with trusted image → product-level media is READY for A and B;
 - image only on inactive sibling → does not make active variant READY;
-- >100 untrusted candidates followed by a trusted image beyond the budget → only 100 are materialized/scanned and the late candidate cannot alter the verdict.
+- >100 untrusted candidates followed by a trusted image beyond the post-query candidate budget → only the first 100 copied candidates are passed to the resolver and the late candidate cannot alter the verdict.
 
-Recorded real-catalog count: **149 READY / 0 MISSING / 0 UNTRUSTED**.
+Recorded real-catalog observation: **149 READY / 0 MISSING / 0 UNTRUSTED**. An attributable post-fix rerun is still required before this count closes Checkpoint D.
 
 ---
 
@@ -313,20 +318,20 @@ Known limitation: Pancake does not publish a perpetual identifier-lifetime SLA; 
 
 ## 9. Gate result
 
-- **Identifier format:** **GREEN** for the intended standalone catalog.
+- **Identifier implementation:** **GREEN**; recorded catalog counts support the expected result, but final current-catalog gate evidence awaits attributable rerun.
 - **External-ID durability:** **PROVEN via PR #175 / §3.3 Option B**.
-- **Manufacturer SKU / MPN:** **GREEN** — authority `display_id` → mirrored `pancakeDisplayId`; 149/149 present/valid/unique; immediate read consistency + time-separated representative lifecycle evidence; local `VariantMirror.sku` remains separate.
-- **Composite exclusion:** **GREEN** — 116 `COMPOSITE_DEFERRED`.
-- **Media:** **GREEN** — product-level storefront parity with bounded 100-candidate materialization; recorded catalog 149/149 READY.
-- **Availability:** **PARTIAL / NOT READY** — 3 unresolved rows remain a downstream M3 exclusion concern, not an identity/MPN/durability Checkpoint D contradiction.
+- **Manufacturer SKU / MPN implementation:** **GREEN** — authority `display_id` → mirrored `pancakeDisplayId`; local `VariantMirror.sku` remains separate. Recorded 149/149 presence/validity/uniqueness and lifecycle observations remain supporting evidence; operational closure awaits exact-SHA rerun.
+- **Composite exclusion implementation:** **GREEN**; recorded observation 116 `COMPOSITE_DEFERRED`; operational confirmation awaits rerun.
+- **Media implementation:** **GREEN** — product-level storefront parity with a bounded post-query 100-candidate list; recorded catalog observation 149/149 READY; operational confirmation awaits rerun.
+- **Availability:** **PARTIAL / NOT READY** — 3 unresolved rows remain a downstream M3 exclusion concern.
 - **Apparel runtime:** **BLOCKED under M3**.
 
-### Checkpoint D verdict: PASSED
+### Checkpoint D verdict: OPEN / PENDING ATTRIBUTABLE REAL-CATALOG RERUN
 
-Checkpoint D's three requirements are met:
+Two requirements have accepted evidence and the third has implementation + supporting observations but not final attributable execution evidence:
 
-1. real-catalog identity/MPN/durability evidence is green for the intended standalone launch records;
-2. standalone deep-link/addressability contract is green via U12/M2 / PR #180;
-3. composite products remain intentionally absent (`COMPOSITE_DEFERRED`).
+1. **PENDING:** rerun the real-catalog identity/MPN/media/composite audit on an exact committed post-fix SHA and record SHA + clean/dirty state + refreshed counts;
+2. **GREEN:** standalone deep-link/addressability contract via U12/M2 / PR #180;
+3. **IMPLEMENTATION GREEN / CURRENT-CATALOG CONFIRMATION PENDING:** composite products remain intentionally absent (`COMPOSITE_DEFERRED`).
 
-This does **not** mean the Merchant feed is launch-ready: M3/M4, O2/O3 runtime, unresolved availability exclusion, feed route/cache/backoff and later Merchant activation evidence remain separate gates.
+Until item 1 is satisfied, M1 operational closure and Checkpoint D remain open. This does **not** roll back the reviewed implementation fixes in PR #194; it prevents CI fixture evidence or an unattributable earlier catalog run from being overstated as the final operational gate.
