@@ -2,14 +2,11 @@ const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
 const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;
-const SCHEMA_COLOR = "https://schema.org/color" as const;
-const SCHEMA_SIZE = "https://schema.org/size" as const;
-
-/**
- * The same bound the variant query applies to an external identifier at the request boundary.
- * Mirrored catalog text is untrusted, and an unbounded identifier should not be published either.
- */
-const MAX_EXTERNAL_IDENTIFIER_LENGTH = 128;
+/** The full schema.org URIs Google reads for the dimensions a variant family varies by. */
+const SCHEMA_URI_BY_DIMENSION = {
+  COLOR: "https://schema.org/color",
+  SIZE: "https://schema.org/size",
+} as const;
 
 type StorefrontUnavailableReason =
   | "MAPPING_REQUIRED"
@@ -44,9 +41,18 @@ export type StructuredDataVariant = Readonly<{
   imageUrl: string | null;
 }>;
 
+export type StructuredDataVariantDimension = keyof typeof SCHEMA_URI_BY_DIMENSION;
+
 export type StructuredDataProductGroup = Readonly<{
   /** The reviewed external product-level identity. Never a local CUID or a presentation key. */
   productGroupID: string;
+  /**
+   * The dimensions the caller established these variants actually differ on — a domain answer,
+   * because "do these two rows name the same colour?" is the option model's question, not this
+   * module's. Naming them here rather than re-deriving them is what keeps `variesBy` from becoming
+   * a stricter rule than the one that decided the variants were siblings in the first place.
+   */
+  variesBy: readonly StructuredDataVariantDimension[];
   variants: readonly StructuredDataVariant[];
 }>;
 
@@ -214,32 +220,6 @@ function buildOffer(
   };
 }
 
-/** Bounded, non-blank mirrored catalog text is the only thing that may become a public identifier. */
-function readExternalIdentifier(value: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_EXTERNAL_IDENTIFIER_LENGTH) return null;
-  return trimmed;
-}
-
-/**
- * The dimensions the published variants genuinely differ on, as the full schema.org URIs Google
- * reads. A dimension the catalog does not actually vary is not listed, because `variesBy` is a
- * claim about this family and not a description of the columns the schema happens to have.
- */
-function resolveVariesBy(variants: readonly StructuredDataVariant[]): string[] {
-  const distinct = (key: "color" | "size") =>
-    new Set(
-      variants
-        .map((variant) => variant[key])
-        .filter((value): value is string => value !== null),
-    ).size;
-
-  const variesBy: string[] = [];
-  if (distinct("color") > 1) variesBy.push(SCHEMA_COLOR);
-  if (distinct("size") > 1) variesBy.push(SCHEMA_SIZE);
-  return variesBy;
-}
-
 function buildVariantNode(name: string, variant: StructuredDataVariant): ProductVariantNode {
   const node: ProductVariantNode = {
     "@type": "Product",
@@ -285,18 +265,18 @@ export function buildProductStructuredData({
   const shopUrl = new URL("/shop", origin).href;
   const images = product.media.gallery.map((item) => item.url);
 
-  const productGroupID =
-    productGroup === null ? null : readExternalIdentifier(productGroup.productGroupID);
-  const variants = productGroup?.variants ?? [];
-  const variesBy = resolveVariesBy(variants);
-  // A family is publishable only if it has a public identity and something it demonstrably varies
-  // by; missing either, the page keeps its ordinary product-level `Product`. A single variant can
-  // never satisfy the second condition — nothing differs from itself — so a group of one is
-  // excluded by the same rule rather than by a separate count, and a group of one is exactly what
-  // the product-level shape already says better.
-  const publishedGroupID = variesBy.length > 0 ? productGroupID : null;
+  // The caller decides whether a family is publishable; this is the shape invariant alone. A group
+  // needs an identity, members, and something it varies by — and a family of one can never vary by
+  // anything, which is exactly what the product-level shape already says better.
+  const publishedGroup =
+    productGroup !== null
+    && productGroup.productGroupID.length > 0
+    && productGroup.variesBy.length > 0
+    && productGroup.variants.length > 0
+      ? productGroup
+      : null;
 
-  const productNode: ProductNode | ProductGroupNode = publishedGroupID !== null
+  const productNode: ProductNode | ProductGroupNode = publishedGroup !== null
     ? {
         "@type": "ProductGroup",
         "@id": `${productUrl}#product`,
@@ -305,11 +285,15 @@ export function buildProductStructuredData({
         brand: {
           "@id": organizationId,
         },
-        productGroupID: publishedGroupID,
-        variesBy,
+        productGroupID: publishedGroup.productGroupID,
+        variesBy: publishedGroup.variesBy.map(
+          (dimension) => SCHEMA_URI_BY_DIMENSION[dimension],
+        ),
         // No group-level `offers`. The exact per-variant offers below are the whole point, and an
         // aggregate beside them would be a second, contradictory price authority on one page.
-        hasVariant: variants.map((variant) => buildVariantNode(product.name, variant)),
+        hasVariant: publishedGroup.variants.map(
+          (variant) => buildVariantNode(product.name, variant),
+        ),
       }
     : {
         "@type": "Product",

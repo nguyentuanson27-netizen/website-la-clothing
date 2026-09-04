@@ -144,7 +144,8 @@ test("P14/U27 the product-level path claims no ProductGroup variant markup", () 
   for (const productGroup of [
     undefined,
     null,
-    { productGroupID: "pancake-product-1", variants: [] },
+    { productGroupID: "pancake-product-1", variesBy: [], variants: [] },
+    { productGroupID: "", variesBy: ["SIZE" as const], variants: [] },
   ]) {
     const serialized = JSON.stringify(
       buildProductStructuredData({

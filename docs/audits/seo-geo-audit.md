@@ -136,10 +136,27 @@ precision. Các trạng thái dưới đây có nghĩa:
   **variant identity → variant URL/deep-link + preselection → query/canonical policy →
   `ProductGroup`/variant `Offer` markup → HTTP/Rich Results verification**.
 
-  **Cập nhật W4d (U27):** dependency chain trên đã hoàn tất, nên markup đã được triển khai.
-  PDP hiện phát `ProductGroup` + một `Product` variant với `Offer` **exact** cho từng variant
-  publishable, thay thế (không đứng cạnh) `Product` product-level cũ, nên trang không còn hai
-  product-schema authority mâu thuẫn. Các quyết định đã chốt:
+  **Cập nhật W4d (U27):** markup đã được triển khai trên nền U12/U17. PDP hiện phát `ProductGroup`
+  + một `Product` variant với `Offer` **exact** cho từng variant publishable, thay thế (không đứng
+  cạnh) `Product` product-level cũ, nên trang không còn hai product-schema authority mâu thuẫn.
+
+  **Hai trong bốn điều kiện Google nêu ở ngay trên (dòng 128–133) vẫn CHƯA được đáp ứng**, và U27
+  cố ý không tự quyết định chúng:
+
+  1. *"mỗi variant có unique ID đáng tin"* — variant hiện **không** mang identifier nào
+     (`sku`/`gtin`/`mpn`). Đây là ranh giới ADR 0008: MPN authority là `pancakeDisplayId` và thuộc
+     U25/M3; product-level identifier còn lại thuộc U32. U27 không mở identifier design mới.
+     Requirement này vẫn **OPEN**.
+  2. *"mỗi variant có distinct URL"* — URL variant đã tồn tại và preselect đúng, nhưng theo W4c mọi
+     request có query string non-canonical đều được `src/proxy.ts` trả `X-Robots-Tag: noindex,
+     nofollow`. Vì vậy các URL mà U27 phát trong `hasVariant[].url` / `offers.url` là URL
+     **noindex, nofollow**. Pattern Google mô tả cho single-page variant model dùng URL *fragment*
+     để khỏi sinh URL riêng cần xử lý index/canonical. Việc chọn **query vs fragment** là quyết
+     định W4c — đã merge ở U12 và là contract mà M2/U25 cũng dùng — nên U27 tái sử dụng nguyên
+     trạng thay vì tự đổi. **OWNER DECISION REQUIRED** trước khi coi W4d là đủ để Google thực sự
+     dùng được variant data; markup hiện tại là đúng sự thật nhưng có thể chưa đủ hiệu lực.
+
+  Các quyết định U27 đã chốt:
 
   - variant URL tái sử dụng đúng contract U12 `/shop/<slug>?variant=<pancakeVariationId>`, được
     build bởi chính module sở hữu contract đó; canonical/indexing policy của W4c không đổi (base
@@ -154,7 +171,14 @@ precision. Các trạng thái dưới đây có nghĩa:
   - `variesBy` chỉ liệt kê chiều mà các variant được phát thực sự khác nhau;
   - **không** `AggregateOffer`, `lowPrice`, `highPrice`, `offerCount` cho một tập variants;
   - composite giữ nguyên hành vi product-level an toàn hiện có (parent set only), không bị mô hình
-    hoá thành một variant family.
+    hoá thành một variant family;
+  - `variesBy` so sánh color/size qua đúng identity rule của option model (`toOptionIdentityKey`),
+    nên hai dòng catalog chỉ khác hoa/thường không bị coi là hai giá trị.
+
+  **Forward dependency:** `productGroupID = pancakeProductId` trên thực tế đặt trước semantics
+  `item_group_id` mà U25/M3 sẽ dùng cho Merchant feed. Master checklist đã có dòng "prove feed vs
+  JSON-LD identity/price/availability consistency" trước Merchant/index launch; đó là nơi hai bên
+  phải khớp, không phải một quyết định riêng của U27.
 
 - **W15 — 0/5 dedicated SEO HTTP smoke được wire trực tiếp, nhưng các contract không hoàn toàn
   ungated.** Các script `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,

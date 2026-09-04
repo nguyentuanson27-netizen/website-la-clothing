@@ -121,7 +121,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 - [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **Blocked until U9/M1 operational exact-SHA real-catalog rerun closes #153 Checkpoint D.**
 - [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions. Depends on accepted U25/M3 contract.
-- [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13.
+- [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13. *(PR #196 open, not merged. Markup delivered; W4d's own "unique reliable variant ID" condition stays OPEN by ADR 0008 — identifiers belong to U25/M3 and U32 — and every published variant URL is `noindex, nofollow` under the merged W4c query contract. Both are recorded in `docs/audits/seo-geo-audit.md` W4d; the URL form is an owner decision U27 did not reopen.)*
 - [ ] Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency.
 - [ ] **U28** #153 T8 — exact saved GTM version/export/checksum; preview isolation; only then actual loader/CSP; live publishes the same reviewed version.
 

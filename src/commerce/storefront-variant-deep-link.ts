@@ -32,6 +32,10 @@ export const VARIANT_QUERY_PARAM = "variant";
  * rest of the server boundary applies. Matching happens against a small in-memory array, so this is
  * hygiene rather than a hot-path guard — but an unbounded string should not cross the boundary at
  * all.
+ *
+ * It is the repository's one bound on a mirrored external identifier, so a consumer that publishes
+ * such an identifier rather than reading one — U27's `productGroupID` — reuses it instead of
+ * declaring a second constant that claims to be the same number.
  */
 export const MAX_VARIANT_QUERY_LENGTH = 128;
 

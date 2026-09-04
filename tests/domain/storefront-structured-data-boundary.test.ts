@@ -14,10 +14,14 @@ import test from "node:test";
 
 import { resolveDeepLinkedVariantSelection, VARIANT_QUERY_PARAM }
   from "../../src/commerce/storefront-variant-deep-link.ts";
-import type {
-  StorefrontProductProjection,
-  StorefrontProjectionOption,
+import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
+import {
+  buildStorefrontProductProjection,
+  type StorefrontProductProjection,
+  type StorefrontProjectionOption,
 } from "../../src/commerce/storefront-projection.ts";
+import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import { buildPromotionalStorefrontPricing } from "../../src/commerce/storefront-promotion-projection.ts";
 import { buildStorefrontProductStructuredData } from "../../src/seo/storefront-product-structured-data.ts";
 import { serializeJsonLd, type ProductStructuredDataDocument } from "../../src/seo/structured-data.ts";
 
@@ -613,5 +617,157 @@ test("U27 publishes no merchant, rating or policy claim the catalog cannot suppo
     for (const variant of group.hasVariant) {
       assert.equal(forbidden in variant, false, `${forbidden} on variant`);
     }
+  }
+});
+
+/* ----------------------------------------------- driven through the real projection builder */
+
+/**
+ * The tests above hand-build projection options, which is the right shape to pin publishing rules
+ * but proves nothing about which states the projection actually produces. These drive the real
+ * `buildStorefrontProductProjection` with the real promotion-aware pricing rule — the same pair the
+ * product page uses — so the pricing authority and the option model are part of the contract.
+ */
+function facts(
+  overrides: Partial<StorefrontVariantFacts> & Pick<StorefrontVariantFacts, "id">,
+): StorefrontVariantFacts {
+  return {
+    pancakeVariationId: `pv-${overrides.id}`,
+    color: "Đen",
+    size: "M",
+    sellableStock: 4,
+    retailPrice: 890_000,
+    retailPriceAfterDiscount: 890_000,
+    ...overrides,
+  };
+}
+
+function projectedProduct(
+  variants: readonly StorefrontVariantFacts[],
+  campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]> = new Map(),
+): BoundaryProduct {
+  return product({
+    galleryIndexByVariantId: {},
+    projection: buildStorefrontProductProjection({
+      parentVariants: variants,
+      componentGroups: [],
+      hasCompositeGraph: false,
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now: NOW }),
+    }),
+  });
+}
+
+const NOW = new Date("2026-09-04T12:00:00.000Z");
+
+test("U27 variesBy is not fooled by mirrored catalog text that differs only in case", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", color: "Đen", size: "M" }),
+        facts({ id: "cuid-b", color: "đen", size: "L" }),
+      ]),
+    }),
+  );
+
+  // One colour spelled two ways is still one colour, so this family varies by size alone.
+  assert.deepEqual(group.variesBy, ["https://schema.org/size"]);
+  assert.equal(group.hasVariant.length, 2);
+});
+
+test("U27 an active promotion publishes the discounted price the page actually charges", () => {
+  const campaign: ApplicablePromotionCampaign = {
+    id: "campaign-1",
+    name: "Thu 2026",
+    kind: "PROMOTION",
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    fixedPriceVnd: null,
+    startsAt: new Date("2026-09-01T00:00:00.000Z"),
+    endsAt: new Date("2026-09-30T00:00:00.000Z"),
+  };
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct(
+        [
+          facts({ id: "cuid-a", size: "M", retailPrice: 1_000_000, retailPriceAfterDiscount: 1_000_000 }),
+          facts({ id: "cuid-b", size: "L", retailPrice: 1_000_000, retailPriceAfterDiscount: 1_000_000 }),
+        ],
+        new Map([["cuid-a", [campaign]]]),
+      ),
+    }),
+  );
+
+  // The promoted variant publishes 800.000, not the 1.000.000 the undiscounted rule would quote.
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.offers.price),
+    [800_000, 1_000_000],
+  );
+});
+
+test("U27 a variant whose mirrored discount field differs still publishes its exact retail price", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", size: "M", retailPrice: 890_000, retailPriceAfterDiscount: 690_000 }),
+        facts({ id: "cuid-b", size: "L", retailPrice: 910_000, retailPriceAfterDiscount: 910_000 }),
+      ]),
+    }),
+  );
+
+  // The equality-gated rule would call the first variant unpriceable and publish no offer for it.
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.offers.price),
+    [890_000, 910_000],
+  );
+});
+
+test("U27 the real projection agrees with this file about which options are publishable", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", size: "M" }),
+        facts({ id: "cuid-b", size: "L", sellableStock: 0 }),
+        // Unpriceable, unmappable, and one half of a duplicate option pair: none is addressable.
+        facts({ id: "cuid-c", size: "XL", retailPrice: null, retailPriceAfterDiscount: null }),
+        facts({ id: "cuid-d", size: null }),
+        facts({ id: "cuid-e", size: "XXL" }),
+        facts({ id: "cuid-f", size: "XXL" }),
+      ]),
+    }),
+  );
+
+  assert.deepEqual(
+    group.hasVariant.map((variant) => [variant.size, variant.offers.availability]),
+    [
+      ["M", "https://schema.org/InStock"],
+      ["L", "https://schema.org/OutOfStock"],
+    ],
+  );
+});
+
+/* --------------------------------------------------------- unpublishable external identity */
+
+test("U27 an untrimmed external product identity is refused rather than rewritten", () => {
+  const document = build({ pancakeProductId: " pancake-product-1 " });
+
+  assert.equal(document["@graph"][0]["@type"], "Product");
+  assert.equal(serializeJsonLd(document).includes("pancake-product-1"), false);
+});
+
+test("U27 a price that is not usable money is never published", () => {
+  for (const price of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+    const document = build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+        option({ id: "cuid-c", pancakeVariationId: "pv-unusable", size: "XL", price }),
+      ]),
+    });
+
+    assert.equal(serializeJsonLd(document).includes("pv-unusable"), false, String(price));
   }
 });

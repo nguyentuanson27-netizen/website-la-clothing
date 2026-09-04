@@ -76,10 +76,22 @@ function normalizeOptionValue(value: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+/**
+ * How this model compares two option values for identity.
+ *
+ * Case is not part of what distinguishes one option from another: a catalog row spelled `Đen` and
+ * one spelled `đen` name the same colour, and the ambiguity check below already treats them as one.
+ * Exported so a consumer asking "do these variants actually differ on this dimension?" — U27's
+ * `variesBy` — answers it the same way, instead of growing a second, quietly stricter rule.
+ */
+export function toOptionIdentityKey(value: string): string {
+  return value.toLowerCase();
+}
+
 function optionKey(color: string | null, size: string, hasColorDimension: boolean): string {
   return hasColorDimension
-    ? `${color?.toLowerCase() ?? ""}\u0000${size.toLowerCase()}`
-    : size.toLowerCase();
+    ? `${color === null ? "" : toOptionIdentityKey(color)}\u0000${toOptionIdentityKey(size)}`
+    : toOptionIdentityKey(size);
 }
 
 function isUsablePrice(value: number | null): value is number {

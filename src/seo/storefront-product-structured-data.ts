@@ -15,12 +15,14 @@
  * so publishing structured data costs no additional catalog or pricing work.
  */
 
+import { toOptionIdentityKey } from "../commerce/storefront-product.ts";
 import {
   selectStorefrontProductLevelOptions,
   type StorefrontProductProjection,
   type StorefrontProjectionOption,
 } from "../commerce/storefront-projection.ts";
 import {
+  MAX_VARIANT_QUERY_LENGTH,
   buildVariantDeepLinkUrl,
   resolveDeepLinkedVariantSelection,
 } from "../commerce/storefront-variant-deep-link.ts";
@@ -28,7 +30,9 @@ import {
   buildProductStructuredData,
   type ProductStructuredDataDocument,
   type StructuredDataAvailability,
+  type StructuredDataProductGroup,
   type StructuredDataVariant,
+  type StructuredDataVariantDimension,
 } from "./structured-data.ts";
 
 type StorefrontStructuredDataProduct = Readonly<{
@@ -71,8 +75,49 @@ function resolveVariantImageUrl(
   option: StorefrontProjectionOption,
 ): string | null {
   const index = product.galleryIndexByVariantId[option.id];
-  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) return null;
-  return product.media.gallery[index]?.url ?? null;
+  // An index that addresses no resolved image — missing, out of range, or not a position at all —
+  // simply does not select one, so there is nothing further to guard.
+  return typeof index === "number" ? product.media.gallery[index]?.url ?? null : null;
+}
+
+/**
+ * The dimensions these variants genuinely differ on.
+ *
+ * Compared through the option model's own identity rule rather than by raw string, because that is
+ * the rule that decided these rows were distinct siblings in the first place. Mirrored catalog text
+ * is inconsistently cased, and a family whose rows read `Đen` and `đen` varies by size alone — the
+ * markup must not tell Google it offers two colours.
+ */
+function resolveVariesBy(
+  variants: readonly StructuredDataVariant[],
+): StructuredDataVariantDimension[] {
+  const distinct = (key: "color" | "size") =>
+    new Set(
+      variants
+        .map((variant) => variant[key])
+        .filter((value): value is string => value !== null)
+        .map(toOptionIdentityKey),
+    ).size;
+
+  const variesBy: StructuredDataVariantDimension[] = [];
+  if (distinct("color") > 1) variesBy.push("COLOR");
+  if (distinct("size") > 1) variesBy.push("SIZE");
+  return variesBy;
+}
+
+/**
+ * The external product identity, when it is publishable as one.
+ *
+ * Mirrored catalog text is untrusted, so a blank or unbounded value publishes no group at all. It
+ * is refused rather than repaired: trimming would publish an identity the catalog does not hold,
+ * and a `productGroupID` that disagrees with the id every other consumer uses is worse than none.
+ * The bound is the one the addressing contract already applies to an external identifier.
+ */
+function readPublishableProductGroupID(pancakeProductId: string): string | null {
+  if (pancakeProductId.length === 0 || pancakeProductId.length > MAX_VARIANT_QUERY_LENGTH) {
+    return null;
+  }
+  return pancakeProductId.trim() === pancakeProductId ? pancakeProductId : null;
 }
 
 /**
@@ -102,6 +147,10 @@ function resolvePublishableVariants({
       projection: product.projection,
       variantQuery: option.pancakeVariationId,
     });
+    // The second half is redundant against today's resolver, which matches one exact external id or
+    // none. It stays because it, not the resolver's current internals, is the property this file
+    // depends on: the URL about to be published must open *this* variant. A resolver that ever
+    // learned to fall back to a near match would otherwise start publishing wrong links silently.
     if (reselected === null || reselected.variantId !== option.id) continue;
 
     const offer = resolvePublishableOffer(option);
@@ -124,6 +173,29 @@ function resolvePublishableVariants({
   return variants;
 }
 
+/**
+ * The publishable variant family, or `null` when this product does not have one.
+ *
+ * Null covers every case the page must fall back from: a composite, a product whose options are
+ * not addressable, one with a single option, and one whose external identity is unusable.
+ */
+function resolveProductGroup({
+  origin,
+  product,
+}: Readonly<{
+  origin: string;
+  product: StorefrontStructuredDataProduct;
+}>): StructuredDataProductGroup | null {
+  const productGroupID = readPublishableProductGroupID(product.pancakeProductId);
+  if (productGroupID === null) return null;
+
+  const variants = resolvePublishableVariants({ origin, product });
+  const variesBy = resolveVariesBy(variants);
+  if (variesBy.length === 0) return null;
+
+  return { productGroupID, variesBy, variants };
+}
+
 export function buildStorefrontProductStructuredData({
   origin,
   product,
@@ -139,9 +211,6 @@ export function buildStorefrontProductStructuredData({
     // from the same projection the page renders so structured data cannot quote a price the page
     // does not show.
     variantOptions: selectStorefrontProductLevelOptions(product.projection),
-    productGroup: {
-      productGroupID: product.pancakeProductId,
-      variants: resolvePublishableVariants({ origin, product }),
-    },
+    productGroup: resolveProductGroup({ origin, product }),
   });
 }
