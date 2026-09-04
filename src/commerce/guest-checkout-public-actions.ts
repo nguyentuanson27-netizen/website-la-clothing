@@ -8,6 +8,7 @@ type GuestCheckoutCartSession = {
 type SubmitCheckout = (input: {
   cartId: string;
   checkoutInput: unknown;
+  quoteProof: unknown;
 }) => Promise<GuestCheckoutSubmitResult>;
 
 type ConsumeAttempt = (cartId: string) => Promise<boolean>;
@@ -65,6 +66,10 @@ export async function submitGuestCheckoutPublicAction(
   const result = await submitCheckout({
     cartId,
     checkoutInput: checkoutInputFromFormData(formData),
+    // Forwarded exactly as received. This is the one browser-supplied checkout field that is
+    // allowed to matter, and it matters only by failing to verify — it is authenticated against the
+    // server-read cart before it can say anything, and it never carries a price into the server.
+    quoteProof: formData.get("quoteProof"),
   });
 
   if (result.ok) {

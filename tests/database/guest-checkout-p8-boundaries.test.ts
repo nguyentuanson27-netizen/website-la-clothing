@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -33,7 +34,7 @@ async function cleanup() {
 }
 
 async function snapshot(cartId: string, publicCode: string, input: unknown = checkoutInput) {
-  return createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true }).create({
+  return createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote }).create({
     cartId,
     shopId,
     publicCode,

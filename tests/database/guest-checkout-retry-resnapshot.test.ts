@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
@@ -92,6 +93,7 @@ async function makeRetryableDraft({ suffix, variantId }: { suffix: string; varia
   });
   const snapshot = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
   const first = await snapshot.create({
     cartId: cart.id,

@@ -1,12 +1,12 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P7b IMPLEMENTED AND MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 onward remain planned.**
+Status: **P1–P8 IMPLEMENTED AND MERGED; P9a IMPLEMENTED IN OPEN PR #190, NOT MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189. P9b/P10 remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
 real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; Checkpoint B evidence is in `docs/audits/wave-2-checkpoint-b.md`; the W3 pricing evidence is in `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work and the shared T5/T6 cart contract are integrated, but P8/P9/P10 and later activation gates remain open.
+The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract and P8's mutable DRAFT quote/audit are integrated. P9a's rendered-quote proof is implemented in PR #190 but is **not** integrated until that merges; P9b/P10 and later activation gates remain open.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -233,42 +233,62 @@ price-bearing consumers. P8/P9/P10 remain unimplemented and consume this contrac
 extending it.
 
 ## P8 — DRAFT quote + promotion audit
-- [ ] DRAFT stores purchased external variant identity + quantity/name/options + base/final/promotion audit.
-- [ ] Checkout render may expose bounded non-PII quote facts for proof issuance, but unsigned/client-editable quote fields never prove buyer acknowledgement.
-- [ ] Raw browser quote facts alone cannot create submit-capable DRAFT.
-- [ ] DRAFT mutable/retryable until guarded finalization.
-- [ ] Final pricing freezes when leaving DRAFT for submission.
+
+Delivered by U20 / PR #189.
+
+- [x] DRAFT stores purchased external variant identity + quantity/name/options + base/final/promotion audit.
+- [x] Checkout render may expose bounded non-PII quote facts for proof issuance, but unsigned/client-editable quote fields never prove buyer acknowledgement.
+- [x] Raw browser quote facts alone cannot create submit-capable DRAFT.
+- [x] DRAFT mutable/retryable until guarded finalization.
+- [x] Final pricing freezes when leaving DRAFT for submission.
 
 Verification:
-- [ ] no promo / % / fixed.
-- [ ] composite external identity.
-- [ ] invalid base.
-- [ ] retryable DRAFT replacement.
-- [ ] unsigned quote facts alone rejected for submit-capable DRAFT.
+- [x] no promo / % / fixed.
+- [x] composite external identity.
+- [x] invalid base.
+- [x] retryable DRAFT replacement.
+- [x] unsigned quote facts alone rejected for submit-capable DRAFT.
+
+A DRAFT whose `pancakeShopId` no longer matches the configured shop is rejected with
+`SHOP_SCOPE_UNVERIFIED` and re-snapshotted rather than stranding the cart: `DRAFT` is the one active
+state stranded-checkout recovery never sweeps.
 
 ## P9a — stateless rendered quote proof -> DRAFT
-- [ ] Re-read then-current `anonymous-cart.ts` and `anonymous-cart-cookie.ts`; current baseline is max 50 distinct anonymous-cart lines and raw cart UUID in HttpOnly `la_cart`.
-- [ ] Checkout render issues bounded opaque proof bound to current anonymous cart/checkout identity + canonical rendered non-PII quote facts.
-- [ ] Proof v1 uses deterministic canonical payload bytes + standard-library server-only HMAC/MAC; **no DB proof rows, nonce table, append-only proof state, or third-party crypto dependency**.
-- [ ] Key is server-only and domain-separated from other uses; derive from an existing validated server secret or use a dedicated validated server-only secret after re-reading current config ownership.
-- [ ] Raw HttpOnly cart UUID is **server-only MAC context**. Include the server-read cart identity in MAC input/binding but never serialize the raw UUID into browser-visible token bytes or another client-readable field.
-- [ ] Proof binds browser-visible variant IDs, quantities, effective unit prices, merchandise subtotal, shipping, total and server issue/version/format fact.
-- [ ] `MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024`, sized for current 50-line cart cap; if that cap changes, re-prove token envelope instead of silently unbounding it.
-- [ ] max+1 rejected before decode/MAC work.
-- [ ] Proof/secret/customer PII/cart UUID is never logged; constant-time MAC comparison where supported.
-- [ ] Submit verifies length + format + MAC authenticity + binding to the **current server-read cart identity** before stale comparison, then recomputes current authoritative quote independently.
-- [ ] Missing/oversized/malformed/forged/wrong-cart/unverifiable proof => refreshed quote + fresh proof, no submit-capable DRAFT, no `POS_SUBMITTING`, no Pancake create.
-- [ ] Verified rendered quote mismatch => typed `PRICE_CHANGED` + refreshed totals + fresh proof.
-- [ ] Explicit resubmit required; proof never becomes price authority.
+
+Delivered by U21 in **open PR #190 — implemented but not merged, so not yet integrated**. Implemented
+in `src/commerce/checkout-quote-proof.ts`, issued in
+`src/app/checkout/page.tsx`, verified inside the snapshot transaction in
+`src/commerce/guest-checkout-snapshot.ts`.
+
+- [x] Re-read then-current `anonymous-cart.ts` and `anonymous-cart-cookie.ts`; baseline re-verified unchanged — max 50 distinct anonymous-cart lines and raw cart UUID in HttpOnly `la_cart`.
+- [x] Checkout render issues bounded opaque proof bound to current anonymous cart/checkout identity + canonical rendered non-PII quote facts.
+- [x] Proof v1 uses deterministic canonical payload bytes + standard-library server-only HMAC/MAC; **no DB proof rows, nonce table, append-only proof state, or third-party crypto dependency**.
+- [x] Key is server-only and domain-separated: derived from the validated `BETTER_AUTH_SECRET` through its own context string, following the `deriveGuestCheckoutClientKey` precedent.
+- [x] Raw HttpOnly cart UUID is **server-only MAC context**, length-prefixed into the MAC input and never serialized into token bytes or any client-readable field.
+- [x] Proof binds variant IDs, quantities, effective unit prices, merchandise subtotal, shipping, total, line cardinality and a `laq1` format/version fact.
+- [x] `MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024`, with the 50-line fit measured by a regression rather than asserted, so a raised cart cap fails the test instead of silently unbounding the envelope.
+- [x] max+1 rejected before decode/MAC work; max reaches normal verification.
+- [x] Proof/secret/customer PII/cart UUID is never logged; `timingSafeEqual` for MAC comparison.
+- [x] Submit verifies length + format + MAC authenticity + cart binding before stale comparison, then compares against the quote recomputed inside the snapshot transaction.
+- [x] Missing/oversized/malformed/forged/wrong-cart/unverifiable proof => refreshed quote + fresh proof, no submit-capable DRAFT, no `POS_SUBMITTING`, no Pancake create.
+- [x] Verified rendered quote mismatch => typed `PRICE_CHANGED` + refreshed totals + fresh proof.
+- [x] Explicit resubmit required; proof never becomes price authority — verification returns no money at all.
 
 Verification:
-- [ ] buyer saw 400k, sale ended, first submit shows 500k/fresh proof/zero POS write, second unchanged submit may continue.
-- [ ] client edits hidden/rendered quote to current 500k but stale/forged proof cannot bypass reconfirmation.
-- [ ] proof from another cart/checkout fails closed.
-- [ ] valid bound proof + unchanged quote succeeds.
-- [ ] 16 KiB/max+1 + deterministic canonicalization.
-- [ ] decoded/browser-visible token inspection cannot recover the raw HttpOnly cart UUID.
-- [ ] checkout render/submit creates zero quote-proof persistence rows/state.
+- [x] buyer saw 400k, sale ended, first submit shows 500k/fresh proof/zero POS write, second unchanged submit may continue.
+- [x] client edits hidden/rendered quote to current 500k but stale/forged proof cannot bypass reconfirmation.
+- [x] proof from another cart/checkout fails closed.
+- [x] valid bound proof + unchanged quote succeeds.
+- [x] 16 KiB/max+1 + deterministic canonicalization.
+- [x] decoded/browser-visible token inspection cannot recover the raw HttpOnly cart UUID.
+- [x] checkout render/submit creates zero quote-proof persistence rows/state.
+
+Two decisions worth recording. Verification runs **inside** the snapshot transaction rather than
+ahead of it: a check before the transaction could pass and then have the price move underneath it
+before the DRAFT was written, which is the substitution this slice exists to prevent. And every
+unproven outcome converges on one buyer-visible result — the current price, a fresh proof, an
+explicit re-submission — because reporting which check failed would tell a probing client which
+guess was closer, while the buyer's next step is identical in every case.
 
 ## P9b — DRAFT -> fresh Pancake
 - [ ] Fetch fresh trusted Pancake catalog facts.

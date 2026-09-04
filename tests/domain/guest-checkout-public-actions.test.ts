@@ -51,8 +51,40 @@ test("browser checkout uses the HttpOnly cart identity and forwards only allowli
       detail: "12 Đường A",
       note: "Giao giờ hành chính",
     },
+    // Absent from this form, and forwarded as the absence rather than silently defaulted: an
+    // unproven submission has to reach the verifier and fail there, not be waved through here.
+    quoteProof: null,
   });
   assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: "LA-001" });
+});
+
+test("the rendered-quote proof is forwarded verbatim and is the only browser field that may be opaque", async () => {
+  let submittedInput: { quoteProof?: unknown; checkoutInput?: unknown } | undefined;
+  const formData = makeFormData();
+  formData.set("quoteProof", "cGF5bG9hZA.bWFj");
+  // A browser-supplied price alongside it must not survive the allowlist.
+  formData.set("totalVnd", "1");
+  formData.set("unitPriceVnd", "1");
+
+  await submitGuestCheckoutPublicAction(
+    {
+      cartSession: { read: () => "server-cart-id", clear: () => undefined },
+      consumeAttempt: allowAttempt,
+      submitCheckout: async (input) => {
+        submittedInput = input;
+        return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-003" };
+      },
+    },
+    formData,
+  );
+
+  assert.equal(submittedInput?.quoteProof, "cGF5bG9hZA.bWFj");
+  assert.equal(
+    Object.hasOwn(submittedInput?.checkoutInput as object, "totalVnd"),
+    false,
+    "browser money fields must never reach the snapshot input",
+  );
+  assert.equal(Object.hasOwn(submittedInput?.checkoutInput as object, "unitPriceVnd"), false);
 });
 
 test("confirmed checkout clears the anonymous cart cookie but ambiguous checkout never does", async () => {

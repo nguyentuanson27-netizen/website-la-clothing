@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import {
   loadCheckoutCommunesAction,
@@ -39,11 +40,13 @@ const geoFailures = {
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
-export function GuestCheckoutForm() {
+export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string }>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
     null,
   );
+  const router = useRouter();
+  const [isRefreshingQuote, startQuoteRefresh] = useTransition();
   const [provinces, setProvinces] = useState<PancakeProvince[]>([]);
   const [districts, setDistricts] = useState<PancakeDistrict[]>([]);
   const [communes, setCommunes] = useState<PancakeCommune[]>([]);
@@ -185,6 +188,26 @@ export function GuestCheckoutForm() {
     };
   }, []);
 
+  // After a refusal the order summary beside this form still holds the price the page was rendered
+  // with, so the screen is showing one total while the warning quotes another. Refreshing re-renders
+  // it from the server without discarding what the buyer has typed.
+  //
+  // The refresh is not cosmetic, which is why it runs in a transition whose pending state disables
+  // submitting. The proof this form carries is always the one the *current* server render issued
+  // alongside the quote on screen, and it binds line identities, quantities and per-line prices —
+  // not just the total in the warning. Letting a re-submit through before the refresh installs the
+  // matching render would confirm a basket the buyer has not seen yet, which is exactly the
+  // acknowledgement this whole mechanism exists to obtain. If the refresh stalls or fails, submit
+  // stays disabled and nothing is confirmed.
+  //
+  // Keyed on the response itself rather than on `priceChanged`: a second consecutive price change
+  // leaves that boolean true, and an effect keyed on it would never fire again.
+  useEffect(() => {
+    if (submitState && !submitState.ok && submitState.status === "PRICE_CHANGED") {
+      startQuoteRefresh(() => router.refresh());
+    }
+  }, [submitState, router]);
+
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
   const geoBusy = provinceLoading || districtLoading || communeLoading;
@@ -195,6 +218,7 @@ export function GuestCheckoutForm() {
     !provinceRef ||
     !districtRef ||
     !communeRef ||
+    isRefreshingQuote ||
     lockSubmission;
 
   function handleProvinceChange(value: string) {
@@ -253,6 +277,11 @@ export function GuestCheckoutForm() {
 
   return (
     <form action={submitAction} className="space-y-8">
+      {/* Opaque, server-authenticated, and always the token issued by the render currently on
+          screen. Editing it cannot change what the buyer is charged: the server recomputes the price
+          itself and only asks this token whether that price is the one it already showed. A tampered
+          or swapped value simply fails closed into re-confirmation. */}
+      <input name="quoteProof" type="hidden" value={quoteProof} />
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>

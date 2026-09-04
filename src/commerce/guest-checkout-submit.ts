@@ -1,3 +1,7 @@
+import type {
+  RenderedQuoteProofFacts,
+  RenderedQuoteProofRejection,
+} from "./checkout-quote-proof.ts";
 import type { PancakeOrderSubmissionResult } from "./pancake-order-submit.ts";
 
 type ActiveSnapshotState =
@@ -26,7 +30,13 @@ type SnapshotResult =
         totalVnd: bigint;
       };
     }
-  | { ok: false; reason: SnapshotFailureReason };
+  | { ok: false; reason: SnapshotFailureReason }
+  | {
+      ok: false;
+      reason: "QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedQuote: RenderedQuoteProofFacts;
+    };
 
 type SnapshotService = {
   create(input: {
@@ -37,6 +47,7 @@ type SnapshotService = {
     now: Date;
   }): Promise<SnapshotResult>;
 };
+
 
 type OrderSubmissionService = {
   submit(input: { publicCode: string; shopId: number }): Promise<PancakeOrderSubmissionResult>;
@@ -49,8 +60,25 @@ export type GuestCheckoutBrowserReason =
   | "SERVICE_UNAVAILABLE"
   | "CHECKOUT_UNAVAILABLE";
 
+/**
+ * The refreshed money a buyer must explicitly accept before submission can continue.
+ *
+ * Display only, and deliberately *without* a proof. Handing the browser a fresh proof here would let
+ * it authorise the next submission before the refreshed quote had actually been rendered — and the
+ * proof binds line identities, quantities and per-line prices, not just this total, so a fast second
+ * click could confirm a basket the buyer never saw. The refreshed server render is the only thing
+ * that issues a proof, which keeps "a proof exists only alongside the render it attests" structural
+ * rather than a convention the client has to honour.
+ */
+export type GuestCheckoutPriceChange = Readonly<{
+  merchandiseSubtotalVnd: number;
+  shippingFeeVnd: number;
+  totalVnd: number;
+}>;
+
 export type GuestCheckoutSubmitResult =
   | { ok: true; status: "CONFIRMED"; orderCode: string }
+  | { ok: false; status: "PRICE_CHANGED"; priceChange: GuestCheckoutPriceChange }
   | {
       ok: false;
       status: "RETRYABLE";
@@ -155,6 +183,22 @@ export function createGuestCheckoutSubmitService({
     });
 
     if (!snapshotResult.ok) {
+      if (snapshotResult.reason === "QUOTE_UNPROVEN") {
+        // Every unproven outcome — missing, oversized, malformed, forged, wrong-cart or simply
+        // stale — converges here deliberately: the buyer is shown the current price and must accept
+        // it again. Reporting *why* the proof failed would tell a probing client which of its
+        // guesses was closer, and the buyer's next step is identical in every case.
+        const { refreshedQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            merchandiseSubtotalVnd: refreshedQuote.merchandiseSubtotalVnd,
+            shippingFeeVnd: refreshedQuote.shippingFeeVnd,
+            totalVnd: refreshedQuote.totalVnd,
+          },
+        };
+      }
       return mapSnapshotFailure(snapshotResult.reason);
     }
 

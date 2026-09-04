@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -41,7 +42,7 @@ test.after(async () => {
 
 test("snapshot service fails closed when checkout geo authority is omitted", async () => {
   const cart = await createBareCart();
-  const service = createGuestCheckoutSnapshotService(prisma);
+  const service = createGuestCheckoutSnapshotService(prisma, { verifyRenderedQuote: acceptAnyRenderedQuote });
 
   assert.deepEqual(
     await service.create({
@@ -62,6 +63,7 @@ test("unvalidated checkout input cannot create a fresh snapshot", async () => {
   const cart = await createBareCart();
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: false,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   assert.deepEqual(
@@ -92,6 +94,7 @@ test("unvalidated checkout input cannot supersede a retryable draft", async () =
   });
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: false,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   assert.deepEqual(
@@ -140,6 +143,7 @@ test("unvalidated current form input may reuse a confirmed snapshot without a fr
   });
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: false,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   assert.deepEqual(

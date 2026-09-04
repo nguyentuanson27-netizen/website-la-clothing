@@ -1,5 +1,11 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 
+const vnd = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+  maximumFractionDigits: 0,
+});
+
 export type CheckoutSubmitFeedback = Readonly<{
   tone: "success" | "error" | "warning";
   title: string;
@@ -16,6 +22,18 @@ export function checkoutSubmitFeedback(
       title: "Đặt hàng thành công",
       message: `Mã đơn ${result.orderCode}. LA Clothing sẽ liên hệ để xác nhận đơn COD.`,
       mayRetry: false,
+    };
+  }
+
+  // The buyer is being asked to accept a price they have not seen yet, so this is the one failure
+  // that must state the new number and stay retryable. Every unproven-proof outcome lands here;
+  // from the buyer's side there is nothing to distinguish and only one thing to do.
+  if (result.status === "PRICE_CHANGED") {
+    return {
+      tone: "warning",
+      title: "Giá đã thay đổi",
+      message: `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Vui lòng xác nhận lại để đặt hàng với mức giá này.`,
+      mayRetry: true,
     };
   }
 

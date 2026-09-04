@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is now unblocked; later launch gates remain independent.**
+Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is merged via PR #189. U21/P9a is implemented in PR #190 and is not merged, so it is not yet integrated; later launch gates remain independent.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -89,7 +89,7 @@ At the Checkpoint A head, the owning source checklists were reconciled to the sa
 - [x] Exact-head CI `33739762266`, Catalog runtime `33739762252`, and VPS verification `33739762271` succeeded.
 - [x] Fresh integrated review: **0 Critical / 0 Required**.
 
-Checkpoint B no longer blocks U20/P8. Later promotion activation and downstream launch work remain gated by their own acceptance criteria and Checkpoint C.
+Checkpoint B no longer blocks U20/P8, which is merged. Later promotion activation and downstream launch work remain gated by their own acceptance criteria and Checkpoint C.
 
 ## Wave 3 — canonical analytics/cart APIs
 
@@ -99,12 +99,12 @@ Checkpoint B no longer blocks U20/P8. Later promotion activation and downstream 
 Wave 3 also converged cart, checkout render and the order snapshot onto the central promotion
 resolver, which the #151 shared cart checkpoint required. Before this, a promotion was visible on
 the PDP and on `/shop` but the cart and the submitted order still quoted the undiscounted base
-price. U20/P8 is now unblocked because the master storefront Checkpoint B has passed; U20 still owns its own DRAFT quote/audit acceptance criteria.
+price. U20/P8 was unblocked by the master storefront Checkpoint B and is now merged via PR #189, having met its own DRAFT quote/audit acceptance criteria.
 
 ## Wave 4 — checkout/order convergence
 
-- [ ] **U20** #151 P8 — mutable DRAFT quote/audit after U17 + U19.
-- [ ] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context.
+- [x] **U20** #151 P8 — mutable DRAFT quote/audit after U17 + U19. Merged via PR #189.
+- [ ] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context. Implemented in PR #190; unchecked until that merges.
 - [ ] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create.
 - [ ] **U23** #151 P10 — final Pancake convergence; all three raw-`livePrice` regressions + controlled custom-price acceptance.
 - [ ] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID.

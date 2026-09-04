@@ -447,3 +447,66 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
+
+test("P9a a price change between render and submit forces an explicit second confirmation", async ({
+  page,
+  context,
+}) => {
+  await cleanupRateLimits();
+  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+  await createTestCart();
+  await prepareBrowser(context);
+
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  const submit = page.getByRole("button", { name: "Đặt hàng COD" });
+  const totalValue = page.locator("dl > div").filter({ hasText: "Tổng dự kiến" }).locator("dd");
+  const quotedTotal = (await totalValue.textContent())?.trim() ?? "";
+  expect(quotedTotal).not.toEqual("");
+
+  await page.getByLabel("Tỉnh / Thành phố").selectOption(PROVINCE_CURRENT);
+  await page.getByLabel("Quận / Huyện").selectOption(DISTRICT_CURRENT);
+  await page.getByLabel("Phường / Xã").selectOption(COMMUNE_CURRENT);
+  await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
+  await page.getByLabel("Số điện thoại").fill("0901234567");
+  await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
+  await expect(submit).toBeEnabled();
+  const proofBefore = await page.locator('input[name="quoteProof"]').inputValue();
+
+  // The price moves behind the buyer's back, after the page — and its proof — were rendered.
+  await prisma.variantMirror.update({
+    where: { id: testVariantId },
+    data: { pancakeRetailPrice: 700_000, pancakeRetailPriceAfterDiscount: 700_000 },
+  });
+
+  await submit.click();
+
+  await expect(page.getByRole("status")).toContainText("Giá đã thay đổi");
+  expect(
+    await prisma.orderMirror.count({ where: { sourceCartId: cartId } }),
+    "a quote the buyer has not acknowledged must create no order at all",
+  ).toBe(0);
+
+  // The ordering is the point: the summary must be showing the new money before the buyer is able
+  // to confirm it. The proof this form carries binds line identities and quantities as well as the
+  // total, so re-enabling submit against the old render would let a fast second click confirm a
+  // basket that was never displayed.
+  await expect(totalValue).not.toHaveText(quotedTotal);
+  await expect(submit).toBeEnabled();
+
+  // The proof the form now carries is the refreshed render's, over the money on screen — not the
+  // one the buyer was originally shown. That rotation is what makes the next confirmation an
+  // acknowledgement of the new price rather than of the old one.
+  const proofAfter = await page.locator('input[name="quoteProof"]').inputValue();
+  expect(proofAfter).not.toEqual(proofBefore);
+  expect(Buffer.from(proofAfter.split(".")[0] ?? "", "base64url").toString("utf8")).toContain(
+    "700000",
+  );
+
+  // Deliberately not asserted here: that the second confirmation reaches CONFIRMED. This fixture's
+  // Pancake catalog is pinned to the old 500.000 and refuses a create-order at any other price, so
+  // that leg would be exercising P9b/P10's reconciliation against a fresher Pancake base rather
+  // than P9a's question of whether the buyer acknowledged the website's price. That the acknowledged
+  // proof is accepted and the acknowledged price persisted is covered against the real snapshot
+  // transaction in tests/database/guest-checkout-p9a-quote-proof.test.ts.
+});

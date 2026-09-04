@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -140,7 +141,7 @@ async function createDraft({
   input?: unknown;
   at?: Date;
 }) {
-  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true });
+  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote });
   const result = await snapshot.create({
     cartId,
     shopId,
@@ -279,7 +280,7 @@ test("P8 retry refresh mutates the same DRAFT identity and atomically replaces s
     promotionCampaignId: "still-browser-controlled",
   };
 
-  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true });
+  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote });
   const retry = await snapshot.create({
     cartId: cart.id,
     shopId,
@@ -331,7 +332,7 @@ test("P8 quote freezes once the order has left DRAFT even when cart and browser 
     prisma.cartItem.create({ data: { cartId: cart.id, variantId: variantB.id, quantity: 3 } }),
   ]);
 
-  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true });
+  const snapshot = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote });
   const result = await snapshot.create({
     cartId: cart.id,
     shopId,

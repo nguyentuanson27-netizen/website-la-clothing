@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -97,6 +98,7 @@ test("concurrent checkout snapshots reuse one active order per cart and allow a 
   const cart = await createCart();
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
   const publicCodes = [`${key}-a`, `${key}-b`];
 

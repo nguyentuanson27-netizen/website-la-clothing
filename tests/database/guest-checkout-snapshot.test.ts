@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -124,6 +125,7 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
   const publicCode = `checkout-${key}-001`;
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   const result = await service.create({
@@ -220,6 +222,7 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
   const publicCode = `checkout-${key}-001`;
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   const result = await service.create({
@@ -243,6 +246,7 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
 test("checkout snapshot fails closed for unavailable lines, wrong-shop catalog data, expired carts, and malformed customer input", async () => {
   const service = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
   const unavailableKey = "unavailable";

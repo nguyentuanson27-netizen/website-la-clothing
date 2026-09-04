@@ -1,6 +1,6 @@
 # Promotions & Flash Sale v1 — implementation plan
 
-Status: **P1–P7b IMPLEMENTED AND MERGED; Checkpoint A PASS; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54` via PR #187. P8 onward remain planned.**
+Status: **P1–P8 IMPLEMENTED AND MERGED; Checkpoint A PASS; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54` via PR #187. P8 is merged via PR #189. P9a is implemented in open PR #190 and is not merged, so it is not yet integrated. P9b onward remain planned.**
 
 P1 (PR #158), P2 (PR #162 + #163 + #174), P3 (PR #167/#168/#169) and P4 (PR #170/#171/#172) are merged and
 integrated on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; see `docs/audits/wave-1-checkpoint-a.md` and the
