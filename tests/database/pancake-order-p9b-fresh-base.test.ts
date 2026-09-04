@@ -99,10 +99,23 @@ async function seedVariant(label: string, mirroredBaseVnd: number) {
 
 async function seedCampaign(
   variantId: string,
-  campaign:
+  campaign: (
     | { discountType: "PERCENTAGE"; percentageValue: number }
-    | { discountType: "FIXED_PRICE"; fixedPriceVnd: bigint },
+    | { discountType: "FIXED_PRICE"; fixedPriceVnd: bigint }
+  ) & {
+    /**
+     * The activity window, defaulting to one already open at `now`.
+     *
+     * Overridable because a campaign that is always active cannot exercise its own boundaries: the
+     * plan requires start and end transitions *during* checkout, which only exist when the window
+     * edge falls between the instant the buyer's quote was rendered and the instant submission
+     * revalidates it.
+     */
+    startsAt?: Date;
+    endsAt?: Date;
+  },
 ) {
+  const startsAt = campaign.startsAt ?? new Date(now.getTime() - 60_000);
   return prisma.promotionCampaign.create({
     data: {
       kind: "PROMOTION",
@@ -110,10 +123,10 @@ async function seedCampaign(
       discountType: campaign.discountType,
       percentageValue: "percentageValue" in campaign ? campaign.percentageValue : null,
       fixedPriceVnd: "fixedPriceVnd" in campaign ? campaign.fixedPriceVnd : null,
-      startsAt: new Date(now.getTime() - 60_000),
-      endsAt: new Date(now.getTime() + 600_000),
+      startsAt,
+      endsAt: campaign.endsAt ?? new Date(now.getTime() + 600_000),
       isEnabled: true,
-      enabledAt: new Date(now.getTime() - 60_000),
+      enabledAt: startsAt,
       targets: { create: { variantId } },
     },
   });
@@ -151,8 +164,12 @@ function gatewayWithFreshBase(variationId: string, productId: string, freshBaseV
   };
 }
 
-function submissionService(gateway: Parameters<typeof createPancakeOrderSubmissionService>[1]) {
-  return createPancakeOrderSubmissionService(prisma, gateway, { now: () => now });
+function submissionService(
+  gateway: Parameters<typeof createPancakeOrderSubmissionService>[1],
+  submittedAt: Date = now,
+  client: PrismaClient = prisma,
+) {
+  return createPancakeOrderSubmissionService(client, gateway, { now: () => submittedAt });
 }
 
 test("P9b a promoted DRAFT is compared against the fresh effective quote, not raw Pancake retail", async () => {
@@ -398,4 +415,182 @@ test("P9b repeated upstream drift repeats the handshake rather than sticking", a
   );
   assert.equal((await submissionService(settled.gateway).submit({ publicCode, shopId })).ok, true);
   assert.equal(settled.created.length, 1);
+});
+
+test("P9b a campaign starting mid-checkout reprices, while the same quote before the start does not", async () => {
+  // A start boundary crossed between render and submission. The Pancake base is pinned at 500k in
+  // both legs and the campaign fixture is identical, so the *only* variable is which side of
+  // `startsAt` the submission instant falls on. That is what makes this a boundary test rather than
+  // a price test: an implementation that ignored the window, or one that read no campaigns at all,
+  // cannot produce both legs.
+  const { product, variant } = await seedVariant("starts", 500_000);
+  await seedCampaign(variant.id, {
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    startsAt: new Date(now.getTime() + 120_000),
+    endsAt: new Date(now.getTime() + 900_000),
+  });
+
+  const beforeCode = `${prefix}-starts-before-order`;
+  await createDraft(variant.id, beforeCode);
+  const draft = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: beforeCode },
+    include: { lines: true },
+  });
+  assert.equal(
+    draft.lines[0]!.unitPriceVnd,
+    BigInt(500_000),
+    "the campaign had not started when the quote was rendered",
+  );
+
+  const before = gatewayWithFreshBase(
+    variant.pancakeVariationId,
+    product.pancakeProductId,
+    500_000,
+  );
+  const beforeResult = await submissionService(
+    before.gateway,
+    new Date(now.getTime() + 60_000),
+  ).submit({ publicCode: beforeCode, shopId });
+  assert.equal(beforeResult.ok, true, "submitting while the sale is still pending must not drift");
+  assert.equal(before.created.length, 1);
+
+  const afterCode = `${prefix}-starts-after-order`;
+  await createDraft(variant.id, afterCode);
+  const after = gatewayWithFreshBase(variant.pancakeVariationId, product.pancakeProductId, 500_000);
+  const result = await submissionService(after.gateway, new Date(now.getTime() + 300_000)).submit({
+    publicCode: afterCode,
+    shopId,
+  });
+
+  assert.equal(result.ok, false, "once the sale opens, the rendered quote is stale");
+  if (result.ok) return;
+  assert.equal(result.state, "DRAFT");
+  assert.equal(result.reason, "PRICE_CHANGED");
+  assert.equal(after.created.length, 0, "a quote the buyer has not agreed to must never reach Pancake");
+  assert.ok("repricedQuote" in result, "a repriced DRAFT must carry the refreshed money");
+  assert.equal(
+    result.repricedQuote.merchandiseSubtotalVnd,
+    400_000,
+    "the buyer is offered the now-live sale price",
+  );
+
+  const repriced = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: afterCode },
+    include: { lines: true },
+  });
+  assert.equal(repriced.state, "DRAFT");
+  assert.equal(repriced.syncErrorCode, "PRICE_CHANGED");
+  assert.equal(repriced.lines[0]!.unitPriceVnd, BigInt(400_000));
+  assert.equal(repriced.lines[0]!.baseUnitPriceVnd, BigInt(500_000));
+  assert.equal(repriced.merchandiseSubtotalVnd, BigInt(400_000));
+  assert.equal(repriced.totalVnd, BigInt(400_000) + repriced.shippingFeeVnd!);
+});
+
+test("P9b a campaign ending mid-checkout reprices, while the same quote inside the window does not", async () => {
+  // The end boundary, and the leg that costs real money if it is wrong: a buyer who rendered at the
+  // sale price must not be sold at that price after the sale closes. Same fixture, same 500k base,
+  // same rendered 400k DRAFT in both legs — only the submission instant moves across `endsAt`. The
+  // window is half-open, so a submission exactly at `endsAt` is already outside it.
+  const { product, variant } = await seedVariant("ends", 500_000);
+  const endsAt = new Date(now.getTime() + 120_000);
+  await seedCampaign(variant.id, {
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    startsAt: new Date(now.getTime() - 60_000),
+    endsAt,
+  });
+
+  const insideCode = `${prefix}-ends-inside-order`;
+  await createDraft(variant.id, insideCode);
+  const draft = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: insideCode },
+    include: { lines: true },
+  });
+  assert.equal(
+    draft.lines[0]!.unitPriceVnd,
+    BigInt(400_000),
+    "the campaign was live when the quote was rendered",
+  );
+
+  const inside = gatewayWithFreshBase(variant.pancakeVariationId, product.pancakeProductId, 500_000);
+  const insideResult = await submissionService(
+    inside.gateway,
+    new Date(now.getTime() + 60_000),
+  ).submit({ publicCode: insideCode, shopId });
+  assert.equal(insideResult.ok, true, "submitting inside the window honours the sale price");
+  assert.equal(inside.created.length, 1);
+
+  const afterCode = `${prefix}-ends-after-order`;
+  await createDraft(variant.id, afterCode);
+  const after = gatewayWithFreshBase(variant.pancakeVariationId, product.pancakeProductId, 500_000);
+  const result = await submissionService(after.gateway, endsAt).submit({
+    publicCode: afterCode,
+    shopId,
+  });
+
+  assert.equal(result.ok, false, "an expired sale price is stale, not submittable");
+  if (result.ok) return;
+  assert.equal(result.state, "DRAFT");
+  assert.equal(result.reason, "PRICE_CHANGED");
+  assert.equal(after.created.length, 0, "an expired sale price must never reach Pancake");
+  assert.ok("repricedQuote" in result, "a repriced DRAFT must carry the refreshed money");
+  assert.equal(
+    result.repricedQuote.merchandiseSubtotalVnd,
+    500_000,
+    "the buyer is asked to confirm the base the ended campaign no longer discounts",
+  );
+
+  const repriced = await prisma.orderMirror.findUniqueOrThrow({
+    where: { publicCode: afterCode },
+    include: { lines: true },
+  });
+  assert.equal(repriced.state, "DRAFT");
+  assert.equal(repriced.syncErrorCode, "PRICE_CHANGED");
+  assert.equal(repriced.lines[0]!.unitPriceVnd, BigInt(500_000));
+  assert.equal(repriced.lines[0]!.baseUnitPriceVnd, BigInt(500_000));
+  assert.equal(repriced.merchandiseSubtotalVnd, BigInt(500_000));
+  assert.equal(repriced.totalVnd, BigInt(500_000) + repriced.shippingFeeVnd!);
+});
+
+test("P9b a promotion-candidate read failure returns the order to retryable DRAFT, not a stranded claim", async () => {
+  // The claim has already moved the row to VALIDATING, but nothing has been sent to Pancake yet, so
+  // a transient database failure here is exactly as recoverable as the fresh-catalog read failure
+  // beside it. Left unguarded it escapes with the row still VALIDATING, and the recovery sweep later
+  // converts that to a terminal REJECTED / VALIDATION_INTERRUPTED — killing an order that could
+  // simply have been retried.
+  const { product, variant } = await seedVariant("candidate-outage", 500_000);
+  const publicCode = `${prefix}-candidate-outage-order`;
+  await createDraft(variant.id, publicCode);
+
+  const failingClient = new Proxy(prisma, {
+    get(target, property, receiver) {
+      if (property === "promotionTarget") {
+        return {
+          findMany: () => Promise.reject(new Error("simulated promotion-candidate read outage")),
+        };
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  }) as PrismaClient;
+
+  const { created, gateway } = gatewayWithFreshBase(
+    variant.pancakeVariationId,
+    product.pancakeProductId,
+    500_000,
+  );
+  const result = await submissionService(gateway, now, failingClient).submit({
+    publicCode,
+    shopId,
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.state, "DRAFT", "a pre-write dependency outage must not strand the checkout");
+  assert.equal(result.reason, "VALIDATION_UNAVAILABLE");
+  assert.equal(created.length, 0, "nothing may reach Pancake when pricing could not be resolved");
+
+  const recovered = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode } });
+  assert.equal(recovered.state, "DRAFT", "the buyer can retry immediately, without a 15-minute wait");
+  assert.equal(recovered.syncErrorCode, "VALIDATION_UNAVAILABLE");
 });

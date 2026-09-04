@@ -8,7 +8,10 @@ import {
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
-import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import type {
+  ApplicableCampaignLookup,
+  PromotionCandidateReadClient,
+} from "./promotion-candidate-repository.ts";
 import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
@@ -476,10 +479,21 @@ export function createPancakeOrderSubmissionService(
     // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
     // one resolver, at one instant.
     const now = readNow();
-    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
-      variantIds: order.lines.map(({ variantId }) => variantId),
-      client: client as unknown as PromotionCandidateReadClient,
-    });
+    // Inside the same pre-write recovery boundary as the catalog read above, and for the same
+    // reason: the claim has moved the row to `VALIDATING`, but nothing has been sent to Pancake yet.
+    // A transient failure resolving promotion candidates is therefore retryable, not fatal. Letting
+    // it escape would leave the row `VALIDATING`, which the recovery sweep converts to a terminal
+    // `REJECTED / VALIDATION_INTERRUPTED` fifteen minutes later — killing an order that only needed
+    // to be tried again.
+    let campaignsByVariantId: ApplicableCampaignLookup["campaignsByVariantId"];
+    try {
+      ({ campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+        variantIds: order.lines.map(({ variantId }) => variantId),
+        client: client as unknown as PromotionCandidateReadClient,
+      }));
+    } catch {
+      return resetValidation();
+    }
 
     const requestedVariationIds = new Set<string>();
     const requestLines: Array<{

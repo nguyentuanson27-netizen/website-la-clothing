@@ -320,6 +320,15 @@ than raw live price, because comparing against the effective quote while sending
 charge full price for a discounted line. P10 still owns the totals-integrity regressions and the
 controlled authorized Pancake acceptance evidence.
 
+Two verification boxes above were checked ahead of their evidence and have since been earned. The
+start/end boundaries are now driven by two regressions that submit the *same* fixture on either side
+of the window edge, so the submission instant is the only variable; evaluating campaigns at snapshot
+time instead of submission time fails exactly those two and nothing else. And the promotion-candidate
+read is now inside the same pre-write recovery boundary as the fresh-catalog read: a transient
+failure there returns the order to retryable `DRAFT / VALIDATION_UNAVAILABLE` instead of escaping
+with the row still `VALIDATING`, which the recovery sweep would have turned into a terminal
+`REJECTED / VALIDATION_INTERRUPTED` fifteen minutes later despite no Pancake write having happened.
+
 ## P10 — final Pancake convergence
 - [ ] Fresh effective quote used for price-change comparison.
 - [ ] Authoritative effective/final money used for merchandise/shipping/total integrity.
