@@ -4,7 +4,7 @@ Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), and M1 (PR #175 + 
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
-+ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media/sync closure). Checkpoint D is green. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md`.
++ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure). Checkpoint D is green. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
 
 T8, M3, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
@@ -153,11 +153,11 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-D — Merchant identity + standalone deep link
 
 ### M1 Merchant read-only identity/durability audit
-- [x] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits. (Audited: 149/149 variations and 35/35 products within 50 Unicode code points, no whitespace, no invalid controls/surrogates).
+- [x] Audit `pancakeVariationId` and standalone `pancakeProductId` against current Merchant format/length limits. (Audited: 149/149 variations and 35/35 products within 50 characters; current values contain no rejected invalid Unicode. LA Clothing rejects whitespace rather than relying on Google normalization.)
 - [x] Prove external-ID durability by provider contract, controlled repeated full-catalog resync evidence + repository reconciliation tests, or equivalent approved history. **PROVEN via §3.3 Option B.** A controlled experiment on production product `a132` (`scripts/pancake-m1-durability-experiment.ts`) with independent owner-controlled cryptographic markers at the raw Pancake API boundary proved that the same upstream product and variations retain the exact same `pancakeProductId` and `pancakeVariationId` across controlled reversible mutations and repeated full-catalog observations, with zero remap and verified restoration; combined with repository reconciliation tests (`tests/database/merchant-identity-audit.test.ts`). Recorded in `docs/audits/merchant-identity-m1.md`.
-- [x] Audit SKU-as-MPN presence/uniqueness/stability. (Owner authority established manufacturer SKU in Pancake `display_id`. Full catalog audit: 149/149 PRESENT, 0 MISSING, 0 BLANK, 0 UNTRIMMED, 0 TOO_LONG, 0 INVALID_FORMAT, 0 duplicates. T0–T2 stability: 356/356 identical. Clone DB sync: `VariantMirror.sku === display_id` for 356/356, `mpnReady = true`).
+- [x] Audit SKU-as-MPN presence/uniqueness/stability. **Authority is ADR 0008:** owner-confirmed manufacturer SKU/MPN is Pancake variation `display_id`, mirrored in `VariantMirror.pancakeDisplayId` and audited directly; website-owned `VariantMirror.sku` remains preserved and is not an MPN fallback. Current full-catalog audit: 149/149 PRESENT, 0 MISSING/BLANK/UNTRIMMED/TOO_LONG/INVALID_FORMAT, 0 duplicates. Immediate T0–T2 reads provide 356/356 consistency; lifecycle stability is supported separately by the time-separated `a132` evidence from PR #175 (2026-09-02 exact restore) to PR #194 (2026-09-04 same `A132-*` values on the same variation IDs). Intentional owner reassignment is an explicit metadata change, not offer-identity remapping.
 - [x] Every composite projection becomes `COMPOSITE_DEFERRED` in v1. (116 composite records classified `COMPOSITE_DEFERRED`, 0 leak into standalone feed).
-- [x] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready. (Media: 149/149 READY with storefront product-level parity; Price: 149/149 READY; Availability: 77 IN_STOCK, 69 OUT_OF_STOCK, 3 AVAILABILITY_UNRESOLVED reported PARTIAL / NOT READY; Content: 0 published, 149 draft/missing; Apparel: policy RESOLVED, runtime BLOCKED under M3).
+- [x] Audit price/media/content/apparel **runtime readiness** with bounded non-PII diagnostics; ADR 0007 resolves owner policy but does not by itself make runtime apparel facts ready. (Media: 149/149 READY with storefront product-level parity and candidate materialization bounded by the shared 100-candidate limit; Price: 149/149 READY; Availability: 77 IN_STOCK, 69 OUT_OF_STOCK, 3 AVAILABILITY_UNRESOLVED reported PARTIAL / NOT READY; Content: 0 published, 149 draft/missing; Apparel: policy RESOLVED, runtime BLOCKED under M3).
 
 ### M2 Standalone variant deep link + canonical/query contract
 *(Delivered via U12 / PR #180, merged.)*
@@ -175,7 +175,7 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-E — Merchant feed
 
 ### M3 Standalone Merchant mapper
-- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN, no inferred GTIN.
+- [ ] Stable audited ID/grouping, `brand=LA Clothing`, audited MPN from `VariantMirror.pancakeDisplayId` per ADR 0008, no inferred GTIN.
 - [ ] Add local website-owned product-level O3 override persistence and server-authoritative validation for the reviewed Merchant enums; Pancake sync cannot erase overrides.
 - [ ] Add product admin editing with an explicit “use shop default” state; clearing an override returns to inheritance rather than copying the current default.
 - [ ] Resolve effective apparel facts as `explicit product override → ADR 0007 shop default`; never infer from product name/category/description/size/model output.
