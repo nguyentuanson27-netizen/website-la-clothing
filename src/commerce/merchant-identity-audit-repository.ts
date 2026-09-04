@@ -25,9 +25,9 @@ function aggregateWarehouseStock(quantities: readonly number[]): number {
 }
 
 /**
- * Mirrors storefront-catalog's JSON-string-array boundary while bounding materialization before the
- * storefront resolver runs. The resolver itself scans at most MAX_MEDIA_CANDIDATES_SCANNED inputs;
- * retaining more untrusted strings per product would add memory cost without changing the result.
+ * Mirrors storefront-catalog's JSON-string-array boundary while bounding the copied per-product
+ * candidate list after Prisma has materialized the selected row JSON. The storefront resolver scans
+ * at most MAX_MEDIA_CANDIDATES_SCANNED inputs, so copying more candidates cannot change its result.
  */
 function appendBoundedVariantImageUrls(target: string[], raw: unknown): void {
   if (!Array.isArray(raw) || target.length >= MAX_MEDIA_CANDIDATES_SCANNED) return;
@@ -114,7 +114,7 @@ export async function readMerchantIdentityRows(
     stockQuantity: aggregateWarehouseStock(row.warehouseStocks.map((stock) => stock.quantity)),
     primaryImageUrl: row.product.primaryImageUrl,
     // Product-level storefront semantics: every active/present sibling gets the same ordered,
-    // bounded variant-image candidate set. Hidden/inactive siblings never contribute media.
+    // bounded post-query variant-image candidate set. Hidden/inactive siblings never contribute.
     variantImageUrls: activeVariantImagesByProductId.get(row.product.id) ?? [],
     title: row.product.name,
     publishedDescription: row.product.content?.status === "PUBLISHED"
