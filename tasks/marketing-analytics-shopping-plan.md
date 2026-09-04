@@ -1,8 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T7, M1 implementation, and M2 IMPLEMENTED; Checkpoint D remains OPEN pending an attributable post-fix real-catalog M1 rerun. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1, and M2 IMPLEMENTED; Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and the M1 implementation (PR #175 durability + PR #194 read-only audit corrections) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is not yet green** because the final corrected M1 implementation still needs one authorized real-catalog run attributable to an exact committed SHA with clean/dirty state recorded. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED**. T8, M3, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
