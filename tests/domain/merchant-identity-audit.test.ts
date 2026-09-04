@@ -8,6 +8,8 @@ import {
   classifyMerchantPrice,
   classifyMerchantText,
   MAX_EXTERNAL_IDENTIFIER_LENGTH,
+  MERCHANT_ID_MAX_LENGTH,
+  MERCHANT_MPN_MAX_LENGTH,
   summarizeMerchantIdentity,
   type MerchantIdentityRow,
 } from "../../src/commerce/merchant-identity-audit.ts";
@@ -43,6 +45,99 @@ test("M1 an external identifier is classified without assuming a vendor format",
     classifyExternalIdentifier("a".repeat(MAX_EXTERNAL_IDENTIFIER_LENGTH + 1)),
     "TOO_LONG",
   );
+});
+
+test("M1 Merchant format and length limits enforce 1-50 chars for offer and product ID, rejecting whitespace and control chars", () => {
+  assert.equal(MERCHANT_ID_MAX_LENGTH, 50);
+  assert.equal(MERCHANT_MPN_MAX_LENGTH, 70);
+
+  // Valid Merchant ID
+  assert.equal(
+    classifyExternalIdentifier("v-1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "PRESENT",
+  );
+  assert.equal(
+    classifyExternalIdentifier("a".repeat(50), { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "PRESENT",
+  );
+
+  // Overlong Merchant ID (exceeds 50 chars)
+  assert.equal(
+    classifyExternalIdentifier("a".repeat(51), { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "TOO_LONG",
+  );
+
+  // Internal whitespace in Merchant ID
+  assert.equal(
+    classifyExternalIdentifier("v 1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\t1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\n1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+
+  // Control characters
+  assert.equal(
+    classifyExternalIdentifier("v\x001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\x1f1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+  assert.equal(
+    classifyExternalIdentifier("v\x7f1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
+    "INVALID_FORMAT",
+  );
+
+  // MPN limits (1-70 chars)
+  assert.equal(classifyExternalIdentifier("SKU-1", { maxLength: MERCHANT_MPN_MAX_LENGTH }), "PRESENT");
+  assert.equal(classifyExternalIdentifier("a".repeat(70), { maxLength: MERCHANT_MPN_MAX_LENGTH }), "PRESENT");
+  assert.equal(classifyExternalIdentifier("a".repeat(71), { maxLength: MERCHANT_MPN_MAX_LENGTH }), "TOO_LONG");
+});
+
+test("M1 summarizeMerchantIdentity enforces Merchant-specific bounds on variations, products, and SKU", () => {
+  const summary = summarizeMerchantIdentity([
+    // Variation ID too long (>50)
+    row({ pancakeVariationId: "v".repeat(51), pancakeProductId: "p-1", sku: "SKU-1" }),
+    // Variation ID invalid format (internal space)
+    row({ pancakeVariationId: "v space", pancakeProductId: "p-1", sku: "SKU-2" }),
+    // Product ID too long (>50)
+    row({ pancakeVariationId: "v-3", pancakeProductId: "p".repeat(51), sku: "SKU-3" }),
+    // SKU too long (>70)
+    row({ pancakeVariationId: "v-4", pancakeProductId: "p-2", sku: "s".repeat(71) }),
+    // Valid row
+    row({ pancakeVariationId: "v-5", pancakeProductId: "p-2", sku: "SKU-5" }),
+  ]);
+
+  assert.equal(summary.emittableStandaloneVariations, 5);
+  assert.equal(summary.variationIdentifiers.TOO_LONG, 1);
+  assert.equal(summary.variationIdentifiers.INVALID_FORMAT, 1);
+  assert.equal(summary.variationIdentifiers.PRESENT, 3);
+
+  assert.equal(summary.productIdentifiers.TOO_LONG, 1);
+  assert.equal(summary.productIdentifiers.PRESENT, 2); // p-1 and p-2
+
+  assert.equal(summary.sku.TOO_LONG, 1);
+  assert.equal(summary.sku.PRESENT, 4);
+  assert.equal(summary.mpnReady, false, "overlong SKU fails MPN readiness");
+});
+
+test("M1 mpnReady fails closed when there are zero emittable standalone variations", () => {
+  const summary = summarizeMerchantIdentity([]);
+  assert.equal(summary.emittableStandaloneVariations, 0);
+  assert.equal(summary.mpnReady, false, "empty catalog cannot claim MPN ready");
+
+  const hiddenSummary = summarizeMerchantIdentity([
+    row({ isStorefrontVisible: false }),
+  ]);
+  assert.equal(hiddenSummary.emittableStandaloneVariations, 0);
+  assert.equal(hiddenSummary.mpnReady, false, "catalog with no visible variations cannot claim MPN ready");
 });
 
 test("M1 the audit counts identifier health for variations and standalone products", () => {

@@ -16,16 +16,16 @@ Emitted offers additionally remain blocked on owner apparel runtime (**O3**) and
 
 | Question | Status |
 |---|---|
-| Are `pancakeVariationId` / `pancakeProductId` present, bounded and well-formed in the mirror? | **PROVEN** — 149/149 emittable variation IDs present, 35/35 product IDs present |
+| Are `pancakeVariationId` / `pancakeProductId` present, bounded and well-formed in the mirror? | **PROVEN** — 149/149 emittable variation IDs present, 35/35 product IDs present; all bounded within Google Merchant 50-character limit (`MERCHANT_ID_MAX_LENGTH = 50`), 0 untrimmed, 0 invalid format |
 | Are emitted variation ids unique? | **PROVEN** — 0 duplicate variation IDs across the catalog |
-| Is SKU usable as MPN (present, unique across emitted variations)? | **NOT READY** — 149/149 standalone variations missing SKU in Pancake |
+| Is SKU usable as MPN (present, unique across emitted variations)? | **NOT READY** — 149/149 standalone variations missing manufacturer SKU in Pancake (investigated: Pancake API variation payload exposes no `sku` or `custom_id` field; internal `display_id` like `A132-M` and internal `barcode` like `145-1` are not authoritative manufacturer MPNs; `VariantMirror.sku` is null; feed v1 must omit MPN per spec §6.2) |
 | Are composites excluded? | **PROVEN** — 116 composite members classified `COMPOSITE_DEFERRED` and excluded |
 | Does the mirror reconcile rows by external id rather than slug/position/local id? | **PROVEN** — repository tests (`tests/database/merchant-identity-audit.test.ts`). Renaming a product or modifying option text updates the existing rows by external id |
 | Do upstream objects keep those ids for their lifetime? | **PROVEN via §3.3 Option B** — controlled reversible mutations and multi-run raw catalog observations on production product `a132` proved that independently-correlated upstream objects retain the same `pancakeProductId` and `pancakeVariationId` across mutations and resyncs; combined with repository reconciliation tests |
 | Does every emittable record have a price the website would publish? | **READY** — 149/149 emittable prices resolved (`PRICE_UNRESOLVED: 0`) |
 | Is stock status known? | **READY** — 77 `IN_STOCK`, 71 `OUT_OF_STOCK`, 1 `AVAILABILITY_UNRESOLVED` |
 | Does every emittable record have a trusted image? | **NOT READY** — 149/149 missing variant-level media |
-| Is title and published description text serializable into a feed? | **READY** (title 149/149, description 5 published / 144 draft) |
+| Is title and published description text serializable into a feed? | **READY** (title 149/149 XML 1.0 valid, description 0 published / 149 draft or missing) |
 | Is a GTIN available? | **Not asserted, by design** |
 | Are `gender` / `age_group` / `condition` ready? | **Policy RESOLVED** by ADR 0007; **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists yet |
 
@@ -98,7 +98,7 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
 ```
 
 - **Execution provenance:** Production VPS (PostgreSQL 17, shop `1635185058`).
-- **Executed at:** 2026-09-01T17:16:09Z.
+- **Executed at:** 2026-09-04T13:24:10Z.
 
 ```json
 {
@@ -111,21 +111,24 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
     "MISSING": 0,
     "BLANK": 0,
     "UNTRIMMED": 0,
-    "TOO_LONG": 0
+    "TOO_LONG": 0,
+    "INVALID_FORMAT": 0
   },
   "productIdentifiers": {
     "PRESENT": 35,
     "MISSING": 0,
     "BLANK": 0,
     "UNTRIMMED": 0,
-    "TOO_LONG": 0
+    "TOO_LONG": 0,
+    "INVALID_FORMAT": 0
   },
   "sku": {
     "PRESENT": 0,
     "MISSING": 149,
     "BLANK": 0,
     "UNTRIMMED": 0,
-    "TOO_LONG": 0
+    "TOO_LONG": 0,
+    "INVALID_FORMAT": 0
   },
   "duplicateVariationIds": [],
   "duplicateSkus": [],
@@ -150,8 +153,8 @@ DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
     "MALFORMED": 0
   },
   "description": {
-    "READY": 5,
-    "MISSING": 144,
+    "READY": 0,
+    "MISSING": 149,
     "MALFORMED": 0
   },
   "merchantFactsReady": 0,
@@ -292,11 +295,15 @@ against the live Pancake API fetched on `2026-09-01T17:16:42.377Z`:
 ## Status of downstream Merchant gates
 
 - **Identifier Durability (M1):** **PROVEN via §3.3 Option B.** Upstream external ID stability under controlled mutation and repeated observations is established, combined with repository reconciliation tests.
-- **MPN (SKU readiness):** **NOT READY.** 149/149 standalone variants currently have no SKU in Pancake.
-  **Owner decision required:** omit MPN from emitted offers rather than inventing an MPN, or populate SKUs upstream in Pancake.
+- **Identifier Format & Bounds (M1):** **PROVEN.** Audited against Google Merchant Center specifications: `id` (max 50 chars, no whitespace/control characters) and `item_group_id` (max 50 chars, no whitespace/control characters). All 149 emittable variation IDs and 35 product IDs are 36-char UUIDs cleanly bounded within 50 chars with 0 untrimmed and 0 invalid format.
+- **MPN (SKU readiness):** **NOT READY.** 149/149 standalone variants currently have no manufacturer-assigned SKU in Pancake catalog.
+  Authoritative investigation: The Pancake variation API endpoint (`/shops/:shop_id/products/variations`) provides no `sku` or `custom_id` property. Pancake exposes an internal display tag (`display_id`, e.g. `A132-M`) and internal barcode sequence (`barcode`, e.g. `145-1`), neither of which represents an authoritative manufacturer-assigned MPN. The mirror stores `null` in `VariantMirror.sku`.
+  **Specification action (spec §6.2):** Feed mapper (M3) must omit MPN from emitted offers rather than fabricating or guessing MPNs.
+- **Composite exclusion (M1):** **PROVEN.** 116 composite members are classified `COMPOSITE_DEFERRED` and excluded from the standalone feed.
 - **Media readiness:** 149/149 standalone variants currently lack variant-level media in the mirror.
-- **Editorial description:** 5 published, 144 draft.
+- **Editorial description:** 0 published, 149 draft or missing.
 - **Apparel facts (O3):** **Policy RESOLVED** by ADR 0007 (`male` / `adult` / `new` shop defaults with local product overrides); **runtime BLOCKED** — no override persistence, validation, admin editing or effective-fact projection exists. Offer emission (U25 / M3) cannot proceed until that runtime lands.
+
 
 
 

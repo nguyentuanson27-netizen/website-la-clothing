@@ -25,12 +25,19 @@ import { resolveStorefrontPrice } from "./storefront-product.ts";
 /** Matches the existing Pancake catalog audit bound so one contract governs identifier length. */
 export const MAX_EXTERNAL_IDENTIFIER_LENGTH = 512;
 
+/** Google Merchant Center specification: offer id and item_group_id are limited to 50 characters. */
+export const MERCHANT_ID_MAX_LENGTH = 50;
+
+/** Google Merchant Center specification: manufacturer part number (mpn) is limited to 70 characters. */
+export const MERCHANT_MPN_MAX_LENGTH = 70;
+
 export type ExternalIdentifierClass =
   | "PRESENT"
   | "MISSING"
   | "BLANK"
   | "UNTRIMMED"
-  | "TOO_LONG";
+  | "TOO_LONG"
+  | "INVALID_FORMAT";
 
 const CLASSES: readonly ExternalIdentifierClass[] = [
   "PRESENT",
@@ -38,6 +45,7 @@ const CLASSES: readonly ExternalIdentifierClass[] = [
   "BLANK",
   "UNTRIMMED",
   "TOO_LONG",
+  "INVALID_FORMAT",
 ];
 
 export type MerchantIdentityRow = Readonly<{
@@ -136,11 +144,27 @@ export type MerchantIdentitySummary = Readonly<{
   }>;
 }>;
 
-export function classifyExternalIdentifier(value: string | null): ExternalIdentifierClass {
+export type ClassifyIdentifierOptions = {
+  maxLength?: number;
+  allowWhitespace?: boolean;
+};
+
+export function classifyExternalIdentifier(
+  value: string | null,
+  options?: number | ClassifyIdentifierOptions,
+): ExternalIdentifierClass {
+  const maxLength =
+    typeof options === "number" ? options : (options?.maxLength ?? MAX_EXTERNAL_IDENTIFIER_LENGTH);
+  const allowWhitespace =
+    typeof options === "number" ? true : (options?.allowWhitespace ?? true);
+
   if (value === null || value.length === 0) return "MISSING";
   if (value.trim().length === 0) return "BLANK";
-  if (value.length > MAX_EXTERNAL_IDENTIFIER_LENGTH) return "TOO_LONG";
   if (value !== value.trim()) return "UNTRIMMED";
+  if (value.length > maxLength) return "TOO_LONG";
+  if (!allowWhitespace && /\s/.test(value)) return "INVALID_FORMAT";
+  // Control characters (#x00-#x1F and #x7F) are invalid across all Merchant identifiers
+  if (/[\x00-\x1f\x7f]/.test(value)) return "INVALID_FORMAT";
   return "PRESENT";
 }
 
@@ -244,18 +268,29 @@ export function summarizeMerchantIdentity(
 
     emittableStandaloneVariations += 1;
 
-    const variationClass = classifyExternalIdentifier(row.pancakeVariationId);
+    const variationClass = classifyExternalIdentifier(row.pancakeVariationId, {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    });
     variationIdentifiers[variationClass] += 1;
     if (variationClass === "PRESENT") emittableVariationIds.push(row.pancakeVariationId as string);
 
     // One product family is counted once however many of its variations are emitted.
     const productId = row.pancakeProductId;
     if (productId === null || !seenProductIds.has(productId)) {
-      productIdentifiers[classifyExternalIdentifier(productId)] += 1;
+      productIdentifiers[
+        classifyExternalIdentifier(productId, {
+          maxLength: MERCHANT_ID_MAX_LENGTH,
+          allowWhitespace: false,
+        })
+      ] += 1;
       if (productId !== null) seenProductIds.add(productId);
     }
 
-    const skuClass = classifyExternalIdentifier(row.sku);
+    const skuClass = classifyExternalIdentifier(row.sku, {
+      maxLength: MERCHANT_MPN_MAX_LENGTH,
+      allowWhitespace: true,
+    });
     sku[skuClass] += 1;
     if (skuClass === "PRESENT") emittableSkus.push(row.sku as string);
 
@@ -292,7 +327,10 @@ export function summarizeMerchantIdentity(
     sku: Object.freeze(sku),
     duplicateVariationIds: Object.freeze(duplicateVariationIds),
     duplicateSkus: Object.freeze(duplicateSkus),
-    mpnReady: sku.PRESENT === emittableStandaloneVariations && duplicateSkus.length === 0,
+    mpnReady:
+      emittableStandaloneVariations > 0
+      && sku.PRESENT === emittableStandaloneVariations
+      && duplicateSkus.length === 0,
     price: Object.freeze(price),
     availability: Object.freeze(availability),
     media: Object.freeze(media),
