@@ -6,30 +6,25 @@
  *
  * It enforces Google Merchant Center format and character constraints (valid Unicode, no invalid
  * control characters, format characters like U+200D, PUA, or lone surrogates; length bounds of
- * 50 characters for ID and 70 characters for MPN) combined with LA Clothing's strict fail-closed
- * whitespace policy, while avoiding vendor-specific pattern assumptions (e.g. not requiring UUID
- * or any proprietary vendor prefix).
+ * 50 Unicode code points for ID and 70 Unicode code points for MPN) combined with LA Clothing's
+ * strict fail-closed whitespace policy, while avoiding vendor-specific pattern assumptions.
  *
  * Three things it will not do:
  *
  *   - infer a GTIN. `pancakeBarcode` is a field name, not proof of a GTIN, and the audit does not
  *     read it at all rather than tempt a later reader;
  *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3), so
- *     they are reported as an explicit blocked state rather than derived from a name or a category;
+ *     they are reported as an explicit blocked state rather than derived from a name or category;
  *   - declare identifier durability. Current DB uniqueness and upsert behaviour are explicitly
  *     insufficient evidence, so the verdict stays blocked until upstream lifetime evidence exists.
  *
- * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`: a component sold through
- * a parent set has no proven durable Merchant family identity, and that is a separate design.
+ * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`.
  */
 
-import {
-  MAX_MEDIA_CANDIDATES_SCANNED,
-  parseTrustedProductImageUrl,
-} from "./product-media.ts";
+import { resolveStorefrontProductMedia } from "./product-media.ts";
 import { resolveStorefrontPrice } from "./storefront-product.ts";
 
-/** Matches the existing Pancake catalog audit bound so one contract governs identifier length. */
+/** Matches the existing Pancake catalog audit bound for generic external identifiers. */
 export const MAX_EXTERNAL_IDENTIFIER_LENGTH = 512;
 
 /** Google Merchant Center specification: offer id and item_group_id are limited to 50 characters. */
@@ -58,7 +53,7 @@ const CLASSES: readonly ExternalIdentifierClass[] = [
 export type MerchantIdentityRow = Readonly<{
   pancakeVariationId: string | null;
   pancakeProductId: string | null;
-  /** Candidate MPN. Nullable and not database-unique, which is why it needs auditing. */
+  /** Candidate manufacturer MPN. Nullable and not database-unique, which is why it needs auditing. */
   sku: string | null;
   isComposite: boolean;
   isStorefrontVisible: boolean;
@@ -68,37 +63,17 @@ export type MerchantIdentityRow = Readonly<{
   /** Valid summed stock, or NaN when any source warehouse quantity is unsafe/unresolved. */
   stockQuantity: number;
   primaryImageUrl: string | null;
+  /** Product-level storefront media candidates from all active/present variants, in resolver order. */
   variantImageUrls?: readonly unknown[] | null;
   title: string | null;
   /** Only what the storefront would actually publish; a Draft description is not a Merchant fact. */
   publishedDescription: string | null;
 }>;
 
-/**
- * Whether a record has a price the website would publish *today*.
- *
- * Deliberately the live `resolveStorefrontPrice` rule and not a second one: an audit that used a
- * different definition of a usable price would report a readiness the storefront does not share.
- * That rule is currently equality-gated on the mirrored Pancake fields pending W3 evidence, so this
- * count moves when that gate does — which is the point of measuring it.
- */
 export type PriceReadiness = "READY" | "PRICE_UNRESOLVED";
-
-/**
- * A real zero is a valid Merchant availability fact (`out_of_stock`). Unsafe source data is not:
- * M3 must exclude unresolved rows rather than publishing a fabricated zero-stock state.
- */
 export type AvailabilityClass = "IN_STOCK" | "OUT_OF_STOCK" | "AVAILABILITY_UNRESOLVED";
-
-/** Media trust is the storefront's own parser; an untrusted host is not a Merchant image. */
 export type MediaReadiness = "READY" | "MISSING" | "UNTRUSTED";
-
-/**
- * `MALFORMED` is not a style judgement. It means text that cannot be serialized as XML 1.0 text;
- * XML-illegal code points and lone surrogates cannot be repaired by escaping.
- */
 export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
-
 export type DuplicateIdentifier = Readonly<{ value: string; occurrences: number }>;
 
 export type MerchantIdentitySummary = Readonly<{
@@ -110,43 +85,21 @@ export type MerchantIdentitySummary = Readonly<{
   sku: Readonly<Record<ExternalIdentifierClass, number>>;
   duplicateVariationIds: readonly DuplicateIdentifier[];
   duplicateSkus: readonly DuplicateIdentifier[];
-  /** True only when every emittable variation has a present, unique SKU. */
+  /** True only when every emittable variation has a present, unique manufacturer SKU/MPN. */
   mpnReady: boolean;
   price: Readonly<Record<PriceReadiness, number>>;
   availability: Readonly<Record<AvailabilityClass, number>>;
   media: Readonly<Record<MediaReadiness, number>>;
   title: Readonly<Record<TextReadiness, number>>;
   description: Readonly<Record<TextReadiness, number>>;
-  /**
-   * Emittable variations with a publishable price, a trusted image, serializable title/description,
-   * and a resolved availability fact. A valid zero-stock row still counts: Merchant can publish it
-   * as `out_of_stock`; only unsafe/unresolved availability fails readiness closed.
-   */
   merchantFactsReady: number;
-  /**
-   * Apparel attributes (O3), split the way ADR 0007 splits them.
-   *
-   * The policy is settled — approved shop defaults plus local product-owned overrides — so reporting
-   * this as an open owner gate would be false. What is missing is the runtime: persistence,
-   * validation, admin editing and effective-fact projection. The verdict stays BLOCKED, for that
-   * reason and not the other one.
-   *
-   * No value appears here, then or now. Deriving `gender` from a product name is the invention ADR
-   * 0007 forbids as firmly as the original gate did, and restating the approved defaults would make
-   * this a second authority for a value the feed publishes — M3 applies them.
-   */
   apparelFacts: Readonly<{
-    /** Settled by ADR 0007. */
     policy: "RESOLVED";
-    /** No local override persistence, validation, admin editing or projection exists yet. */
     productOverrides: "NOT_IMPLEMENTED";
-    /** Blocked by the missing runtime, no longer by an open owner decision. */
     verdict: "BLOCKED";
   }>;
   durability: Readonly<{
-    /** Proven here: the mirror reconciles rows by external id, not by slug, position or local id. */
     mirrorReconcilesByExternalId: boolean;
-    /** Needs upstream contract or repeated-resync evidence from an approved context. */
     upstreamLifetimeProven: boolean;
     verdict: "BLOCKED" | "PROVEN";
   }>;
@@ -158,13 +111,8 @@ export type ClassifyIdentifierOptions = {
 };
 
 /**
- * Google Merchant Center identifier character restrictions:
- * Rejects invalid Unicode characters including:
- * - Control characters (Cc: \u0000-\u001F, \u007F-\u009F)
- * - Function/format characters (Cf: including zero-width joiner U+200D, ZWNJ U+200C, BOM U+FEFF, etc.)
- * - Private-use characters (Co: BMP U+E000-U+F8FF, Supplementary PUA-A U+F0000-U+FFFFD, PUA-B U+100000-U+10FFFD)
- * - Unassigned code points and noncharacters (Cn: e.g. U+FDD0-U+FDEF, U+FFFE, U+FFFF)
- * - Lone surrogate code points or malformed UTF-16 surrogate sequences (Cs: 0xD800-0xDFFF)
+ * Google Merchant identifier character restrictions. Reject controls, format characters,
+ * private-use/unassigned code points, noncharacters and malformed UTF-16.
  */
 const INVALID_MERCHANT_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
 
@@ -173,6 +121,10 @@ export function hasInvalidMerchantUnicode(value: string): boolean {
     return true;
   }
   return INVALID_MERCHANT_UNICODE_REGEX.test(value);
+}
+
+function unicodeCodePointLength(value: string): number {
+  return Array.from(value).length;
 }
 
 export function classifyExternalIdentifier(
@@ -187,17 +139,12 @@ export function classifyExternalIdentifier(
   if (value === null || value.length === 0) return "MISSING";
   if (value.trim().length === 0) return "BLANK";
   if (value !== value.trim()) return "UNTRIMMED";
-  if (value.length > maxLength) return "TOO_LONG";
+  if (unicodeCodePointLength(value) > maxLength) return "TOO_LONG";
 
-  // LA Clothing fail-closed hardening policy:
-  // Strictly reject internal whitespace for offer ID and item_group_id.
-  // Note: Google's product data specification recommends avoiding whitespace and normalizes it to
-  // single spaces; LA Clothing enforces a stricter fail-closed rejection of all whitespace in IDs.
+  // LA Clothing applies a stricter fail-closed policy than Google's whitespace normalization for
+  // offer ID and item_group_id: any whitespace is rejected instead of normalized.
   if (!allowWhitespace && /\s/.test(value)) return "INVALID_FORMAT";
 
-  // Google Merchant Center requirement:
-  // Reject invalid Unicode characters (controls, format characters like U+200D, private-use
-  // characters, lone/malformed surrogates, and unassigned/noncharacter code points).
   if (hasInvalidMerchantUnicode(value)) return "INVALID_FORMAT";
 
   return "PRESENT";
@@ -242,59 +189,36 @@ export function classifyMerchantAvailability(stockQuantity: number): Availabilit
   return stockQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
 }
 
+function normalizeVariantImageUrls(
+  variantImageUrls: readonly unknown[] | null | undefined,
+): readonly string[] {
+  if (!Array.isArray(variantImageUrls)) return [];
+  return variantImageUrls.filter((candidate): candidate is string => typeof candidate === "string");
+}
+
 /**
- * Determines Merchant media readiness using the storefront's existing trusted media authority.
- *
- * Rules:
- * - Scans candidate image URLs from both product primary image and variant image URLs.
- * - Parses candidates safely and scans at most MAX_MEDIA_CANDIDATES_SCANNED (100) items to stay bounded.
- * - Tests candidates against parseTrustedProductImageUrl (must match HTTPS, content.pancake.vn host,
- *   reviewed path structure /:segment/:id/:id/:id/:file.jpg, and no custom port or credentials).
- * - If at least one candidate is trusted -> "READY".
- * - If candidates exist but NONE are trusted (untrusted host, malformed path, etc.) -> "UNTRUSTED".
- * - If no candidates exist anywhere (null, undefined, blank, empty array) -> "MISSING".
+ * Merchant media readiness delegates trusted-image selection to the exact storefront product
+ * resolver. `variantImageUrls` is the ordered product-level candidate set assembled from all
+ * active/present variants of the product, not merely the current variation's own image list.
  */
 export function classifyMerchantMedia(
   primaryImageUrl: string | null,
   variantImageUrls?: readonly unknown[] | null,
 ): MediaReadiness {
-  const candidates: unknown[] = [];
+  const productVariantImageUrls = normalizeVariantImageUrls(variantImageUrls);
+  const resolved = resolveStorefrontProductMedia({
+    productName: "Merchant audit",
+    primaryImageUrl,
+    variantImageUrls: [productVariantImageUrls],
+  });
 
-  if (primaryImageUrl !== null) {
-    if (typeof primaryImageUrl === "string") {
-      const trimmed = primaryImageUrl.trim();
-      if (trimmed.length > 0) candidates.push(trimmed);
-    } else {
-      candidates.push(primaryImageUrl);
-    }
-  }
+  if (resolved.primary !== null) return "READY";
 
-  if (variantImageUrls !== null && variantImageUrls !== undefined) {
-    if (Array.isArray(variantImageUrls)) {
-      for (const item of variantImageUrls) {
-        if (candidates.length >= MAX_MEDIA_CANDIDATES_SCANNED) break;
-        if (item === null || item === undefined) continue;
-        if (typeof item === "string") {
-          const trimmed = item.trim();
-          if (trimmed.length > 0) candidates.push(trimmed);
-        } else {
-          candidates.push(item);
-        }
-      }
-    } else {
-      candidates.push(variantImageUrls);
-    }
-  }
+  const hasPrimaryCandidate =
+    typeof primaryImageUrl === "string" && primaryImageUrl.trim().length > 0;
+  const hasVariantCandidate = productVariantImageUrls.some((candidate) => candidate.trim().length > 0);
 
-  if (candidates.length === 0) return "MISSING";
-
-  for (const candidate of candidates) {
-    if (parseTrustedProductImageUrl(candidate) !== null) {
-      return "READY";
-    }
-  }
-
-  return "UNTRUSTED";
+  return hasPrimaryCandidate || hasVariantCandidate ? "UNTRUSTED" : "MISSING";
 }
 
 function countsFor<TClass extends string>(names: readonly TClass[]): Record<TClass, number> {
@@ -347,8 +271,6 @@ export function summarizeMerchantIdentity(
       compositeDeferred += 1;
       continue;
     }
-    // Only what would actually be emitted is audited. A hidden variation's missing SKU is not a
-    // Merchant problem, and counting it would produce a verdict nobody can act on.
     if (!row.isStorefrontVisible) continue;
 
     emittableStandaloneVariations += 1;
@@ -360,7 +282,6 @@ export function summarizeMerchantIdentity(
     variationIdentifiers[variationClass] += 1;
     if (variationClass === "PRESENT") emittableVariationIds.push(row.pancakeVariationId as string);
 
-    // One product family is counted once however many of its variations are emitted.
     const productId = row.pancakeProductId;
     if (productId === null || !seenProductIds.has(productId)) {
       productIdentifiers[
@@ -389,6 +310,7 @@ export function summarizeMerchantIdentity(
     media[mediaClass] += 1;
     title[titleClass] += 1;
     description[descriptionClass] += 1;
+
     if (
       priceClass === "READY"
       && availabilityClass !== "AVAILABILITY_UNRESOLVED"
@@ -423,18 +345,12 @@ export function summarizeMerchantIdentity(
     description: Object.freeze(description),
     merchantFactsReady,
     apparelFacts: Object.freeze({
-      // Constants, like the durability verdict: nothing this audit can read decides either of
-      // these. The policy was decided by a human in ADR 0007, and the runtime either exists or
-      // does not — neither is a fact about the mirror.
       policy: "RESOLVED" as const,
       productOverrides: "NOT_IMPLEMENTED" as const,
       verdict: "BLOCKED" as const,
     }),
     durability: Object.freeze({
       mirrorReconcilesByExternalId: true,
-      // Nothing this audit can read establishes that an upstream object keeps its id for its
-      // lifetime. That needs a provider contract or repeated full-catalog resync evidence from an
-      // approved context, so the verdict is a constant here rather than a computed hope.
       upstreamLifetimeProven: false,
       verdict: "BLOCKED" as const,
     }),
