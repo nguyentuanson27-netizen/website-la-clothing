@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is merged via PR #189 and U21/P9a via PR #190. U22/P9b is in progress; later launch gates remain independent.**
+Status: **WAVES 0–4 IMPLEMENTED through U24; Checkpoint A PASS and Checkpoint B PASS. U9/M1 durability was delivered by PR #175 and PR #194 is the read-only M1 closure for manufacturer MPN/media/current-catalog evidence; its final merge still requires fresh review. Wave 5 U25–U28 remains open and launch gates remain independent.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -41,7 +41,7 @@ not resolve downstream owner or launch gates.
 
 - [x] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence. *(PR #162 resolver, PR #163 mirrored-money audit, PR #174 W3 evidence; merged)* W3 verdict **PASS** — real-catalog evidence does not contradict the approved `retailPrice` ownership assumption, so the U7 stop rule was not triggered. The `retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place and remains U15/P6 work.
 - [x] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only. *(PR #164 cart lines, PR #165 product/option facts; merged)* Composite lines carry the actual purchased component variation ID; unresolvable/private lines fail closed to no external identity.
-- [x] **U9** #153 M1 + #152 W4a — read-only identity/durability/SKU-MPN audit (PR #175); M1 durability **PROVEN via §3.3 Option B** (controlled repeated upstream-object correlation evidence on `a132`); SKU-as-MPN and runtime apparel facts remain pending downstream decisions; no GTIN inference; composites deferred.
+- [x] **U9** #153 M1 + #152 W4a — **read-only** Merchant identity/durability/catalog audit. PR #175 proves external-ID durability via §3.3 Option B; PR #194 closes current manufacturer-MPN/media evidence without changing catalog ownership: owner-confirmed Pancake variation `display_id` is mirrored as `VariantMirror.pancakeDisplayId` and audited directly as MPN, while website-owned `VariantMirror.sku` remains preserved across Pancake resync. ADR 0008 records the source/lifecycle contract; no GTIN inference; composites deferred. PR #194 still requires final fresh review before merge.
 - [x] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery. *(PR #167 lifecycle, PR #168 candidate repository, PR #169 runtime health; merged)* Candidate lookup is two bounded queries with an N+1 guard; lifecycle is derived, so it stays correct across restart and zero traffic.
 - [x] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision. *(PR #170 activation validation, PR #171 activation service, PR #172 admin operations; merged)* Activation gate remains **off**; disable/end-early stay campaign-row bounded so rollback survives coverage above 2000.
 
@@ -107,7 +107,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 - [x] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context. Merged via PR #190.
 - [x] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create. Merged via PR #191.
 - [x] **U23** #151 P10 — final Pancake convergence; all three raw-`livePrice` regressions + controlled custom-price acceptance. Merged via PR #192.
-- [x] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID.
+- [x] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID. Merged via PR #193.
 
 ### Checkpoint C
 
