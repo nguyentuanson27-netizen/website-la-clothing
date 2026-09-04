@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { readCanonicalPurchaseSnapshotSafely } from "@/commerce/canonical-purchase-snapshot";
 import { readMetaPurchaseSnapshot } from "@/commerce/meta-purchase-snapshot";
+import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
 import { prisma } from "@/db/prisma";
 
@@ -32,9 +34,22 @@ export default async function CheckoutSuccessPage({
       })
     : null;
   const confirmed = order?.state === "CONFIRMED";
+
+  // Vendor-neutral canonical Purchase snapshot from immutable finalized order facts (T7)
+  const canonicalPurchase = confirmed && orderCode
+    ? await readCanonicalPurchaseSnapshotSafely(prisma, orderCode)
+    : null;
+
   // The Conversions API reports this same sale from the server action that placed it. Both carry
   // the order code as the event id, so Meta collapses them into a single Purchase.
-  const purchase = confirmed && orderCode ? await readMetaPurchaseSnapshot(prisma, orderCode) : null;
+  let purchase = null;
+  if (confirmed && orderCode) {
+    try {
+      purchase = await readMetaPurchaseSnapshot(prisma, orderCode);
+    } catch {
+      // Tracking failures must never affect checkout success.
+    }
+  }
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -57,6 +72,7 @@ export default async function CheckoutSuccessPage({
       <h1 className="mt-4 text-[clamp(3rem,9vw,8rem)] font-semibold leading-[0.9] tracking-[-0.05em]">
         {confirmed ? "ĐẶT HÀNG THÀNH CÔNG" : "CHƯA THỂ XÁC NHẬN"}
       </h1>
+      <CommerceEventReporter event={canonicalPurchase ? canonicalPurchase.event : null} />
       {purchase && orderCode ? (
         <FacebookPixelEvent
           name="Purchase"

@@ -1,12 +1,12 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6 and M2 IMPLEMENTED; M1 partially delivered. T7/T8 and M3–M5/V1 remain proposed and
+Status: **PR-A (T1–T3), T4, T5, T6, M2, and T7 (U24, PR #193) IMPLEMENTED; M1 partially delivered. T8 and M3–M5/V1 remain proposed and
 require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
-+ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), and the durability half of **M1** (U9, PR #175). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
++ PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), the durability half of **M1** (U9, PR #175), and **T7** (U24, PR #193 canonical confirmed Purchase). T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`.
 
-T7, T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
+T8, M3, M4, M5 and V1 are **not** implemented. M1 remains incomplete outside its durability proof. No GTM loader exists: T8 still owns the first
 actual GTM load and CSP opening.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
@@ -123,11 +123,11 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-C — confirmed Purchase + immutable GTM activation
 
 ### T7 Canonical confirmed Purchase
-- [ ] Purchase only for `OrderMirror.state === CONFIRMED`.
-- [ ] `transaction_id = event_id = publicCode`.
-- [ ] Immutable item quantity/price/variation identity from `OrderLineSnapshot`; mutable enrichment optional.
-- [ ] Refresh/revisit keeps same ID; tracking failure cannot affect checkout success.
-- [ ] Existing Meta Pixel+CAPI dedup remains healthy.
+- [x] Purchase only for `OrderMirror.state === CONFIRMED`. *(Evidenced via Regression A in `canonical-purchase-snapshot.test.ts` & `canonical-confirmed-purchase.test.ts`)*
+- [x] `transaction_id = event_id = publicCode`. *(Evidenced via Regression E & live acceptance report on order #23258)*
+- [x] Immutable item quantity/price/variation identity from `OrderLineSnapshot`; mutable enrichment optional. *(Evidenced via Regressions B, C, D)*
+- [x] Refresh/revisit keeps same ID; tracking failure cannot affect checkout success. *(Evidenced via Regressions E & F)*
+- [x] Existing Meta Pixel+CAPI dedup remains healthy. *(Evidenced via Regression G & `meta-purchase-reporting.test.ts`)*
 
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
