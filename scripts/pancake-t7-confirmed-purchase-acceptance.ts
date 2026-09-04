@@ -36,7 +36,7 @@ export type SanitizedT7AcceptanceReport = Readonly<{
   publicCode: string;
   catalogBasePriceVnd: number;
   createdPancakeOrderId: string;
-  verifiedOrderState: "CONFIRMED";
+  syntheticSnapshotState: "CONFIRMED";
   snapshotFactQuantity: number;
   snapshotFactUnitPriceVnd: number;
   canonicalTransactionId: string;
@@ -162,16 +162,23 @@ export function extractCreatedOrderId(rawResponse: unknown): string {
   throw new Error("Unable to parse created order ID from Pancake response");
 }
 
+export const MAX_CLEANUP_DIAGNOSTIC_LENGTH = 128;
+
 export function sanitizeCleanupErrorMessage(message: string): string {
   if (typeof message !== "string") {
     return "UNKNOWN_ERROR";
   }
-  return message
+  const sanitized = message
     .replace(/[?&]api_key=[^&\s]+/gi, "")
     .replace(/[?&][a-zA-Z0-9_-]*(?:key|token|secret)[a-zA-Z0-9_-]*=[^&\s]+/gi, "")
     .replace(/\b(?:api_key|token|secret_key|secret)=[^\s]+/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (sanitized.length > MAX_CLEANUP_DIAGNOSTIC_LENGTH) {
+    return sanitized.slice(0, MAX_CLEANUP_DIAGNOSTIC_LENGTH).trimEnd();
+  }
+  return sanitized.length > 0 ? sanitized : "UNKNOWN_ERROR";
 }
 
 export type ControlledAcceptanceClient = {
@@ -400,7 +407,7 @@ export async function runControlledT7Acceptance(
     publicCode,
     catalogBasePriceVnd: EXPECTED_CATALOG_BASE_PRICE,
     createdPancakeOrderId: createdOrderId,
-    verifiedOrderState: "CONFIRMED" as const,
+    syntheticSnapshotState: "CONFIRMED" as const,
     snapshotFactQuantity: 1,
     snapshotFactUnitPriceVnd: EXPECTED_CATALOG_BASE_PRICE,
     canonicalTransactionId: snapshotVerification.snapshot!.event.ecommerce.transaction_id,

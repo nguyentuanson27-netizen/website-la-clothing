@@ -12,7 +12,9 @@ import {
   EXPECTED_SHOP_ID,
   EXPECTED_VARIATION_ID,
   extractCreatedOrderId,
+  MAX_CLEANUP_DIAGNOSTIC_LENGTH,
   runControlledT7Acceptance,
+  sanitizeCleanupErrorMessage,
   validateVariationPreflight,
 } from "../../scripts/pancake-t7-confirmed-purchase-acceptance.ts";
 
@@ -168,7 +170,7 @@ test("runControlledT7Acceptance executes complete verified flow with cleanup", a
   assert.equal(report.productCode, EXPECTED_PRODUCT_CODE);
   assert.equal(report.variationId, EXPECTED_VARIATION_ID);
   assert.equal(report.createdPancakeOrderId, "777888");
-  assert.equal(report.verifiedOrderState, "CONFIRMED");
+  assert.equal(report.syntheticSnapshotState, "CONFIRMED");
   assert.equal(report.snapshotFactQuantity, 1);
   assert.equal(report.snapshotFactUnitPriceVnd, EXPECTED_CATALOG_BASE_PRICE);
   assert.equal(report.identityInvariantVerified, true);
@@ -359,4 +361,139 @@ test("verification throws after create → cleanup is still attempted exactly on
   assert.equal(puts.length, 1);
   assert.equal(puts[0], `/shops/${EXPECTED_SHOP_ID}/orders/555666`);
 });
+
+test("sanitizeCleanupErrorMessage strips secrets and bounds diagnostic length", () => {
+  const longSecretMessage =
+    "Error 504 Gateway Timeout while processing /shops/123?api_key=secret-key-xyz&other=value " +
+    "A".repeat(500) +
+    "&token=very-secret-token";
+
+  const sanitized = sanitizeCleanupErrorMessage(longSecretMessage);
+
+  // Must not leak secret or query param
+  assert.equal(sanitized.includes("secret-key-xyz"), false);
+  assert.equal(sanitized.includes("very-secret-token"), false);
+  assert.equal(sanitized.includes("api_key"), false);
+
+  // Must be length-bounded
+  assert.ok(
+    sanitized.length <= MAX_CLEANUP_DIAGNOSTIC_LENGTH,
+    `Expected sanitized message length <= ${MAX_CLEANUP_DIAGNOSTIC_LENGTH}, got ${sanitized.length}`,
+  );
+});
+
+test("Regression A: long cleanup error message is sanitized and bounded in attemptOrderCancellation", async () => {
+  const longErrorMsg =
+    "Pancake PUT failure: " +
+    "B".repeat(600) +
+    " [sensitive query: ?api_key=token-abc-123456789]";
+
+  const throwingClient = {
+    getJson: async () => ({}),
+    postJson: async () => ({}),
+    putJson: async () => {
+      throw new Error(longErrorMsg);
+    },
+  };
+
+  const result = await attemptOrderCancellation(throwingClient, EXPECTED_SHOP_ID, "444555");
+  assert.ok(result.startsWith("CLEANUP_FAILED_"));
+  assert.equal(result.includes("token-abc-123456789"), false);
+  assert.equal(result.includes("api_key"), false);
+
+  const diagnosticPart = result.replace("CLEANUP_FAILED_", "");
+  assert.ok(
+    diagnosticPart.length <= MAX_CLEANUP_DIAGNOSTIC_LENGTH,
+    `Expected diagnostic length <= ${MAX_CLEANUP_DIAGNOSTIC_LENGTH}, got ${diagnosticPart.length}`,
+  );
+});
+
+test("Regression B & C: dual failure (main verification throws + cleanup fails) preserves original error and attaches bounded sanitized cleanupContext", async () => {
+  const env = {
+    T7_ACCEPTANCE_APPROVED: EXPECTED_PRODUCT_CODE,
+    PANCAKE_API_KEY: "dummy-key-for-test",
+    PANCAKE_SHOP_ID: String(EXPECTED_SHOP_ID),
+  };
+
+  let postCount = 0;
+  let putCount = 0;
+
+  const mockClient = {
+    getJson: async (endpoint: string) => {
+      if (endpoint.includes("/products/variations")) {
+        return {
+          data: [
+            {
+              id: EXPECTED_VARIATION_ID,
+              display_id: "A132-M",
+              retail_price: EXPECTED_CATALOG_BASE_PRICE,
+              remain_quantity: 5,
+              product_name: "Áo Polo Nam A132",
+            },
+          ],
+        };
+      }
+      return {};
+    },
+    postJson: async () => {
+      postCount++;
+      return { success: true, data: { id: 888777 } };
+    },
+    putJson: async () => {
+      putCount++;
+      // Cleanup PUT throws with long message and secret
+      throw new Error("Pancake network down: " + "C".repeat(400) + " ?api_key=leak-leak-leak");
+    },
+  };
+
+  // Main canonical verification throws intentional business error
+  const originalError = new Error("Authority verification failed: line price mismatch");
+  const failingDbClient = {
+    orderMirror: {
+      findUnique: async () => {
+        throw originalError;
+      },
+    },
+    variantMirror: {
+      findMany: async () => [],
+    },
+  };
+
+  await assert.rejects(
+    async () =>
+      runControlledT7Acceptance(env, {
+        client: mockClient,
+        dbClient: failingDbClient as unknown as import("../../src/commerce/canonical-purchase-snapshot.ts").CanonicalPurchaseClient,
+      }),
+    (err: unknown) => {
+      // 1. Throws the exact original verification error
+      assert.equal(err, originalError);
+      assert.equal((err as Error).message, "Authority verification failed: line price mismatch");
+
+      // 2. Cleanup context is attached
+      const context = (err as Error & { cleanupContext?: { createdOrderId?: string; cleanupResult?: string } }).cleanupContext;
+      assert.ok(context, "cleanupContext must be attached to original error");
+      assert.equal(context?.createdOrderId, "888777");
+
+      // 3. Cleanup diagnostic is sanitized and bounded
+      const cleanupResult = context?.cleanupResult ?? "";
+      assert.ok(cleanupResult.startsWith("CLEANUP_FAILED_"));
+      assert.equal(cleanupResult.includes("leak-leak-leak"), false);
+      assert.equal(cleanupResult.includes("api_key"), false);
+
+      const diagnosticPart = cleanupResult.replace("CLEANUP_FAILED_", "");
+      assert.ok(
+        diagnosticPart.length <= MAX_CLEANUP_DIAGNOSTIC_LENGTH,
+        `Expected attached diagnostic <= ${MAX_CLEANUP_DIAGNOSTIC_LENGTH}, got ${diagnosticPart.length}`,
+      );
+
+      return true;
+    },
+  );
+
+  // Invariant: No blind retries! Exactly 1 create POST, exactly 1 cleanup attempt
+  assert.equal(postCount, 1, "Expected exactly 1 create attempt");
+  assert.equal(putCount, 1, "Expected exactly 1 cleanup attempt");
+});
+
 

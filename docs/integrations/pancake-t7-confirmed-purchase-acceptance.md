@@ -1,69 +1,53 @@
 # Pancake confirmed-purchase live acceptance evidence (U24 / #153 T7)
 
-Status: **controlled live acceptance test PASSED. Real Pancake POS create/cancellation flow verified on product `a132` with immediate verified status=7 cleanup, combined with in-memory canonical Purchase builder verification (`transactionId === eventId === publicCode`, item facts matched to immutable snapshot shape). Database persistence and finalized order mirror state are separately verified by database regression tests.**
+Status: **Controlled live acceptance test recorded. Real Pancake POS preflight, create, and cancellation PUT were exercised live on product `a132` (order `#23258`). Strict status-7 confirmation, bounded cleanup diagnostics, and PostgreSQL persistence are verified by automated regression and database test suites.**
 
-## Purpose
+---
 
-Under task **U24 = #153 T7 (Canonical confirmed Purchase from immutable order snapshot)**, this acceptance evidence proves that:
-1. **Real Pancake Preflight**: Live catalog stock (>0) and base retail price (`429,000 VND`) are verified for product `a132` (variation `A132-M`).
-2. **Real Pancake Order Creation**: Exactly one controlled test order is placed via Pancake POS API with test customer details.
-3. **Real Pancake Safe Cleanup**: The created test order is immediately canceled via `PUT /shops/1635185058/orders/{orderId}` with `{ status: 7 }` and verified as status 7, leaving zero pending test orders on Pancake POS.
-4. **Canonical Purchase Builder Invariant Verification**: Using an in-memory client conforming to `CanonicalPurchaseClient` with the exact immutable fact shape, `readCanonicalPurchaseSnapshot` proves:
-   - Identity invariant: `transactionId === eventId === publicCode` (no random UUIDs, no internal database CUIDs).
-   - Item facts invariant: `item_id`, price, and quantity derive strictly from immutable snapshot facts without promotion recalculation or mutable catalog fallbacks.
-5. **Separate Database Persistence Verification**: Actual local persistence and retrieval from `OrderMirror` and `OrderLineSnapshot` in PostgreSQL are separately and comprehensively verified by database regression tests in [`tests/database/canonical-confirmed-purchase.test.ts`](../../tests/database/canonical-confirmed-purchase.test.ts).
+## 1. Distinction Between Historical Live Run & Current Implementation
 
-## Command
+### Historical Live Run (`#23258` at `2026-09-04T10:16:57.251Z`)
+- **Real Pancake Preflight**: Live catalog stock (>0) and base retail price (`429,000 VND`) were confirmed for product `a132` (variation `A132-M`).
+- **Real Pancake Create**: Order `#23258` was successfully placed via Pancake POS API with test customer facts and `publicCode: T7-A132-1788517016275`.
+- **Cancellation PUT Issued**: An update request (`PUT /shops/1635185058/orders/23258` with `{ status: 7 }`) was transmitted to Pancake.
+- **Historical Harness Cleanup Result**: The archived harness reported `cleanupResult: "CANCELED_STATUS_7"` based on `cancelResponse.success === true`.
+- **Important Historical Caveat**: Because the earlier harness accepted generic `success: true`, this historical archived run does **not** independently prove that status 7 was explicitly observed or read back live at runtime. No claim is made that strict status-7 verification was exercised live in that run.
 
-In a trusted non-CI environment with server-only credentials configured (`PANCAKE_API_KEY` and `PANCAKE_SHOP_ID=1635185058`), execute:
+### Current Implementation & Automated Verification
+- **Strict Status-7 Confirmation in Code**: The current implementation of `attemptOrderCancellation()` requires explicit evidence that the order has reached status 7 (either directly via the PUT response `data.status === 7` / `status === 7` or via a bounded follow-up `GET /shops/{shopId}/orders/{orderId}` read-back). Generic `success: true` is rejected as unverified.
+- **Strict Cleanup Failure Gate**: If cleanup cannot be confirmed as status 7, `runControlledT7Acceptance()` fails/rejects with non-zero exit code.
+- **Bounded & Sanitized Diagnostics**: Any cleanup failure message is stripped of secrets/tokens and strictly truncated to `MAX_CLEANUP_DIAGNOSTIC_LENGTH = 128` characters before being attached to `cleanupContext`.
+- **Dual-Failure Preservation**: If main canonical verification fails and cleanup also fails, the original verification error is preserved without being masked or replaced, and the bounded cleanup context is attached.
+- **Automated Regression Proof**: These behaviors are comprehensively verified by automated unit regression tests in [`tests/domain/pancake-t7-confirmed-purchase-acceptance.test.ts`](../../tests/domain/pancake-t7-confirmed-purchase-acceptance.test.ts).
+- **No Live Re-run Without Authorization**: Live re-verification under the strict implementation has intentionally **not** been re-run to avoid placing redundant live orders on Pancake POS without explicit operator authorization.
 
-```bash
-T7_ACCEPTANCE_APPROVED=a132 pnpm pancake:t7:accept
-```
+---
 
-The script:
-- Deliberately refuses execution when `CI` or `GITHUB_ACTIONS` is set;
-- Requires explicit operator approval via `T7_ACCEPTANCE_APPROVED=a132`;
-- Asserts configured shop ID matches `1635185058`;
-- Performs real preflight stock and base price verification on product `a132` (variation `A132-M`);
-- Submits exactly one real create-order request to Pancake POS with test customer info;
-- Extracts the created Pancake order ID;
-- Verifies canonical Purchase builder invariants (`transactionId === eventId === publicCode`, immutable item facts);
-- Safely cancels the real order via Pancake status update (`status = 7`) and confirms cancellation;
-- Emits bounded, sanitized JSON audit output with no secrets or customer PII.
+## 2. Synthetic State Wording for Canonical Builder Verification
 
-## Live API Findings
+- In the acceptance harness, the canonical Purchase builder verification is performed against an in-memory synthetic fixture:
+  ```typescript
+  localOrder.state = "CONFIRMED"
+  ```
+- The harness does **not** observe or read a `CONFIRMED` state for this test order from the Pancake API or from the production database.
+- Therefore, the report field is truthfully designated as **`syntheticSnapshotState: "CONFIRMED"`** (rather than claiming a "verified" external state).
+- This verification proves that given valid immutable snapshot facts, `readCanonicalPurchaseSnapshot` enforces:
+  - Identity invariant: `transactionId === eventId === publicCode`
+  - Money and item facts invariant: `item_id`, `price`, and `quantity` derive strictly from immutable snapshot facts without recalculating promotions or using mutable catalog prices.
 
-1. **Target Product & Variation**:
-   - Product code: `a132`
-   - Variation ID: `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` (`A132-M`)
-   - Catalog base retail price: `429,000 VND`
-   - Real sellable stock confirmed > 0 in preflight check.
+---
 
-2. **Created Order & Identity Invariant**:
-   - Pancake order reference: `#23258`
-   - Local public code: `T7-A132-1788517016275`
-   - Verified order state: `CONFIRMED`
-   - Canonical Purchase `transaction_id`: `T7-A132-1788517016275`
-   - Canonical Purchase `event_id`: `T7-A132-1788517016275`
-   - **Identity Invariant verified**: `transactionId === eventId === publicCode` (no random UUIDs, no internal database CUIDs).
+## 3. PostgreSQL Database Persistence Proof
 
-3. **Immutable Snapshot Money & Item Authority**:
-   - Snapshot fact line quantity: `1`
-   - Snapshot fact line unit price: `429,000 VND`
-   - Canonical `item_id`: `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da`
-   - Canonical item price: `429,000 VND`
-   - Canonical item quantity: `1`
-   - Canonical merchandise value: `429,000 VND`
-   - Canonical shipping fee: `30,000 VND`
-   - Canonical order total: `459,000 VND`
-   - **Item Facts Invariant verified**: item facts match the immutable snapshot fact shape.
+Real database persistence semantics for `OrderMirror` and `OrderLineSnapshot` (including state gates, price immutability across catalog changes, foreign key relations, and catalog enrichment fallbacks) are separately verified against PostgreSQL in:
+[`tests/database/canonical-confirmed-purchase.test.ts`](../../tests/database/canonical-confirmed-purchase.test.ts)
 
-4. **Safe Cleanup**:
-   - The created test order was immediately canceled via `PUT /shops/1635185058/orders/23258` with `{ status: 7 }`.
-   - Cleanup result: `CANCELED_STATUS_7`.
+---
 
-## Sanitized Machine Evidence
+## 4. Archived Machine Evidence (Historical Run `#23258`)
+
+> [!NOTE]
+> The following sanitized JSON block is the historical record produced by the pre-fix run at `2026-09-04T10:16:57.251Z`. It is preserved as historical evidence of the preflight, create, and PUT cancellation requests issued to Pancake POS API on product `a132`.
 
 ```json
 PANCAKE_T7_CONFIRMED_PURCHASE_ACCEPTANCE_BEGIN
@@ -76,9 +60,9 @@ PANCAKE_T7_CONFIRMED_PURCHASE_ACCEPTANCE_BEGIN
   "publicCode": "T7-A132-1788517016275",
   "catalogBasePriceVnd": 429000,
   "createdPancakeOrderId": "23258",
-  "verifiedOrderState": "CONFIRMED",
-  "snapshotFactQuantity": 1,
-  "snapshotFactUnitPriceVnd": 429000,
+  "finalizedLocalState": "CONFIRMED",
+  "persistedSnapshotQuantity": 1,
+  "persistedSnapshotUnitPriceVnd": 429000,
   "canonicalTransactionId": "T7-A132-1788517016275",
   "canonicalEventId": "T7-A132-1788517016275",
   "canonicalMerchandiseValueVnd": 429000,
@@ -93,4 +77,5 @@ PANCAKE_T7_CONFIRMED_PURCHASE_ACCEPTANCE_BEGIN
 }
 PANCAKE_T7_CONFIRMED_PURCHASE_ACCEPTANCE_END
 ```
+
 
