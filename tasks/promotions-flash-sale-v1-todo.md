@@ -1,12 +1,12 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P8 IMPLEMENTED AND MERGED; P9a IMPLEMENTED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189. P9b/P10 remain planned.**
+Status: **P1–P8 IMPLEMENTED AND MERGED; P9a IMPLEMENTED IN OPEN PR #190, NOT MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189. P9b/P10 remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
 real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; Checkpoint B evidence is in `docs/audits/wave-2-checkpoint-b.md`; the W3 pricing evidence is in `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract, P8's mutable DRAFT quote/audit and P9a's rendered-quote proof are integrated; P9b/P10 and later activation gates remain open.
+The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract and P8's mutable DRAFT quote/audit are integrated. P9a's rendered-quote proof is implemented in PR #190 but is **not** integrated until that merges; P9b/P10 and later activation gates remain open.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -255,7 +255,8 @@ state stranded-checkout recovery never sweeps.
 
 ## P9a — stateless rendered quote proof -> DRAFT
 
-Delivered by U21. Implemented in `src/commerce/checkout-quote-proof.ts`, issued in
+Delivered by U21 in **open PR #190 — implemented but not merged, so not yet integrated**. Implemented
+in `src/commerce/checkout-quote-proof.ts`, issued in
 `src/app/checkout/page.tsx`, verified inside the snapshot transaction in
 `src/commerce/guest-checkout-snapshot.ts`.
 
