@@ -57,6 +57,34 @@ export function readVariantQueryValue(
   return raw;
 }
 
+/**
+ * Writes the deep link this module reads.
+ *
+ * Kept beside the resolver on purpose: a consumer that needs to *publish* a variant URL — U27's
+ * variant `Offer`, and the Merchant mapper after it — must produce exactly what
+ * `resolveDeepLinkedVariantSelection` accepts, and a second URL-construction site is how those two
+ * halves drift apart. The identifier is percent-encoded rather than form-encoded so a value
+ * containing a space survives the round trip under either query parser, and it is written as the
+ * only query parameter so a hostile identifier cannot smuggle a second one or a fragment.
+ *
+ * This builds an addressable URL; it does not decide whether the named variation is publishable.
+ * That question belongs to the caller, and is answered by feeding the identifier back through
+ * `resolveDeepLinkedVariantSelection` against the same projection.
+ */
+export function buildVariantDeepLinkUrl({
+  origin,
+  slug,
+  pancakeVariationId,
+}: Readonly<{
+  origin: string;
+  slug: string;
+  pancakeVariationId: string;
+}>): string {
+  const url = new URL(`/shop/${encodeURIComponent(slug)}`, origin);
+  url.search = `${VARIANT_QUERY_PARAM}=${encodeURIComponent(pancakeVariationId)}`;
+  return url.href;
+}
+
 function matchesVariation(
   option: StorefrontProjectionOption,
   pancakeVariationId: string,

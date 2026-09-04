@@ -135,18 +135,30 @@ test("P14 omits Offer instead of misrepresenting variant price ranges or unresol
   assert.equal("offers" in unresolved["@graph"][0], false);
 });
 
-test("P14 does not claim ProductGroup variant markup without crawlable preselected variant URLs", () => {
-  const structured = buildProductStructuredData({
-    origin: "https://shop.example.com",
-    product,
-    variantOptions: onePriceOptions,
-  });
-  const serialized = JSON.stringify(structured);
+/**
+ * U27 gave this builder a `ProductGroup` shape, but only for a caller that has actually resolved a
+ * publishable variant family. The product-level path stays exactly what P14 published, so a caller
+ * that names no family — or one the caller could not make addressable — never gets variant markup.
+ */
+test("P14/U27 the product-level path claims no ProductGroup variant markup", () => {
+  for (const productGroup of [
+    undefined,
+    null,
+    { productGroupID: "pancake-product-1", variants: [] },
+  ]) {
+    const serialized = JSON.stringify(
+      buildProductStructuredData({
+        origin: "https://shop.example.com",
+        product,
+        variantOptions: onePriceOptions,
+        productGroup,
+      }),
+    );
 
-  assert.equal(serialized.includes("ProductGroup"), false);
-  assert.equal(serialized.includes("hasVariant"), false);
-  assert.equal(serialized.includes("productGroupID"), false);
-  assert.equal(serialized.includes("variesBy"), false);
+    for (const forbidden of ["ProductGroup", "hasVariant", "productGroupID", "variesBy"]) {
+      assert.equal(serialized.includes(forbidden), false, forbidden);
+    }
+  }
 });
 
 test("P14 omits invented product and merchant-policy facts", () => {

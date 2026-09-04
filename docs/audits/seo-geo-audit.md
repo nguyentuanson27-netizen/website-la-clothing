@@ -136,6 +136,26 @@ precision. Các trạng thái dưới đây có nghĩa:
   **variant identity → variant URL/deep-link + preselection → query/canonical policy →
   `ProductGroup`/variant `Offer` markup → HTTP/Rich Results verification**.
 
+  **Cập nhật W4d (U27):** dependency chain trên đã hoàn tất, nên markup đã được triển khai.
+  PDP hiện phát `ProductGroup` + một `Product` variant với `Offer` **exact** cho từng variant
+  publishable, thay thế (không đứng cạnh) `Product` product-level cũ, nên trang không còn hai
+  product-schema authority mâu thuẫn. Các quyết định đã chốt:
+
+  - variant URL tái sử dụng đúng contract U12 `/shop/<slug>?variant=<pancakeVariationId>`, được
+    build bởi chính module sở hữu contract đó; canonical/indexing policy của W4c không đổi (base
+    PDP vẫn là canonical duy nhất, variant query vẫn `noindex`);
+  - eligibility không được định nghĩa lại: mỗi candidate được đưa ngược qua resolver U12 trên chính
+    projection của trang, nên composite, external id trùng, `MAPPING_REQUIRED`/`AMBIGUOUS_OPTION`,
+    id rỗng/quá dài đều fail closed vì cùng một lý do — URL sẽ không mở đúng variant nó đặt tên;
+  - `price`/`availability` lấy từ projection PDP (rule promotion-aware dùng chung), không phải một
+    đường giá thứ hai; giá chưa resolve thì không phát offer;
+  - `productGroupID` là `pancakeProductId`; **không** phát `sku`/`mpn`/`gtin` — MPN authority thuộc
+    ADR 0008 và U25/M3, U27 không mở identifier design mới;
+  - `variesBy` chỉ liệt kê chiều mà các variant được phát thực sự khác nhau;
+  - **không** `AggregateOffer`, `lowPrice`, `highPrice`, `offerCount` cho một tập variants;
+  - composite giữ nguyên hành vi product-level an toàn hiện có (parent set only), không bị mô hình
+    hoá thành một variant family.
+
 - **W15 — 0/5 dedicated SEO HTTP smoke được wire trực tiếp, nhưng các contract không hoàn toàn
   ungated.** Các script `search-exposure-http-smoke.ts`, `structured-data-http-smoke.ts`,
   `product-metadata-http-smoke.ts`, `oai-robots-http-smoke.ts`, `product-slug-http-smoke.ts` đều
@@ -168,7 +188,9 @@ precision. Các trạng thái dưới đây có nghĩa:
 
 ### Medium — leverage cao sau correctness
 
-- **W5 — Product/variant schema còn mỏng.** Repo đã có dữ liệu như `sku`, `color`, `size`,
+- **W5 — Product/variant schema còn mỏng.** *(Phần variant-level đã do U27 giao: `color`/`size`
+  và `Offer` per-variant đã có. Phần còn lại — identifier product-level đã xác minh, `itemCondition`,
+  shipping/return policy — vẫn thuộc U32 và vẫn chưa được phát.)* Repo đã có dữ liệu như `sku`, `color`, `size`,
   `pancakeDisplayId`, `pancakeBarcode`, nhưng JSON-LD chưa khai thác. Bổ sung trường chỉ khi source
   semantics được xác minh. Đặc biệt **không suy `pancakeBarcode == gtin13` chỉ từ tên field**;
   phải xác nhận loại identifier, format/check digit và contract upstream. Có thể xem xét

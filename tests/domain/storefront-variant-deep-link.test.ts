@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   MAX_VARIANT_QUERY_LENGTH,
   VARIANT_QUERY_PARAM,
+  buildVariantDeepLinkUrl,
   readVariantQueryValue,
   resolveDeepLinkedVariantSelection,
 } from "../../src/commerce/storefront-variant-deep-link.ts";
@@ -158,4 +159,50 @@ test("U12 absent, empty and repeated query values resolve to no preselection", (
 
 test("U12 a null query resolves to no preselection without touching the projection", () => {
   assert.equal(resolveDeepLinkedVariantSelection({ projection: standalone, variantQuery: null }), null);
+});
+
+/**
+ * U27 consumes this contract to publish variant URLs in structured data, so the builder half of the
+ * addressing contract lives here with the reader half and is proved against it: whatever the
+ * builder writes, the resolver must select.
+ */
+test("U27 the deep-link builder writes the reviewed /shop/<slug>?variant=<pancakeVariationId> URL", () => {
+  assert.equal(
+    buildVariantDeepLinkUrl({
+      origin: "https://shop.example.com",
+      slug: "ao-oxford-relaxed",
+      pancakeVariationId: "pv-b",
+    }),
+    "https://shop.example.com/shop/ao-oxford-relaxed?variant=pv-b",
+  );
+});
+
+test("U27 the builder percent-encodes hostile identifiers instead of minting a second query", () => {
+  const url = buildVariantDeepLinkUrl({
+    origin: "https://shop.example.com",
+    slug: "ao-oxford-relaxed",
+    pancakeVariationId: "pv&other=1 #frag",
+  });
+
+  assert.equal(new URL(url).searchParams.get(VARIANT_QUERY_PARAM), "pv&other=1 #frag");
+  assert.equal([...new URL(url).searchParams.keys()].length, 1);
+  assert.equal(new URL(url).hash, "");
+});
+
+test("U27 every built variant URL resolves back to exactly the variation it names", () => {
+  for (const built of standalone.options) {
+    const url = buildVariantDeepLinkUrl({
+      origin: "https://shop.example.com",
+      slug: "ao-oxford-relaxed",
+      pancakeVariationId: built.pancakeVariationId,
+    });
+
+    assert.deepEqual(
+      resolveDeepLinkedVariantSelection({
+        projection: standalone,
+        variantQuery: new URL(url).searchParams.get(VARIANT_QUERY_PARAM),
+      })?.variantId,
+      built.id,
+    );
+  }
 });
