@@ -1,12 +1,12 @@
 # M1 / W4a — Merchant identity, MPN, media and durability audit
 
-Canonical audit document for **#153 M1 — Merchant read-only identity/durability/catalog audit** and **Checkpoint D**, closed in PR #194.
+Canonical audit document for **#153 M1 — Merchant read-only identity/durability/catalog audit** and **Checkpoint D**. Manufacturer-MPN ownership/lifecycle is governed by **ADR 0008**.
 
 ## Status
 
-- **M1 Audit Gate:** **COMPLETE / GREEN**.
+- **M1 Audit Gate:** **COMPLETE / GREEN** for the audited identity/MPN/durability/composite criteria.
 - **Checkpoint D:** **PASSED**.
-- **Downstream Merchant Feed Activation:** Remains **PENDING** under M3 (local O3 apparel override runtime, offer mapper) and M4 (scheduled fetch XML feed route). M1 proves catalog readiness for identity, MPN, durability, media, and composite isolation; it does not authorize immediate feed emission before M3/M4 land.
+- **Downstream Merchant Feed Activation:** Remains **PENDING** under M3 (O3 runtime + offer mapper) and M4 (bounded feed route/cache). M1 does not authorize feed activation.
 
 ---
 
@@ -14,25 +14,37 @@ Canonical audit document for **#153 M1 — Merchant read-only identity/durabilit
 
 | Criteria | Status | Evidence |
 |---|---|---|
-| **Offer ID (`id`)** | **PROVEN / GREEN** | 149/149 emittable variation IDs present, bounded $\le$ 50 Unicode code points, no whitespace/controls/surrogates, 0 duplicates. |
-| **Product Group ID (`item_group_id`)** | **PROVEN / GREEN** | 35/35 standalone product IDs present, bounded $\le$ 50 Unicode code points, no whitespace/controls/surrogates. |
-| **Identifier Durability** | **PROVEN via §3.3 Option B** | PR #175 controlled live experiment on production product `a132` with cryptographic markers across all 5 variations + repository external-ID reconciliation tests. |
-| **Manufacturer SKU / MPN** | **PROVEN / GREEN** | Owner authority confirmed LA Clothing manufacturer SKU is stored in Pancake variation `display_id`. Audited across full catalog: 149/149 PRESENT, 0 MISSING, 0 BLANK, 0 UNTRIMMED, 0 TOO_LONG, 0 INVALID_FORMAT, 0 duplicate SKUs. Stability proven across T0, T1, T2. Mirror sync proven on isolated clone DB: `mpnReady = true`. |
-| **Media Parity** | **PROVEN / GREEN** | Storefront product-level media projection (`ProductMirror.primaryImageUrl` + active/present sibling variant images ordered by `pancakeVariationId ASC` via `resolveStorefrontProductMedia`). 149/149 READY, 0 MISSING, 0 UNTRUSTED. |
-| **Composite Isolation** | **PROVEN / GREEN** | 116 composite members classified `COMPOSITE_DEFERRED` and excluded from standalone feed. Zero composite leak. |
-| **Price Readiness** | **READY** | 149/149 emittable prices resolved through storefront pricing authority (`PRICE_UNRESOLVED: 0`). |
-| **Availability** | **PARTIAL / NOT READY** | 77 `IN_STOCK`, 69 `OUT_OF_STOCK`, 3 `AVAILABILITY_UNRESOLVED` (requires upstream warehouse data reconciliation before feed launch). |
-| **Editorial Descriptions** | **NOT READY** | 0 published descriptions, 149 draft or missing. Downstream feed mapper will handle description fallback or gating. |
-| **Apparel Facts (O3)** | **Policy RESOLVED / Runtime BLOCKED** | ADR 0007 settled shop defaults (`male` / `adult` / `new`) with local product overrides. Runtime persistence/admin editing is M3 scope. |
+| **Offer ID (`id`)** | **PROVEN / GREEN** | 149/149 intended standalone variation IDs present, within the 50-character bound, no rejected invalid Unicode/whitespace, 0 duplicates. |
+| **Product Group ID (`item_group_id`)** | **PROVEN / GREEN** | 35/35 standalone product IDs present and within the 50-character bound. |
+| **External-ID durability** | **PROVEN via §3.3 Option B** | PR #175 controlled live experiment on `a132` + repository external-ID reconciliation tests. |
+| **Manufacturer SKU / MPN** | **PROVEN / GREEN** | Owner-confirmed authority is Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` per ADR 0008. Full current catalog: 149/149 PRESENT, 0 MISSING/BLANK/UNTRIMMED/TOO_LONG/INVALID_FORMAT, 0 duplicates. Immediate T0/T1/T2 reads prove consistency; time-separated `a132` observations from 2026-09-02 → 2026-09-04 provide representative lifecycle evidence. |
+| **Local `VariantMirror.sku` ownership** | **UNCHANGED** | Website-owned/local field remains preserved across Pancake resync. M1 does not read it as MPN and Pancake sync does not overwrite it. |
+| **Media parity** | **PROVEN / GREEN** | Product primary + all active/present sibling variant images in storefront order, delegated to `resolveStorefrontProductMedia`; 149/149 READY. Materialization is capped at the shared 100-candidate budget per product. |
+| **Composite isolation** | **PROVEN / GREEN** | 116 composite members classified `COMPOSITE_DEFERRED`; 0 standalone leakage. |
+| **Price readiness** | **READY** | 149/149 resolved by the storefront pricing authority. |
+| **Availability** | **PARTIAL / NOT READY** | 77 `IN_STOCK`, 69 `OUT_OF_STOCK`, 3 `AVAILABILITY_UNRESOLVED`. M3 must exclude unresolved rows fail-closed. |
+| **Editorial descriptions** | **NOT READY** | 0 published descriptions, 149 draft/missing in the recorded closure run. |
+| **Apparel facts (O3)** | **Policy RESOLVED / Runtime BLOCKED** | ADR 0007 settles defaults/override policy; persistence/admin/effective resolution remains M3 scope. |
 
 ---
 
-## 2. Real-catalog audit evidence (closure run)
+## 2. Recorded real-catalog closure run
 
-- **Command:** `DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit`
-- **Execution provenance:** Production VPS (PostgreSQL 17, shop `1635185058`), isolated mirror clone `la_clothing_m1_audit` synced with live Pancake production API in read-only mode.
-- **Timestamp:** `2026-09-04T15:59:15Z`
-- **Git Head:** PR #194 head
+Command:
+
+```bash
+DATABASE_URL=... PANCAKE_SHOP_ID=1635185058 pnpm merchant:identity:audit
+```
+
+Recorded environment/evidence:
+
+- production VPS / Pancake shop `1635185058`;
+- isolated PostgreSQL mirror clone `la_clothing_m1_audit`; production DB was not intentionally mutated by the M1 branch;
+- timestamp: `2026-09-04T15:59:15Z`;
+- the committed PR branch head at that timestamp was `ee98bd10e04e73df3d9bf1183d0c38eddf687c5d`; the run record did **not** capture worktree dirty state, so this is explicitly **not relabelled as exact immutable execution-SHA evidence** for later commits;
+- later PR #194 tests/CI verify the corrected read-only ownership/media/Unicode implementation separately. A future trusted-host rerun should record exact committed SHA + clean/dirty state if this operational evidence is refreshed.
+
+Recorded summary:
 
 ```json
 {
@@ -105,210 +117,216 @@ Canonical audit document for **#153 M1 — Merchant read-only identity/durabilit
 }
 ```
 
-*Note on `durability.verdict: "BLOCKED"` in the JSON output:* By design, the local static script reports `"BLOCKED"` because runtime execution cannot independently verify external API lifetime guarantees; the authoritative durability verdict is established empirically via §3.3 Option B below.
+The JSON key `sku` is historical report compatibility: after the Review `5115581893` remediation, the M1 repository populates that candidate-MPN field from mirrored **`pancakeDisplayId`**, not from website-owned `VariantMirror.sku`.
+
+The script's local `durability.verdict: "BLOCKED"` is also intentional: a DB-only process cannot independently prove upstream lifetime semantics. External-ID durability is established by §3.3 Option B evidence below.
 
 ---
 
-## 3. Authoritative owner decision on manufacturer SKU / MPN
+## 3. Manufacturer SKU / MPN source-of-truth
 
-- **Brand:** `LA Clothing` (manufacturer & brand owner).
-- **Authoritative decision:** Codes such as `A132-S`, `A132-M`, `A132-L`, `A132-XL`, `A132-XXL` are official manufacturer-assigned SKUs/MPNs created and owned by LA Clothing.
-- **Pancake field:** In the current Pancake POS/API system, these manufacturer SKUs appear in the variation field `display_id`.
-- **Anti-omission rule:** `identifier_exists = false` is **forbidden** for the LA Clothing catalog because manufacturer SKUs exist and are assigned to all standalone variations.
-- **Anti-fallback contract:** `VariantMirror.sku` is populated directly from upstream `variation.display_id`. The mirror sync enforces:
-  - No fallback to `barcode` (e.g. `145-1`, which represents an internal barcode sequence, not an MPN);
-  - No fallback to `pancakeVariationId` (UUID);
-  - No fallback to product slug or local CUID;
-  - No silent auto-generation or heuristics;
-  - Exact upstream string preservation (untrimmed/malformed upstream values are preserved so audit fails closed).
+ADR 0008 records the reviewed ownership boundary:
 
----
+- LA Clothing is the manufacturer/brand owner.
+- Codes such as `A132-S`, `A132-M`, `A132-L`, `A132-XL`, `A132-XXL` are manufacturer-assigned LA Clothing SKUs/MPNs.
+- Pancake exposes them as variation `display_id`.
+- The mirror stores that external fact as `VariantMirror.pancakeDisplayId`.
+- **`VariantMirror.sku` remains website-owned/local and is preserved across Pancake resync.** M1 remains read-only and does not repurpose that field.
+- MPN never falls back to barcode, Pancake UUID, local CUID, slug, option label or array position.
+- `identifier_exists=false` is not an approved escape path for this catalog because manufacturer identifiers exist.
 
-## 4. Full Pancake API MPN audit (read-only)
+The external adapter now treats missing/null `display_id` as null and fails closed when a present value is a non-string. Dedicated parser-level regressions pin that trust boundary.
 
-A comprehensive, paginated traversal of the entire Pancake catalog for shop `1635185058` was executed against the live Pancake API (`https://pos.pages.fm/api/v1`):
+### Current full-catalog MPN observation
 
-- **Total catalog variations fetched:** 356 (across 4 pages, page size 100).
-- **Target standalone launch set:** 149 visible, standalone variations across 35 product families.
-- **Classification results for `display_id` as manufacturer SKU:**
-  - `PRESENT`: **149** (100.0%)
-  - `MISSING`: **0**
-  - `BLANK`: **0**
-  - `UNTRIMMED`: **0**
-  - `TOO_LONG` (> 70 Unicode code points): **0**
-  - `INVALID_FORMAT` (invalid Unicode/control characters): **0**
-  - `duplicateSkus`: **0** (149 unique manufacturer SKUs across 149 standalone variations).
-  - `blockers`: **0**.
+The authorized read-only Pancake traversal observed 356 total variations over 4 pages and 149 intended standalone launch records:
 
-### Target `a132` inspection
+- `PRESENT`: **149**
+- `MISSING`: **0**
+- `BLANK`: **0**
+- `UNTRIMMED`: **0**
+- `TOO_LONG`: **0**
+- `INVALID_FORMAT`: **0**
+- duplicate manufacturer MPNs: **0**
 
-Inspection of product `ÁO A132` (`4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`) verified exact manufacturer SKU semantics:
+Representative `a132` values:
 
-| Size | Pancake Variation ID | Upstream `display_id` (Manufacturer SKU) | Upstream `barcode` |
+| Size | Pancake Variation ID | Manufacturer MPN (`display_id`) | Barcode |
 |---|---|---|---|
-| **S** | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `A132-S` | `145-5` |
-| **M** | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `A132-M` | `145-1` |
-| **L** | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `A132-L` | `145-2` |
-| **XL** | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `A132-XL` | `145-3` |
-| **XXL** | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `A132-XXL` | `145-4` |
+| S | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `A132-S` | `145-5` |
+| M | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `A132-M` | `145-1` |
+| L | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `A132-L` | `145-2` |
+| XL | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `A132-XL` | `145-3` |
+| XXL | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `A132-XXL` | `145-4` |
 
-*Conclusion:* `display_id` carries the human-readable manufacturer SKU/MPN, `barcode` is an internal inventory sequence, and `variationId` is an immutable UUID.
-
-### MPN stability proof (T0 / T1 / T2)
-
-Full catalog observations across repeated read cycles demonstrated complete stability of `display_id`:
-
-- **T0 Observation:** `2026-09-04T15:50:38.351Z` (356 variations fetched).
-- **T1 Observation:** `2026-09-04T15:50:39.946Z` (356 variations fetched).
-- **T2 Observation:** `2026-09-04T15:50:50.790Z` (356 variations fetched).
-- **Correlation:** Every variation correlated by `pancakeVariationId`.
-- **Result:** **356 / 356 variations (100.0%)** retained identical `display_id` across all observations. Unstable count = 0.
+Barcode and variation UUID are therefore distinct from the manufacturer MPN and are not used as fallbacks.
 
 ---
 
-## 5. Media authority & storefront product-level parity
+## 4. Manufacturer-MPN lifecycle evidence
 
-Addressing Review Comment `5542421957`: the audit media projection in `src/commerce/merchant-identity-audit-repository.ts` and `merchant-identity-audit.ts` now strictly mirrors storefront product-level candidate resolution:
+### Immediate consistency: T0 / T1 / T2
 
-1. Candidate media set assembled from:
-   - `ProductMirror.primaryImageUrl`;
-   - Images from all sibling variants of the same product where `isPresent = true` and `isActive = true`;
-   - Ordered deterministically by `pancakeVariationId ASC`.
-2. Image URLs within each variant preserved in source order.
-3. Inactive/hidden siblings (`isActive = false` or `isPresent = false`) are excluded from contributing media.
-4. Selection delegated to canonical storefront resolver `resolveStorefrontProductMedia()`.
-5. Performance guarantee: single bounded database query with in-memory grouping ($O(n)$ time and space), avoiding $O(n^2)$ result amplification.
+Full-catalog repeated reads recorded:
 
-**Real-catalog count:** **149 READY, 0 MISSING, 0 UNTRUSTED**. All 149 standalone variations have trusted media available through product-level storefront projection.
+- T0: `2026-09-04T15:50:38.351Z` — 356 variations;
+- T1: `2026-09-04T15:50:39.946Z` — 356 variations;
+- T2: `2026-09-04T15:50:50.790Z` — 356 variations;
+- correlation key: `pancakeVariationId`;
+- result: 356/356 retained the same `display_id` across these reads.
 
----
+**Interpretation:** this is consistency evidence only. Seconds-apart reads are not described as a lifecycle proof.
 
-## 6. Official Google Merchant specifications & format validation
+### Time-separated representative lifecycle evidence
 
-Audited against official Google Merchant Center specifications (retrieved **2026-09-04**):
+The `a132` production experiment in PR #175 ended on **2026-09-02** with a fresh GET proving exact restoration of `display_id = A132-S/M/L/XL/XXL` on the same five `pancakeVariationId` values. The PR #194 authorized live reads on **2026-09-04** observed the same five manufacturer MPN values on those same five variation IDs.
 
-| Attribute | GMC Limit | Google Specification URL | Repo Enforcement |
-|---|---|---|---|
-| `id` | Up to 50 characters | https://support.google.com/merchants/answer/6324405 | 1–50 Unicode code points, no whitespace, no controls/surrogates |
-| `item_group_id` | 1–50 characters | https://support.google.com/merchants/answer/6324507 | 1–50 Unicode code points, no whitespace, no controls/surrogates |
-| `mpn` | 1–70 characters | https://support.google.com/merchants/answer/6324482 | 1–70 Unicode code points, XML 1.0 valid text, no invalid controls |
+That two-day separation supplies representative evidence that ordinary time/resync activity does not randomly rewrite the manufacturer MPN. It supplements, rather than replaces, the stronger PR #175 controlled external-ID durability experiment.
 
-- **Unicode length semantics:** Length is measured in Unicode code points (`Array.from(value).length`), not JavaScript UTF-16 code units.
-- **Character constraints:** Validated against XML 1.0 valid characters; rejected if matching `\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}` or if UTF-16 is malformed (`!value.isWellFormed()`).
+### Lifecycle contract
+
+- Manufacturer MPN is expected to remain stable across ordinary catalog reads/resyncs and unrelated product edits when the owner has not intentionally changed it.
+- An intentional owner reassignment of `display_id` is an explicit catalog metadata change and may change future Merchant `mpn`.
+- Such a deliberate reassignment does **not** remap offer/mirror identity; reconciliation remains keyed by `pancakeVariationId`.
+- The repository test therefore correctly preserves local `VariantMirror.sku` across Pancake changes instead of turning the local field into a second copy of `display_id`.
 
 ---
 
-## 7. Pancake $\rightarrow$ VariantMirror sync integration & mutation proof
+## 5. Media authority and bounded storefront parity
 
-In `src/commerce/catalog-mirror-repository.ts`, `tx.variantMirror.upsert` maps:
-```typescript
-pancakeDisplayId: variation.displayId,
-sku: variation.displayId ?? null,
+M1 uses the same product-level candidate scope as the storefront:
+
+1. `ProductMirror.primaryImageUrl`;
+2. all `isPresent=true && isActive=true` sibling variant `pancakeImageUrls` for that product;
+3. sibling order `pancakeVariationId ASC`;
+4. source order preserved inside each variant image array;
+5. trusted selection delegated to `resolveStorefrontProductMedia()`.
+
+The audit performs one bounded variation query and groups candidates in memory; it does not issue a sibling query per row. **Before the resolver is called, materialized variant image strings are capped at `MAX_MEDIA_CANDIDATES_SCANNED = 100` per product**, matching the resolver scan budget. Thus a 50,000-variation audit cannot retain an unbounded number of raw image strings per product merely to discard them later.
+
+Regression coverage proves:
+
+- variant A with no image + active sibling B with trusted image → product-level media is READY for A and B;
+- image only on inactive sibling → does not make active variant READY;
+- >100 untrusted candidates followed by a trusted image beyond the budget → only 100 are materialized/scanned and the late candidate cannot alter the verdict.
+
+Recorded real-catalog count: **149 READY / 0 MISSING / 0 UNTRUSTED**.
+
+---
+
+## 6. Google Merchant format validation
+
+Official Google Merchant Center sources were checked on **2026-09-04**:
+
+| Attribute | Source limit | Repository policy |
+|---|---|---|
+| `id` | 1–50 Unicode characters | max 50 code points; reject invalid Merchant Unicode; LA Clothing additionally rejects any whitespace instead of relying on Google normalization |
+| `item_group_id` | 1–50 characters | same conservative identifier policy |
+| `mpn` | 1–70 characters | max 70 code points; conservative invalid-Unicode rejection; no guessed/fallback value |
+
+Sources:
+
+- `id`: https://support.google.com/merchants/answer/6324405
+- `item_group_id`: https://support.google.com/merchants/answer/6324507
+- `mpn`: https://support.google.com/merchants/answer/6324482
+
+Google's ID guidance says to **avoid whitespace** and may normalize it; “reject all whitespace” is therefore LA Clothing project hardening, not quoted as Google's exact normalization behavior.
+
+The validator:
+
+- counts length with `Array.from(value).length` (Unicode code points);
+- rejects malformed UTF-16;
+- rejects `Cc`, `Cf`, `Co`, `Cn` invalid-Unicode categories;
+- additionally rejects supplementary-plane code points represented by UTF-16 surrogate pairs, matching the current Google ID invalid-Unicode example conservatively;
+- keeps normal BMP Unicode letters such as Vietnamese `đ` valid within the length bound.
+
+---
+
+## 7. Read-only mirror integration and ownership regressions
+
+M1 intentionally makes **no Pancake → local-SKU write**.
+
+`catalog-mirror-repository.ts` continues to mirror:
+
+```ts
+pancakeDisplayId: variation.displayId
 ```
-on both `create` and `update`.
 
-### TDD & Anti-fallback test suite (`tests/database/catalog-mirror-sku-sync.test.ts`)
-- **Positive test:** `display_id: "A132-M"` $\rightarrow$ `VariantMirror.sku: "A132-M"`. (PASS)
-- **Negative / Anti-fallback test:** `display_id: null, barcode: "145-2", variationId: UUID` $\rightarrow$ `VariantMirror.sku: null`. (PASS)
-- **Anti-fallback assertions:** `sku !== barcode`, `sku !== pancakeVariationId`, `sku !== slug`. (PASS)
-- **Update test:** Changing upstream `display_id` from `"A132-M"` to `"A132-M2"` updates `VariantMirror.sku` on the same row, preserving identity by `pancakeVariationId`. (PASS)
+while leaving `VariantMirror.sku` untouched on create/update according to the pre-existing local ownership contract.
 
-### Mutation proof
-- **Mutation 1 (`sku: variation.barcode`):** Anti-fallback test failed RED with `AssertionError: '145-1' !== 'A132-M'`.
-- **Mutation 2 (`sku: variation.id`):** Anti-fallback test failed RED with `AssertionError: 'var-positive-1' !== 'A132-M'`.
-- **Restoration (`sku: variation.displayId ?? null`):** Test suite returned GREEN.
+Tests prove both directions:
 
-### Real-catalog sync integration proof on isolated clone DB (`la_clothing_m1_audit`)
-- **Execution:** Full branch catalog sync executed against isolated PostgreSQL database clone `la_clothing_m1_audit` using live read-only Pancake API.
-- **Result:** 356 variations synced. Exactly **356 / 356 (100.0%)** variations have `VariantMirror.sku === PancakeVariation.display_id` (0 mismatches).
-- **M1 Audit on clone DB:** `emittableStandaloneVariations = 149`, `sku.PRESENT = 149`, `sku.MISSING = 0`, `duplicateSkus = []`, `mpnReady = true`.
+- a locally set `VariantMirror.sku = "LOCAL-SKU"` survives a Pancake resync even when `display_id` changes;
+- M1 reads `pancakeDisplayId` as the manufacturer MPN candidate and does not let a populated/duplicate local `sku` rescue or contaminate a missing/unique MPN verdict;
+- `display_id = null` does not fall back to barcode, UUID, slug or local SKU;
+- identity reconciliation remains keyed by `pancakeVariationId`, not manufacturer MPN.
+
+This keeps U9/M1 inside the master plan's **read-only audit** boundary and leaves any future ownership migration of `VariantMirror.sku` as a separate reviewed decision.
 
 ---
 
-## 8. External-ID durability evidence (preserved from PR #175)
+## 8. External-ID durability evidence preserved from PR #175
 
-External identifier durability is proven under **§3.3 Option B** through the combination of upstream empirical observation under controlled mutation and local repository reconciliation.
+External identifier durability is proven under **§3.3 Option B** through controlled upstream mutation/restore evidence plus repository reconciliation.
 
-### 1. Controlled live experiment on production product `a132`
+### Controlled live experiment on production `a132`
 
-- **Execution provenance:** Production VPS (Node.js v22.23.2, Pancake shop `1635185058`).
-- **Exact experiment execution SHA:** `847b4d49d76edd2939803002b27fc19d223e7236`
-- **Executed at:** `2026-09-02T13:34:15Z` – `2026-09-02T13:34:28Z`.
-- **Command:** `M1_EXPERIMENT_APPROVED=a132 node --env-file=.env.local --experimental-strip-types scripts/pancake-m1-durability-experiment.ts`
-- **Run ID:** `310af19f`
-- **Target resolution:** Target `a132` queried directly from Pancake API (`/shops/1635185058/products?search=a132`). Exactly 1 upstream product matched:
-  - `pancakeProductId`: `4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`
-  - Name: `"ÁO A132"`
-  - `custom_id`: `"A132"`
-  - `display_id`: `"145"`
-  - Variations count: 5 (sizes S, M, L, XL, XXL).
-- **Setup bridge validation (`setupPreservedIds: true`):**
-  - T0 baseline observation immediately after marker setup asserted against pre-mutation snapshot via `assertSetupPreservedIds()`.
-  - Confirmed product ID and all 5 variation IDs remained unchanged through initial marker assignment (`setupPreservedIds: true`), preventing silent remap at setup.
-- **Production safety & decoupled identifier restoration:**
-  - Pre-mutation snapshot separately recorded `custom_id: null` and `display_id: "A132-{size}"` for every variation without collapsing.
-  - Restoration payload uses `custom_id: origVar.custom_id ?? origVar.display_id`, ensuring `custom_id` takes priority when provided.
-  - Fresh GET verification confirmed exact restoration of: product name, product `custom_id`, `note_product`, variation count, variation IDs, variation `display_id`, and variation `custom_id: null` (`productionProductRestored: true`, `verifiedFieldsMatch: true`).
-- **Independent correlate design without tested ID fallback:**
-  - Zero proof-path fallback to `GET /products/${productId}`.
-  - Option B correlation: Parent product is correlated strictly through the COMPLETE set of 5 child variation markers (`M1-A132-V-{size}-310af19f`), all sharing exactly one upstream `product_id`.
-  - Option A verification: Upstream product `note_product` verified against expected phase product marker (`M1-A132-P-310af19f`, `...|MUT1`, `...|MUT2`).
-- **Identifier Lifecycle Evidence:**
+- production VPS, Node.js v22.23.2, shop `1635185058`;
+- **exact experiment execution SHA:** `847b4d49d76edd2939803002b27fc19d223e7236`;
+- executed `2026-09-02T13:34:15Z`–`2026-09-02T13:34:28Z`;
+- run ID `310af19f`;
+- product ID `4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`;
+- five variations S/M/L/XL/XXL.
 
-| Variation Size | Pancake Variation ID | Original (`custom_id` / `display_id`) | Temporary Marker (`custom_id` in PUT $\rightarrow$ `display_id` in GET) | Restored State (`custom_id` / `display_id`) |
-| :--- | :--- | :--- | :--- | :--- |
-| **S** | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `null` / `"A132-S"` | `M1-A132-V-S-310af19f` | `null` / `"A132-S"` (Verified) |
-| **M** | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `null` / `"A132-M"` | `M1-A132-V-M-310af19f` | `null` / `"A132-M"` (Verified) |
-| **L** | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `null` / `"A132-L"` | `M1-A132-V-L-310af19f` | `null` / `"A132-L"` (Verified) |
-| **XL** | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `null` / `"A132-XL"` | `M1-A132-V-XL-310af19f` | `null` / `"A132-XL"` (Verified) |
-| **XXL** | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `null` / `"A132-XXL"` | `M1-A132-V-XXL-310af19f` | `null` / `"A132-XXL"` (Verified) |
+The experiment independently correlated the product/variations with owner-controlled markers, verified the pre-mutation IDs before changing fields, performed controlled reversible mutations, and verified fresh GET restoration. The final evidence reported:
 
-- **Comparison evaluation:**
-  - Evaluated via `compareCorrelatedObservations`:
-    - `runsObserved`: 3
-    - `setupPreservedIds`: `true`
-    - `productMarkerStable`: `true`
-    - `variationMarkersStable`: `true`
-    - `allMarkersRetainedSameIds`: `true`
-    - `remapDetected`: `false`
-    - `duplicateMarkersDetected`: `false`
-    - `missingMarkersDetected`: `false`
-    - `unexpectedMarkersDetected`: `false`
-    - `verdict`: `"STABLE"`
+```text
+setupPreservedIds: true
+productMarkerStable: true
+variationMarkersStable: true
+allMarkersRetainedSameIds: true
+remapDetected: false
+duplicateMarkersDetected: false
+missingMarkersDetected: false
+unexpectedMarkersDetected: false
+productionProductRestored: true
+verdict: STABLE
+```
 
-### 2. Repository reconciliation by external ID (proven in test)
+The pre-mutation and restored manufacturer-facing values were also recorded separately from `custom_id`:
 
-`tests/database/merchant-identity-audit.test.ts` proves that `ProductMirror` and `VariantMirror` rows reconcile by `pancakeProductId` and `pancakeVariationId`: renaming a product or modifying options updates the existing row rather than creating duplicate rows.
+| Size | Stable variation ID | Pre/Restored `custom_id` | Pre/Restored `display_id` |
+|---|---|---|---|
+| S | `5fb045fa-af8a-4fc9-95f8-8c30d02027b4` | `null` | `A132-S` |
+| M | `9ea76227-51f0-45a2-b5cc-f6b42e5ec3da` | `null` | `A132-M` |
+| L | `fc45eab8-ed4e-4f25-87d1-70944026d655` | `null` | `A132-L` |
+| XL | `b185e908-caf3-4394-8c6a-692e5cf4c51a` | `null` | `A132-XL` |
+| XXL | `9c2657ae-1de0-4037-86a0-26cc5d4949b9` | `null` | `A132-XXL` |
 
-### 3. Historical time-separated stability (supporting context)
+Repository regressions separately prove that `ProductMirror` and `VariantMirror` reconcile by `pancakeProductId` / `pancakeVariationId`, not slug, position, option text or local row ID.
 
-Comparing the production mirror database against live Pancake API reads:
-- Database variation count: 356.
-- Live API variation count: 356.
-- Stable variation IDs: **356 / 356 (100.0%)**.
-- Disappeared variation IDs: **0**.
-- Appeared variation IDs: **0**.
+Historical supporting context also observed 356/356 stable variation IDs between the production mirror and later live Pancake reads, with 0 disappeared and 0 newly appeared IDs.
 
-### Known limitations & scope
-
-- **No perpetual contractual guarantee:** The Pancake POS API does not provide an explicit contractual lifetime or non-reuse guarantee. Durability is proven via **§3.3 Option B** empirical controlled multi-run correlation evidence rather than a vendor SLA.
-- **Target scope:** The controlled mutation experiment was conducted on production product `a132` (`4b838ecb-6eb3-4e38-bc89-c1e6e8890a3d`) across all 5 variations.
+Known limitation: Pancake does not publish a perpetual identifier-lifetime SLA; the project therefore relies on reviewed §3.3 Option B empirical evidence rather than claiming a provider guarantee.
 
 ---
 
 ## 9. Gate result
 
-- **Identifier format:** **PROVEN / GREEN** (149/149 variations and 35/35 products within 50 code points, no whitespace/controls/surrogates).
-- **Identifier durability:** **PROVEN via §3.3 Option B** (PR #175 / `a132`).
-- **Composite exclusion:** **PROVEN / GREEN** (116 records classified `COMPOSITE_DEFERRED`, 0 leak).
-- **Manufacturer SKU / MPN:** **PROVEN / GREEN** (`mpnReady = true`, 149/149 present, 0 duplicates, stable across T0–T2, mirror sync verified).
-- **Media implementation parity:** **PROVEN / GREEN** (149/149 READY via product-level storefront projection).
-- **Availability:** **PARTIAL / NOT READY** (77 `IN_STOCK`, 69 `OUT_OF_STOCK`, 3 `AVAILABILITY_UNRESOLVED`).
-- **Apparel runtime:** **BLOCKED under M3** (ADR 0007 policy resolved, runtime deferred to M3).
+- **Identifier format:** **GREEN** for the intended standalone catalog.
+- **External-ID durability:** **PROVEN via PR #175 / §3.3 Option B**.
+- **Manufacturer SKU / MPN:** **GREEN** — authority `display_id` → mirrored `pancakeDisplayId`; 149/149 present/valid/unique; immediate read consistency + time-separated representative lifecycle evidence; local `VariantMirror.sku` remains separate.
+- **Composite exclusion:** **GREEN** — 116 `COMPOSITE_DEFERRED`.
+- **Media:** **GREEN** — product-level storefront parity with bounded 100-candidate materialization; recorded catalog 149/149 READY.
+- **Availability:** **PARTIAL / NOT READY** — 3 unresolved rows remain a downstream M3 exclusion concern, not an identity/MPN/durability Checkpoint D contradiction.
+- **Apparel runtime:** **BLOCKED under M3**.
 
-### Checkpoint D Verdict: PASSED
+### Checkpoint D verdict: PASSED
 
-Checkpoint D requirements are fully met:
-1. Real-catalog identity/MPN/durability audit is green for every intended standalone launch record.
-2. Standalone deep-link contract is green via U12/M2 (PR #180).
-3. Composite products are intentionally absent and classified `COMPOSITE_DEFERRED`.
+Checkpoint D's three requirements are met:
+
+1. real-catalog identity/MPN/durability evidence is green for the intended standalone launch records;
+2. standalone deep-link/addressability contract is green via U12/M2 / PR #180;
+3. composite products remain intentionally absent (`COMPOSITE_DEFERRED`).
+
+This does **not** mean the Merchant feed is launch-ready: M3/M4, O2/O3 runtime, unresolved availability exclusion, feed route/cache/backoff and later Merchant activation evidence remain separate gates.
