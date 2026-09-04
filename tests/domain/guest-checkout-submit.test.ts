@@ -229,3 +229,63 @@ test("P9a an unproven quote returns refreshed money and nothing that could autho
     "the price-change payload must carry display money only, never a proof",
   );
 });
+
+test("P9b a DRAFT repriced against a fresher Pancake base asks the buyer to reconfirm", async () => {
+  const service = createGuestCheckoutSubmitService({
+    snapshot: {
+      async create() {
+        return snapshotOrder("LA-repriced");
+      },
+    },
+    orderSubmission: {
+      async submit() {
+        return {
+          ok: false as const,
+          state: "DRAFT" as const,
+          reason: "PRICE_CHANGED" as const,
+          repricedQuote: {
+            merchandiseSubtotalVnd: 600_000,
+            shippingFeeVnd: 30_000,
+            totalVnd: 630_000,
+          },
+        };
+      },
+    },
+    generatePublicCode: () => "LA-repriced",
+  });
+
+  // The load-bearing assertion. Falling through to PROCESSING would tell the buyer the order is
+  // being handled and to stop resubmitting, which would make P9b's explicit reconfirmation
+  // unreachable from the browser and strand the order at the repriced DRAFT forever.
+  assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+    ok: false,
+    status: "PRICE_CHANGED",
+    priceChange: {
+      merchandiseSubtotalVnd: 600_000,
+      shippingFeeVnd: 30_000,
+      totalVnd: 630_000,
+    },
+  });
+});
+
+test("P9b a DRAFT returned for any other reason still reads as processing", async () => {
+  const service = createGuestCheckoutSubmitService({
+    snapshot: {
+      async create() {
+        return snapshotOrder("LA-busy");
+      },
+    },
+    orderSubmission: {
+      async submit() {
+        return { ok: false as const, state: "DRAFT" as const, reason: "SUBMISSION_BUSY" as const };
+      },
+    },
+    generatePublicCode: () => "LA-busy",
+  });
+
+  assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+    ok: false,
+    status: "PROCESSING",
+    orderCode: "LA-busy",
+  });
+});

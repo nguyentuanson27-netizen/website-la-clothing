@@ -156,31 +156,62 @@ test("submission rejects mismatched or unproven Pancake shop scope before any ex
   }
 });
 
-test("price or stock drift is rejected before Pancake order creation", async () => {
-  for (const scenario of [
-    { key: "price-drift", variation: liveVariation({ price: 510_000 }), reason: "PRICE_CHANGED" },
-    { key: "stock-drift", variation: liveVariation({ stock: 1 }), reason: "STOCK_UNAVAILABLE" },
-  ] as const) {
-    const order = await createDraft(scenario.key);
-    let createCalls = 0;
-    const service = createPancakeOrderSubmissionService(prisma, {
-      async fetchCompleteCatalog() {
-        return [scenario.variation];
-      },
-      async createOrder() {
-        createCalls += 1;
-        return { id: 1 };
-      },
-    });
+test("stock drift is rejected outright before Pancake order creation", async () => {
+  // Unlike a price move, stock is not something the buyer can reconfirm their way past, so this
+  // stays terminal. P9b changed only the price half of what used to be one shared assertion.
+  const key = "stock-drift";
+  const order = await createDraft(key);
+  let createCalls = 0;
+  const service = createPancakeOrderSubmissionService(prisma, {
+    async fetchCompleteCatalog() {
+      return [liveVariation({ stock: 1 })];
+    },
+    async createOrder() {
+      createCalls += 1;
+      return { id: 1 };
+    },
+  });
 
-    const result = await service.submit({ publicCode: order.publicCode, shopId });
-    assert.deepEqual(result, { ok: false, state: "REJECTED", reason: scenario.reason });
-    assert.equal(createCalls, 0);
-    const persisted = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
-    assert.equal(persisted.state, "REJECTED");
-    assert.equal(persisted.syncErrorCode, scenario.reason);
-    await cleanup(scenario.key);
-  }
+  const result = await service.submit({ publicCode: order.publicCode, shopId });
+  assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.equal(createCalls, 0);
+  const persisted = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
+  assert.equal(persisted.state, "REJECTED");
+  assert.equal(persisted.syncErrorCode, "STOCK_UNAVAILABLE");
+  await cleanup(key);
+});
+
+test("price drift returns the order to a reconfirmable DRAFT instead of killing it", async () => {
+  // P9b: a price that moved upstream is not an invalid order, it is one the buyer has not agreed to
+  // yet. It must stay reconfirmable, carry the refreshed money, and reach no Pancake write.
+  const key = "price-drift";
+  const order = await createDraft(key);
+  let createCalls = 0;
+  const service = createPancakeOrderSubmissionService(prisma, {
+    async fetchCompleteCatalog() {
+      return [liveVariation({ price: 510_000 })];
+    },
+    async createOrder() {
+      createCalls += 1;
+      return { id: 1 };
+    },
+  });
+
+  const result = await service.submit({ publicCode: order.publicCode, shopId });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.state, "DRAFT");
+  assert.equal(result.reason, "PRICE_CHANGED");
+  assert.equal(createCalls, 0);
+
+  const persisted = await prisma.orderMirror.findUniqueOrThrow({
+    where: { id: order.id },
+    include: { lines: true },
+  });
+  assert.equal(persisted.state, "DRAFT");
+  assert.equal(persisted.syncErrorCode, "PRICE_CHANGED");
+  assert.equal(persisted.lines[0]!.unitPriceVnd, BigInt(510_000));
+  await cleanup(key);
 });
 
 test("pre-write validation transport failure safely returns to DRAFT and may be retried", async () => {

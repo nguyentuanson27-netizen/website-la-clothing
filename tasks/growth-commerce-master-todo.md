@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is merged via PR #189. U21/P9a is implemented in PR #190 and is not merged, so it is not yet integrated; later launch gates remain independent.**
+Status: **WAVE 2 COMPLETE — Checkpoint A PASS; U12–U17 are merged and integrated; U14/P5 is delivered via P5a PR #184 + P5b PR #185; Wave 3 U18/U19 is merged; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. U20/P8 is merged via PR #189 and U21/P9a via PR #190. U22/P9b is in progress; later launch gates remain independent.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -104,8 +104,8 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 ## Wave 4 — checkout/order convergence
 
 - [x] **U20** #151 P8 — mutable DRAFT quote/audit after U17 + U19. Merged via PR #189.
-- [ ] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context. Implemented in PR #190; unchecked until that merges.
-- [ ] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create.
+- [x] **U21** #151 P9a — bounded stateless server-MAC rendered-quote proof; raw HttpOnly cart UUID remains server-only context. Merged via PR #190.
+- [ ] **U22** #151 P9b — fresh Pancake reconfirmation through central resolver; mismatch => refreshed DRAFT + `PRICE_CHANGED`, no create. Implemented in an open PR; unchecked until that merges.
 - [ ] **U23** #151 P10 — final Pancake convergence; all three raw-`livePrice` regressions + controlled custom-price acceptance.
 - [ ] **U24** #153 T7 — confirmed Purchase from immutable order snapshot; `publicCode` remains transaction/event ID.
 

@@ -1,12 +1,12 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P8 IMPLEMENTED AND MERGED; P9a IMPLEMENTED IN OPEN PR #190, NOT MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189. P9b/P10 remain planned.**
+Status: **P1–P9a IMPLEMENTED AND MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189 and P9a via PR #190. P9b/P10 remain planned.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
 real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; Checkpoint B evidence is in `docs/audits/wave-2-checkpoint-b.md`; the W3 pricing evidence is in `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract and P8's mutable DRAFT quote/audit are integrated. P9a's rendered-quote proof is implemented in PR #190 but is **not** integrated until that merges; P9b/P10 and later activation gates remain open.
+The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract, P8's mutable DRAFT quote/audit and P9a's rendered-quote proof are integrated; P9b/P10 and later activation gates remain open.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -255,8 +255,7 @@ state stranded-checkout recovery never sweeps.
 
 ## P9a — stateless rendered quote proof -> DRAFT
 
-Delivered by U21 in **open PR #190 — implemented but not merged, so not yet integrated**. Implemented
-in `src/commerce/checkout-quote-proof.ts`, issued in
+Delivered by U21 / PR #190. Implemented in `src/commerce/checkout-quote-proof.ts`, issued in
 `src/app/checkout/page.tsx`, verified inside the snapshot transaction in
 `src/commerce/guest-checkout-snapshot.ts`.
 
@@ -291,18 +290,54 @@ explicit re-submission — because reporting which check failed would tell a pro
 guess was closer, while the buyer's next step is identical in every case.
 
 ## P9b — DRAFT -> fresh Pancake
-- [ ] Fetch fresh trusted Pancake catalog facts.
-- [ ] Feed fresh base into central resolver.
-- [ ] Compare DRAFT quote to fresh effective website quote, never raw retail.
-- [ ] Mismatch atomically refreshes DRAFT line/audit/totals + `PRICE_CHANGED`.
-- [ ] No create-order on mismatch.
-- [ ] Percentage recalculates; fixed revalidates; repeated drift can reconfirm again.
+
+Delivered by U22 in an open PR — implemented but not merged, so not yet integrated. Implemented in
+`src/commerce/pancake-order-submit.ts`.
+
+- [x] Fetch fresh trusted Pancake catalog facts.
+- [x] Feed fresh base into central resolver.
+- [x] Compare DRAFT quote to fresh effective website quote, never raw retail.
+- [x] Mismatch atomically refreshes DRAFT line/audit/totals + `PRICE_CHANGED`.
+- [x] No create-order on mismatch.
+- [x] Percentage recalculates; fixed revalidates; repeated drift can reconfirm again.
 
 Verification:
-- [ ] % and fixed fresh-base drift.
-- [ ] promotion start/end during checkout.
-- [ ] invalid/recovery.
-- [ ] zero POS write on mismatch.
+- [x] % and fixed fresh-base drift.
+- [x] promotion start/end during checkout.
+- [x] invalid/recovery.
+- [x] zero POS write on mismatch.
+
+Two decisions worth recording. A drifted price returns the order to `DRAFT` rather than `REJECTED`:
+it is not an invalid order, only one the buyer has not agreed to yet, so it stays reconfirmable
+through the same handshake P9a introduced. And the fresher base is written back to
+`VariantMirror` for the order's variants — without that, the reconfirmation re-derives the quote
+from stale mirrored data, submission finds the fresher base again, and the handshake never
+terminates. Only the two price columns are touched; `syncedAt` still means "last reconciled by a
+catalog sync", which this is not.
+
+The outbound requested line price now follows the confirmed `OrderLineSnapshot.unitPriceVnd` rather
+than raw live price, because comparing against the effective quote while sending the raw base would
+charge full price for a discounted line. P10 still owns the totals-integrity regressions and the
+controlled authorized Pancake acceptance evidence.
+
+Price drift and provenance drift are handled separately. `drifted` compares only the effective unit
+price, which is the right test for the buyer-facing handshake but not for the finalized audit: a
+fresher Pancake base behind a still-valid fixed price, or one campaign handing over to another at the
+same final price, moves no money the buyer agreed to yet would finalize a line recording a base no
+upstream reported or naming a campaign that was already over. Those now refresh the line audit and
+the mirror under the guarded `VALIDATING` transition, before the outbound claim and without asking
+the buyer to reconfirm anything; money columns are deliberately untouched there, since rewriting them
+would turn an audit correction into a silent repricing. A submission with nothing stale writes
+nothing, which is pinned by its own regression so the comparison cannot quietly become eager.
+
+Two verification boxes above were checked ahead of their evidence and have since been earned. The
+start/end boundaries are now driven by two regressions that submit the *same* fixture on either side
+of the window edge, so the submission instant is the only variable; evaluating campaigns at snapshot
+time instead of submission time fails exactly those two and nothing else. And the promotion-candidate
+read is now inside the same pre-write recovery boundary as the fresh-catalog read: a transient
+failure there returns the order to retryable `DRAFT / VALIDATION_UNAVAILABLE` instead of escaping
+with the row still `VALIDATING`, which the recovery sweep would have turned into a terminal
+`REJECTED / VALIDATION_INTERRUPTED` fifteen minutes later despite no Pancake write having happened.
 
 ## P10 — final Pancake convergence
 - [ ] Fresh effective quote used for price-change comparison.
