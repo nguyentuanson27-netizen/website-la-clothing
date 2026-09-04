@@ -134,6 +134,12 @@ function mapSubmissionResult(
   }
 
   if (result.state === "DRAFT") {
+    // A DRAFT repriced against a fresher Pancake base is the P9b handshake, not a stuck order.
+    // Falling through to PROCESSING would tell the buyer their order is being handled and to stop
+    // resubmitting — the exact opposite of the explicit reconfirmation this outcome requires.
+    if (result.reason === "PRICE_CHANGED" && "repricedQuote" in result) {
+      return { ok: false, status: "PRICE_CHANGED", priceChange: result.repricedQuote };
+    }
     if (result.reason === "VALIDATION_UNAVAILABLE") {
       return {
         ok: false,

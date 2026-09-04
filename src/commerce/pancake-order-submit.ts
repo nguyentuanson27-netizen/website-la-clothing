@@ -7,7 +7,9 @@ import {
 } from "../integrations/pancake/order-create.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
-import { resolveStorefrontPrice } from "./storefront-product.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 
@@ -54,6 +56,12 @@ export type PancakeOrderSubmissionEvent =
       reason: "VALIDATION_UNAVAILABLE";
     }
   | {
+      name: "pancake_order.quote_repriced";
+      correlationId: string;
+      state: "DRAFT";
+      reason: "PRICE_CHANGED";
+    }
+  | {
       name: "pancake_order.create_started";
       correlationId: string;
       state: "POS_SUBMITTING";
@@ -72,8 +80,28 @@ export type PancakeOrderSubmissionEvent =
       state: "CONFIRMED";
     };
 
+/**
+ * The money a repriced DRAFT now carries.
+ *
+ * Returned so the buyer can be shown the new number and asked to confirm it. Display only: the next
+ * submission recomputes the quote and re-checks the buyer's proof against that answer, exactly as
+ * P9a requires, so nothing here is ever charged on the strength of having travelled through a
+ * response body.
+ */
+export type PancakeOrderRepricedQuote = Readonly<{
+  merchandiseSubtotalVnd: number;
+  shippingFeeVnd: number;
+  totalVnd: number;
+}>;
+
 export type PancakeOrderSubmissionResult =
   | { ok: true; state: "CONFIRMED"; pancakeOrderId: string }
+  | {
+      ok: false;
+      state: "DRAFT";
+      reason: "PRICE_CHANGED";
+      repricedQuote: PancakeOrderRepricedQuote;
+    }
   | {
       ok: false;
       state: "DRAFT" | "VALIDATING" | "POS_SUBMITTING" | "REJECTED" | "SYNC_UNKNOWN" | "CONFIRMED";
@@ -87,6 +115,13 @@ export type PancakeOrderSubmissionGateway = {
 
 export type PancakeOrderSubmissionOptions = {
   onEvent?: (event: PancakeOrderSubmissionEvent) => void;
+  /**
+   * The instant every campaign window is evaluated against for this submission.
+   *
+   * Injected rather than read inside the loop so one submission cannot straddle a campaign
+   * boundary and price two lines of the same order against different instants.
+   */
+  now?: () => Date;
 };
 
 function emitSafely(
@@ -187,6 +222,7 @@ export function createPancakeOrderSubmissionService(
   gateway: PancakeOrderSubmissionGateway,
   options: PancakeOrderSubmissionOptions = {},
 ) {
+  const readNow = options.now ?? (() => new Date());
   async function submit({
     publicCode,
     shopId,
@@ -235,6 +271,145 @@ export function createPancakeOrderSubmissionService(
         reason,
       });
       return { ok: false, state: "REJECTED", reason };
+    }
+
+    /**
+     * Hands a drifted order back to the buyer instead of killing it.
+     *
+     * `reject` is terminal: it is for orders that must not be placed at all. A price that moved
+     * upstream is not that — the buyer simply has not agreed to the new number yet, and the correct
+     * outcome is the same two-stage handshake P9a introduced. So this returns the order to `DRAFT`
+     * carrying the refreshed quote, and the buyer must confirm it explicitly.
+     *
+     * The write is one transaction: line, audit and totals move together, because a half-refreshed
+     * order is one whose stored totals disagree with its own lines. The guard on `VALIDATING`
+     * ensures a submission that lost its claim cannot overwrite whatever took it.
+     *
+     * The fresher base is also written back to the mirror. Without that, the buyer's reconfirmation
+     * re-derives the quote from stale mirrored data, submission finds the fresher base again, and the
+     * handshake never terminates — the stale-mirror loop the spec names. Only the two price columns
+     * are touched: `syncedAt` means "last reconciled by a catalog sync", which this is not.
+     */
+    async function repriceDraft(
+      refreshed: ReadonlyArray<{
+        id: string;
+        variantId: string;
+        quantity: number;
+        freshBaseVnd: number;
+        pricing: ReturnType<typeof resolvePromotionPricing>;
+      }>,
+    ): Promise<PancakeOrderSubmissionResult> {
+      let refreshedSubtotalVnd = 0;
+      let refreshedQuantity = 0;
+      const lineWrites: Array<{
+        id: string;
+        unitPriceVnd: bigint;
+        lineTotalVnd: bigint;
+        baseUnitPriceVnd: bigint;
+        promotionCampaignId: string | null;
+        promotionName: string | null;
+        promotionKind: "PROMOTION" | "FLASH_SALE" | null;
+        promotionDiscountType: "PERCENTAGE" | "FIXED_PRICE" | null;
+        promotionPercentageValue: number | null;
+        promotionFixedPriceVnd: bigint | null;
+      }> = [];
+
+      for (const line of refreshed) {
+        const unitPriceVnd = line.pricing.effectivePriceVnd;
+        const basePriceVnd = line.pricing.basePriceVnd;
+        if (unitPriceVnd === null || basePriceVnd === null) return reject("PRICE_UNAVAILABLE");
+
+        const lineTotalVnd = checkedMultiplyVnd(unitPriceVnd, line.quantity);
+        const nextSubtotal =
+          lineTotalVnd === null ? null : checkedAddVnd(refreshedSubtotalVnd, lineTotalVnd);
+        const nextQuantity = refreshedQuantity + line.quantity;
+        if (
+          lineTotalVnd === null ||
+          nextSubtotal === null ||
+          !Number.isSafeInteger(nextQuantity) ||
+          nextQuantity <= 0
+        ) {
+          return reject("LOCAL_ORDER_INVALID");
+        }
+        refreshedSubtotalVnd = nextSubtotal;
+        refreshedQuantity = nextQuantity;
+
+        const promotion = line.pricing.promotion;
+        if (line.pricing.isDiscounted && promotion === null) return reject("LOCAL_ORDER_INVALID");
+
+        lineWrites.push({
+          id: line.id,
+          unitPriceVnd: BigInt(unitPriceVnd),
+          lineTotalVnd: BigInt(lineTotalVnd),
+          baseUnitPriceVnd: BigInt(basePriceVnd),
+          promotionCampaignId: promotion?.id ?? null,
+          promotionName: promotion?.name ?? null,
+          promotionKind: promotion?.kind ?? null,
+          promotionDiscountType: promotion?.discountType ?? null,
+          promotionPercentageValue: promotion?.percentageValue ?? null,
+          promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
+        });
+      }
+
+      const refreshedShippingVnd = calculateGuestShippingFeeVnd({
+        subtotalVnd: refreshedSubtotalVnd,
+        totalQuantity: refreshedQuantity,
+      });
+      const refreshedTotalVnd = checkedAddVnd(refreshedSubtotalVnd, refreshedShippingVnd);
+      if (refreshedTotalVnd === null) return reject("LOCAL_ORDER_INVALID");
+
+      const claimed = await client.$transaction(async (tx) => {
+        const held = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "VALIDATING" },
+          data: {
+            state: "DRAFT",
+            syncErrorCode: "PRICE_CHANGED",
+            merchandiseSubtotalVnd: BigInt(refreshedSubtotalVnd),
+            shippingFeeVnd: BigInt(refreshedShippingVnd),
+            totalVnd: BigInt(refreshedTotalVnd),
+          },
+        });
+        if (held.count !== 1) return false;
+
+        // `updateMany` rather than `update` throughout: a row that vanished under a concurrent
+        // catalog sync should leave the rest of the refresh intact, not abort the transaction and
+        // surface to the buyer as an outage.
+        for (const write of lineWrites) {
+          const { id, ...data } = write;
+          await tx.orderLineSnapshot.updateMany({ where: { id }, data });
+        }
+        for (const line of refreshed) {
+          await tx.variantMirror.updateMany({
+            where: { id: line.variantId },
+            data: {
+              pancakeRetailPrice: line.freshBaseVnd,
+              pancakeRetailPriceAfterDiscount: line.freshBaseVnd,
+            },
+          });
+        }
+        return true;
+      });
+
+      if (!claimed) {
+        return { ok: false, state: "VALIDATING", reason: "SUBMISSION_ALREADY_CLAIMED" };
+      }
+
+      emitSafely(options.onEvent, {
+        name: "pancake_order.quote_repriced",
+        correlationId,
+        state: "DRAFT",
+        reason: "PRICE_CHANGED",
+      });
+      return {
+        ok: false,
+        state: "DRAFT",
+        reason: "PRICE_CHANGED",
+        repricedQuote: {
+          merchandiseSubtotalVnd: refreshedSubtotalVnd,
+          shippingFeeVnd: refreshedShippingVnd,
+          totalVnd: refreshedTotalVnd,
+        },
+      };
     }
 
     async function resetValidation(): Promise<PancakeOrderSubmissionResult> {
@@ -290,12 +465,31 @@ export function createPancakeOrderSubmissionService(
       }
     }
 
+    // The fresher base is only half the answer. A website sale is `resolvePromotionPricing(base,
+    // campaigns)`, so comparing a promoted DRAFT against raw Pancake retail would refuse every
+    // correctly discounted order; and a percentage campaign against a moved base yields a different
+    // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
+    // one resolver, at one instant.
+    const now = readNow();
+    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+      variantIds: order.lines.map(({ variantId }) => variantId),
+      client: client as unknown as PromotionCandidateReadClient,
+    });
+
     const requestedVariationIds = new Set<string>();
     const requestLines: Array<{
       pancakeVariationId: string;
       quantity: number;
       unitPriceVnd: number;
     }> = [];
+    const freshLines: Array<{
+      id: string;
+      variantId: string;
+      quantity: number;
+      freshBaseVnd: number;
+      pricing: ReturnType<typeof resolvePromotionPricing>;
+    }> = [];
+    let drifted = false;
     let subtotalVnd = 0;
     let totalQuantity = 0;
 
@@ -315,21 +509,36 @@ export function createPancakeOrderSubmissionService(
         return reject("VARIATION_UNAVAILABLE");
       }
 
-      const livePrice = resolveStorefrontPrice({
-        retailPrice: live.retailPrice,
-        retailPriceAfterDiscount: live.retailPriceAfterDiscount,
-      });
-      if (livePrice === null || !isSupportedVndAmount(livePrice)) {
+      // Deliberately `retailPrice` alone, matching the central authority: a lower Pancake
+      // after-discount field is an order-level rule there, not a catalog price, so it neither sets
+      // nor invalidates the website price.
+      if (!isUsableBasePriceVnd(live.retailPrice)) {
         return reject("PRICE_UNAVAILABLE");
       }
-      if (line.unitPriceVnd !== BigInt(livePrice)) {
-        return reject("PRICE_CHANGED");
+      const freshPricing = resolvePromotionPricing({
+        basePriceVnd: live.retailPrice,
+        campaigns: campaignsByVariantId.get(line.variantId) ?? [],
+        now,
+      });
+      const freshUnitPriceVnd = freshPricing.effectivePriceVnd;
+      if (freshUnitPriceVnd === null || !isSupportedVndAmount(freshUnitPriceVnd)) {
+        return reject("PRICE_UNAVAILABLE");
       }
       if (!Number.isFinite(live.sellableStock) || live.sellableStock < line.quantity) {
         return reject("STOCK_UNAVAILABLE");
       }
+      if (line.unitPriceVnd !== BigInt(freshUnitPriceVnd)) {
+        drifted = true;
+      }
+      freshLines.push({
+        id: line.id,
+        variantId: line.variantId,
+        quantity: line.quantity,
+        freshBaseVnd: live.retailPrice,
+        pricing: freshPricing,
+      });
 
-      const lineTotalVnd = checkedMultiplyVnd(livePrice, line.quantity);
+      const lineTotalVnd = checkedMultiplyVnd(Number(line.unitPriceVnd), line.quantity);
       const nextSubtotal = lineTotalVnd === null ? null : checkedAddVnd(subtotalVnd, lineTotalVnd);
       const nextQuantity = totalQuantity + line.quantity;
       if (
@@ -347,8 +556,17 @@ export function createPancakeOrderSubmissionService(
       requestLines.push({
         pancakeVariationId: line.pancakeVariationId,
         quantity: line.quantity,
-        unitPriceVnd: livePrice,
+        // The money the buyer confirmed, which the drift check above has just established equals the
+        // fresh effective quote. Sending the live base here instead would charge full price for a
+        // line the website sold at a discount.
+        unitPriceVnd: Number(line.unitPriceVnd),
       });
+    }
+
+    // Before any totals assertion or outbound call: a drifted quote is not an invalid order, and
+    // must not be judged against totals the buyer is about to be asked to replace.
+    if (drifted) {
+      return repriceDraft(freshLines);
     }
 
     const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd, totalQuantity });

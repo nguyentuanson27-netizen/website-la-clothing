@@ -290,18 +290,35 @@ explicit re-submission — because reporting which check failed would tell a pro
 guess was closer, while the buyer's next step is identical in every case.
 
 ## P9b — DRAFT -> fresh Pancake
-- [ ] Fetch fresh trusted Pancake catalog facts.
-- [ ] Feed fresh base into central resolver.
-- [ ] Compare DRAFT quote to fresh effective website quote, never raw retail.
-- [ ] Mismatch atomically refreshes DRAFT line/audit/totals + `PRICE_CHANGED`.
-- [ ] No create-order on mismatch.
-- [ ] Percentage recalculates; fixed revalidates; repeated drift can reconfirm again.
+
+Delivered by U22 in an open PR — implemented but not merged, so not yet integrated. Implemented in
+`src/commerce/pancake-order-submit.ts`.
+
+- [x] Fetch fresh trusted Pancake catalog facts.
+- [x] Feed fresh base into central resolver.
+- [x] Compare DRAFT quote to fresh effective website quote, never raw retail.
+- [x] Mismatch atomically refreshes DRAFT line/audit/totals + `PRICE_CHANGED`.
+- [x] No create-order on mismatch.
+- [x] Percentage recalculates; fixed revalidates; repeated drift can reconfirm again.
 
 Verification:
-- [ ] % and fixed fresh-base drift.
-- [ ] promotion start/end during checkout.
-- [ ] invalid/recovery.
-- [ ] zero POS write on mismatch.
+- [x] % and fixed fresh-base drift.
+- [x] promotion start/end during checkout.
+- [x] invalid/recovery.
+- [x] zero POS write on mismatch.
+
+Two decisions worth recording. A drifted price returns the order to `DRAFT` rather than `REJECTED`:
+it is not an invalid order, only one the buyer has not agreed to yet, so it stays reconfirmable
+through the same handshake P9a introduced. And the fresher base is written back to
+`VariantMirror` for the order's variants — without that, the reconfirmation re-derives the quote
+from stale mirrored data, submission finds the fresher base again, and the handshake never
+terminates. Only the two price columns are touched; `syncedAt` still means "last reconciled by a
+catalog sync", which this is not.
+
+The outbound requested line price now follows the confirmed `OrderLineSnapshot.unitPriceVnd` rather
+than raw live price, because comparing against the effective quote while sending the raw base would
+charge full price for a discounted line. P10 still owns the totals-integrity regressions and the
+controlled authorized Pancake acceptance evidence.
 
 ## P10 — final Pancake convergence
 - [ ] Fresh effective quote used for price-change comparison.
