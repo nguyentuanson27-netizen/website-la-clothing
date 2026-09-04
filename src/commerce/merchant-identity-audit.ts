@@ -4,10 +4,11 @@
  * Answers what the mirrored catalog can prove today about the identifiers a Merchant feed would
  * emit, and is deliberately unable to answer what it cannot.
  *
- * It enforces Google Merchant Center format and character constraints (valid Unicode, no invalid
- * control characters, format characters like U+200D, PUA, or lone surrogates; length bounds of
- * 50 Unicode code points for ID and 70 Unicode code points for MPN) combined with LA Clothing's
- * strict fail-closed whitespace policy, while avoiding vendor-specific pattern assumptions.
+ * It enforces Google Merchant Center format and character constraints for offer IDs, combined with
+ * LA Clothing's stricter fail-closed policy: invalid control/format/private-use/unassigned Unicode,
+ * malformed UTF-16, supplementary-plane code points represented by surrogate pairs, and whitespace
+ * in `id` / `item_group_id` are rejected. Length bounds are 50 Unicode code points for ID and 70
+ * Unicode code points for MPN. The same conservative Unicode safety boundary is applied to MPN.
  *
  * Three things it will not do:
  *
@@ -53,7 +54,11 @@ const CLASSES: readonly ExternalIdentifierClass[] = [
 export type MerchantIdentityRow = Readonly<{
   pancakeVariationId: string | null;
   pancakeProductId: string | null;
-  /** Candidate manufacturer MPN. Nullable and not database-unique, which is why it needs auditing. */
+  /**
+   * Candidate manufacturer MPN. The M1 repository sources this from mirrored Pancake
+   * `pancakeDisplayId`; it is intentionally not the website-owned `VariantMirror.sku` field.
+   * The summary keeps the historical `sku` key for report compatibility.
+   */
   sku: string | null;
   isComposite: boolean;
   isStorefrontVisible: boolean;
@@ -111,13 +116,18 @@ export type ClassifyIdentifierOptions = {
 };
 
 /**
- * Google Merchant identifier character restrictions. Reject controls, format characters,
- * private-use/unassigned code points, noncharacters and malformed UTF-16.
+ * Google Merchant invalid-Unicode examples for `id` include controls, format characters,
+ * private-use/unassigned code points and surrogate pairs. The shared M1 validator applies that
+ * conservative boundary to every Merchant identifier candidate, including MPN.
  */
 const INVALID_MERCHANT_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
+const SUPPLEMENTARY_CODE_POINT_REGEX = /[\u{10000}-\u{10FFFF}]/u;
 
 export function hasInvalidMerchantUnicode(value: string): boolean {
   if (typeof value.isWellFormed === "function" && !value.isWellFormed()) {
+    return true;
+  }
+  if (SUPPLEMENTARY_CODE_POINT_REGEX.test(value)) {
     return true;
   }
   return INVALID_MERCHANT_UNICODE_REGEX.test(value);
@@ -141,8 +151,8 @@ export function classifyExternalIdentifier(
   if (value !== value.trim()) return "UNTRIMMED";
   if (unicodeCodePointLength(value) > maxLength) return "TOO_LONG";
 
-  // LA Clothing applies a stricter fail-closed policy than Google's whitespace normalization for
-  // offer ID and item_group_id: any whitespace is rejected instead of normalized.
+  // Google says to avoid whitespace and may normalize it. LA Clothing deliberately refuses to rely
+  // on that normalization for offer ID and item_group_id: any whitespace is rejected fail-closed.
   if (!allowWhitespace && /\s/.test(value)) return "INVALID_FORMAT";
 
   if (hasInvalidMerchantUnicode(value)) return "INVALID_FORMAT";
