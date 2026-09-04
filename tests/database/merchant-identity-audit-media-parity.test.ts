@@ -95,7 +95,7 @@ test("M1 media audit excludes inactive sibling images exactly like storefront pr
   );
 });
 
-test("M1 media audit bounds untrusted image candidate materialization before resolver scanning", async () => {
+test("M1 media audit bounds the copied post-query candidate list before resolver scanning", async () => {
   await insertProduct();
   const candidates = Array.from(
     { length: MAX_MEDIA_CANDIDATES_SCANNED + 25 },
@@ -117,7 +117,7 @@ test("M1 media audit bounds untrusted image candidate materialization before res
     assert.equal(
       row.variantImageUrls?.[MAX_MEDIA_CANDIDATES_SCANNED - 1],
       `https://attacker.example/image-${MAX_MEDIA_CANDIDATES_SCANNED - 1}.jpg`,
-      "candidate order is preserved while later untrusted payload is not materialized",
+      "candidate order is preserved while later values are not copied into the bounded candidate list",
     );
   }
 
@@ -125,6 +125,6 @@ test("M1 media audit bounds untrusted image candidate materialization before res
   assert.deepEqual(
     summary.media,
     { READY: 0, MISSING: 0, UNTRUSTED: 2 },
-    "a trusted image beyond the shared candidate budget must not be reached",
+    "a trusted image beyond the shared post-query candidate budget must not be reached",
   );
 });
