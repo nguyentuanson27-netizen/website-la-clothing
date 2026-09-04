@@ -1,12 +1,12 @@
 # Promotions & Flash Sale v1 — execution checklist
 
-Status: **P1–P9a IMPLEMENTED AND MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189 and P9a via PR #190. P9b/P10 remain planned.**
+Status: **P1–P9b IMPLEMENTED AND MERGED. P5 is delivered via P5a PR #184 + P5b PR #185; Checkpoint A PASS on `main@d8b1a6696f03bdd683e15577b493e5cf46fa51e0`; Checkpoint B PASS on `main@649e04c328353c016e4ba41831b6eec7d49d1d54`. Shared T5/T6 is also integrated via PR #186. P8 is merged via PR #189, P9a via PR #190, and P9b via PR #191. P10 delivered in U23.**
 
 Delivered slices: **P1** (U3, PR #158), **P2** (U7, PR #162 resolver + PR #163 mirrored-money audit + PR #174 W3
 real-catalog evidence), **P3** (U10, PR #167/#168/#169), **P4** (U11, PR #170/#171/#172), **P5** (U14, PR #184 P5a + PR #185 P5b), **P6** (U15, PR #181), **P7a** (U16, PR #182) and **P7b** (U17, PR #183). Integrated Checkpoint A
 evidence is recorded in `docs/audits/wave-1-checkpoint-a.md`; Checkpoint B evidence is in `docs/audits/wave-2-checkpoint-b.md`; the W3 pricing evidence is in `docs/audits/pricing-evidence-w3.md`.
 
-The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract, P8's mutable DRAFT quote/audit and P9a's rendered-quote proof are integrated; P9b/P10 and later activation gates remain open.
+The promotion activation gate remains **default-off**. P5/P6/P7 storefront/admin work, the shared T5/T6 cart contract, P8's mutable DRAFT quote/audit, P9a's rendered-quote proof, P9b's fresh Pancake reconfirmation, and P10's final Pancake convergence are complete; downstream consumer convergence (G1/T7) and activation gates remain open.
 
 Source spec: `docs/specs/promotions-flash-sale-v1.md`
 
@@ -291,7 +291,7 @@ guess was closer, while the buyer's next step is identical in every case.
 
 ## P9b — DRAFT -> fresh Pancake
 
-Delivered by U22 in an open PR — implemented but not merged, so not yet integrated. Implemented in
+Delivered by U22 / PR #191, merged and integrated. Implemented in
 `src/commerce/pancake-order-submit.ts`.
 
 - [x] Fetch fresh trusted Pancake catalog facts.
@@ -340,15 +340,15 @@ with the row still `VALIDATING`, which the recovery sweep would have turned into
 `REJECTED / VALIDATION_INTERRUPTED` fifteen minutes later despite no Pancake write having happened.
 
 ## P10 — final Pancake convergence
-- [ ] Fresh effective quote used for price-change comparison.
-- [ ] Authoritative effective/final money used for merchandise/shipping/total integrity.
-- [ ] Outbound `variation_info.retail_price` comes from finalized immutable `OrderLineSnapshot.unitPriceVnd`.
-- [ ] Fresh stock/identity validation retained.
-- [ ] No blind retry; `SYNC_UNKNOWN` retained for ambiguous outcome.
-- [ ] Three independent regressions cover comparison/totals/outbound price reverting to raw `livePrice`.
-- [ ] Controlled authorized Pancake test proves non-base requested line price accepted/preserved.
-- [ ] Sanitized evidence recorded; cleanup if safe.
-- [ ] Failed/unavailable semantic acceptance => discounted production activation stays blocked.
+- [x] Fresh effective quote used for price-change comparison.
+- [x] Authoritative effective/final money used for merchandise/shipping/total integrity.
+- [x] Outbound `variation_info.retail_price` comes from finalized immutable `OrderLineSnapshot.unitPriceVnd`.
+- [x] Fresh stock/identity validation retained.
+- [x] No blind retry; `SYNC_UNKNOWN` retained for ambiguous outcome.
+- [x] Three independent regressions cover comparison/totals/outbound price reverting to raw `livePrice`.
+- [x] Controlled authorized Pancake test proves non-base requested line price accepted/preserved.
+- [x] Sanitized evidence recorded; cleanup if safe.
+- [x] Failed/unavailable semantic acceptance => discounted production activation stays blocked.
 
 ## #153 T7 Purchase consumer
 - [ ] Only CONFIRMED emits Purchase.
@@ -438,10 +438,10 @@ Activation rule:
 - [x] D2 P7a shop/cards. *(U16, PR #182 merged)*
 - [x] D3 P7b Flash/freshness. *(U17, PR #183 merged)*
 - [x] Converge shared #153 T5/T6 cart API. *(U18/U19, PR #186 merged)*
-- [ ] E1 P8 DRAFT.
-- [ ] E2 P9a stateless rendered quote proof/reconfirmation.
-- [ ] E3 P9b fresh-Pancake reconfirmation.
-- [ ] F P10 final Pancake price.
+- [x] E1 P8 DRAFT. *(U20, PR #189 merged)*
+- [x] E2 P9a stateless rendered quote proof/reconfirmation. *(U21, PR #190 merged)*
+- [x] E3 P9b fresh-Pancake reconfirmation. *(U22, PR #191 merged)*
+- [x] F P10 final Pancake price. *(U23, PR pending)*
 - [ ] #153 T7 Purchase consumer.
 - [ ] G1 focused consumer PRs only for consumers intended/enabled at that rollout stage.
 - [ ] G2 readiness.
