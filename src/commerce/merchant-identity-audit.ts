@@ -16,8 +16,9 @@
  *     read it at all rather than tempt a later reader;
  *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3), so
  *     they are reported as an explicit blocked state rather than derived from a name or category;
- *   - declare identifier durability. Current DB uniqueness and upsert behaviour are explicitly
- *     insufficient evidence, so the verdict stays blocked until upstream lifetime evidence exists.
+ *   - synthesize historical upstream-lifecycle evidence into a mirror-only runtime result. The
+ *     runtime summary deliberately reports only what this DB read can prove; the authoritative
+ *     time-separated durability evidence is recorded separately in the reviewed M1 audit document.
  *
  * Composites are excluded from the emittable set with `COMPOSITE_DEFERRED`.
  */
