@@ -351,10 +351,10 @@ with the row still `VALIDATING`, which the recovery sweep would have turned into
 - [x] Failed/unavailable semantic acceptance => discounted production activation stays blocked.
 
 ## #153 T7 Purchase consumer
-- [ ] Only CONFIRMED emits Purchase.
-- [ ] Purchase uses immutable finalized order snapshot price/quantity/`pancakeVariationId`.
-- [ ] `publicCode` remains transaction/event ID.
-- [ ] Tracking never recalculates promotion.
+- [x] Only CONFIRMED emits Purchase.
+- [x] Purchase uses immutable finalized order snapshot price/quantity/`pancakeVariationId`.
+- [x] `publicCode` remains transaction/event ID.
+- [x] Tracking never recalculates promotion.
 
 ## G1 — enabled-consumer convergence
 Analytics/Meta:

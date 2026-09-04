@@ -123,11 +123,11 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ## PR-C — confirmed Purchase + immutable GTM activation
 
 ### T7 Canonical confirmed Purchase
-- [ ] Purchase only for `OrderMirror.state === CONFIRMED`.
-- [ ] `transaction_id = event_id = publicCode`.
-- [ ] Immutable item quantity/price/variation identity from `OrderLineSnapshot`; mutable enrichment optional.
-- [ ] Refresh/revisit keeps same ID; tracking failure cannot affect checkout success.
-- [ ] Existing Meta Pixel+CAPI dedup remains healthy.
+- [x] Purchase only for `OrderMirror.state === CONFIRMED`. *(Evidenced via Regression A in `canonical-purchase-snapshot.test.ts` & `canonical-confirmed-purchase.test.ts`)*
+- [x] `transaction_id = event_id = publicCode`. *(Evidenced via Regression E & live acceptance report on order #23258)*
+- [x] Immutable item quantity/price/variation identity from `OrderLineSnapshot`; mutable enrichment optional. *(Evidenced via Regressions B, C, D)*
+- [x] Refresh/revisit keeps same ID; tracking failure cannot affect checkout success. *(Evidenced via Regressions E & F)*
+- [x] Existing Meta Pixel+CAPI dedup remains healthy. *(Evidenced via Regression G & `meta-purchase-reporting.test.ts`)*
 
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
