@@ -112,7 +112,7 @@ Rules:
 - `variantExternalId = pancakeVariationId` only when the application has a concrete selected/committed variant.
 - internal `VariantMirror.id` remains the mutation/authorization identity and must never be substituted as a vendor external item ID.
 - browser/cart/Purchase values use server-authoritative committed facts at their truth point.
-- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The recorded full intended standalone observation found 149/149 present, valid and unique, but Checkpoint D still requires an attributable post-fix rerun before that observation becomes final operational closure evidence. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
+- Manufacturer MPN is owner-confirmed Pancake variation `display_id`, mirrored as `VariantMirror.pancakeDisplayId` and governed by ADR 0008. The authoritative exact-tree operational run on `84c99db3de6757c3ded4396644eb4dae25869e09` found all 149 intended standalone MPNs present, valid and unique; **Checkpoint D is GREEN / PASSED**. Immediate T0/T1/T2 reads are consistency evidence; lifecycle evidence is the time-separated `a132` restoration/observation across 2026-09-02 → 2026-09-04 on the same variation IDs. Website-owned `VariantMirror.sku` remains a separate local field and is not overwritten or used as Merchant MPN fallback.
 - Pancake barcode is never assumed to be GTIN.
 
 Purchase `transaction_id` / `event_id` remains `OrderMirror.publicCode`.
@@ -467,7 +467,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ## M1 — Read-only Merchant identity, durability and catalog audit
 
-**Delivery status:** **IMPLEMENTATION DELIVERED** via PR #175 (Option B durability) and PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions). ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Operational M1 closure remains pending** one authorized real-catalog rerun on an exact committed post-fix SHA with clean/dirty state recorded. Evidence and the provenance limitation are recorded in `docs/audits/merchant-identity-m1.md`.
+**Delivery status:** **IMPLEMENTATION + OPERATIONAL CLOSURE DELIVERED** via PR #175 (Option B durability), PR #194 (Merchant format validation, manufacturer-MPN audit from mirrored `pancakeDisplayId`, storefront media parity, and read-only ownership regressions), and the authoritative production/current-mirror audit on exact committed SHA `84c99db3de6757c3ded4396644eb4dae25869e09` (tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`) with CLEAN worktree provenance. ADR 0008 preserves website-owned `VariantMirror.sku`; M1 does not repurpose that field. **Checkpoint D is GREEN / PASSED.** Evidence is recorded in `docs/audits/merchant-identity-m1.md`.
 
 **Build:** bounded audit over current mirrored catalog.
 
@@ -485,9 +485,9 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 **Verification:** valid/stale/forged/composite-rejected tests + browser regression + SEO canonical/query regression. PR #180 exact-head evidence is recorded in the merged PR; integrated M2 compatibility is also covered by `docs/audits/wave-2-checkpoint-b.md`.
 
-### Checkpoint C
+### Checkpoint D
 
-Do not build/activate Merchant feed until ID/MPN/durability audit is green for intended standalone records. **Because the final post-fix real-catalog M1 run is not yet attributable to an exact committed SHA, M3/M4 remain blocked by this gate even though the M1 implementation itself is reviewed and green.** Composite inventory remains intentionally absent from Merchant v1.
+**GREEN / PASSED.** The authoritative exact-tree M1 audit on `84c99db3de6757c3ded4396644eb4dae25869e09` confirms intended standalone identity/MPN/media/composite readiness for this checkpoint, while PR #175 supplies external-ID durability and U12 / PR #180 supplies standalone deep-link/addressability evidence. Composite inventory remains intentionally absent from Merchant v1. **M3/M4 are no longer blocked by M1/Checkpoint D; they remain unimplemented and must satisfy their own approval, runtime-readiness, feed-safety, and activation gates.**
 
 ---
 
