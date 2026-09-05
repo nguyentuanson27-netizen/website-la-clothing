@@ -99,7 +99,7 @@ describe("Merchant public-feed repository query envelope", () => {
       key: KEY,
       readPricingRevision: async () => {
         count("promotionPricingRevision");
-        return 7n;
+        return BigInt(7);
       },
     });
 
