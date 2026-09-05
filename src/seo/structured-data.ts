@@ -17,6 +17,7 @@ const MAX_PUBLISHED_IDENTIFIER_LENGTH = 128;
 const MAX_PUBLISHED_MPN_LENGTH = 70;
 const INVALID_PUBLISHED_IDENTIFIER_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
 const SUPPLEMENTARY_CODE_POINT_REGEX = /[\u{10000}-\u{10FFFF}]/u;
+const VARIANT_NAME_SEPARATOR = " — ";
 
 /** The full schema.org URIs Google reads for the dimensions a variant family varies by. */
 const SCHEMA_URI_BY_DIMENSION = {
@@ -271,14 +272,32 @@ function hasUniquePublishableVariantMpns(variants: readonly StructuredDataVarian
   return new Set(mpns).size === mpns.length;
 }
 
+/**
+ * Google expects each nested variant `Product.name` to be more specific than the family name.
+ * Compose that specificity only from the same factual option values already published on the node;
+ * no category, audience, material, editorial copy, SKU, or identifier is inferred for naming.
+ */
+function buildVariantName(name: string, variant: StructuredDataVariant): string {
+  const identifyingFacts = [variant.color, variant.size].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  return identifyingFacts.length > 0
+    ? [name, ...identifyingFacts].join(VARIANT_NAME_SEPARATOR)
+    : name;
+}
+
+function hasSpecificVariantNames(
+  name: string,
+  variants: readonly StructuredDataVariant[],
+): boolean {
+  return variants.every((variant) => buildVariantName(name, variant) !== name);
+}
+
 function buildVariantNode(name: string, variant: StructuredDataVariant): ProductVariantNode {
   const node: ProductVariantNode = {
     "@type": "Product",
     "@id": `${variant.url}#product`,
-    // The family's name, not a composed one: the option this variant is differs from its siblings
-    // by `color`/`size`, which the group already names through `variesBy`. Inventing a variant
-    // title would publish merchandising copy the catalog never wrote.
-    name,
+    name: buildVariantName(name, variant),
     url: variant.url,
     offers: {
       "@type": "Offer",
@@ -321,14 +340,16 @@ export function buildProductStructuredData({
 
   // The caller decides whether a family is publishable — whether these rows really are siblings,
   // and whether their identity is one this catalog holds. This module still owns the serialization
-  // boundary: a group needs a bounded product identity, members, a real varying dimension, and a
-  // unique reviewed manufacturer MPN on every variant before it can become public markup.
+  // boundary: a group needs a bounded product identity, members, a real varying dimension, a
+  // variant-specific factual name, and a unique reviewed manufacturer MPN on every variant before
+  // it can become public markup.
   const publishedGroup =
     productGroup !== null
     && isPublishableIdentifier(productGroup.productGroupID)
     && productGroup.variesBy.length > 0
     && productGroup.variants.length > 0
     && hasUniquePublishableVariantMpns(productGroup.variants)
+    && hasSpecificVariantNames(product.name, productGroup.variants)
       ? productGroup
       : null;
 
