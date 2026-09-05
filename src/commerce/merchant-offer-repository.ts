@@ -2,9 +2,8 @@
  * U25 / #153 M3 — the bounded canonical loader behind the Merchant offer mapper.
  *
  * It answers one question — "what does the storefront currently publish?" — and hands the answer to
- * a pure function. The split matters: the mapper never queries, so a catalog of 5,000 offers costs
- * the same number of round trips as a catalog of five, and the whole feed is testable without a
- * database.
+ * a pure function. The split matters: the mapper never queries, while this loader uses one bounded
+ * product read plus bounded promotion-candidate batches rather than a query per offer.
  *
  * Every fact here is loaded through the authority that already owns it:
  *
@@ -19,10 +18,11 @@
  *   - apparel overrides are the website-owned `ProductMerchantFacts` row, read as untrusted values
  *     that the pure resolver validates.
  *
- * Query shape is deliberately flat: one bounded product read that carries its variants, warehouse
- * stock, composite edges, published content and overrides, then bounded promotion-candidate batches.
- * There is no per-offer lookup anywhere, and the read refuses an over-large catalog rather than
- * silently truncating the feed to whatever fitted.
+ * Query shape is deliberately bounded: one product read that carries its variants, warehouse stock,
+ * composite edges, published content and overrides, then promotion-candidate reads in the existing
+ * 200-variant batches. The number of batches can grow with catalog size, but there is no per-offer
+ * N+1 lookup and the read refuses an over-large product catalog rather than silently truncating it.
+ * The stricter public-feed round-trip envelope remains U26 / M4's responsibility.
  *
  * Composite products are still fetched. They are excluded by the mapper with `COMPOSITE_DEFERRED`
  * rather than filtered out here, so the diagnostics can account for every catalog row the way the
@@ -36,7 +36,6 @@ import {
   type MerchantCandidateProduct,
   type MerchantCandidateVariation,
   type MerchantMappingResult,
-  type MerchantMarketPolicy,
 } from "./merchant-offer-mapper.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
@@ -238,15 +237,13 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     shopId,
     origin,
     now = new Date(),
-    market,
   }: Readonly<{
     shopId: number;
     origin: string;
     now?: Date;
-    market?: MerchantMarketPolicy | null;
   }>): Promise<MerchantMappingResult> {
     const products = await readCandidateProducts({ shopId, now });
-    return mapMerchantOffers({ products, origin, market });
+    return mapMerchantOffers({ products, origin });
   }
 
   return { readCandidateProducts, readMerchantOffers };
