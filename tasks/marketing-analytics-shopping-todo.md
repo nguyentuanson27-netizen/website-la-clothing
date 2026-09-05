@@ -130,9 +130,13 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 
 **Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
-that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 85 cases in
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 102 cases in
 `tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
-an export format version it was not written against, a deleted container version, a top-level
+an export format version it was not written against, a field whose type does not match the schema
+or a collection entry that is not an object (shape is established before anything is read for
+meaning, so malformed data cannot become ignored data), a container that does not prove it is a
+`web` container, a version that disagrees with its own nested container about which container it is,
+a deleted container version, a top-level
 `containerVersion` field it does not account for — matched by exact schema name, so an unknown
 field refuses whatever it holds and a future scalar flag cannot pass as harmless metadata — a
 populated `zone`, `gtagConfig`, `client` or `transformation`, a tag type it has no reviewed parser

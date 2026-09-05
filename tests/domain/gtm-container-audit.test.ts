@@ -152,7 +152,7 @@ function containerExport(overrides: Record<string, unknown> = {}) {
       accountId: "0",
       containerId: "0",
       containerVersionId: "7",
-      container: { publicId: "GTM-FIXTURE" },
+      container: { publicId: "GTM-FIXTURE", usageContext: ["web"] },
       tag: [ga4ConfigTag(), adsConversionTag(), ga4EventTag()],
       trigger: [liveGuardTrigger(), unguardedTrigger()],
       variable: variables,
@@ -1371,11 +1371,128 @@ describe("GTM container export static audit", () => {
     assert.ok(codes(result).includes(GTM_AUDIT_CODES.CONTAINER_VERSION_DELETED));
   });
 
+  for (const [label, overrides] of [
+    ["a deleted marker that is a string rather than a boolean", { deleted: "true" }],
+    ["a numeric accountId", { accountId: 7 }],
+    ["a name that is an object", { name: {} }],
+    ["a boolean fingerprint", { fingerprint: false }],
+  ] as const) {
+    it(`refuses ${label}`, () => {
+      // A known field name and a plausible-looking value are not a valid schema. `deleted: "true"`
+      // is the sharpest case: the deleted check compares against `true`, so a malformed marker
+      // would slip past a rule written to catch exactly that state.
+      const result = auditGtmContainerExport({
+        source: containerExport(overrides),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  for (const key of ["tag", "trigger", "variable", "customTemplate", "folder", "builtInVariable"] as const) {
+    it(`refuses a non-object entry inside ${key}[]`, () => {
+      // The readers below filter non-objects away. A malformed entry that becomes an ignored entry
+      // lets the audit report on a subset of the artifact as though it were the whole.
+      const existing = key === "tag"
+        ? [ga4ConfigTag()]
+        : key === "trigger"
+          ? [liveGuardTrigger()]
+          : key === "variable"
+            ? [trackingModeVariable()]
+            : [];
+      const result = auditGtmContainerExport({
+        source: containerExport({ [key]: [...existing, "garbage"] }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  for (const [label, container] of [
+    ["names no usage context", { publicId: "GTM-FIXTURE" }],
+    ["names a server container", { publicId: "GTM-FIXTURE", usageContext: ["server"] }],
+    ["names an empty usage context", { publicId: "GTM-FIXTURE", usageContext: [] }],
+  ] as const) {
+    it(`refuses a container that ${label}`, () => {
+      // The question is whether the storefront may load this artifact. A server container's export
+      // would otherwise satisfy every rule here and be certified for a runtime it was never built
+      // for, so being a web container is proved rather than assumed.
+      const result = auditGtmContainerExport({
+        source: containerExport({ container }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED));
+    });
+  }
+
+  it("refuses a container object whose publicId is not a string", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({ container: { publicId: 12345, usageContext: ["web"] } }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses a version that disagrees with its own container about which container it is", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        accountId: "1",
+        containerId: "2",
+        container: { publicId: "GTM-FIXTURE", usageContext: ["web"], accountId: "1", containerId: "999" },
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("accepts a version whose nested container agrees with it", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        accountId: "1",
+        containerId: "2",
+        container: { publicId: "GTM-FIXTURE", usageContext: ["web"], accountId: "1", containerId: "2" },
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  it("does not run the semantic rules on a version whose shape it has refused", () => {
+    // Reporting tag-level findings about a version the audit has just said it cannot read would be
+    // certifying a normalised artifact rather than the one on disk.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        deleted: "true",
+        tag: [ga4ConfigTag({ firingTriggerId: [ALWAYS_TRIGGER_ID], parameter: [] })],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    assert.ok(
+      !codes(result).includes(GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD),
+      "semantic findings must not be reported about a version the audit could not read",
+    );
+  });
+
   it("refuses an export from a container the owner did not approve", () => {
     // Same destination ids, different container: without this the audit would certify an artifact
     // that was never the reviewed one.
     const result = auditGtmContainerExport({
-      source: containerExport({ container: { publicId: "GTM-SOMEONEELSE" } }),
+      source: containerExport({ container: { publicId: "GTM-SOMEONEELSE", usageContext: ["web"] } }),
       approved: APPROVED,
     });
 

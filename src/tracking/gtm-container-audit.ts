@@ -107,6 +107,9 @@ export type GtmAuditResult = Readonly<{
   containerPublicId: string | null;
 }>;
 
+/** The usage context a container must declare before the storefront may load it. */
+const WEB_USAGE_CONTEXT = "web";
+
 /** The container export format this parser was written against. */
 const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
 
@@ -163,16 +166,22 @@ const RUNTIME_BEARING_CONTAINER_COLLECTIONS: ReadonlySet<string> = new Set([
  * These describe the version; none of them changes what it does at runtime — with one exception,
  * `deleted`, which is read below rather than waved past.
  */
-const METADATA_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+const STRING_METADATA_CONTAINER_KEYS: ReadonlySet<string> = new Set([
   "path",
   "accountId",
   "containerId",
   "containerVersionId",
   "name",
-  "deleted",
   "description",
   "fingerprint",
   "tagManagerUrl",
+]);
+
+const BOOLEAN_METADATA_CONTAINER_KEYS: ReadonlySet<string> = new Set(["deleted"]);
+
+const METADATA_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+  ...STRING_METADATA_CONTAINER_KEYS,
+  ...BOOLEAN_METADATA_CONTAINER_KEYS,
 ]);
 
 /** The application-owned dataLayer fact every production tag must be gated on. */
@@ -631,6 +640,76 @@ function isGoogleConfigurationTag(tag: Record<string, unknown>): boolean {
   return GOOGLE_CONFIGURATION_TAG_TYPES.has(readString(tag.type) ?? "");
 }
 
+/**
+ * Whether the version's shape matches the schema, field by field and element by element.
+ *
+ * Knowing a field's name and that its outer value is an array is not knowing that the artifact is
+ * well formed — it is the same substitution of a proxy for the thing that this module has had to be
+ * corrected on repeatedly. `deleted: "true"` is not a boolean, so the deleted check would miss it;
+ * a `trigger` array holding a string would be quietly filtered away by the readers below, and a
+ * malformed entry that becomes an ignored entry is exactly how an artifact gets certified for what
+ * it does not contain.
+ *
+ * So malformed data is refused here rather than normalised away, and the semantic rules run only on
+ * a version whose shape has been established.
+ */
+function validateContainerVersionShape(
+  version: Record<string, unknown>,
+  refuse: (code: GtmAuditCode, detail: string) => void,
+): boolean {
+  const before = { malformed: false };
+  const malformed = (detail: string) => {
+    before.malformed = true;
+    refuse(GTM_AUDIT_CODES.MALFORMED_EXPORT, detail);
+  };
+
+  // JSON has no `undefined`: a field is present with a value or it is absent, and an absent field is
+  // the responsibility of whichever rule needs it rather than of shape validation.
+  const declared = (key: string) => key in version && version[key] !== undefined;
+
+  for (const key of STRING_METADATA_CONTAINER_KEYS) {
+    if (declared(key) && readString(version[key]) === null) {
+      malformed(`containerVersion.${key} is not a string`);
+    }
+  }
+  for (const key of BOOLEAN_METADATA_CONTAINER_KEYS) {
+    if (declared(key) && typeof version[key] !== "boolean") {
+      malformed(`containerVersion.${key} is not a boolean`);
+    }
+  }
+
+  // Every collection the schema defines holds objects. An entry that is not one cannot be read, and
+  // skipping it would let the audit report on a subset of the artifact as if it were the whole.
+  for (const key of [...AUDITED_CONTAINER_COLLECTIONS, ...INERT_CONTAINER_COLLECTIONS]) {
+    const value = version[key];
+    if (value === undefined) continue;
+    if (!Array.isArray(value)) continue; // Reported by the capability gate.
+    if (!value.every(isRecord)) malformed(`containerVersion.${key} holds an entry that is not an object`);
+  }
+
+  // The container the artifact claims to come from is what binds it to the owner's approval, so its
+  // own shape has to hold up before that binding means anything.
+  if (declared("container")) {
+    const container = version.container;
+    if (!isRecord(container)) malformed("containerVersion.container is not an object");
+    else {
+      if (readString(container.publicId) === null) {
+        malformed("containerVersion.container.publicId is not a string");
+      }
+      // A version and the container it names must agree about which container that is.
+      for (const key of ["accountId", "containerId"]) {
+        const outer = readString(version[key]);
+        const inner = readString(container[key]);
+        if (outer !== null && inner !== null && outer !== inner) {
+          malformed(`containerVersion.${key} and containerVersion.container.${key} disagree`);
+        }
+      }
+    }
+  }
+
+  return !before.malformed;
+}
+
 export function auditGtmContainerExport({
   source,
   approved,
@@ -723,6 +802,10 @@ export function auditGtmContainerExport({
     }
   }
 
+  // Shape before meaning. A field whose type does not match the schema cannot be read for what it
+  // says, and reading it anyway is how malformed data becomes ignored data.
+  const shapeIsValid = validateContainerVersionShape(version, refuse);
+
   // A deleted version is not an artifact that may be loaded, whatever its contents say. The question
   // this module answers is whether *this exact JSON* may be published, and a deleted one may not.
   if (version.deleted === true) {
@@ -730,6 +813,19 @@ export function auditGtmContainerExport({
       GTM_AUDIT_CODES.CONTAINER_VERSION_DELETED,
       "the export names a deleted container version",
     );
+  }
+
+  if (!shapeIsValid) {
+    // The capability and format findings above stand on their own; the semantic rules would be
+    // reporting on a version this audit has just said it cannot read.
+    return Object.freeze({
+      ok: false,
+      findings: Object.freeze(findings),
+      containerVersionId: readString(version.containerVersionId),
+      containerPublicId: isRecord(version.container)
+        ? readString(version.container.publicId)
+        : null,
+    });
   }
 
   const containerVersionId = readString(version.containerVersionId);
@@ -743,6 +839,26 @@ export function auditGtmContainerExport({
     refuse(
       GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED,
       "export does not come from the owner-approved GTM container",
+    );
+  }
+
+  // The question is whether this artifact may be loaded *by the storefront*, so the container has to
+  // be a web container. A server container's export would otherwise satisfy every rule here and be
+  // certified for a runtime it was never built for. Proof is required rather than assumed: a
+  // container that does not say it is a web container has not been shown to be one.
+  //
+  // This is the one rule written against a resource shape no export in this repository has ever
+  // exhibited, because there is no real export yet. If the first genuine saved version turns out not
+  // to carry `usageContext` on its nested container, this refusal is where that will surface — which
+  // is the right place for it, with a person reading the finding.
+  const usageContext = isRecord(version.container) ? version.container.usageContext : undefined;
+  const declaresWebContext =
+    Array.isArray(usageContext)
+    && usageContext.some((entry) => readString(entry)?.toLowerCase() === WEB_USAGE_CONTEXT);
+  if (!declaresWebContext) {
+    refuse(
+      GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED,
+      `export does not prove its container is a ${WEB_USAGE_CONTEXT} container`,
     );
   }
 
