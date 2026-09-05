@@ -24,7 +24,7 @@
  *     on this product, so an offer link can never point at a page that would not preselect it;
  *   - media is whatever the trusted storefront resolver already returned. Raw Pancake URLs never
  *     reach this module;
- *   - identity, MPN and text safety are the M1 classifiers, under ADR 0008 for the MPN source;
+ *   - identity, MPN and XML text safety are the M1 classifiers, under ADR 0008 for the MPN source;
  *   - apparel facts are ADR 0007's resolver, which cannot see catalog text at all.
  *
  * Three things it will not do, and one it cannot:
@@ -33,9 +33,10 @@
  *     `VariantMirror.sku`. That field is not an input;
  *   - it will not emit `gtin`. A Pancake barcode is a field name, not a proof of identifier type,
  *     format and check digit, so no barcode is an input either;
- *   - it will not invent a description, a price or a stock state to make a row publishable;
- *   - and it cannot query anything. It is handed a bounded, already-loaded candidate set, so a feed
- *     of 5,000 offers costs the same number of round trips as a feed of five.
+ *   - it will not invent or silently repair a description, apparel attribute, price or stock state
+ *     to make a row publishable;
+ *   - and the pure mapper cannot query anything. Repository reads are separately bounded and batched,
+ *     so this module itself can never introduce a per-offer database lookup.
  *
  * Composite offers stay `COMPOSITE_DEFERRED` for Merchant v1, exactly as M1 audited them.
  */
@@ -71,6 +72,12 @@ export const MERCHANT_BRAND = "LA Clothing";
 /** Google Merchant accepts at most ten `additional_image_link` values per offer. */
 export const MAX_MERCHANT_ADDITIONAL_IMAGES = 10;
 
+/** Current Google Merchant attribute bounds used by the apparel-only M3 v1 contract. */
+export const MERCHANT_TITLE_MAX_LENGTH = 150;
+export const MERCHANT_DESCRIPTION_MAX_LENGTH = 5_000;
+export const MERCHANT_COLOR_MAX_LENGTH = 100;
+export const MERCHANT_SIZE_MAX_LENGTH = 100;
+
 export const MERCHANT_MARKET_UNRESOLVED = "MERCHANT_MARKET_UNRESOLVED";
 
 export type MerchantAvailability = "in_stock" | "out_of_stock";
@@ -88,6 +95,7 @@ export type MerchantExclusionReason =
   | "MEDIA_UNRESOLVED"
   | "TITLE_UNRESOLVED"
   | "DESCRIPTION_UNRESOLVED"
+  | "COLOR_UNRESOLVED"
   | "SIZE_UNRESOLVED"
   | "OFFER_ID_DUPLICATE"
   | "MPN_DUPLICATE";
@@ -112,6 +120,7 @@ const REASON_ORDER: readonly MerchantExclusionReason[] = [
   "MEDIA_UNRESOLVED",
   "TITLE_UNRESOLVED",
   "DESCRIPTION_UNRESOLVED",
+  "COLOR_UNRESOLVED",
   "SIZE_UNRESOLVED",
   "OFFER_ID_DUPLICATE",
   "MPN_DUPLICATE",
@@ -165,14 +174,14 @@ export type MerchantOffer = Readonly<{
   /**
    * The effective storefront price in Vietnamese dong, which is the denomination the mirrored
    * catalog holds. Turning it into a Merchant `price` string with an ISO currency belongs to the
-   * market declaration below, and therefore waits on owner gate O2.
+   * reviewed market declaration below, and therefore waits on owner gate O2.
    */
   priceVnd: number;
   gender: MerchantGender;
   ageGroup: MerchantAgeGroup;
   condition: MerchantCondition;
-  /** Absent when the product has no colour dimension at all, which is a legitimate catalog shape. */
-  color: string | null;
+  /** Required for apparel/free-listing eligibility in this M3 v1 scope. */
+  color: string;
   /** Required for apparel, so an offer is never emitted without one. */
   size: string;
 }>;
@@ -187,9 +196,10 @@ export type MerchantExcludedCandidate = Readonly<{
 /**
  * Owner gate O2 — target market, content language and feed currency.
  *
- * Vietnam / Vietnamese / VND is the *proposed* value in the source plan, not an approved one, so no
- * value is hard-coded here. Until an owner approval lands, `resolveMerchantMarket` reports the
- * market unresolved and `activationBlockedReasons` carries that state to every consumer.
+ * Vietnam / Vietnamese / VND is the *proposed* value in the source plan, not an approved one. The
+ * mapper deliberately accepts no market argument: syntax-valid caller data is not owner approval.
+ * When O2 is resolved, the reviewed value must be introduced through this single trusted constant
+ * (or a separately reviewed trusted config source) rather than through request/caller input.
  */
 export type MerchantMarketPolicy = Readonly<{
   /** ISO 3166-1 alpha-2, uppercase. */
@@ -204,22 +214,17 @@ export type MerchantMarketResolution =
   | Readonly<{ status: "APPROVED"; policy: MerchantMarketPolicy }>
   | Readonly<{ status: "UNRESOLVED"; reason: typeof MERCHANT_MARKET_UNRESOLVED }>;
 
-/** No owner approval exists for O2 yet. Changing this is an owner decision, not a code change. */
+/** No owner approval exists for O2 yet. Changing this requires a reviewed owner-decision change. */
 export const APPROVED_MERCHANT_MARKET: MerchantMarketPolicy | null = null;
 
-export function resolveMerchantMarket(
-  candidate: MerchantMarketPolicy | null | undefined,
-): MerchantMarketResolution {
-  const unresolved = Object.freeze({
-    status: "UNRESOLVED" as const,
-    reason: MERCHANT_MARKET_UNRESOLVED,
-  });
+function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy | null {
+  if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return null;
 
-  if (candidate === null || candidate === undefined || typeof candidate !== "object") {
-    return unresolved;
-  }
+  const record = candidate as Record<string, unknown>;
+  const targetCountry = record.targetCountry;
+  const contentLanguage = record.contentLanguage;
+  const currency = record.currency;
 
-  const { targetCountry, contentLanguage, currency } = candidate;
   if (
     typeof targetCountry !== "string"
     || !/^[A-Z]{2}$/.test(targetCountry)
@@ -228,13 +233,23 @@ export function resolveMerchantMarket(
     || typeof currency !== "string"
     || !/^[A-Z]{3}$/.test(currency)
   ) {
-    return unresolved;
+    return null;
   }
 
-  return Object.freeze({
-    status: "APPROVED" as const,
-    policy: Object.freeze({ targetCountry, contentLanguage, currency }),
-  });
+  return Object.freeze({ targetCountry, contentLanguage, currency });
+}
+
+/** Resolves O2 exclusively from the reviewed authority above; callers cannot inject approval. */
+export function resolveMerchantMarket(): MerchantMarketResolution {
+  const policy = parseReviewedMerchantMarket(APPROVED_MERCHANT_MARKET as unknown);
+  if (policy === null) {
+    return Object.freeze({
+      status: "UNRESOLVED" as const,
+      reason: MERCHANT_MARKET_UNRESOLVED,
+    });
+  }
+
+  return Object.freeze({ status: "APPROVED" as const, policy });
 }
 
 export type MerchantMappingResult = Readonly<{
@@ -271,6 +286,26 @@ function isMerchantIdentifier(
   allowWhitespace: boolean,
 ): value is string {
   return classifyExternalIdentifier(value, { maxLength, allowWhitespace }) === "PRESENT";
+}
+
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
+/** Required Merchant text that is XML-safe and inside the reviewed attribute bound. */
+function resolveBoundedMerchantText(value: string | null, maxLength: number): string | null {
+  if (classifyMerchantText(value) !== "READY" || value === null) return null;
+  return codePointLength(value) <= maxLength ? value : null;
+}
+
+/**
+ * Required apparel dimension. Storefront projection normally supplies trimmed values, but M3 treats
+ * its input as untrusted and refuses blank/untrimmed/malformed/overlong data rather than normalizing
+ * it into a different Merchant fact.
+ */
+function resolveRequiredApparelAttribute(value: string | null, maxLength: number): string | null {
+  if (value === null || value.length === 0 || value !== value.trim()) return null;
+  return resolveBoundedMerchantText(value, maxLength);
 }
 
 /**
@@ -410,20 +445,25 @@ function draftCandidate(
   const { imageLink, additionalImageLinks } = resolveOfferImages(product, variation.variantId);
   if (imageLink === null) reasons.add("MEDIA_UNRESOLVED");
 
-  const title = classifyMerchantText(product.name) === "READY" ? product.name : null;
+  const title = resolveBoundedMerchantText(product.name, MERCHANT_TITLE_MAX_LENGTH);
   if (title === null) reasons.add("TITLE_UNRESOLVED");
 
-  const description =
-    classifyMerchantText(product.publishedDescription) === "READY"
-      ? product.publishedDescription
-      : null;
+  const description = resolveBoundedMerchantText(
+    product.publishedDescription,
+    MERCHANT_DESCRIPTION_MAX_LENGTH,
+  );
   if (description === null) reasons.add("DESCRIPTION_UNRESOLVED");
 
-  // Size is a required apparel attribute. In practice an option without one already carries
-  // MAPPING_REQUIRED and is therefore unaddressable, so this never fires against the real catalog —
-  // it is here so that an offer missing a required field can never be handed to a serializer,
-  // whatever a future projection decides an option may look like.
-  const size = addressableOption === null ? null : addressableOption.size;
+  const color =
+    addressableOption === null
+      ? null
+      : resolveRequiredApparelAttribute(addressableOption.color, MERCHANT_COLOR_MAX_LENGTH);
+  if (addressableOption !== null && color === null) reasons.add("COLOR_UNRESOLVED");
+
+  const size =
+    addressableOption === null
+      ? null
+      : resolveRequiredApparelAttribute(addressableOption.size, MERCHANT_SIZE_MAX_LENGTH);
   if (addressableOption !== null && size === null) reasons.add("SIZE_UNRESOLVED");
 
   // Every condition below has already recorded its own reason, so `reasons.size` alone decides the
@@ -438,6 +478,7 @@ function draftCandidate(
     || imageLink === null
     || title === null
     || description === null
+    || color === null
     || size === null
     || !hasMpn
     || !hasOfferId
@@ -465,7 +506,7 @@ function draftCandidate(
       gender: apparel.facts.gender,
       ageGroup: apparel.facts.ageGroup,
       condition: apparel.facts.condition,
-      color: addressableOption.color,
+      color,
       size,
     }),
   };
@@ -485,13 +526,10 @@ function duplicatesAmong(values: readonly string[]): ReadonlySet<string> {
 export function mapMerchantOffers({
   products,
   origin,
-  market = APPROVED_MERCHANT_MARKET,
 }: Readonly<{
   products: readonly MerchantCandidateProduct[];
   /** Absolute storefront origin, from `readStorefrontOrigin`. */
   origin: string;
-  /** Owner-approved O2 market, when one exists. */
-  market?: MerchantMarketPolicy | null;
 }>): MerchantMappingResult {
   const parsedOrigin = requireAbsoluteOrigin(origin);
 
@@ -534,7 +572,7 @@ export function mapMerchantOffers({
     );
   }
 
-  const resolvedMarket = resolveMerchantMarket(market);
+  const resolvedMarket = resolveMerchantMarket();
 
   return Object.freeze({
     offers: Object.freeze(offers),
