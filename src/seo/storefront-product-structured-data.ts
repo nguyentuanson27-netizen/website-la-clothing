@@ -9,10 +9,12 @@
  * - price and availability — the PDP projection, priced by the same rule the page renders with;
  * - images — the trusted media the catalog already resolved for this product's gallery;
  * - product-level identity — the external `pancakeProductId` the storefront already treats as this
- *   product's public identity.
+ *   product's public identity;
+ * - variant identifier — ADR 0008's manufacturer MPN (`pancakeDisplayId`), kept server-only until
+ *   this serialization boundary.
  *
- * Nothing here reads the database. The projection the page has already built is the whole input,
- * so publishing structured data costs no additional catalog or pricing work.
+ * Nothing here reads the database. The page repository supplies the projection and the reviewed MPN
+ * map together, so publishing structured data adds no extra catalog or pricing query.
  */
 
 import { toOptionIdentityKey } from "../commerce/storefront-product.ts";
@@ -28,6 +30,7 @@ import {
 import {
   buildProductStructuredData,
   isPublishableIdentifier,
+  isPublishableMpn,
   type ProductStructuredDataDocument,
   type StructuredDataAvailability,
   type StructuredDataProductGroup,
@@ -49,6 +52,8 @@ type StorefrontStructuredDataProduct = Readonly<{
   }>;
   /** Server-resolved variant → gallery position, keyed by internal id and never published. */
   galleryIndexByVariantId: Readonly<Record<string, number>>;
+  /** ADR 0008 manufacturer MPNs, keyed by internal id; internal ids themselves never leave JSON-LD. */
+  variantMpnById: Readonly<Record<string, string | null>>;
   projection: StorefrontProductProjection;
 }>;
 
@@ -118,15 +123,24 @@ function readPublishableProductGroupID(pancakeProductId: string): string | null 
   return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
+function countPublishableMpns(product: StorefrontStructuredDataProduct): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const option of product.projection.options) {
+    const mpn = product.variantMpnById[option.id];
+    if (!isPublishableMpn(mpn)) continue;
+    counts.set(mpn, (counts.get(mpn) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /**
- * The variants this page may publish, each proved addressable before it is published.
+ * The variants this page may publish, each proved addressable and uniquely identified first.
  *
- * Eligibility is not re-implemented here. Every candidate's external identity is fed back through
- * the U12 resolver against this same projection, and only an identity that reselects *this* option
- * survives. That single check is what makes composites, duplicated external ids, unmappable and
- * ambiguous options, blank and oversized identifiers all fail closed for the same reason they fail
- * closed for a shopper following the link: the URL would not open the variant it names, so the URL
- * must not be published.
+ * Every candidate's external variation identity is fed back through the U12 resolver against this
+ * same projection, and only an identity that reselects *this* option survives. Separately, ADR 0008
+ * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
+ * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
+ * variation UUID as a different identifier type.
  *
  * The resolver scans the option list, so this is quadratic in the number of options of one product
  * — a small in-memory array the page already holds, with no query behind it.
@@ -139,6 +153,7 @@ function resolvePublishableVariants({
   product: StorefrontStructuredDataProduct;
 }>): StructuredDataVariant[] {
   const variants: StructuredDataVariant[] = [];
+  const mpnCounts = countPublishableMpns(product);
 
   for (const option of product.projection.options) {
     const reselected = resolveDeepLinkedVariantSelection({
@@ -151,6 +166,9 @@ function resolvePublishableVariants({
     // learned to fall back to a near match would otherwise start publishing wrong links silently.
     if (reselected === null || reselected.variantId !== option.id) continue;
 
+    const mpn = product.variantMpnById[option.id];
+    if (!isPublishableMpn(mpn) || mpnCounts.get(mpn) !== 1) continue;
+
     const offer = resolvePublishableOffer(option);
     if (offer === null) continue;
 
@@ -160,6 +178,7 @@ function resolvePublishableVariants({
         slug: product.slug,
         pancakeVariationId: option.pancakeVariationId,
       }),
+      mpn,
       color: option.color,
       size: option.size,
       price: offer.price,
@@ -175,7 +194,8 @@ function resolvePublishableVariants({
  * The publishable variant family, or `null` when this product does not have one.
  *
  * Null covers every case the page must fall back from: a composite, a product whose options are
- * not addressable, one with a single option, and one whose external identity is unusable.
+ * not addressable or uniquely identified, one with a single surviving option, and one whose
+ * external product identity is unusable.
  */
 function resolveProductGroup({
   origin,
