@@ -11,8 +11,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  APPROVED_MERCHANT_MARKET,
   MERCHANT_BRAND,
+  MERCHANT_COLOR_MAX_LENGTH,
+  MERCHANT_DESCRIPTION_MAX_LENGTH,
   MERCHANT_MARKET_UNRESOLVED,
+  MERCHANT_SIZE_MAX_LENGTH,
+  MERCHANT_TITLE_MAX_LENGTH,
   mapMerchantOffers,
   type MerchantCandidateProduct,
   type MerchantCandidateVariation,
@@ -480,23 +485,62 @@ test("M3 malformed required text excludes the offer", () => {
   assert.deepEqual(onlyExclusionReasons({ name: "   " }), ["TITLE_UNRESOLVED"]);
 });
 
-test("M3 a required apparel size is never omitted from an emitted offer", () => {
-  // The real projection marks a size-less option MAPPING_REQUIRED, so this reaches the mapper only
-  // if some future projection stops doing that. Either way no offer goes out missing the field.
-  assert.deepEqual(
-    onlyExclusionReasons({
-      projection: { mode: "standalone", options: [option({ size: null })] },
-    }),
-    ["SIZE_UNRESOLVED"],
+test("M3 title and description enforce current Merchant length bounds", () => {
+  assert.equal(MERCHANT_TITLE_MAX_LENGTH, 150);
+  assert.equal(MERCHANT_DESCRIPTION_MAX_LENGTH, 5_000);
+  assert.equal(mapOne({ name: "T".repeat(MERCHANT_TITLE_MAX_LENGTH) }).offers.length, 1);
+  assert.equal(
+    mapOne({ publishedDescription: "D".repeat(MERCHANT_DESCRIPTION_MAX_LENGTH) }).offers.length,
+    1,
   );
 
-  // A product with no colour dimension is a legitimate catalog shape and still publishes.
-  const colourless = mapOne({
-    projection: { mode: "standalone", options: [option({ color: null })] },
+  assert.deepEqual(onlyExclusionReasons({ name: "T".repeat(MERCHANT_TITLE_MAX_LENGTH + 1) }), [
+    "TITLE_UNRESOLVED",
+  ]);
+  assert.deepEqual(
+    onlyExclusionReasons({
+      publishedDescription: "D".repeat(MERCHANT_DESCRIPTION_MAX_LENGTH + 1),
+    }),
+    ["DESCRIPTION_UNRESOLVED"],
+  );
+});
+
+test("M3 required apparel color and size enforce current Merchant bounds", () => {
+  assert.equal(MERCHANT_COLOR_MAX_LENGTH, 100);
+  assert.equal(MERCHANT_SIZE_MAX_LENGTH, 100);
+
+  const boundary = mapOne({
+    projection: {
+      mode: "standalone",
+      options: [
+        option({
+          color: "C".repeat(MERCHANT_COLOR_MAX_LENGTH),
+          size: "S".repeat(MERCHANT_SIZE_MAX_LENGTH),
+        }),
+      ],
+    },
   });
-  assert.deepEqual(colourless.excluded, []);
-  assert.equal(colourless.offers[0]!.color, null);
-  assert.equal(colourless.offers[0]!.size, "M");
+  assert.equal(boundary.offers.length, 1);
+
+  for (const color of [null, "", "   ", " Den ", "D\u0000en", "C".repeat(101)]) {
+    assert.deepEqual(
+      onlyExclusionReasons({
+        projection: { mode: "standalone", options: [option({ color })] },
+      }),
+      ["COLOR_UNRESOLVED"],
+      `expected color ${JSON.stringify(color)} to be rejected`,
+    );
+  }
+
+  for (const size of [null, "", "   ", " M ", "M\u0000", "S".repeat(101)]) {
+    assert.deepEqual(
+      onlyExclusionReasons({
+        projection: { mode: "standalone", options: [option({ size })] },
+      }),
+      ["SIZE_UNRESOLVED"],
+      `expected size ${JSON.stringify(size)} to be rejected`,
+    );
+  }
 });
 
 // --- Determinism and diagnostics ------------------------------------------------------------------
@@ -562,9 +606,10 @@ test("M3 an excluded candidate reports bounded identity only, never catalog cont
   ]);
 });
 
-// --- O2 market gate --------------------------------------------------------------------------------
+// --- O2 market gate ------------------------------------------------------------------------------
 
 test("M3 the unapproved O2 market keeps Merchant activation explicitly blocked", () => {
+  assert.equal(APPROVED_MERCHANT_MARKET, null);
   const result = mapOne();
   assert.deepEqual(result.market, { status: "UNRESOLVED", reason: MERCHANT_MARKET_UNRESOLVED });
   assert.deepEqual(result.activationBlockedReasons, [MERCHANT_MARKET_UNRESOLVED]);
@@ -575,34 +620,18 @@ test("M3 the unapproved O2 market keeps Merchant activation explicitly blocked",
   }
 });
 
-test("M3 an owner-approved market unblocks activation without changing any offer fact", () => {
-  const approved = { targetCountry: "VN", contentLanguage: "vi", currency: "VND" } as const;
-  const result = mapMerchantOffers({ products: [product()], origin: ORIGIN, market: approved });
-
-  assert.deepEqual(result.market, { status: "APPROVED", policy: approved });
-  assert.deepEqual(result.activationBlockedReasons, []);
-  assert.deepEqual(result.offers, mapOne().offers);
-});
-
-test("M3 a malformed market policy is refused rather than half-applied", () => {
-  for (const malformed of [
-    { targetCountry: "vn", contentLanguage: "vi", currency: "VND" },
-    { targetCountry: "VN", contentLanguage: "VI", currency: "VND" },
-    { targetCountry: "VN", contentLanguage: "vi", currency: "vnd" },
-    { targetCountry: "VNM", contentLanguage: "vi", currency: "VND" },
-    { targetCountry: "VN", contentLanguage: "vi" },
-  ]) {
-    const result = mapMerchantOffers({
-      products: [product()],
-      origin: ORIGIN,
-      market: malformed as never,
-    });
-    assert.deepEqual(
-      result.market,
-      { status: "UNRESOLVED", reason: MERCHANT_MARKET_UNRESOLVED },
-      `expected ${JSON.stringify(malformed)} to be refused`,
-    );
-  }
+test("M3 caller-supplied market data cannot impersonate owner approval", () => {
+  const injected = {
+    products: [product()],
+    origin: ORIGIN,
+    market: { targetCountry: "VN", contentLanguage: "vi", currency: "VND" },
+  };
+  // Structural typing permits the extra property on a variable, which is useful here: this proves
+  // the runtime path ignores even a syntactically valid injected market rather than merely relying
+  // on TypeScript excess-property checks.
+  const result = mapMerchantOffers(injected);
+  assert.deepEqual(result.market, { status: "UNRESOLVED", reason: MERCHANT_MARKET_UNRESOLVED });
+  assert.deepEqual(result.activationBlockedReasons, [MERCHANT_MARKET_UNRESOLVED]);
 });
 
 test("M3 the mapper refuses an unusable origin rather than emitting a relative link", () => {
