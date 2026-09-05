@@ -1013,6 +1013,7 @@ describe("GTM container export static audit", () => {
   }
 
   it("refuses a variable list that is not an array rather than reading it as empty", () => {
+    // Every reference would resolve to nothing and the container would look cleaner than it is.
     // An unreadable variable list is not an empty one: every reference would resolve to nothing and
     // the container would look cleaner than it is.
     const result = auditGtmContainerExport({
@@ -1308,9 +1309,10 @@ describe("GTM container export static audit", () => {
     assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
   });
 
-  it("ignores scalar version metadata rather than treating it as a feature", () => {
+  it("accepts the scalar metadata the published schema defines, by name", () => {
     const result = auditGtmContainerExport({
       source: containerExport({
+        path: "accounts/0/containers/0/versions/7",
         name: "Reviewed version 7",
         description: "",
         fingerprint: "1699999999999",
@@ -1322,6 +1324,51 @@ describe("GTM container export static audit", () => {
 
     assert.deepEqual(result.findings, []);
     assert.equal(result.ok, true);
+  });
+
+  for (const [label, extra] of [
+    ["a boolean", { futureRuntimeFlag: true }],
+    ["a string", { futureRuntimeMode: "live" }],
+    ["a number", { futureRuntimeBudget: 5 }],
+    ["null", { futureRuntimeHook: null }],
+  ] as const) {
+    it(`refuses an unknown top-level field holding ${label}`, () => {
+      // Benignness is not a property of a value's type. A future `runtimeMode: "live"` is a scalar
+      // and would sail through a gate that only refuses populated arrays and objects — which is
+      // exactly the failure this gate exists to stop.
+      const result = auditGtmContainerExport({
+        source: containerExport(extra),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
+    });
+  }
+
+  for (const key of ["customTemplate", "folder", "builtInVariable"] as const) {
+    it(`reports an inert ${key} collection of the wrong shape as malformed`, () => {
+      // An inventory that is not a list is not an inventory, and reading it as absent is a guess.
+      const result = auditGtmContainerExport({
+        source: containerExport({ [key]: "not-an-array" }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  it("refuses a deleted container version however clean its contents", () => {
+    // The question this module answers is whether this exact JSON may be loaded. A deleted version
+    // may not, whatever its tags say.
+    const result = auditGtmContainerExport({
+      source: containerExport({ deleted: true }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.CONTAINER_VERSION_DELETED));
   });
 
   it("refuses an export from a container the owner did not approve", () => {

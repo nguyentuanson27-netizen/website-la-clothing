@@ -53,8 +53,10 @@ export const GTM_AUDIT_CODES = {
   TRACKING_MODE_VARIABLE_NOT_APP_OWNED: "TRACKING_MODE_VARIABLE_NOT_APP_OWNED",
   /** Tag sequencing gives a delivering tag a firing path this audit cannot account for. */
   TAG_SEQUENCING_NOT_AUDITABLE: "TAG_SEQUENCING_NOT_AUDITABLE",
-  /** The version carries a populated top-level collection this audit does not account for. */
+  /** The version carries a top-level field this audit does not account for. */
   UNAUDITABLE_CONTAINER_FEATURE: "UNAUDITABLE_CONTAINER_FEATURE",
+  /** The version has been deleted, so it is not an artifact that may be loaded. */
+  CONTAINER_VERSION_DELETED: "CONTAINER_VERSION_DELETED",
   /** Meta belongs to the direct first-party integration, never to GTM. */
   META_TAG_PRESENT: "META_TAG_PRESENT",
   /** GA4 would send its own page view beside the application's canonical one. */
@@ -109,11 +111,17 @@ export type GtmAuditResult = Readonly<{
 const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
 
 /**
- * Top-level `containerVersion` collections this audit reads and reasons about.
+ * The top-level `containerVersion` fields this audit was written against, by exact name.
  *
- * Everything the rules below say is said about these three.
+ * Names, not shapes. Deciding that a field is harmless because its value happens to be a string or a
+ * boolean is the same mistake as trusting a variable because of what it is called: a future
+ * `runtimeMode: "live"` would be a scalar and would sail through, which is precisely the failure a
+ * capability gate exists to stop. A field this audit has never heard of is refused whatever it
+ * holds, because not knowing what it is *is* the problem.
  */
-const AUDITED_CONTAINER_KEYS: ReadonlySet<string> = new Set(["tag", "trigger", "variable", "container"]);
+
+/** Collections this audit reads and reasons about. Every rule below speaks about these three. */
+const AUDITED_CONTAINER_COLLECTIONS: ReadonlySet<string> = new Set(["tag", "trigger", "variable"]);
 
 /**
  * Top-level collections that are accounted for and carry no runtime of their own.
@@ -123,7 +131,7 @@ const AUDITED_CONTAINER_KEYS: ReadonlySet<string> = new Set(["tag", "trigger", "
  * that the reviewed-parser allowlist already refuses. They are listed so that being ignored is a
  * decision on the record rather than an oversight.
  */
-const INERT_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+const INERT_CONTAINER_COLLECTIONS: ReadonlySet<string> = new Set([
   "builtInVariable",
   "folder",
   "customTemplate",
@@ -136,7 +144,7 @@ const INERT_CONTAINER_KEYS: ReadonlySet<string> = new Set([
  * unaccounted-for feature — and so the reason each is refused is written down where the next person
  * to add a parser will find it.
  */
-const RUNTIME_BEARING_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+const RUNTIME_BEARING_CONTAINER_COLLECTIONS: ReadonlySet<string> = new Set([
   // A zone links additional child containers, which may belong to another account and whose tags
   // never appear in this version's tag[]. Every rule in this module would be bypassed by one.
   "zone",
@@ -147,6 +155,24 @@ const RUNTIME_BEARING_CONTAINER_KEYS: ReadonlySet<string> = new Set([
   // artifact this audit was written to read.
   "client",
   "transformation",
+]);
+
+/**
+ * Scalar metadata the published schema defines, listed by exact name.
+ *
+ * These describe the version; none of them changes what it does at runtime — with one exception,
+ * `deleted`, which is read below rather than waved past.
+ */
+const METADATA_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+  "path",
+  "accountId",
+  "containerId",
+  "containerVersionId",
+  "name",
+  "deleted",
+  "description",
+  "fingerprint",
+  "tagManagerUrl",
 ]);
 
 /** The application-owned dataLayer fact every production tag must be gated on. */
@@ -664,28 +690,46 @@ export function auditGtmContainerExport({
   }
 
   // The capability gate. A rule that reads three collections cannot speak for a version that has
-  // more than three, so anything populated and unaccounted for refuses the artifact by name. This is
-  // an allowlist on purpose: a collection GTM adds after this was written fails closed instead of
-  // passing unnoticed.
+  // more than three, so every top-level field is matched against the schema this audit was written
+  // against, by exact name. Anything else refuses the artifact whatever it holds — a field nobody
+  // has reviewed is not made safe by being a boolean.
   for (const [key, value] of Object.entries(version)) {
-    if (AUDITED_CONTAINER_KEYS.has(key) || INERT_CONTAINER_KEYS.has(key)) continue;
+    if (key === "container" || METADATA_CONTAINER_KEYS.has(key)) continue;
 
-    if (RUNTIME_BEARING_CONTAINER_KEYS.has(key) && !Array.isArray(value)) {
+    const isKnownCollection =
+      AUDITED_CONTAINER_COLLECTIONS.has(key)
+      || INERT_CONTAINER_COLLECTIONS.has(key)
+      || RUNTIME_BEARING_CONTAINER_COLLECTIONS.has(key);
+    if (!isKnownCollection) {
+      refuse(
+        GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE,
+        `containerVersion.${key} is not part of the schema this audit was written against`,
+      );
+      continue;
+    }
+
+    // Shape is checked for every known collection, inert ones included: an inventory that is not a
+    // list is not an inventory, and reading it as absent is a guess.
+    if (!Array.isArray(value)) {
       refuse(GTM_AUDIT_CODES.MALFORMED_EXPORT, `containerVersion.${key} is not an array`);
       continue;
     }
 
-    const populated = Array.isArray(value)
-      ? value.length > 0
-      : isRecord(value)
-        ? Object.keys(value).length > 0
-        : false;
-    if (populated) {
+    if (RUNTIME_BEARING_CONTAINER_COLLECTIONS.has(key) && value.length > 0) {
       refuse(
         GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE,
-        `containerVersion.${key} is populated and this audit does not account for it`,
+        `containerVersion.${key} is populated and this audit does not model it`,
       );
     }
+  }
+
+  // A deleted version is not an artifact that may be loaded, whatever its contents say. The question
+  // this module answers is whether *this exact JSON* may be published, and a deleted one may not.
+  if (version.deleted === true) {
+    refuse(
+      GTM_AUDIT_CODES.CONTAINER_VERSION_DELETED,
+      "the export names a deleted container version",
+    );
   }
 
   const containerVersionId = readString(version.containerVersionId);
@@ -702,11 +746,8 @@ export function auditGtmContainerExport({
     );
   }
 
-  // An unreadable variable list is not an empty one: every reference would resolve to nothing and
-  // the artifact would look cleaner than it is.
-  if (version.variable !== undefined && !Array.isArray(version.variable)) {
-    refuse(GTM_AUDIT_CODES.MALFORMED_EXPORT, "containerVersion.variable is not an array");
-  }
+  // The gate above already refuses an unreadable variable list; indexing defends itself so that a
+  // refused artifact still produces the rest of its findings in the same pass.
   const variables = indexVariables(Array.isArray(version.variable) ? version.variable : []);
 
   // A workspace export carries no saved version, and "0" is the placeholder an unsaved export uses.
