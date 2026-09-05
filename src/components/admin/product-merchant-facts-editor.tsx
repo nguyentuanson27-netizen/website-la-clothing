@@ -73,9 +73,7 @@ export async function ProductMerchantFactsEditor({
   const persisted = await repository.readOverrides(productId);
   // Resolved only to show the operator what Merchant would actually emit today. A malformed stored
   // value is reported here as unresolved rather than smoothed over, matching what the mapper does.
-  const effective = resolveEffectiveApparelFacts(
-    persisted as Parameters<typeof resolveEffectiveApparelFacts>[0],
-  );
+  const effective = resolveEffectiveApparelFacts(persisted);
 
   async function saveMerchantFacts(formData: FormData) {
     "use server";

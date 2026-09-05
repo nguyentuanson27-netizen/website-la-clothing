@@ -377,7 +377,7 @@ test("M3 a persisted apparel value outside the reviewed allowlist fails closed",
   const products = await merchant.readCandidateProducts({ shopId: SHOP_ID, now: SYNCED_AT });
   const { mapMerchantOffers } = await import("../../src/commerce/merchant-offer-mapper.ts");
   const result = mapMerchantOffers({
-    products: products.map((candidate) => ({ ...candidate, apparelOverrides: overrides as never })),
+    products: products.map((candidate) => ({ ...candidate, apparelOverrides: overrides })),
     origin: ORIGIN,
   });
 

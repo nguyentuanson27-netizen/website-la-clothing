@@ -58,6 +58,20 @@ export type MerchantApparelOverrides = Readonly<{
   condition: MerchantCondition | null;
 }>;
 
+/**
+ * Overrides as they come back from storage: strings the allowlist has not vouched for yet.
+ *
+ * The resolver takes this looser shape on purpose. Typing the read path as already-validated would
+ * make the fail-closed branch look unreachable and invite a cast at every call site, which is how a
+ * value nobody checked ends up in a feed. A validated `MerchantApparelOverrides` is assignable here,
+ * so the admin path loses nothing.
+ */
+export type PersistedMerchantApparelOverrides = Readonly<{
+  gender: string | null;
+  ageGroup: string | null;
+  condition: string | null;
+}>;
+
 export type MerchantApparelField = keyof MerchantApparelFacts;
 
 /** Fixed diagnostic order, so an excluded offer reports the same reason for the same input. */
@@ -99,7 +113,7 @@ function isAllowedValue(field: MerchantApparelField, value: unknown): value is s
  * than be quietly replaced by the shop default.
  */
 export function resolveEffectiveApparelFacts(
-  overrides: MerchantApparelOverrides,
+  overrides: PersistedMerchantApparelOverrides,
 ): EffectiveApparelFactsResult {
   const unresolved: MerchantApparelField[] = [];
   const facts: Record<string, string> = {};
@@ -182,9 +196,9 @@ export function parseMerchantApparelOverrides(input: unknown): ParsedMerchantApp
 }
 
 type PersistedApparelNames = Readonly<{
-  gender: string | null;
-  ageGroup: string | null;
-  condition: string | null;
+  gender: Uppercase<MerchantGender> | null;
+  ageGroup: Uppercase<MerchantAgeGroup> | null;
+  condition: Uppercase<MerchantCondition> | null;
 }>;
 
 /**
@@ -209,7 +223,9 @@ const WIRE_VALUE_BY_PERSISTED_NAME: ReadonlyMap<string, string> = new Map(
  * unrecognised name is carried through unchanged rather than nulled or coerced, which keeps
  * `resolveEffectiveApparelFacts` the single place that decides an unusable value fails closed.
  */
-export function toMerchantApparelWireValues(persisted: PersistedApparelNames): PersistedApparelNames {
+export function toMerchantApparelWireValues(
+  persisted: PersistedMerchantApparelOverrides,
+): PersistedMerchantApparelOverrides {
   const translate = (name: string | null): string | null =>
     name === null ? null : (WIRE_VALUE_BY_PERSISTED_NAME.get(name) ?? name);
 
@@ -220,12 +236,21 @@ export function toMerchantApparelWireValues(persisted: PersistedApparelNames): P
   });
 }
 
+/**
+ * The storage direction, for values the allowlist has already vouched for.
+ *
+ * The uppercase assertion is safe precisely because the argument is the validated type: every
+ * member of the three unions upper-cases to a declared database enum name.
+ */
 export function toPersistedMerchantApparelNames(
   overrides: MerchantApparelOverrides,
 ): PersistedApparelNames {
+  const persist = <TValue extends string>(value: TValue | null) =>
+    value === null ? null : (value.toUpperCase() as Uppercase<TValue>);
+
   return Object.freeze({
-    gender: overrides.gender === null ? null : overrides.gender.toUpperCase(),
-    ageGroup: overrides.ageGroup === null ? null : overrides.ageGroup.toUpperCase(),
-    condition: overrides.condition === null ? null : overrides.condition.toUpperCase(),
+    gender: persist(overrides.gender),
+    ageGroup: persist(overrides.ageGroup),
+    condition: persist(overrides.condition),
   });
 }

@@ -17,16 +17,11 @@ import {
   toMerchantApparelWireValues,
   toPersistedMerchantApparelNames,
   type MerchantApparelOverrides,
+  type PersistedMerchantApparelOverrides,
 } from "./merchant-apparel-facts.ts";
 
-/** What the mapper consumes: wire values, or `null` for inherit. Never trusted without validation. */
-export type PersistedApparelOverrides = Readonly<{
-  gender: string | null;
-  ageGroup: string | null;
-  condition: string | null;
-}>;
-
-export const INHERITED_APPAREL_OVERRIDES: PersistedApparelOverrides = Object.freeze({
+/** A product with no override row: every fact inherits the approved shop default. */
+export const INHERITED_APPAREL_OVERRIDES: PersistedMerchantApparelOverrides = Object.freeze({
   gender: null,
   ageGroup: null,
   condition: null,
@@ -42,7 +37,7 @@ export function createProductMerchantFactsRepository(client: PrismaClient) {
     );
   }
 
-  async function readOverrides(productId: string): Promise<PersistedApparelOverrides> {
+  async function readOverrides(productId: string): Promise<PersistedMerchantApparelOverrides> {
     const row = await client.productMerchantFacts.findUnique({
       where: { productId },
       select: { gender: true, ageGroup: true, condition: true },
@@ -63,16 +58,10 @@ export function createProductMerchantFactsRepository(client: PrismaClient) {
       return;
     }
 
-    const values = {
-      gender: persisted.gender as never,
-      ageGroup: persisted.ageGroup as never,
-      condition: persisted.condition as never,
-    };
-
     await client.productMerchantFacts.upsert({
       where: { productId },
-      create: { productId, ...values },
-      update: values,
+      create: { productId, ...persisted },
+      update: { ...persisted },
       select: { productId: true },
     });
   }

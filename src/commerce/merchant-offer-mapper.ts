@@ -51,9 +51,9 @@ import {
   APPAREL_FACT_UNRESOLVED,
   resolveEffectiveApparelFacts,
   type MerchantAgeGroup,
-  type MerchantApparelOverrides,
   type MerchantCondition,
   type MerchantGender,
+  type PersistedMerchantApparelOverrides,
 } from "./merchant-apparel-facts.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import type {
@@ -141,8 +141,11 @@ export type MerchantCandidateProduct = Readonly<{
   galleryIndexByVariantId: ReadonlyMap<string, number>;
   /** The projection the product page builds, priced by the shared promotional rule. */
   projection: StorefrontProductProjection;
-  /** ADR 0007 website-owned overrides; `null` on a field means inherit the shop default. */
-  apparelOverrides: MerchantApparelOverrides;
+  /**
+   * ADR 0007 website-owned overrides, as stored. `null` on a field means inherit the shop default;
+   * anything the allowlist does not recognise fails the whole product closed.
+   */
+  apparelOverrides: PersistedMerchantApparelOverrides;
   variations: readonly MerchantCandidateVariation[];
 }>;
 
@@ -258,10 +261,12 @@ function requireAbsoluteOrigin(origin: string): URL {
   return parsed;
 }
 
-function isMerchantIdentifier(value: string | null, maxLength: number, allowWhitespace: boolean) {
-  return (
-    classifyExternalIdentifier(value, { maxLength, allowWhitespace }) === "PRESENT"
-  );
+function isMerchantIdentifier(
+  value: string | null,
+  maxLength: number,
+  allowWhitespace: boolean,
+): value is string {
+  return classifyExternalIdentifier(value, { maxLength, allowWhitespace }) === "PRESENT";
 }
 
 /**
@@ -301,6 +306,7 @@ function resolveOfferImages(
 function resolveAddressableOption(
   product: MerchantCandidateProduct,
   variation: MerchantCandidateVariation,
+  optionsByVariantId: ReadonlyMap<string, StorefrontProjectionOption>,
 ): StorefrontProjectionOption | null {
   if (variation.pancakeVariationId === null) return null;
 
@@ -310,18 +316,40 @@ function resolveAddressableOption(
   });
   if (selection === null || selection.variantId !== variation.variantId) return null;
 
-  return (
-    product.projection.options.find(
-      (candidate) =>
-        candidate.id === variation.variantId
-        && candidate.pancakeVariationId === variation.pancakeVariationId,
-    ) ?? null
-  );
+  const option = optionsByVariantId.get(variation.variantId);
+  // The external identity must still agree with the option the internal handle names. U12 already
+  // refused a duplicated identity, so this only rejects a candidate row that disagrees with the
+  // projection it was loaded beside.
+  return option !== undefined && option.pancakeVariationId === variation.pancakeVariationId
+    ? option
+    : null;
+}
+
+/**
+ * Index of a product's authorized options by internal variant id.
+ *
+ * Built once per product rather than searched per candidate: a duplicated internal id cannot be
+ * resolved to one option, so it is dropped from the index and its candidate reads as unaddressable.
+ */
+function indexOptionsByVariantId(
+  projection: StorefrontProductProjection,
+): ReadonlyMap<string, StorefrontProjectionOption> {
+  const index = new Map<string, StorefrontProjectionOption>();
+  const duplicated = new Set<string>();
+
+  for (const option of projection.options) {
+    if (index.has(option.id)) duplicated.add(option.id);
+    else index.set(option.id, option);
+  }
+  for (const id of duplicated) index.delete(id);
+
+  return index;
 }
 
 function draftCandidate(
   product: MerchantCandidateProduct,
   variation: MerchantCandidateVariation,
+  optionsByVariantId: ReadonlyMap<string, StorefrontProjectionOption>,
   origin: URL,
 ): Draft {
   const pancakeVariationId = variation.pancakeVariationId;
@@ -356,7 +384,7 @@ function draftCandidate(
   const apparel = resolveEffectiveApparelFacts(product.apparelOverrides);
   if (!apparel.ok) reasons.add(APPAREL_FACT_UNRESOLVED);
 
-  const addressableOption = resolveAddressableOption(product, variation);
+  const addressableOption = resolveAddressableOption(product, variation, optionsByVariantId);
   if (addressableOption === null) reasons.add("OPTION_NOT_ADDRESSABLE");
 
   // Two reasons are reported only when they are the candidate's own fault rather than a consequence
@@ -378,11 +406,18 @@ function draftCandidate(
   const { imageLink, additionalImageLinks } = resolveOfferImages(product, variation.variantId);
   if (imageLink === null) reasons.add("MEDIA_UNRESOLVED");
 
-  if (classifyMerchantText(product.name) !== "READY") reasons.add("TITLE_UNRESOLVED");
-  if (classifyMerchantText(product.publishedDescription) !== "READY") {
-    reasons.add("DESCRIPTION_UNRESOLVED");
-  }
+  const title = classifyMerchantText(product.name) === "READY" ? product.name : null;
+  if (title === null) reasons.add("TITLE_UNRESOLVED");
 
+  const description =
+    classifyMerchantText(product.publishedDescription) === "READY"
+      ? product.publishedDescription
+      : null;
+  if (description === null) reasons.add("DESCRIPTION_UNRESOLVED");
+
+  // Every condition below has already recorded its own reason, so `reasons.size` alone decides the
+  // outcome. They are repeated here only so the emitted offer needs no cast to convince the type
+  // checker that a fact it refused to emit without is present.
   if (
     reasons.size > 0
     || !apparel.ok
@@ -390,8 +425,11 @@ function draftCandidate(
     || path === null
     || priceVnd === null
     || imageLink === null
-    || pancakeVariationId === null
-    || product.pancakeProductId === null
+    || title === null
+    || description === null
+    || !hasMpn
+    || !hasOfferId
+    || !hasItemGroupId
   ) {
     return { pancakeVariationId, itemGroupId: product.pancakeProductId, reasons, offer: null };
   }
@@ -404,9 +442,9 @@ function draftCandidate(
       id: pancakeVariationId,
       itemGroupId: product.pancakeProductId,
       brand: MERCHANT_BRAND,
-      mpn: variation.pancakeDisplayId as string,
-      title: product.name,
-      description: product.publishedDescription as string,
+      mpn: variation.pancakeDisplayId,
+      title,
+      description,
       link: new URL(path, origin).href,
       imageLink,
       additionalImageLinks: Object.freeze(additionalImageLinks),
@@ -447,8 +485,9 @@ export function mapMerchantOffers({
 
   const drafts: Draft[] = [];
   for (const product of products) {
+    const optionsByVariantId = indexOptionsByVariantId(product.projection);
     for (const variation of product.variations) {
-      drafts.push(draftCandidate(product, variation, parsedOrigin));
+      drafts.push(draftCandidate(product, variation, optionsByVariantId, parsedOrigin));
     }
   }
 

@@ -40,6 +40,7 @@ import {
 } from "./merchant-offer-mapper.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 import {
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
@@ -116,7 +117,7 @@ function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
 
 function toCandidateProduct(
   product: SelectedCandidateProduct,
-  campaignsByVariantId: ReadonlyMap<string, Parameters<typeof buildPromotionalStorefrontPricing>[0]["campaignsByVariantId"] extends ReadonlyMap<string, infer TValue> ? TValue : never>,
+  campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
   now: Date,
 ): MerchantCandidateProduct {
   const variantImageUrls = product.variants.map((variant) =>
@@ -137,12 +138,21 @@ function toCandidateProduct(
     })),
   });
 
+  // Summed once and shared, so the stock the storefront projection sees and the stock the Merchant
+  // availability fact is classified from cannot drift apart.
+  const stockByVariantId = new Map(
+    product.variants.map((variant) => [
+      variant.id,
+      aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
+    ]),
+  );
+
   const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
     id: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
     color: variant.color,
     size: variant.size,
-    sellableStock: aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
+    sellableStock: stockByVariantId.get(variant.id) ?? Number.NaN,
     retailPrice: variant.pancakeRetailPrice,
     retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
   }));
@@ -156,9 +166,7 @@ function toCandidateProduct(
     pancakeVariationId: variant.pancakeVariationId,
     pancakeDisplayId: variant.pancakeDisplayId,
     isComposite: variant.compositeParents.length > 0 || variant.compositeComponents.length > 0,
-    stockQuantity: aggregateWarehouseStock(
-      variant.warehouseStocks.map((stock) => stock.quantity),
-    ),
+    stockQuantity: stockByVariantId.get(variant.id) ?? Number.NaN,
   }));
 
   return {
@@ -177,9 +185,12 @@ function toCandidateProduct(
       hasCompositeGraph,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     }),
-    apparelOverrides: (product.merchantFacts === null
-      ? INHERITED_APPAREL_OVERRIDES
-      : toMerchantApparelWireValues(product.merchantFacts)) as MerchantCandidateProduct["apparelOverrides"],
+    // Read as stored, not as trusted: the mapper's resolver is what decides whether these values
+    // are usable, and an absent row is inheritance rather than an unknown state.
+    apparelOverrides:
+      product.merchantFacts === null
+        ? INHERITED_APPAREL_OVERRIDES
+        : toMerchantApparelWireValues(product.merchantFacts),
     variations,
   };
 }

@@ -316,7 +316,7 @@ test("M3 each apparel override applies independently to the emitted offer", () =
 test("M3 a malformed persisted apparel override excludes the offer fail-closed", () => {
   assert.deepEqual(
     onlyExclusionReasons({
-      apparelOverrides: { gender: "nam", ageGroup: null, condition: null } as never,
+      apparelOverrides: { gender: "nam", ageGroup: null, condition: null },
     }),
     ["APPAREL_FACT_UNRESOLVED"],
   );
@@ -518,7 +518,7 @@ test("M3 every unresolved fact for one candidate is reported in one bounded, ord
     name: "   ",
     media: { primary: null, gallery: [] },
     galleryIndexByVariantId: new Map(),
-    apparelOverrides: { gender: "nam", ageGroup: null, condition: null } as never,
+    apparelOverrides: { gender: "nam", ageGroup: null, condition: null },
     variations: [variation({ pancakeDisplayId: null, stockQuantity: Number.NaN })],
   });
 
