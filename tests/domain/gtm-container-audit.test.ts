@@ -1219,6 +1219,111 @@ describe("GTM container export static audit", () => {
     });
   }
 
+  it("passes a version whose unmodelled collections are absent or empty", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        zone: [],
+        gtagConfig: [],
+        client: [],
+        transformation: [],
+        customTemplate: [],
+        builtInVariable: [{ type: "PAGE_URL", name: "Page URL" }],
+        folder: [{ folderId: "1", name: "Tracking" }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  it("refuses a zone, which links a whole child container this audit never sees", () => {
+    // Every rule in the module reasons about this version's tag[]. A zone's child container has its
+    // own tags, which are not in it — so a spotless tag list proves nothing about what actually
+    // fires.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        zone: [{
+          zoneId: "1",
+          name: "Third party zone",
+          childContainer: [{ publicId: "GTM-OTHER", nickname: "partner" }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
+  });
+
+  it("refuses Google tag configuration this audit does not model", () => {
+    // gtagConfig changes what the Google tag sends and where, from outside any tag's parameters, so
+    // the page-view and destination proofs above cannot speak for it.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        gtagConfig: [{
+          gtagConfigId: "1",
+          type: "googtag",
+          parameter: [{ type: "TEMPLATE", key: "send_page_view", value: "true" }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
+  });
+
+  for (const key of ["client", "transformation"] as const) {
+    it(`refuses a populated ${key} collection`, () => {
+      const result = auditGtmContainerExport({
+        source: containerExport({ [key]: [{ name: "something" }] }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
+    });
+
+    it(`reports a ${key} collection of the wrong shape as malformed`, () => {
+      const result = auditGtmContainerExport({
+        source: containerExport({ [key]: { name: "something" } }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  it("refuses a collection this audit has never heard of", () => {
+    // The gate is an allowlist on purpose: whatever GTM adds after this was written must fail closed
+    // rather than pass unnoticed, which is how the zone blind spot happened in the first place.
+    const result = auditGtmContainerExport({
+      source: containerExport({ somethingGtmAddedLater: [{ fires: "who knows" }] }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE));
+  });
+
+  it("ignores scalar version metadata rather than treating it as a feature", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        name: "Reviewed version 7",
+        description: "",
+        fingerprint: "1699999999999",
+        tagManagerUrl: "https://tagmanager.google.com/#/versions/...",
+        deleted: false,
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
   it("refuses an export from a container the owner did not approve", () => {
     // Same destination ids, different container: without this the audit would certify an artifact
     // that was never the reviewed one.

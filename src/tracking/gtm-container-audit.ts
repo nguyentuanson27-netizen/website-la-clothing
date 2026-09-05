@@ -10,11 +10,13 @@
  *
  * **It fails closed on anything it does not understand.** Google's published export schema could not
  * be fetched in the environment this was written in, so the parser is pinned to the one export
- * format it was written against, refuses malformed shapes, and refuses a tag whose type it has no
- * reviewed parser for rather than certifying it on its firing guard. A live guard says *when* a tag
- * fires, never *where* it delivers; for a Custom HTML tag or a gallery template the delivery lives
- * in code the export does not even contain. A schema surprise therefore becomes a loud failure,
- * never a silently passing check.
+ * format it was written against and refuses what it cannot account for at every level: a malformed
+ * shape, a tag whose type it has no reviewed parser for, and — the level easiest to forget — a
+ * populated top-level collection of the container version itself. A saved version carries more than
+ * `tag`, `trigger` and `variable`: a `zone` links a whole child container whose tags never appear in
+ * this version's `tag[]`, and `gtagConfig` carries Google tag settings that change what destinations
+ * receive. Auditing only the collections this parser reads would certify an artifact by ignoring the
+ * parts of it that do the delivering, so unaccounted-for collections are refused by name.
  *
  * **It keeps vendor identity all the way through.** Approval is checked field by field against the
  * vendor that field belongs to, and a Google Ads conversion is approved as a whole `(id, label)`
@@ -51,6 +53,8 @@ export const GTM_AUDIT_CODES = {
   TRACKING_MODE_VARIABLE_NOT_APP_OWNED: "TRACKING_MODE_VARIABLE_NOT_APP_OWNED",
   /** Tag sequencing gives a delivering tag a firing path this audit cannot account for. */
   TAG_SEQUENCING_NOT_AUDITABLE: "TAG_SEQUENCING_NOT_AUDITABLE",
+  /** The version carries a populated top-level collection this audit does not account for. */
+  UNAUDITABLE_CONTAINER_FEATURE: "UNAUDITABLE_CONTAINER_FEATURE",
   /** Meta belongs to the direct first-party integration, never to GTM. */
   META_TAG_PRESENT: "META_TAG_PRESENT",
   /** GA4 would send its own page view beside the application's canonical one. */
@@ -104,6 +108,47 @@ export type GtmAuditResult = Readonly<{
 /** The container export format this parser was written against. */
 const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
 
+/**
+ * Top-level `containerVersion` collections this audit reads and reasons about.
+ *
+ * Everything the rules below say is said about these three.
+ */
+const AUDITED_CONTAINER_KEYS: ReadonlySet<string> = new Set(["tag", "trigger", "variable", "container"]);
+
+/**
+ * Top-level collections that are accounted for and carry no runtime of their own.
+ *
+ * `builtInVariable` enables names, `folder` organises the workspace, and `customTemplate` is an
+ * inventory: a template does nothing until a tag uses it, and a tag using one has a `cvt_*` type
+ * that the reviewed-parser allowlist already refuses. They are listed so that being ignored is a
+ * decision on the record rather than an oversight.
+ */
+const INERT_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+  "builtInVariable",
+  "folder",
+  "customTemplate",
+]);
+
+/**
+ * Collections known to carry runtime or destination configuration this parser does not model.
+ *
+ * Named individually so a wrong *shape* on one of them reads as a malformed export rather than as an
+ * unaccounted-for feature — and so the reason each is refused is written down where the next person
+ * to add a parser will find it.
+ */
+const RUNTIME_BEARING_CONTAINER_KEYS: ReadonlySet<string> = new Set([
+  // A zone links additional child containers, which may belong to another account and whose tags
+  // never appear in this version's tag[]. Every rule in this module would be bypassed by one.
+  "zone",
+  // Google tag configuration: parameters that change what the Google tag sends and to where,
+  // including automatic event and page-view behaviour, from outside any tag's own parameters.
+  "gtagConfig",
+  // Server-container entities. A web container should not carry them; one that does is not the
+  // artifact this audit was written to read.
+  "client",
+  "transformation",
+]);
+
 /** The application-owned dataLayer fact every production tag must be gated on. */
 const TRACKING_MODE_VARIABLE = "la_tracking_mode";
 const LIVE_MODE = "live";
@@ -137,18 +182,26 @@ const NON_DELIVERING_TAG_TYPES: ReadonlySet<string> = new Set([
  * A type earns a place here only when the type itself fixes the vendor, so the parameters that can
  * name a destination are bounded and readable from the export alone. Google's built-in tags qualify.
  *
- * A Custom HTML tag or a gallery template does not, and no parameter allowlist can rescue it: its
- * delivery lives in template or script code the export does not contain, so a production endpoint
- * can sit under any key — `html`, `code`, a template-defined name — or behind a variable reference,
- * with no recognised destination key anywhere on the tag. Certifying such a tag because it carries a
- * live guard would confuse *when* it fires with *where* it delivers. It is refused instead.
+ * A Custom HTML tag does not, and no parameter allowlist can rescue it: its payload is arbitrary
+ * script, so a production endpoint can sit under any key or behind a variable reference, with no
+ * recognised destination key anywhere on the tag.
+ *
+ * A gallery template does not either, but for a different reason, and the distinction matters. The
+ * saved version *does* carry the template — `containerVersion.customTemplate[]` holds each one's
+ * `templateData` and, for gallery templates, a `galleryReference` naming its owner, repository,
+ * version and signature. What is missing is not the code but the review: this audit has no parser
+ * bound to any specific template, so it cannot say which of a template's parameters names a
+ * destination. Certifying such a tag because it carries a live guard would confuse *when* it fires
+ * with *where* it delivers, so it is refused.
  *
  * The consequence is deliberate and worth stating: delivering TikTok through its gallery template
  * cannot be certified by this audit as written. Under the locked v1 contract — plan §3.7, *TikTok
- * Pixel runs through GTM* — the only path that admits it is a reviewed parser for that exact
- * template, a human review step this audit deliberately leaves to a person. Delivering TikTok
- * outside GTM is not an alternative available here: that is an architecture change needing its own
- * approved amendment, not something this gate may open by loosening.
+ * Pixel runs through GTM* — the only path that admits it is a parser bound to that exact template,
+ * identified from a real saved export: its `galleryReference` and a checksum over its
+ * `templateData`, reviewed by a person, before any mapping of Pixel ID or event fields is written.
+ * Guessing the `cvt_*` type-to-template mapping from a fixture is exactly what that review exists to
+ * prevent. Delivering TikTok outside GTM is not an alternative available here: that is an
+ * architecture change needing its own approved amendment, not something this gate may open.
  */
 const REVIEWED_TAG_TYPES: ReadonlySet<string> = new Set([
   "gclidw", // Conversion Linker — first-party cookies only
@@ -608,6 +661,31 @@ export function auditGtmContainerExport({
       containerVersionId: null,
       containerPublicId: null,
     });
+  }
+
+  // The capability gate. A rule that reads three collections cannot speak for a version that has
+  // more than three, so anything populated and unaccounted for refuses the artifact by name. This is
+  // an allowlist on purpose: a collection GTM adds after this was written fails closed instead of
+  // passing unnoticed.
+  for (const [key, value] of Object.entries(version)) {
+    if (AUDITED_CONTAINER_KEYS.has(key) || INERT_CONTAINER_KEYS.has(key)) continue;
+
+    if (RUNTIME_BEARING_CONTAINER_KEYS.has(key) && !Array.isArray(value)) {
+      refuse(GTM_AUDIT_CODES.MALFORMED_EXPORT, `containerVersion.${key} is not an array`);
+      continue;
+    }
+
+    const populated = Array.isArray(value)
+      ? value.length > 0
+      : isRecord(value)
+        ? Object.keys(value).length > 0
+        : false;
+    if (populated) {
+      refuse(
+        GTM_AUDIT_CODES.UNAUDITABLE_CONTAINER_FEATURE,
+        `containerVersion.${key} is populated and this audit does not account for it`,
+      );
+    }
   }
 
   const containerVersionId = readString(version.containerVersionId);
