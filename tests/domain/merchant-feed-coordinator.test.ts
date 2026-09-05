@@ -40,18 +40,12 @@ function coordinator(
     readPricingRevision?: () => Promise<bigint>;
   } = {},
 ) {
-  const configuration = {
+  return createMerchantFeedCoordinator({
     key: KEY,
     readPricingRevision: options.readPricingRevision ?? (async () => 1n),
     now: options.now,
     observe: options.observe,
-  };
-  // The cast keeps this RED regression runnable against the pre-fix coordinator, whose public
-  // configuration does not yet declare the durable revision reader. The GREEN implementation makes
-  // the property part of the real contract.
-  return createMerchantFeedCoordinator(
-    configuration as Parameters<typeof createMerchantFeedCoordinator>[0],
-  );
+  });
 }
 
 describe("Merchant feed coordinator", () => {
@@ -225,6 +219,87 @@ describe("Merchant feed coordinator", () => {
     if (!fresh.ok) assert.fail("new revision should remain rebuildable without stale publication");
     assert.equal(fresh.body, "<feed>fresh-21</feed>");
     assert.equal(generations, 2);
+  });
+
+  it("never joins a newer-revision request onto a stale in-flight generation", async () => {
+    let revision = 40n;
+    let runningGenerations = 0;
+    let maxRunningGenerations = 0;
+    let generations = 0;
+    const oldGate = deferred<MerchantFeedGenerationResult>();
+    const freshGate = deferred<MerchantFeedGenerationResult>();
+    const instance = coordinator({ readPricingRevision: async () => revision });
+
+    const oldRequest = instance.get({
+      generate: async () => {
+        generations += 1;
+        runningGenerations += 1;
+        maxRunningGenerations = Math.max(maxRunningGenerations, runningGenerations);
+        const result = await oldGate.promise;
+        runningGenerations -= 1;
+        return result;
+      },
+    });
+    await Promise.resolve();
+    assert.equal(generations, 1);
+
+    revision = 41n;
+    const freshRequest = instance.get({
+      generate: async () => {
+        generations += 1;
+        runningGenerations += 1;
+        maxRunningGenerations = Math.max(maxRunningGenerations, runningGenerations);
+        const result = await freshGate.promise;
+        runningGenerations -= 1;
+        return result;
+      },
+    });
+    await Promise.resolve();
+    assert.equal(generations, 1, "the newer revision must wait rather than overlap heavy work");
+
+    oldGate.resolve(success("<feed>stale-40</feed>"));
+    const oldResult = await oldRequest;
+    assert.equal(oldResult.ok, false);
+    await Promise.resolve();
+    assert.equal(generations, 2, "the newer revision starts only after the stale flight leaves");
+
+    freshGate.resolve(success("<feed>fresh-41</feed>"));
+    const freshResult = await freshRequest;
+    assert.equal(freshResult.ok, true);
+    if (!freshResult.ok) assert.fail("newer revision must complete with its own generation");
+    assert.equal(freshResult.body, "<feed>fresh-41</feed>");
+    assert.equal(maxRunningGenerations, 1);
+  });
+
+  it("preserves a real failure backoff after a newer-revision request waits for a stale flight", async () => {
+    let revision = 50n;
+    let generations = 0;
+    const oldGate = deferred<MerchantFeedGenerationResult>();
+    const instance = coordinator({ readPricingRevision: async () => revision });
+
+    const oldRequest = instance.get({
+      generate: () => {
+        generations += 1;
+        return oldGate.promise;
+      },
+    });
+    await Promise.resolve();
+    revision = 51n;
+
+    const newerRequest = instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>must-not-run</feed>");
+      },
+    });
+    oldGate.resolve({ ok: false, failureClass: "GENERATION_FAILURE" });
+
+    const [oldResult, newerResult] = await Promise.all([oldRequest, newerRequest]);
+    assert.equal(oldResult.ok, false);
+    assert.equal(newerResult.ok, false);
+    if (newerResult.ok) assert.fail("the newer request must observe the old flight's backoff");
+    assert.equal(newerResult.backoff, true);
+    assert.equal(generations, 1);
   });
 
   it("expires cached pricing exactly at the nearest campaign start boundary", async () => {
