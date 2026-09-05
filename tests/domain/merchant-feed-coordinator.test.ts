@@ -12,8 +12,17 @@ import {
 
 const KEY = "merchant-feed:rss-v1:shop:920007";
 
-function success(body = "<feed>ok</feed>"): MerchantFeedGenerationResult {
-  return { ok: true, body, byteLength: new TextEncoder().encode(body).byteLength, offerCount: 1 };
+function success(
+  body = "<feed>ok</feed>",
+  nextPricingTransitionAtMs: number | null = null,
+) {
+  return {
+    ok: true as const,
+    body,
+    byteLength: new TextEncoder().encode(body).byteLength,
+    offerCount: 1,
+    nextPricingTransitionAtMs,
+  };
 }
 
 function deferred<T>() {
@@ -24,8 +33,25 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function coordinator(options: { now?: () => number; observe?: (event: string) => void } = {}) {
-  return createMerchantFeedCoordinator({ key: KEY, ...options });
+function coordinator(
+  options: {
+    now?: () => number;
+    observe?: (event: string) => void;
+    readPricingRevision?: () => Promise<bigint>;
+  } = {},
+) {
+  const configuration = {
+    key: KEY,
+    readPricingRevision: options.readPricingRevision ?? (async () => 1n),
+    now: options.now,
+    observe: options.observe,
+  };
+  // The cast keeps this RED regression runnable against the pre-fix coordinator, whose public
+  // configuration does not yet declare the durable revision reader. The GREEN implementation makes
+  // the property part of the real contract.
+  return createMerchantFeedCoordinator(
+    configuration as Parameters<typeof createMerchantFeedCoordinator>[0],
+  );
 }
 
 describe("Merchant feed coordinator", () => {
@@ -146,5 +172,131 @@ describe("Merchant feed coordinator", () => {
       instance.get({ requestedKey: `${KEY}:noise`, generate: async () => success() }),
       /bounded domain/,
     );
+  });
+
+  it("invalidates a cached feed immediately after the durable pricing revision increments", async () => {
+    let revision = 10n;
+    let generations = 0;
+    const instance = coordinator({ readPricingRevision: async () => revision });
+    const generate = async () => {
+      generations += 1;
+      return success(`<feed>revision-${revision}</feed>`);
+    };
+
+    const first = await instance.get({ generate });
+    assert.equal(first.ok && first.body, "<feed>revision-10</feed>");
+
+    revision = 11n;
+    const afterMutation = await instance.get({ generate });
+    assert.equal(afterMutation.ok, true);
+    if (!afterMutation.ok) assert.fail("new revision must rebuild successfully");
+    assert.equal(afterMutation.cache, "generated");
+    assert.equal(afterMutation.body, "<feed>revision-11</feed>");
+    assert.equal(generations, 2);
+  });
+
+  it("does not publish an in-flight revision after a newer durable revision commits", async () => {
+    let revision = 20n;
+    let generations = 0;
+    const generationGate = deferred<MerchantFeedGenerationResult>();
+    const instance = coordinator({ readPricingRevision: async () => revision });
+
+    const oldRequest = instance.get({
+      generate: () => {
+        generations += 1;
+        return generationGate.promise;
+      },
+    });
+    await Promise.resolve();
+    assert.equal(generations, 1);
+
+    revision = 21n;
+    generationGate.resolve(success("<feed>stale-20</feed>"));
+    const stale = await oldRequest;
+    assert.equal(stale.ok, false, "revision N output must be discarded after N+1 is observed");
+
+    const fresh = await instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>fresh-21</feed>");
+      },
+    });
+    assert.equal(fresh.ok, true);
+    if (!fresh.ok) assert.fail("new revision should remain rebuildable without stale publication");
+    assert.equal(fresh.body, "<feed>fresh-21</feed>");
+    assert.equal(generations, 2);
+  });
+
+  it("expires cached pricing exactly at the nearest campaign start boundary", async () => {
+    let nowMs = 1_000;
+    let generations = 0;
+    const startAtMs = 2_000;
+    const instance = coordinator({ now: () => nowMs });
+    const generate = async () => {
+      generations += 1;
+      return success(`<feed>generation-${generations}</feed>`, startAtMs);
+    };
+
+    await instance.get({ generate });
+    nowMs = startAtMs - 1;
+    const before = await instance.get({ generate });
+    assert.equal(before.ok && before.cache, "hit");
+    assert.equal(generations, 1);
+
+    nowMs = startAtMs;
+    const atBoundary = await instance.get({ generate });
+    assert.equal(atBoundary.ok && atBoundary.cache, "generated");
+    assert.equal(generations, 2);
+  });
+
+  it("expires cached pricing exactly at the nearest campaign end boundary", async () => {
+    let nowMs = 10_000;
+    let generations = 0;
+    const endAtMs = 12_500;
+    const instance = coordinator({ now: () => nowMs });
+    const generate = async () => {
+      generations += 1;
+      return success(`<feed>generation-${generations}</feed>`, endAtMs);
+    };
+
+    await instance.get({ generate });
+    nowMs = endAtMs - 1;
+    const before = await instance.get({ generate });
+    assert.equal(before.ok && before.cache, "hit");
+    assert.equal(generations, 1);
+
+    nowMs = endAtMs;
+    const atBoundary = await instance.get({ generate });
+    assert.equal(atBoundary.ok && atBoundary.cache, "generated");
+    assert.equal(generations, 2);
+  });
+
+  it("fails closed instead of serving a cached success when the durable revision read fails", async () => {
+    let failRevisionRead = false;
+    let generations = 0;
+    const instance = coordinator({
+      readPricingRevision: async () => {
+        if (failRevisionRead) throw new Error("database unavailable");
+        return 30n;
+      },
+    });
+
+    await instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>cached</feed>");
+      },
+    });
+
+    failRevisionRead = true;
+    const failed = await instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>must-not-run</feed>");
+      },
+    });
+
+    assert.equal(failed.ok, false);
+    assert.equal(generations, 1, "a failed revision validation must not start heavy generation");
   });
 });
