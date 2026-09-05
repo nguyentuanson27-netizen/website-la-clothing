@@ -82,9 +82,30 @@ function adsConversionTag(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function tiktokTag(overrides: Record<string, unknown> = {}) {
+function ga4EventTag(overrides: Record<string, unknown> = {}) {
   return {
     tagId: "3",
+    name: "GA4 purchase",
+    type: "gaawe",
+    firingTriggerId: [LIVE_TRIGGER_ID],
+    parameter: [
+      { type: "TEMPLATE", key: "eventName", value: "purchase" },
+      { type: "TEMPLATE", key: "transactionId", value: "{{publicCode}}" },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * TikTok delivered through its gallery template.
+ *
+ * Kept as a fixture precisely because the audit refuses it: the template's delivery lives in code
+ * the export does not contain, so no parameter allowlist can bound where it sends. It is a refusal
+ * case here, not a happy path.
+ */
+function tiktokTemplateTag(overrides: Record<string, unknown> = {}) {
+  return {
+    tagId: "4",
     name: "TikTok CompletePayment",
     type: "cvt_tiktok_pixel",
     firingTriggerId: [LIVE_TRIGGER_ID],
@@ -104,7 +125,7 @@ function containerExport(overrides: Record<string, unknown> = {}) {
       containerId: "0",
       containerVersionId: "7",
       container: { publicId: "GTM-FIXTURE" },
-      tag: [ga4ConfigTag(), adsConversionTag(), tiktokTag()],
+      tag: [ga4ConfigTag(), adsConversionTag(), ga4EventTag()],
       trigger: [liveGuardTrigger(), unguardedTrigger()],
       variable: [],
       ...overrides,
@@ -162,7 +183,7 @@ describe("GTM container export static audit", () => {
   for (const [label, tag] of [
     ["GA4", ga4ConfigTag({ firingTriggerId: [ALWAYS_TRIGGER_ID] })],
     ["Google Ads", adsConversionTag({ firingTriggerId: [ALWAYS_TRIGGER_ID] })],
-    ["TikTok", tiktokTag({ firingTriggerId: [ALWAYS_TRIGGER_ID] })],
+    ["GA4 event", ga4EventTag({ firingTriggerId: [ALWAYS_TRIGGER_ID] })],
   ] as const) {
     it(`fails a production ${label} tag whose firing trigger has no live guard`, () => {
       const result = auditGtmContainerExport({
@@ -236,18 +257,64 @@ describe("GTM container export static audit", () => {
     assert.ok(codes(result).includes(GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD));
   });
 
-  it("refuses an unrecognised tag type rather than assuming it delivers nothing", () => {
-    // The schema could not be verified against Google's own docs here, so an unknown type is
-    // treated as a possible production destination and must still prove its guard.
+  for (const [label, type] of [
+    ["a gallery template", "cvt_unknown_vendor"],
+    ["a Custom HTML tag", "html"],
+    ["a tag carrying no type at all", ""],
+  ] as const) {
+    it(`refuses ${label} even when every firing path is live-guarded`, () => {
+      // The live guard says *when* the tag fires, never *where* it delivers. For these types the
+      // delivery lives in code the export does not contain, so nothing here bounds the destination
+      // and the guard cannot stand in for one.
+      const result = auditGtmContainerExport({
+        source: containerExport({
+          tag: [{ tagId: "9", name: "Mystery", type, firingTriggerId: [LIVE_TRIGGER_ID], parameter: [] }],
+        }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE));
+    });
+  }
+
+  it("refuses a live-guarded custom tag whose delivery hides under an unrecognised key", () => {
+    // This is the shape a parameter allowlist cannot catch: production delivery under `html`, with
+    // no recognised destination key anywhere on the tag, so the destination scan finds nothing.
     const result = auditGtmContainerExport({
       source: containerExport({
-        tag: [{ tagId: "9", name: "Mystery", type: "cvt_unknown_vendor", firingTriggerId: [ALWAYS_TRIGGER_ID], parameter: [] }],
+        tag: [{
+          tagId: "9",
+          name: "Vendor snippet",
+          type: "html",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{
+            type: "TEMPLATE",
+            key: "html",
+            value: "<script>ttq.load('SOMEONEELSESPIXEL')</script>",
+          }],
+        }],
       }),
       approved: APPROVED,
     });
 
     assert.equal(result.ok, false);
-    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD));
+    assert.ok(
+      codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE),
+      "a live guard must not certify a tag whose destination the export does not bound",
+    );
+  });
+
+  it("refuses TikTok delivered through its gallery template, and says why", () => {
+    // Recorded deliberately: T8 wants TikTok, and this audit as written cannot certify it through
+    // GTM. Admitting it takes a reviewed parser for that exact template, not a passing default.
+    const result = auditGtmContainerExport({
+      source: containerExport({ tag: [tiktokTemplateTag()] }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE));
   });
 
   it("rejects any Meta tag in the container, guarded or not", () => {
@@ -597,6 +664,177 @@ describe("GTM container export static audit", () => {
     assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
   });
 
+  it("does not let one settings row prove a claim another row makes", () => {
+    // The fail-open this replaces: flattening the settings table into loose pairs let the `false`
+    // of an unrelated row satisfy the `send_page_view` of a row that actually said `true`.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [
+                {
+                  type: "MAP",
+                  map: [
+                    { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                    { type: "TEMPLATE", key: "parameterValue", value: "true" },
+                  ],
+                },
+                {
+                  type: "MAP",
+                  map: [
+                    { type: "TEMPLATE", key: "parameter", value: "some_other_setting" },
+                    { type: "TEMPLATE", key: "parameterValue", value: "false" },
+                  ],
+                },
+              ],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW),
+      "a false from an unrelated setting must not prove page views are off",
+    );
+  });
+
+  it("refuses a settings row that names the page-view toggle but carries no value", () => {
+    // The tag elsewhere says false, so skipping the incomplete row would read as proof. A row that
+    // names the toggle and then says nothing about it is an open question, not a `false`.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "BOOLEAN", key: "sendPageView", value: "false" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [{
+                type: "MAP",
+                map: [{ type: "TEMPLATE", key: "parameter", value: "send_page_view" }],
+              }],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
+  });
+
+  it("refuses a Google tag that claims the toggle both ways", () => {
+    // Contradictory claims are not proof. Reading either one alone would pick the answer by scan
+    // order rather than by evidence.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "BOOLEAN", key: "sendPageView", value: "false" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [{
+                type: "MAP",
+                map: [
+                  { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                  { type: "TEMPLATE", key: "parameterValue", value: "true" },
+                ],
+              }],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
+  });
+
+  it("finds a Meta payload that only a referenced variable carries", () => {
+    // The tag itself holds no Meta marker at all; the snippet lives in the variable it embeds. A
+    // scan of the tag object alone would read the reference and never the payload.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "9",
+          name: "Vendor snippet",
+          type: "html",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{ type: "TEMPLATE", key: "html", value: "<script>{{Vendor snippet body}}</script>" }],
+        }],
+        variable: [constantVariable("Vendor snippet body", "fbq('track','Purchase')")],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.META_TAG_PRESENT));
+  });
+
+  it("finds a Meta payload two variable hops away", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "9",
+          name: "Vendor snippet",
+          type: "html",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{ type: "TEMPLATE", key: "html", value: "<script>{{Outer}}</script>" }],
+        }],
+        variable: [
+          constantVariable("Outer", "wrap({{Inner}})"),
+          constantVariable("Inner", "fbevents.js"),
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.META_TAG_PRESENT));
+  });
+
+  it("terminates on variables that reference each other in a cycle", () => {
+    // The export is untrusted JSON, so a cycle must end the walk rather than hang the audit.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ parameter: [
+          { type: "TEMPLATE", key: "measurementId", value: "G-FIXTURE001" },
+          { type: "BOOLEAN", key: "sendPageView", value: "false" },
+          { type: "TEMPLATE", key: "note", value: "{{A}}" },
+        ] })],
+        variable: [constantVariable("A", "sees {{B}}"), constantVariable("B", "sees {{A}}")],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
   it("refuses an export from a container the owner did not approve", () => {
     // Same destination ids, different container: without this the audit would certify an artifact
     // that was never the reviewed one.
@@ -662,6 +900,7 @@ describe("GTM container export static audit", () => {
       GTM_AUDIT_CODES.NOT_A_SAVED_VERSION,
       GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD,
       GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+      GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE,
     ].sort());
   });
 });

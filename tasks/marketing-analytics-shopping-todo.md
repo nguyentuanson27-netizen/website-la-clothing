@@ -130,12 +130,22 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 
 **Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
-that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 23 cases in
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 45 cases in
 `tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
-an unrecognised tag type, a dangling trigger reference, a tag whose firing paths are not *all*
-live-guarded, a Meta tag nested anywhere in the parameters, a GA4 config that leaves automatic page
-views on, an unapproved destination id, or an empty approval set all refuse the container. It refuses
-a workspace export that names no saved version, so a mutable container cannot be certified.
+a tag type it has no reviewed parser for, a dangling trigger reference, a tag whose firing paths are
+not *all* live-guarded, a Meta payload nested anywhere in the parameters or reached through a
+variable, a Google configuration tag that does not prove `send_page_view` is false, an unapproved or
+unresolvable destination id, an export from another container, or an empty approval set all refuse
+the container. It refuses a workspace export that names no saved version, so a mutable container
+cannot be certified.
+
+**Open design question this raised — TikTok delivery through GTM.** The audit certifies only tag
+types whose vendor the type itself fixes (Google's built-ins). A gallery template or Custom HTML tag
+is refused, because its delivery lives in template or script code the export does not contain, so a
+live firing guard says when it fires but nothing bounds where it sends. TikTok's GTM tag is a gallery
+template, so delivering TikTok through GTM cannot be certified as the audit stands. Resolving this
+needs an owner decision: add a reviewed parser for that exact template, or deliver TikTok outside
+GTM. It is recorded here rather than settled by loosening the gate.
 
 Nothing else in T8 may proceed: with no container id, GA4/Ads/TikTok ids (O4) and no Tag Manager
 access, there is no container to configure, no immutable version to save, and no export to checksum.

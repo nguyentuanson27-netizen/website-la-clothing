@@ -9,9 +9,11 @@
  * Two design choices follow from that, and both are deliberate:
  *
  * **It fails closed on anything it does not understand.** Google's published export schema could not
- * be fetched in the environment this was written in, so the parser refuses malformed shapes and
- * treats an unrecognised tag type as a possible production destination that still owes a live guard.
- * A schema surprise therefore becomes a loud failure, never a silently passing check.
+ * be fetched in the environment this was written in, so the parser refuses malformed shapes, and a
+ * tag whose type it has no reviewed parser for is refused outright rather than certified by its
+ * firing guard. A live guard says *when* a tag fires, never *where* it delivers; for a Custom HTML
+ * tag or a gallery template the delivery lives in code the export does not even contain. A schema
+ * surprise therefore becomes a loud failure, never a silently passing check.
  *
  * **It collects every violation.** An operator fixing a container wants the whole list, not the
  * first problem; and a partial list invites a second review round that believes it is the last.
@@ -27,6 +29,8 @@ export const GTM_AUDIT_CODES = {
   NOT_A_SAVED_VERSION: "NOT_A_SAVED_VERSION",
   /** A tag that can fire without `la_tracking_mode == live`. */
   TAG_WITHOUT_LIVE_GUARD: "TAG_WITHOUT_LIVE_GUARD",
+  /** A tag type whose delivery this audit has no reviewed parser for. */
+  UNAUDITABLE_TAG_TYPE: "UNAUDITABLE_TAG_TYPE",
   /** Meta belongs to the direct first-party integration, never to GTM. */
   META_TAG_PRESENT: "META_TAG_PRESENT",
   /** GA4 would send its own page view beside the application's canonical one. */
@@ -83,6 +87,31 @@ const LIVE_MODE = "live";
 const NON_DELIVERING_TAG_TYPES: ReadonlySet<string> = new Set([
   // Google's conversion linker only writes first-party cookies; it delivers no measurement itself.
   "gclidw",
+]);
+
+/**
+ * Tag types whose delivery this audit has a reviewed parser for.
+ *
+ * A type earns a place here only when the type itself fixes the vendor, so the parameters that can
+ * name a destination are bounded and readable from the export alone. Google's built-in tags qualify.
+ *
+ * A Custom HTML tag or a gallery template does not, and no parameter allowlist can rescue it: its
+ * delivery lives in template or script code the export does not contain, so a production endpoint
+ * can sit under any key — `html`, `code`, a template-defined name — or behind a variable reference,
+ * with no recognised destination key anywhere on the tag. Certifying such a tag because it carries a
+ * live guard would confuse *when* it fires with *where* it delivers. It is refused instead.
+ *
+ * The consequence is deliberate and worth stating: delivering TikTok through its gallery template
+ * cannot be certified by this audit as written. Admitting it means adding a reviewed parser for that
+ * exact template — a human review step, correctly gated — or delivering TikTok outside GTM. Neither
+ * is decidable here while owner gate O4 is open, so the audit refuses rather than assumes.
+ */
+const REVIEWED_TAG_TYPES: ReadonlySet<string> = new Set([
+  "gclidw", // Conversion Linker — first-party cookies only
+  "gaawc", // GA4 Configuration, the legacy name for the Google tag
+  "googtag", // Google tag
+  "gaawe", // GA4 event
+  "awct", // Google Ads Conversion Tracking
 ]);
 
 /** Parameter keys that name a vendor destination, wherever they appear in a tag's parameters. */
@@ -206,28 +235,64 @@ function collectKeyedValues(value: unknown, depth = 0): Array<readonly [string, 
 }
 
 /**
+ * Every `MAP` row inside a parameter tree, each row kept as its own key→value table.
+ *
+ * Row identity is the point. A settings table spells one setting as two cells — `parameter` naming
+ * it and `parameterValue` holding its value — so a scan that flattens the tree into loose pairs can
+ * pair the name from one row with the value from another. That is not a cosmetic loss: it lets a row
+ * asserting `send_page_view = true` be "proved" false by an unrelated row that happens to say false.
+ * Rows are therefore read as rows, and a claim is only ever read from the row that makes it.
+ */
+function collectMapRows(value: unknown, depth = 0): Array<ReadonlyMap<string, string>> {
+  if (depth > MAX_PARAMETER_DEPTH) return [];
+  const rows: Array<ReadonlyMap<string, string>> = [];
+  if (Array.isArray(value)) {
+    for (const entry of value) rows.push(...collectMapRows(entry, depth + 1));
+  } else if (isRecord(value)) {
+    if (Array.isArray(value.map)) {
+      const row = new Map<string, string>();
+      for (const cell of value.map) {
+        if (!isRecord(cell)) continue;
+        const key = readString(cell.key);
+        const literal = readString(cell.value);
+        if (key !== null && literal !== null) row.set(key, literal);
+      }
+      if (row.size > 0) rows.push(row);
+    }
+    for (const entry of Object.values(value)) rows.push(...collectMapRows(entry, depth + 1));
+  }
+  return rows;
+}
+
+/**
  * The container's variables, indexed by the name a `{{reference}}` uses.
  *
  * Only constant variables resolve to a literal. Anything computed — a JavaScript variable, a lookup
  * table, a data-layer read — cannot be evaluated statically, so it stays unresolved and any
  * destination that depends on it is refused rather than assumed approved.
  */
-type VariableIndex = ReadonlyMap<
-  string,
-  Readonly<{ literal: string | null; keyedValues: ReadonlyArray<readonly [string, string]> }>
->;
+type VariableIndex = ReadonlyMap<string, Readonly<{ literal: string | null; source: unknown }>>;
 
 const VARIABLE_REFERENCE = /^\{\{(.+)\}\}$/;
+const EMBEDDED_VARIABLE_REFERENCE = /\{\{([^{}]+)\}\}/g;
 
+/** The variable a value names outright. A destination id must *be* the reference, not contain one. */
 function referencedVariableName(value: string): string | null {
   return VARIABLE_REFERENCE.exec(value.trim())?.[1]?.trim() ?? null;
 }
 
+/**
+ * Every variable a value mentions, including references embedded in a larger string.
+ *
+ * A snippet reads `<script>{{Meta snippet}}</script>`, not `{{Meta snippet}}`, so a whole-string
+ * match would follow none of the references that actually carry a payload.
+ */
+function embeddedVariableNames(value: string): string[] {
+  return [...value.matchAll(EMBEDDED_VARIABLE_REFERENCE)].map((match) => match[1]!.trim());
+}
+
 function indexVariables(variables: readonly unknown[]): VariableIndex {
-  const index = new Map<
-    string,
-    { literal: string | null; keyedValues: ReadonlyArray<readonly [string, string]> }
-  >();
+  const index = new Map<string, { literal: string | null; source: unknown }>();
   for (const candidate of variables) {
     if (!isRecord(candidate)) continue;
     const name = readString(candidate.name);
@@ -238,13 +303,48 @@ function indexVariables(variables: readonly unknown[]): VariableIndex {
     // A constant whose value is itself a reference is not a literal this audit can stand behind.
     const literal = rawValue !== null && referencedVariableName(rawValue) === null ? rawValue : null;
 
-    index.set(name, { literal, keyedValues: collectKeyedValues(candidate.parameter) });
+    index.set(name, { literal, source: candidate });
   }
   return index;
 }
 
-function tagIsMeta(tag: Record<string, unknown>): boolean {
-  const haystack = collectStrings(tag).strings.join(" ").toLowerCase();
+/**
+ * Every string the tag would deliver, following variable references transitively.
+ *
+ * A tag can hold nothing but `{{Meta snippet}}` and still ship a Meta pixel, because the snippet
+ * lives in the variable. Scanning the tag object alone would read the reference and never the
+ * payload, so the walk follows each reference into the variable it names. Visited names are
+ * remembered: container variables may reference one another, and a cycle must not hang the audit.
+ */
+function payloadStrings(
+  tag: Record<string, unknown>,
+  variables: VariableIndex,
+): Readonly<{ strings: string[]; truncated: boolean }> {
+  const own = collectStrings(tag);
+  const strings = [...own.strings];
+  let truncated = own.truncated;
+
+  const visited = new Set<string>();
+  const pending = [...own.strings];
+  while (pending.length > 0) {
+    const value = pending.pop()!;
+    for (const name of embeddedVariableNames(value)) {
+      if (visited.has(name)) continue;
+      visited.add(name);
+      const variable = variables.get(name);
+      if (variable === undefined) continue;
+      const nested = collectStrings(variable.source);
+      truncated ||= nested.truncated;
+      strings.push(...nested.strings);
+      pending.push(...nested.strings);
+    }
+  }
+
+  return { strings, truncated };
+}
+
+function tagIsMeta(tag: Record<string, unknown>, variables: VariableIndex): boolean {
+  const haystack = payloadStrings(tag, variables).strings.join(" ").toLowerCase();
   return META_MARKERS.some((marker) => haystack.includes(marker));
 }
 
@@ -288,32 +388,36 @@ function destinationIds(
  * settings variable rather than on the tag. A tag whose settings this audit cannot read therefore
  * cannot be shown to be safe, and is refused.
  */
-function provesPageViewsDisabled(
-  tag: Record<string, unknown>,
-  variables: VariableIndex,
-): boolean {
-  const pairs: Array<readonly [string, string]> = [...collectKeyedValues(tag.parameter)];
+function provesPageViewsDisabled(tag: Record<string, unknown>, variables: VariableIndex): boolean {
+  const sources: unknown[] = [tag.parameter];
 
   // Follow any settings variable the tag references, so its table is read as if it were inline.
-  for (const [, value] of [...pairs]) {
-    const reference = referencedVariableName(value);
-    if (reference === null) continue;
-    const referenced = variables.get(reference);
-    if (referenced !== undefined) pairs.push(...referenced.keyedValues);
+  for (const value of collectStrings(tag.parameter).strings) {
+    for (const name of embeddedVariableNames(value)) {
+      const referenced = variables.get(name);
+      if (referenced !== undefined) sources.push(referenced.source);
+    }
   }
 
-  // The settings table spells the toggle as a `parameter`/`parameterValue` row rather than a direct
-  // key, so both shapes are read.
-  const direct = pairs.some(([key, value]) => PAGE_VIEW_KEYS.has(key) && value === "false");
-  const tabulated = pairs.some(
-    ([key, value], position) =>
-      key === "parameter"
-      && PAGE_VIEW_KEYS.has(value)
-      && pairs.slice(position + 1).some(
-        ([nextKey, nextValue]) => nextKey === "parameterValue" && nextValue === "false",
-      ),
-  );
-  return direct || tabulated;
+  // Every claim the artifact makes about the toggle, in either shape it can be written: a direct
+  // key on the tag, or a `parameter`/`parameterValue` row of a settings table. Each claim is read
+  // from the row that makes it, never assembled from cells of different rows.
+  const claims: string[] = [];
+  for (const source of sources) {
+    for (const [key, value] of collectKeyedValues(source)) {
+      if (PAGE_VIEW_KEYS.has(key)) claims.push(value);
+    }
+    for (const row of collectMapRows(source)) {
+      const named = row.get("parameter");
+      if (named === undefined || !PAGE_VIEW_KEYS.has(named)) continue;
+      // A row naming the toggle but carrying no value proves nothing, and says so as an empty claim.
+      claims.push(row.get("parameterValue") ?? "");
+    }
+  }
+
+  // Proof, not the absence of a contrary signal: something must assert the toggle, and nothing may
+  // contradict it. A tag that claims both `true` and `false` has not been shown to be safe.
+  return claims.length > 0 && claims.every((value) => value === "false");
 }
 
 function isGoogleConfigurationTag(tag: Record<string, unknown>): boolean {
@@ -406,14 +510,14 @@ export function auditGtmContainerExport({
 
     const label = `${readString(candidate.name) ?? "unnamed"} (#${readString(candidate.tagId) ?? "?"})`;
 
-    if (collectStrings(candidate).truncated) {
+    if (payloadStrings(candidate, variables).truncated) {
       refuse(
         GTM_AUDIT_CODES.MALFORMED_EXPORT,
         `${label} nests parameters deeper than this audit will walk`,
       );
     }
 
-    if (tagIsMeta(candidate)) {
+    if (tagIsMeta(candidate, variables)) {
       refuse(
         GTM_AUDIT_CODES.META_TAG_PRESENT,
         `${label} looks like a Meta integration; Meta stays direct and must not enter GTM`,
@@ -421,6 +525,17 @@ export function auditGtmContainerExport({
     }
 
     const type = readString(candidate.type) ?? "";
+
+    // A live guard says when a tag fires, never where it delivers. For a type this audit has no
+    // reviewed parser for, nothing in the export bounds the destination, so the guard cannot stand
+    // in for one and the artifact is refused.
+    if (!REVIEWED_TAG_TYPES.has(type)) {
+      refuse(
+        GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE,
+        `${label} has tag type "${type === "" ? "(none)" : type}", which this audit has no reviewed parser for`,
+      );
+    }
+
     if (!NON_DELIVERING_TAG_TYPES.has(type)) {
       const firingTriggerIds = Array.isArray(candidate.firingTriggerId)
         ? candidate.firingTriggerId.map(readString).filter((id): id is string => id !== null)
