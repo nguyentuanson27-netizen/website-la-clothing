@@ -24,7 +24,7 @@ import {
   type StorefrontProjectionOption,
 } from "../commerce/storefront-projection.ts";
 import {
-  buildVariantDeepLinkUrl,
+  buildStandaloneVariantDeepLinkPath,
   resolveDeepLinkedVariantSelection,
 } from "../commerce/storefront-variant-deep-link.ts";
 import {
@@ -166,6 +166,12 @@ function resolvePublishableVariants({
     // learned to fall back to a near match would otherwise start publishing wrong links silently.
     if (reselected === null || reselected.variantId !== option.id) continue;
 
+    const variantPath = buildStandaloneVariantDeepLinkPath({
+      slug: product.slug,
+      pancakeVariationId: option.pancakeVariationId,
+    });
+    if (variantPath === null) continue;
+
     const mpn = product.variantMpnById[option.id];
     if (!isPublishableMpn(mpn) || mpnCounts.get(mpn) !== 1) continue;
 
@@ -173,11 +179,7 @@ function resolvePublishableVariants({
     if (offer === null) continue;
 
     variants.push({
-      url: buildVariantDeepLinkUrl({
-        origin,
-        slug: product.slug,
-        pancakeVariationId: option.pancakeVariationId,
-      }),
+      url: new URL(variantPath, origin).href,
       mpn,
       color: option.color,
       size: option.size,
