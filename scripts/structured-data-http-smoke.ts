@@ -32,6 +32,10 @@ const MEDIUM_VARIATION = `u27-http-medium-${runId}`;
 const LARGE_VARIATION = `u27-http-large-${runId}`;
 const UNPRICED_VARIATION = `u27-http-unpriced-${runId}`;
 const INACTIVE_VARIATION = `u27-http-inactive-${runId}`;
+const MEDIUM_MPN = `U27-M-${runId}`;
+const LARGE_MPN = `U27-L-${runId}`;
+const UNPRICED_MPN = `U27-XL-${runId}`;
+const INACTIVE_MPN = `U27-S-${runId}`;
 const MEDIUM_PRICE = 590_000;
 const LARGE_PRICE = 690_000;
 
@@ -161,11 +165,12 @@ try {
     pancakeVariationId: string,
     size: string,
     retailPrice: number | null,
-    options: Readonly<{ stock: number; isActive?: boolean; imageUrl?: string }>,
+    options: Readonly<{ stock: number; mpn: string; isActive?: boolean; imageUrl?: string }>,
   ): Promise<string> {
     const variant = await prisma.variantMirror.create({
       data: {
         pancakeVariationId,
+        pancakeDisplayId: options.mpn,
         productId: product.id,
         color: "Đen",
         size,
@@ -191,12 +196,21 @@ try {
   // Two publishable siblings priced differently, so a range or an aggregate cannot pass as exact.
   const mediumVariantMirrorId = await seedVariant(MEDIUM_VARIATION, "M", MEDIUM_PRICE, {
     stock: 3,
+    mpn: MEDIUM_MPN,
     imageUrl: MEDIUM_IMAGE_URL,
   });
-  await seedVariant(LARGE_VARIATION, "L", LARGE_PRICE, { stock: 0, imageUrl: LARGE_IMAGE_URL });
+  await seedVariant(LARGE_VARIATION, "L", LARGE_PRICE, {
+    stock: 0,
+    mpn: LARGE_MPN,
+    imageUrl: LARGE_IMAGE_URL,
+  });
   // Two that must stay out of the published family: an unpriceable one and an inactive one.
-  await seedVariant(UNPRICED_VARIATION, "XL", null, { stock: 4 });
-  await seedVariant(INACTIVE_VARIATION, "S", MEDIUM_PRICE, { stock: 4, isActive: false });
+  await seedVariant(UNPRICED_VARIATION, "XL", null, { stock: 4, mpn: UNPRICED_MPN });
+  await seedVariant(INACTIVE_VARIATION, "S", MEDIUM_PRICE, {
+    stock: 4,
+    mpn: INACTIVE_MPN,
+    isActive: false,
+  });
 
   await startServer();
 
@@ -224,7 +238,8 @@ try {
     },
   ]);
 
-  // U27 — the PDP publishes one ProductGroup whose variants each carry their own exact Offer.
+  // U27 — the PDP publishes one ProductGroup whose variants each carry their own exact Offer and
+  // the owner-confirmed manufacturer MPN from mirrored Pancake `display_id` (ADR 0008).
   const productDocument = findDocumentWithType(documents, "ProductGroup");
   const productNodes = graphNodes(productDocument);
   const mediumUrl = `${PUBLIC_ORIGIN}/shop/${slug}?variant=${MEDIUM_VARIATION}`;
@@ -249,6 +264,7 @@ try {
         "@id": `${largeUrl}#product`,
         name: productName,
         url: largeUrl,
+        mpn: LARGE_MPN,
         color: "Đen",
         size: "L",
         image: [LARGE_IMAGE_URL],
@@ -265,6 +281,7 @@ try {
         "@id": `${mediumUrl}#product`,
         name: productName,
         url: mediumUrl,
+        mpn: MEDIUM_MPN,
         color: "Đen",
         size: "M",
         image: [MEDIUM_IMAGE_URL],
@@ -312,6 +329,8 @@ try {
   assert.equal(productSchemaNodes.length, 1, "the PDP must publish exactly one product schema node");
 
   const productJson = JSON.stringify(productDocument);
+  assert.ok(productJson.includes(MEDIUM_MPN), "published medium variant must carry its reviewed MPN");
+  assert.ok(productJson.includes(LARGE_MPN), "published large variant must carry its reviewed MPN");
   for (const forbidden of [
     "AggregateOffer",
     "lowPrice",
@@ -321,13 +340,14 @@ try {
     "review",
     "gtin",
     "sku",
-    "mpn",
     "material",
     "shippingDetails",
     "hasMerchantReturnPolicy",
-    // Variants the catalog cannot state exactly, and identities that are not public.
+    // Variants the catalog cannot state exactly, their MPNs, and identities that are not public.
     UNPRICED_VARIATION,
     INACTIVE_VARIATION,
+    UNPRICED_MPN,
+    INACTIVE_MPN,
     mediumVariantMirrorId,
   ]) {
     assert.equal(productJson.includes(forbidden), false, `U27 must not publish ${forbidden}`);
@@ -370,7 +390,7 @@ try {
   );
 
   console.log(
-    "P14/P16/U27 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and ProductGroup brand, one ProductGroup carrying an exact per-variant Product and Offer whose published URL reopens that same variant at that same price, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
+    "P14/P16/U27 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and ProductGroup brand, one ProductGroup carrying unique manufacturer MPNs plus exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
   );
 } finally {
   await stopServer();
