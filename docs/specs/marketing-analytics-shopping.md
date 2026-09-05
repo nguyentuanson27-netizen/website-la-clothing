@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: **T1–T7, M1, and M2 implemented; M1 operational real-catalog closure is GREEN and Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require reviewed approval before `/build`.**
+Status: **T1–T7, M1, M2, and M3 implemented; M1 operational real-catalog closure is GREEN and Checkpoint D PASSED. T8 and M4–M5/V1 remain proposed and require reviewed approval before `/build`.** M3 builds Merchant items internally only — no feed is published, and the O2 market gate keeps Merchant activation blocked.
 
 This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 

@@ -57,6 +57,47 @@ export function readVariantQueryValue(
   return raw;
 }
 
+/**
+ * The reviewed product-slug shape, as `normalizeProductSlug` produces it.
+ *
+ * Building a link is the one direction where an unexpected slug becomes a URL rather than a lookup
+ * that simply misses, so the shape is re-checked here instead of trusted. A slug that does not match
+ * yields no link at all: an offer without a landing page is a fact a consumer can fail closed on,
+ * whereas a mis-encoded one is a broken destination shipped to a vendor.
+ */
+const PRODUCT_SLUG_PATH_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_PRODUCT_SLUG_PATH_LENGTH = 160;
+
+/**
+ * Builds the exact standalone variant deep link this module already resolves.
+ *
+ * It is here, beside the resolver, so the addressing contract has one owner: a feed, a card or a
+ * structured-data document that assembled `/shop/...?variant=...` itself would be a second contract
+ * free to drift from the one the page actually honours. Callers get a path rather than an absolute
+ * URL, because the origin is `readStorefrontOrigin`'s to decide.
+ *
+ * The variation identity is percent-encoded, so the value the page reads back is byte-for-byte the
+ * value the caller named. Whether that identity is *addressable* is a separate question, and stays
+ * with `resolveDeepLinkedVariantSelection` against the product's authorized option list.
+ */
+export function buildStandaloneVariantDeepLinkPath({
+  slug,
+  pancakeVariationId,
+}: Readonly<{ slug: string; pancakeVariationId: string }>): string | null {
+  if (
+    typeof slug !== "string"
+    || slug.length === 0
+    || slug.length > MAX_PRODUCT_SLUG_PATH_LENGTH
+    || !PRODUCT_SLUG_PATH_PATTERN.test(slug)
+  ) {
+    return null;
+  }
+
+  if (readVariantQueryValue(pancakeVariationId) === null) return null;
+
+  return `/shop/${slug}?${VARIANT_QUERY_PARAM}=${encodeURIComponent(pancakeVariationId)}`;
+}
+
 function matchesVariation(
   option: StorefrontProjectionOption,
   pancakeVariationId: string,

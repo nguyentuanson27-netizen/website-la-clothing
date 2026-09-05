@@ -315,8 +315,102 @@ try {
     "redirect target must render the persisted success status",
   );
 
+  // U25 / #153 M3 — the same authenticated boundary must govern the website-owned Merchant apparel
+  // overrides, and a value outside the reviewed allowlist must be refused by the server rather than
+  // by the select element that happened to render it.
+  const merchantFormHtml = formContainingField(savedPageHtml, "ageGroup");
+  assert.ok(merchantFormHtml, "ADMIN editor must render the Merchant apparel form boundary");
+  const merchantActionEntries = serverActionEntries(merchantFormHtml);
+  assert.ok(
+    merchantActionEntries.length > 0,
+    "ADMIN Merchant apparel form must include progressive-enhancement Server Action metadata",
+  );
+
+  async function submitMerchantFacts(
+    values: Readonly<Record<string, string>>,
+    cookie: string | null,
+  ) {
+    const merchantForm = new FormData();
+    for (const [name, value] of merchantActionEntries) {
+      merchantForm.append(name, value);
+    }
+    for (const [name, value] of Object.entries(values)) {
+      merchantForm.set(name, value);
+    }
+
+    return fetch(`${BASE_URL}${editorPath}`, {
+      method: "POST",
+      headers: {
+        accept: "text/html",
+        origin: BASE_URL,
+        ...(cookie === null ? {} : { cookie }),
+      },
+      body: merchantForm,
+      redirect: "manual",
+    });
+  }
+
+  const merchantSave = await submitMerchantFacts(
+    { gender: "unisex", ageGroup: "kids", condition: "USE_SHOP_DEFAULT" },
+    adminCookie,
+  );
+  assert.ok(
+    merchantSave.status >= 300 && merchantSave.status < 400,
+    `ADMIN Merchant apparel save must redirect, received ${merchantSave.status}`,
+  );
+  const merchantSavedUrl = new URL(
+    merchantSave.headers.get("location") ?? "",
+    BASE_URL,
+  );
+  assert.equal(merchantSavedUrl.searchParams.get("merchantSaved"), "1");
+  assert.deepEqual(
+    await prisma.productMerchantFacts.findUnique({
+      where: { productId: product.id },
+      select: { gender: true, ageGroup: true, condition: true },
+    }),
+    { gender: "UNISEX", ageGroup: "KIDS", condition: null },
+  );
+
+  const rejectedMerchantSave = await submitMerchantFacts(
+    { gender: "nam", ageGroup: "kids", condition: "USE_SHOP_DEFAULT" },
+    adminCookie,
+  );
+  const rejectedUrl = new URL(rejectedMerchantSave.headers.get("location") ?? "", BASE_URL);
+  assert.equal(rejectedUrl.searchParams.get("merchantError"), "1");
+  assert.deepEqual(
+    await prisma.productMerchantFacts.findUnique({
+      where: { productId: product.id },
+      select: { gender: true, ageGroup: true, condition: true },
+    }),
+    { gender: "UNISEX", ageGroup: "KIDS", condition: null },
+    "a refused submission must leave the stored override untouched",
+  );
+
+  const customerMerchantSave = await submitMerchantFacts(
+    { gender: "female", ageGroup: "adult", condition: "used" },
+    customerCookie,
+  );
+  // The action throws `AuthorizationError` before it reaches any write, so the response must not be
+  // the success redirect. Whether Next surfaces that as an error status or an error redirect is its
+  // own concern; what must never happen is a `merchantSaved` outcome.
+  assert.notEqual(
+    new URL(customerMerchantSave.headers.get("location") ?? BASE_URL, BASE_URL).searchParams.get(
+      "merchantSaved",
+    ),
+    "1",
+    "a non-admin submission must never reach the saved outcome",
+  );
+  assert.deepEqual(
+    await prisma.productMerchantFacts.findUnique({
+      where: { productId: product.id },
+      select: { gender: true, ageGroup: true, condition: true },
+    }),
+    { gender: "UNISEX", ageGroup: "KIDS", condition: null },
+    "a non-admin must not be able to write website-owned Merchant apparel facts",
+  );
+
   console.log(
-    "Authenticated admin HTTP smoke passed: CUSTOMER denied, ADMIN editor rendered, and ADMIN Server Action persisted ProductContent.",
+    "Authenticated admin HTTP smoke passed: CUSTOMER denied, ADMIN editor rendered, ADMIN Server Action persisted ProductContent, and Merchant apparel overrides enforced authorization plus the server-side allowlist.",
   );
 } finally {
   await stopServer();

@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS, Checkpoint B PASS, and Checkpoint D PASS. U9/M1 operational closure is GREEN (executed on `84c99db3de6757c3ded4396644eb4dae25869e09`, tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`). Wave 5 remains open: U25/M3 is unblocked by M1 operational evidence and awaits approval before build; U26 depends on accepted U25/M3, while U27 and U28 retain their own prerequisites.**
+Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS, Checkpoint B PASS, and Checkpoint D PASS. U9/M1 operational closure is GREEN (executed on `84c99db3de6757c3ded4396644eb4dae25869e09`, tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`). Wave 5 is partly delivered: U25/M3 is implemented (standalone Merchant mapper + ADR 0007 O3 runtime, nothing published, O2 still open); U26 now depends on the accepted U25/M3 contract, while U27 and U28 retain their own prerequisites.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -119,7 +119,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 5 — downstream consumers
 
-- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **M1/Checkpoint D dependency is satisfied; U25 is unblocked by M1 operational evidence and awaits approved `/build`.**
+- [x] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **Implemented.** Pure `mapMerchantOffers` over a bounded canonical loader, reusing the shared promotional pricing rule, the M1 availability/identity/text classifiers, the trusted storefront media resolver and U12's own deep-link resolver as the addressability proof. The ADR 0007 O3 runtime (website-owned `ProductMerchantFacts`, server-authoritative validation, admin editing, effective-fact resolution, resync preservation) lands with it. Composites stay `COMPOSITE_DEFERRED`; unresolved facts fail closed with bounded reasons. **O2 remains an open owner gate, so the mapper reports the market unresolved and Merchant activation stays blocked.**
 - [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions. Depends on accepted U25/M3 contract.
 - [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13.
 - [ ] Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency.
@@ -185,7 +185,7 @@ structured data — and only then build the page or change the contract.
 
 - [ ] **O1** Google Ads Purchase value: owner chooses merchandise-only vs `OrderMirror.totalVnd` before Ads Purchase publish.
 - [ ] **O2** Merchant market/language/currency confirmed before Merchant activation.
-- [x] **O3** Apparel facts — **policy decision resolved by ADR 0007**: shop defaults `gender=male`, `age_group=adult`, `condition=new` with local website-owned product overrides. Runtime persistence/validation/admin/effective-fact resolution stays open under M3/U25, and Merchant activation stays blocked until that implementation is verified.
+- [x] **O3** Apparel facts — **policy decision resolved by ADR 0007 and runtime implemented by U25/M3**: shop defaults `gender=male`, `age_group=adult`, `condition=new` with website-owned product overrides in `ProductMerchantFacts`. Persistence, server-authoritative validation, admin editing with explicit inheritance, effective-fact resolution, fail-closed `APPAREL_FACT_UNRESOLVED` and Pancake-resync preservation are implemented and tested. Merchant activation still stays blocked on **O2** and the remaining Gate M prerequisites.
 - [ ] **O4** GTM container, GA4 Measurement ID, Ads conversion ID/label and TikTok Pixel ID provided/reviewed by proper account owners.
 
 # Separate launch gates
