@@ -2,7 +2,16 @@ const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
 const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;
-import { MAX_VARIANT_QUERY_LENGTH } from "../commerce/storefront-variant-deep-link.ts";
+/**
+ * How long a mirrored external identifier may be before this module refuses to publish it.
+ *
+ * Deliberately its own number rather than the addressing contract's `MAX_VARIANT_QUERY_LENGTH`.
+ * That one bounds what a browser may send as `?variant=`; this one bounds what is written into a
+ * public document. They share a value today and answer different questions, so widening one must
+ * not silently widen the other. `isPublishableIdentifier` is exported so the caller that decides
+ * publishability applies this rule rather than a second one that agrees by coincidence.
+ */
+const MAX_PUBLISHED_IDENTIFIER_LENGTH = 128;
 
 /** The full schema.org URIs Google reads for the dimensions a variant family varies by. */
 const SCHEMA_URI_BY_DIMENSION = {
@@ -226,8 +235,12 @@ function buildOffer(
  * Bounded, non-blank mirrored catalog text, published exactly as the catalog holds it. Trimming
  * would publish an identity no other consumer uses, so an untrimmed value is refused instead.
  */
-function isPublishableIdentifier(value: string): boolean {
-  return value.length > 0 && value.length <= MAX_VARIANT_QUERY_LENGTH && value.trim() === value;
+export function isPublishableIdentifier(value: string): boolean {
+  return (
+    value.length > 0
+    && value.length <= MAX_PUBLISHED_IDENTIFIER_LENGTH
+    && value.trim() === value
+  );
 }
 
 function buildVariantNode(name: string, variant: StructuredDataVariant): ProductVariantNode {

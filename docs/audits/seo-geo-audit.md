@@ -175,7 +175,8 @@ precision. Các trạng thái dưới đây có nghĩa:
   - `variesBy` so sánh color/size qua đúng identity rule của option model (`toOptionIdentityKey`),
     nên hai dòng catalog chỉ khác hoa/thường không bị coi là hai giá trị.
 
-  **Đã ghi nhận, KHÔNG sửa trong U27:** selection model của PDP
+  **Đã ghi nhận, KHÔNG sửa trong U27** (theo dõi ở `tasks/growth-commerce-master-todo.md` → D1):
+  selection model của PDP
   (`src/commerce/storefront-selection.ts`) vẫn dedupe/so khớp color/size bằng raw string, nên với
   cùng input `Đen`/`đen` nó hiển thị **hai** color chip trong khi JSON-LD (đúng theo option identity
   rule) nói family chỉ vary theo size. Đây là defect có sẵn của storefront mà việc sửa `variesBy`

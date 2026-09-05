@@ -155,6 +155,19 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 - [ ] Composite Merchant offers remain out of v1.
 - [ ] Coupons/stacking/BXGY/personalized promotion expansion remains out of #151 v1.
 
+## Recorded defects — owner needed, not on any unit's critical path
+
+- [ ] **D1 — PDP selection model compares option text case-sensitively.**
+  `src/commerce/storefront-selection.ts` dedupes and matches color/size with raw strings, while the
+  option model (`toOptionIdentityKey` in `src/commerce/storefront-product.ts`) treats values that
+  differ only in case as one option. A catalog spelling one color `Đen` and `đen` therefore renders
+  **two** color chips on the PDP, while U27's variant structured data correctly reports the family
+  as varying by size alone. Pre-existing; surfaced by U27 (PR #196) rather than caused by it —
+  before U27 the markup diverged in the worse direction, contradicting the identity model. Fixing
+  it changes which options a shopper can pick, so it was deliberately left out of U27's variant-level
+  scope. Two candidate fixes: use `toOptionIdentityKey` in the selection model, or normalize the
+  mirrored values upstream. Detail in `docs/audits/seo-geo-audit.md` W4d.
+
 # Owner decision gates
 
 These are **human decisions, not code work.** No unit may infer them from catalog data, UI copy,

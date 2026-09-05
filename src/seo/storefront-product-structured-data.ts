@@ -22,12 +22,12 @@ import {
   type StorefrontProjectionOption,
 } from "../commerce/storefront-projection.ts";
 import {
-  MAX_VARIANT_QUERY_LENGTH,
   buildVariantDeepLinkUrl,
   resolveDeepLinkedVariantSelection,
 } from "../commerce/storefront-variant-deep-link.ts";
 import {
   buildProductStructuredData,
+  isPublishableIdentifier,
   type ProductStructuredDataDocument,
   type StructuredDataAvailability,
   type StructuredDataProductGroup,
@@ -108,16 +108,14 @@ function resolveVariesBy(
 /**
  * The external product identity, when it is publishable as one.
  *
- * Mirrored catalog text is untrusted, so a blank or unbounded value publishes no group at all. It
- * is refused rather than repaired: trimming would publish an identity the catalog does not hold,
- * and a `productGroupID` that disagrees with the id every other consumer uses is worse than none.
- * The bound is the one the addressing contract already applies to an external identifier.
+ * Mirrored catalog text is untrusted, so a blank or unbounded value publishes no group at all, and
+ * an untrimmed one is refused rather than repaired: trimming would publish an identity the catalog
+ * does not hold, and a `productGroupID` that disagrees with the id every other consumer uses is
+ * worse than none. The rule itself belongs to the module that writes the document, so this asks it
+ * rather than restating it — a second copy here would be free to drift from what is serialized.
  */
 function readPublishableProductGroupID(pancakeProductId: string): string | null {
-  if (pancakeProductId.length === 0 || pancakeProductId.length > MAX_VARIANT_QUERY_LENGTH) {
-    return null;
-  }
-  return pancakeProductId.trim() === pancakeProductId ? pancakeProductId : null;
+  return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
 /**

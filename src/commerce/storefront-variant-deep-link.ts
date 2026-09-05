@@ -33,9 +33,9 @@ export const VARIANT_QUERY_PARAM = "variant";
  * hygiene rather than a hot-path guard — but an unbounded string should not cross the boundary at
  * all.
  *
- * It is the repository's one bound on a mirrored external identifier, so a consumer that publishes
- * such an identifier rather than reading one — U27's `productGroupID` — reuses it instead of
- * declaring a second constant that claims to be the same number.
+ * It bounds what a browser may *send*. What a public document may *publish* is a different
+ * question with its own bound in `src/seo/structured-data.ts`; the two share a value today, and
+ * widening this one must not be read as widening that one.
  */
 export const MAX_VARIANT_QUERY_LENGTH = 128;
 
