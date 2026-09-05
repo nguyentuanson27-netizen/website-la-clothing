@@ -1,6 +1,6 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. Merchant↔variant JSON-LD parity is proved with one documented availability difference. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. Merchant↔variant JSON-LD parity is proved for identity, grouping, MPN, URL, price and the resolvable availability domain; the feed↔JSON-LD consistency launch gate stays OPEN on one reachable availability divergence. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure + exact-SHA operational closure audit). Checkpoint D is **GREEN / PASSED**. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
@@ -216,10 +216,12 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 
 ### Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 - [x] One catalog fixture and one storefront projection feed both consumers, and the Merchant side is read back from serialized RSS bytes rather than the mapper's in-memory result: `tests/domain/merchant-structured-data-parity.test.ts`.
-- [x] Variation identity, `item_group_id` ↔ `productGroupID`, ADR 0008 manufacturer MPN, exact U12 variant URL, exact promotion-aware price and availability semantics all MATCH, as does the publishable standalone variant set.
+- [x] Variation identity, `item_group_id` ↔ `productGroupID`, ADR 0008 manufacturer MPN, exact U12 variant URL and exact promotion-aware price all MATCH.
+- [x] Availability semantics and the publishable standalone variant set MATCH across the whole **resolvable** stock domain — no warehouse rows, an explicit zero, and any positive quantity.
 - [x] Missing/blank/untrimmed/duplicate MPN, unresolved price, unaddressable identity and composite candidates fail closed compatibly on both sides; neither consumer invents a fallback identifier, URL or price.
 - [x] O2 stays unresolved: the parity suite passes a clearly named test-only market fixture straight to the serializer, nothing in `src/` imports it, and `/feeds/google-merchant` keeps failing closed.
-- [ ] **Known difference, owner decision pending:** a negative mirrored warehouse quantity reads as `AVAILABILITY_UNRESOLVED` to M1/Merchant (offer excluded) but as sold out to the PDP projection, so U27 publishes an exact `OutOfStock` Offer for it. Recorded in `docs/audits/merchant-jsonld-parity.md`; not equalized inside a verification PR because closing it changes published U27 output and the shared storefront catalog read.
+- [ ] **Reachable divergence, owner decision pending — this keeps the convergence launch gate OPEN.** A negative mirrored warehouse quantity reads as `AVAILABILITY_UNRESOLVED` to M1/Merchant (offer omitted) but as sold out to the PDP projection, so U27 publishes an exact `OutOfStock` Offer for it. `WarehouseStock.quantity` is a `Float` with no non-negative constraint, so this is reachable rather than theoretical. Recorded in `docs/audits/merchant-jsonld-parity.md` and pinned by the parity suite; not equalized inside a verification PR because closing it changes published U27 output and the shared storefront catalog read.
+- [ ] **Convergence launch gate** (`Before Merchant/index launch, prove feed vs JSON-LD ... consistency` in `tasks/growth-commerce-master-todo.md`) stays OPEN until either the runtime semantics are reconciled in a scoped change, or the owner explicitly accepts omission-vs-`OutOfStock` as compatible and that gate's normative wording is updated to define it that way.
 
 ## PR-F — Merchant activation + final convergence
 

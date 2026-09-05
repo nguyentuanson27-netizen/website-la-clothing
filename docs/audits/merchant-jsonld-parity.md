@@ -1,12 +1,13 @@
 # Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 
 Two public consumers describe the same standalone variant to two different audiences. This audit
-records that they do not publish two different truths about the facts they share, and names the one
-place where they deliberately differ.
+records where they publish the same truth about the facts they share, and names the one reachable
+place where they still do not. That remaining divergence keeps the convergence launch gate OPEN.
 
 - **Base SHA:** `2d5ea84045f61fc1249076379dd0816d37499546` (`main` after PR #198).
-- **Final implementation/test SHA:** recorded in the parity PR's description; this audit adds tests
-  and documentation only and changes no runtime behaviour.
+- **Final implementation/test SHA:** the head of PR #199, recorded in that PR's description and
+  shown on its exact-head checks. This audit adds tests and documentation only; no `src/` file is
+  changed, so the runtime behaviour it describes is the behaviour already on the base SHA.
 - **Pancake API used:** NO. **Production database used:** NO. Every case is reproducible from
   repository fixtures.
 
@@ -72,16 +73,18 @@ The two formats are compared on meaning, never on literal strings.
 | D — variant URL | MATCH byte-for-byte, and the published identity reopens the same option through the U12 resolver |
 | E — manufacturer MPN | MATCH: `pancakeDisplayId` only; never the website-local SKU, the internal CUID, or the variation id |
 | F — missing / blank / untrimmed / duplicate MPN | COMPATIBLE FAIL-CLOSED on both sides |
-| G — unresolved availability | See "Known difference" below |
+| G — unresolved availability | **OPEN DIVERGENCE** for a negative quantity — see below |
 | H — unresolved price | COMPATIBLE FAIL-CLOSED; no `0`, no minimum, no base-price stand-in |
 | I — unaddressable variation identity | COMPATIBLE FAIL-CLOSED on both sides |
 | J — composite | COMPATIBLE FAIL-CLOSED: Merchant reports `COMPOSITE_DEFERRED`, U27 publishes no `ProductGroup` |
 | Grouping | MATCH: every emitted sibling groups under `pancakeProductId`, never a slug, local id, kind key, MPN or index |
-| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants |
+| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, within the resolvable stock domain |
 
-## Known difference — negative mirrored warehouse quantity
+## Open divergence — negative mirrored warehouse quantity
 
-One eligibility difference exists and is recorded rather than equalized.
+One eligibility difference exists. It is recorded rather than equalized, and **it keeps the
+`Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency` gate in
+`tasks/growth-commerce-master-todo.md` OPEN.** This audit closes no launch prerequisite.
 
 The two consumers reduce the same warehouse rows identically wherever the quantity is usable — no
 rows and an explicit zero both sum to `0` (out of stock), and a positive sum is in stock. They part
@@ -110,6 +113,22 @@ smuggle into a verification PR.
 
 `tests/domain/merchant-structured-data-parity.test.ts` pins the current behaviour explicitly so the
 difference cannot drift unnoticed in either direction.
+
+### What closing this gate requires
+
+One of:
+
+1. **Scoped runtime reconciliation** — U27 gains an availability-resolution signal (today its input
+   carries only the projection, whose `sellableStock` has already summed the raw quantities away),
+   so an unresolvable-availability variant is omitted rather than published as sold out. That
+   touches the shared storefront catalog read and changes published U27 output, so it is its own
+   unit.
+2. **Explicit owner acceptance** — the owner decides that "Merchant omits the offer" and "U27
+   publishes `OutOfStock`" are compatible outcomes for an unresolvable quantity, and the gate's
+   normative wording in `tasks/growth-commerce-master-todo.md` is updated to define that
+   compatibility.
+
+Neither has happened, so the gate stays open.
 
 ## Checkpoint E evidence
 
@@ -142,8 +161,13 @@ them separate.
 Therefore:
 
 ```
-business-fact parity        = GREEN (one documented availability difference)
-production feed activation  = BLOCKED by O2
+business-fact parity
+  identity / grouping / MPN / URL / price  = GREEN
+  availability, resolvable stock domain    = GREEN
+  availability, negative quantity          = OPEN DIVERGENCE (owner decision pending)
+
+feed <-> JSON-LD consistency launch gate   = OPEN
+production feed activation                 = BLOCKED by O2
 ```
 
 ## O2 status
@@ -165,6 +189,8 @@ changes no activation gate.
 Unchanged since PR #198: one app service, and U26's process-local cache/single-flight/backoff makes
 no multi-replica claim. Nothing here adds Redis, replicas, or a deployment change.
 
-## Remaining gate
+## Remaining gates
 
-`U28 / T8` is next. `O2` and `M5 / U41` stay blocked.
+- **Feed ↔ JSON-LD consistency launch gate:** OPEN, on the negative-quantity divergence above.
+- **O2:** OPEN. **M5 / U41:** BLOCKED.
+- Next unit: `U28 / T8`.

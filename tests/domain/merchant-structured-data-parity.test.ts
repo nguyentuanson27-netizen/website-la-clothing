@@ -479,25 +479,40 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
   });
 
   it("publishes one exact U12 variant URL that reopens the same option on both sides", () => {
-    const { merchant, jsonLd, projection } = runParity(catalogProduct());
+    const product = catalogProduct();
+    const { merchant, jsonLd, projection } = runParity(product);
 
     assert.deepEqual(publishedIds(merchant), publishedIds(jsonLd));
     for (const [index, row] of merchant.entries()) {
       const counterpart = jsonLd[index]!;
       assert.equal(row.url, counterpart.url);
+      assert.equal(row.variantExternalId, counterpart.variantExternalId);
 
       const parsed = new URL(row.url);
       assert.equal(parsed.origin, ORIGIN);
       assert.equal(parsed.pathname, "/shop/ao-oxford-relaxed");
 
-      // Not a substring check: the published identity is fed back through the U12 resolver and must
-      // reselect exactly one option, and the same one for both consumers.
-      const reselected = resolveDeepLinkedVariantSelection({
-        projection,
-        variantQuery: parsed.searchParams.get(VARIANT_QUERY_PARAM),
-      });
-      assert.ok(reselected !== null, "a published variant URL must reopen its own variant");
-      assert.equal(row.variantExternalId, counterpart.variantExternalId);
+      // Not a substring check, and not merely "the resolver answered something": each published
+      // identity is fed back through the U12 resolver and must land on the internal option the
+      // fixture says owns it. A resolver that ever matched a near neighbour would satisfy a
+      // non-null check while silently publishing a link to the wrong variant.
+      const expectedVariantId = product.variants.find(
+        (candidate) => candidate.pancakeVariationId === row.variantExternalId,
+      )?.variantId;
+      assert.ok(expectedVariantId !== undefined, "published id must belong to a fixture variant");
+
+      for (const url of [row.url, counterpart.url]) {
+        const reselected = resolveDeepLinkedVariantSelection({
+          projection,
+          variantQuery: new URL(url).searchParams.get(VARIANT_QUERY_PARAM),
+        });
+        assert.ok(reselected !== null, "a published variant URL must reopen its own variant");
+        assert.equal(
+          reselected.variantId,
+          expectedVariantId,
+          "both consumers' URLs must reopen the same internal option, not merely resolve",
+        );
+      }
     }
   });
 
