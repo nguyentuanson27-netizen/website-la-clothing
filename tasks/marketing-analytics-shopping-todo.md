@@ -128,10 +128,24 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] Existing Meta Pixel+CAPI dedup remains healthy. *(Evidenced via Regression G & `meta-purchase-reporting.test.ts`)*
 
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
+
+**Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 23 cases in
+`tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
+an unrecognised tag type, a dangling trigger reference, a tag whose firing paths are not *all*
+live-guarded, a Meta tag nested anywhere in the parameters, a GA4 config that leaves automatic page
+views on, an unapproved destination id, or an empty approval set all refuse the container. It refuses
+a workspace export that names no saved version, so a mutable container cannot be certified.
+
+Nothing else in T8 may proceed: with no container id, GA4/Ads/TikTok ids (O4) and no Tag Manager
+access, there is no container to configure, no immutable version to save, and no export to checksum.
+Per the interlock below, the loader and CSP origins must not land without that artifact, so
+`REVIEWED_GTM_VERSION_AVAILABLE` stays `false` and every mode still resolves to no GTM load.
+
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
 - [ ] Record GTM container ID + exact saved container version number/ID.
 - [ ] Export JSON from that exact saved version and commit it with repository identity/checksum.
-- [ ] Static assertion proves every production GA4/Ads/TikTok tag has explicit `la_tracking_mode == live` firing guard.
+- [ ] Static assertion proves every production GA4/Ads/TikTok tag has explicit `la_tracking_mode == live` firing guard. *(Audit implemented and unit-proved against fixtures; it has no real export to run against until O4 and GTM access land, so the assertion is not yet made about a production artifact.)*
 - [ ] GA4 auto/history page views disabled under app-owned page-view strategy.
 - [ ] Google Ads Purchase uses O1 value + `publicCode` + conversion-linking functionality; no Enhanced Conversions.
 - [ ] TikTok Purchase/CompletePayment uses `event_id=publicCode`.
