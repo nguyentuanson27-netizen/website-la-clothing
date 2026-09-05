@@ -308,6 +308,11 @@ function resolveRequiredApparelAttribute(value: string | null, maxLength: number
   return resolveBoundedMerchantText(value, maxLength);
 }
 
+/** Google Merchant rejects zero/negative prices for ordinary physical goods such as apparel. */
+function resolveMerchantPrice(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 /**
  * The trusted image for this exact variant, then the product's canonical primary as the fallback.
  *
@@ -436,7 +441,7 @@ function draftCandidate(
       : null;
   if (hasOfferId && path === null) reasons.add("LANDING_URL_UNRESOLVED");
 
-  const priceVnd = addressableOption?.price ?? null;
+  const priceVnd = resolveMerchantPrice(addressableOption?.price ?? null);
   if (addressableOption !== null && priceVnd === null) reasons.add("PRICE_UNRESOLVED");
 
   const availabilityClass = classifyMerchantAvailability(variation.stockQuantity);
