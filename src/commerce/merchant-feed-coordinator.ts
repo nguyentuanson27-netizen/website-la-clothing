@@ -247,6 +247,13 @@ export function createMerchantFeedCoordinator({
     const revisionRead = await readRevisionOrFail();
     if (!revisionRead.ok) return revisionRead.result;
     const currentRevision = revisionRead.revision;
+
+    // A concurrent generation can fail while this request awaits the durable revision read, so the
+    // negative sentinel is re-read here: a backoff installed during that window must still close the
+    // expensive path instead of admitting a second heavy generation.
+    const backedOffAfterRevisionRead = activeFailureSentinel(now());
+    if (backedOffAfterRevisionRead !== null) return backedOffAfterRevisionRead;
+
     const decisionAtMs = now();
 
     if (successCache !== undefined) {

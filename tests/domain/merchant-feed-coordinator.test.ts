@@ -33,6 +33,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+// The coordinator reads the durable promotion pricing revision before it may enter the single-flight
+// slot, so a dispatched request needs the whole pending microtask queue drained - not one tick - to
+// reach its heavy-generation decision.
+function settle(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
 function coordinator(
   options: {
     now?: () => number;
@@ -90,7 +99,7 @@ describe("Merchant feed coordinator", () => {
       return coldGate.promise;
     };
     const coldRequests = Array.from({ length: 25 }, () => instance.get({ generate: cold }));
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 1);
     coldGate.resolve(success("<feed>old</feed>"));
     await Promise.all(coldRequests);
@@ -102,7 +111,7 @@ describe("Merchant feed coordinator", () => {
       return rebuildGate.promise;
     };
     const rebuildRequests = Array.from({ length: 16 }, () => instance.get({ generate: rebuild }));
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 2);
     rebuildGate.resolve(success("<feed>new</feed>"));
     const rebuilt = await Promise.all(rebuildRequests);
@@ -133,7 +142,7 @@ describe("Merchant feed coordinator", () => {
       return gate.promise;
     };
     const requests = Array.from({ length: 12 }, () => instance.get({ generate: retry }));
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 2);
     gate.resolve(success("<feed>recovered</feed>"));
     await Promise.all(requests);
@@ -189,6 +198,65 @@ describe("Merchant feed coordinator", () => {
     assert.equal(generations, 2);
   });
 
+  it("rejects a cached feed whose revision the durable store no longer reports", async () => {
+    let revision = BigInt(81);
+    let generations = 0;
+    const instance = coordinator({ readPricingRevision: async () => revision });
+    const generate = async () => {
+      generations += 1;
+      return success(`<feed>revision-${revision}</feed>`);
+    };
+
+    const first = await instance.get({ generate });
+    assert.equal(first.ok && first.body, "<feed>revision-81</feed>");
+
+    // Only equality keeps a cache hit honest: a durable revision that moved away in either direction
+    // leaves the cached body unverifiable, so ">=" must never stand in for "===" here.
+    revision = BigInt(80);
+    const afterRollback = await instance.get({ generate });
+    assert.equal(afterRollback.ok, true);
+    if (!afterRollback.ok) assert.fail("an unmatched revision must rebuild instead of serving cache");
+    assert.equal(afterRollback.cache, "generated");
+    assert.equal(afterRollback.body, "<feed>revision-80</feed>");
+    assert.equal(generations, 2);
+  });
+
+  it("never joins an in-flight generation bound to a different durable revision", async () => {
+    let revision = BigInt(91);
+    let generations = 0;
+    const gate = deferred<MerchantFeedGenerationResult>();
+    const instance = coordinator({ readPricingRevision: async () => revision });
+
+    const staleFlight = instance.get({
+      generate: () => {
+        generations += 1;
+        return gate.promise;
+      },
+    });
+    await settle();
+    assert.equal(generations, 1);
+
+    revision = BigInt(90);
+    const unmatched = instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>revision-90</feed>");
+      },
+    });
+    await settle();
+    assert.equal(generations, 1, "an unmatched revision must wait rather than join the open flight");
+
+    gate.resolve(success("<feed>revision-91</feed>"));
+    const stale = await staleFlight;
+    assert.equal(stale.ok, false, "a flight may not publish a revision the store no longer reports");
+
+    const rebuilt = await unmatched;
+    assert.equal(rebuilt.ok, true);
+    if (!rebuilt.ok) assert.fail("the unmatched revision must complete with its own generation");
+    assert.equal(rebuilt.body, "<feed>revision-90</feed>");
+    assert.equal(generations, 2);
+  });
+
   it("does not publish an in-flight revision after a newer durable revision commits", async () => {
     let revision = BigInt(20);
     let generations = 0;
@@ -201,7 +269,7 @@ describe("Merchant feed coordinator", () => {
         return generationGate.promise;
       },
     });
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 1);
 
     revision = BigInt(21);
@@ -240,7 +308,7 @@ describe("Merchant feed coordinator", () => {
         return result;
       },
     });
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 1);
 
     revision = BigInt(41);
@@ -254,13 +322,13 @@ describe("Merchant feed coordinator", () => {
         return result;
       },
     });
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 1, "the newer revision must wait rather than overlap heavy work");
 
     oldGate.resolve(success("<feed>stale-40</feed>"));
     const oldResult = await oldRequest;
     assert.equal(oldResult.ok, false);
-    await Promise.resolve();
+    await settle();
     assert.equal(generations, 2, "the newer revision starts only after the stale flight leaves");
 
     freshGate.resolve(success("<feed>fresh-41</feed>"));
@@ -283,7 +351,7 @@ describe("Merchant feed coordinator", () => {
         return oldGate.promise;
       },
     });
-    await Promise.resolve();
+    await settle();
     revision = BigInt(51);
 
     const newerRequest = instance.get({
@@ -300,6 +368,42 @@ describe("Merchant feed coordinator", () => {
     if (newerResult.ok) assert.fail("the newer request must observe the old flight's backoff");
     assert.equal(newerResult.backoff, true);
     assert.equal(generations, 1);
+  });
+
+  it("re-applies an active failure backoff to a request whose revision read was still open", async () => {
+    let generations = 0;
+    let revisionReads = 0;
+    const heldRead = deferred<void>();
+    const instance = coordinator({
+      readPricingRevision: async () => {
+        revisionReads += 1;
+        if (revisionReads === 2) await heldRead.promise;
+        return BigInt(70);
+      },
+    });
+
+    const failing = instance.get({
+      generate: async () => {
+        generations += 1;
+        return { ok: false, failureClass: "GENERATION_FAILURE" };
+      },
+    });
+    const waiting = instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>must-not-run</feed>");
+      },
+    });
+
+    const failed = await failing;
+    assert.equal(failed.ok, false);
+
+    heldRead.resolve();
+    const waited = await waiting;
+    assert.equal(waited.ok, false);
+    if (waited.ok) assert.fail("an open revision read must not bypass a freshly installed backoff");
+    assert.equal(waited.backoff, true);
+    assert.equal(generations, 1, "an active backoff must keep the second heavy generation closed");
   });
 
   it("expires cached pricing exactly at the nearest campaign start boundary", async () => {

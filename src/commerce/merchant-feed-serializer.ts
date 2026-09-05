@@ -37,15 +37,18 @@ function xml(value: string): string {
 
 class BoundedXmlWriter {
   readonly #chunks: string[] = [];
+  readonly #maxBytes: number;
   #byteLength = 0;
 
-  constructor(private readonly maxBytes: number) {}
+  constructor(maxBytes: number) {
+    this.#maxBytes = maxBytes;
+  }
 
   append(chunk: string): void {
     const chunkBytes = encoder.encode(chunk).byteLength;
-    if (this.#byteLength + chunkBytes > this.maxBytes) {
+    if (this.#byteLength + chunkBytes > this.#maxBytes) {
       throw new MerchantFeedByteOverflowError(
-        `Merchant feed exceeds the UTF-8 byte ceiling of ${this.maxBytes}`,
+        `Merchant feed exceeds the UTF-8 byte ceiling of ${this.#maxBytes}`,
       );
     }
     this.#chunks.push(chunk);
