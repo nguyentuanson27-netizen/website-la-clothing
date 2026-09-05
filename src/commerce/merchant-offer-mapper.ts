@@ -88,6 +88,7 @@ export type MerchantExclusionReason =
   | "MEDIA_UNRESOLVED"
   | "TITLE_UNRESOLVED"
   | "DESCRIPTION_UNRESOLVED"
+  | "SIZE_UNRESOLVED"
   | "OFFER_ID_DUPLICATE"
   | "MPN_DUPLICATE";
 
@@ -111,6 +112,7 @@ const REASON_ORDER: readonly MerchantExclusionReason[] = [
   "MEDIA_UNRESOLVED",
   "TITLE_UNRESOLVED",
   "DESCRIPTION_UNRESOLVED",
+  "SIZE_UNRESOLVED",
   "OFFER_ID_DUPLICATE",
   "MPN_DUPLICATE",
 ];
@@ -169,8 +171,10 @@ export type MerchantOffer = Readonly<{
   gender: MerchantGender;
   ageGroup: MerchantAgeGroup;
   condition: MerchantCondition;
+  /** Absent when the product has no colour dimension at all, which is a legitimate catalog shape. */
   color: string | null;
-  size: string | null;
+  /** Required for apparel, so an offer is never emitted without one. */
+  size: string;
 }>;
 
 /** Bounded, non-PII diagnostics: external identity and reasons, never catalog content. */
@@ -415,6 +419,13 @@ function draftCandidate(
       : null;
   if (description === null) reasons.add("DESCRIPTION_UNRESOLVED");
 
+  // Size is a required apparel attribute. In practice an option without one already carries
+  // MAPPING_REQUIRED and is therefore unaddressable, so this never fires against the real catalog —
+  // it is here so that an offer missing a required field can never be handed to a serializer,
+  // whatever a future projection decides an option may look like.
+  const size = addressableOption === null ? null : addressableOption.size;
+  if (addressableOption !== null && size === null) reasons.add("SIZE_UNRESOLVED");
+
   // Every condition below has already recorded its own reason, so `reasons.size` alone decides the
   // outcome. They are repeated here only so the emitted offer needs no cast to convince the type
   // checker that a fact it refused to emit without is present.
@@ -427,6 +438,7 @@ function draftCandidate(
     || imageLink === null
     || title === null
     || description === null
+    || size === null
     || !hasMpn
     || !hasOfferId
     || !hasItemGroupId
@@ -454,7 +466,7 @@ function draftCandidate(
       ageGroup: apparel.facts.ageGroup,
       condition: apparel.facts.condition,
       color: addressableOption.color,
-      size: addressableOption.size,
+      size,
     }),
   };
 }

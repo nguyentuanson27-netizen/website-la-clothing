@@ -480,6 +480,25 @@ test("M3 malformed required text excludes the offer", () => {
   assert.deepEqual(onlyExclusionReasons({ name: "   " }), ["TITLE_UNRESOLVED"]);
 });
 
+test("M3 a required apparel size is never omitted from an emitted offer", () => {
+  // The real projection marks a size-less option MAPPING_REQUIRED, so this reaches the mapper only
+  // if some future projection stops doing that. Either way no offer goes out missing the field.
+  assert.deepEqual(
+    onlyExclusionReasons({
+      projection: { mode: "standalone", options: [option({ size: null })] },
+    }),
+    ["SIZE_UNRESOLVED"],
+  );
+
+  // A product with no colour dimension is a legitimate catalog shape and still publishes.
+  const colourless = mapOne({
+    projection: { mode: "standalone", options: [option({ color: null })] },
+  });
+  assert.deepEqual(colourless.excluded, []);
+  assert.equal(colourless.offers[0]!.color, null);
+  assert.equal(colourless.offers[0]!.size, "M");
+});
+
 // --- Determinism and diagnostics ------------------------------------------------------------------
 
 test("M3 the same canonical input produces the same offers and the same diagnostics", () => {
