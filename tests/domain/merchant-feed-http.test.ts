@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { createMerchantFeedGetHandler } from "../../src/commerce/merchant-feed-http.ts";
 
@@ -18,11 +19,11 @@ describe("Merchant feed HTTP handler", () => {
 
     const response = await GET(new Request("https://shop.example.test/feeds/google-merchant?foo=1"));
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8");
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("x-la-merchant-feed-state")).toBe("generated");
-    expect(await response.text()).toBe("<?xml version=\"1.0\"?><rss></rss>\n");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/rss+xml; charset=utf-8");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-la-merchant-feed-state"), "generated");
+    assert.equal(await response.text(), "<?xml version=\"1.0\"?><rss></rss>\n");
   });
 
   it("never forwards query strings or irrelevant headers into the feed service cache domain", async () => {
@@ -39,12 +40,20 @@ describe("Merchant feed HTTP handler", () => {
     };
     const GET = createMerchantFeedGetHandler(getFeed);
 
-    await GET(new Request("https://shop.example.test/feeds/google-merchant?foo=1", { headers: { "x-noise": "a" } }));
-    await GET(new Request("https://evil.example/feeds/google-merchant?foo=2&country=VN&currency=VND", { headers: { "x-noise": "b", host: "evil.example" } }));
+    await GET(
+      new Request("https://shop.example.test/feeds/google-merchant?foo=1", {
+        headers: { "x-noise": "a" },
+      }),
+    );
+    await GET(
+      new Request("https://evil.example/feeds/google-merchant?foo=2&country=VN&currency=VND", {
+        headers: { "x-noise": "b", host: "evil.example" },
+      }),
+    );
 
-    expect(calls).toBe(2);
+    assert.equal(calls, 2);
     // `getFeed` accepts no Request argument: request-controlled dimensions cannot reach the key.
-    expect(getFeed.length).toBe(0);
+    assert.equal(getFeed.length, 0);
   });
 
   it("returns a generic bounded 503 with Retry-After during failure/backoff", async () => {
@@ -55,13 +64,15 @@ describe("Merchant feed HTTP handler", () => {
       backoff: true,
     }));
 
-    const response = await GET(new Request("https://shop.example.test/feeds/google-merchant?currency=VND"));
+    const response = await GET(
+      new Request("https://shop.example.test/feeds/google-merchant?currency=VND"),
+    );
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
-    expect(response.headers.get("retry-after")).toBe("60");
-    expect(response.headers.get("x-la-merchant-feed-failure")).toBe("MARKET_UNRESOLVED");
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.text()).toBe("Merchant feed temporarily unavailable.\n");
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
+    assert.equal(response.headers.get("retry-after"), "60");
+    assert.equal(response.headers.get("x-la-merchant-feed-failure"), "MARKET_UNRESOLVED");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(await response.text(), "Merchant feed temporarily unavailable.\n");
   });
 });
