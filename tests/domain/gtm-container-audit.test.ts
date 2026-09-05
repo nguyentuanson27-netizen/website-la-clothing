@@ -1165,6 +1165,60 @@ describe("GTM container export static audit", () => {
     assert.equal(result.ok, true);
   });
 
+  it("does not read a bare literal as a reference to the mode variable", () => {
+    // `la_tracking_mode` without braces is a constant string; GTM would compare it against "live"
+    // and never match. Stripping braces before comparing let the audit certify a guard the
+    // container does not actually have.
+    const literalGuard = {
+      triggerId: "13",
+      name: "Looks like a guard",
+      type: "pageview",
+      filter: [{
+        type: "equals",
+        parameter: [
+          { type: "TEMPLATE", key: "arg0", value: "la_tracking_mode" },
+          { type: "TEMPLATE", key: "arg1", value: "live" },
+        ],
+      }],
+    };
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ firingTriggerId: ["13"] })],
+        trigger: [literalGuard],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD));
+  });
+
+  for (const [label, tag] of [
+    ["a GA4 configuration tag", ga4ConfigTag({ parameter: [
+      { type: "BOOLEAN", key: "sendPageView", value: "false" },
+    ] })],
+    ["a Google tag", {
+      tagId: "1",
+      name: "Google tag",
+      type: "googtag",
+      firingTriggerId: [LIVE_TRIGGER_ID],
+      parameter: [{ type: "BOOLEAN", key: "sendPageView", value: "false" }],
+    }],
+  ] as const) {
+    it(`refuses ${label} that names no destination this audit can check`, () => {
+      // A configuration tag establishes where the events after it are sent. Checking only the ids
+      // it happens to expose would certify one that names its property somewhere this parser does
+      // not look — the same proof an Ads conversion already owes about its own action.
+      const result = auditGtmContainerExport({
+        source: containerExport({ tag: [tag] }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+    });
+  }
+
   it("refuses an export from a container the owner did not approve", () => {
     // Same destination ids, different container: without this the audit would certify an artifact
     // that was never the reviewed one.

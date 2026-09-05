@@ -130,7 +130,7 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 
 **Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
-that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 65 cases in
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 68 cases in
 `tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
 an export format version it was not written against, a tag type it has no reviewed parser for, a
 `la_tracking_mode` variable that is not a single Data Layer Variable reading that exact dataLayer

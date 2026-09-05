@@ -25,6 +25,13 @@
  * **It collects every violation.** An operator fixing a container wants the whole list, not the
  * first problem; and a partial list invites a second review round that believes it is the last.
  *
+ * **One rule is deliberately not positive proof, and it is worth naming.** The Meta scan matches
+ * known markers — `fbq(`, `fbevents`, and the rest — so a Meta integration authored around them
+ * would not trip it. It is a second line rather than the control: the control is the tag-type
+ * allowlist, which refuses Custom HTML and every gallery template outright, and that is what a Meta
+ * payload would have to arrive as. Read the Meta finding as a helpful diagnosis of *why* a tag is
+ * refused, never as the reason it is safe to accept one.
+ *
  * Tag Assistant is not a substitute for any of this. It observes one preview session; these rules
  * bind the artifact that will be published.
  */
@@ -262,10 +269,14 @@ function triggerCarriesLiveGuard(trigger: Record<string, unknown>): boolean {
     const parameters = readParameters(condition.parameter);
     const left = parameterValue(parameters, "arg0");
     const right = parameterValue(parameters, "arg1");
+    // The left side must *be* a reference to the mode variable, not merely text that looks like its
+    // name once braces are stripped. A bare literal `la_tracking_mode` is a constant string GTM
+    // would compare against "live" and never match, so a guard read that loosely is not the guard
+    // the container actually has.
     return (
       left !== null
       && right === LIVE_MODE
-      && left.replaceAll(/[{}\s]/g, "") === TRACKING_MODE_VARIABLE
+      && referencedVariableName(left) === TRACKING_MODE_VARIABLE
     );
   });
 }
@@ -762,8 +773,10 @@ export function auditGtmContainerExport({
     };
 
     if (GA4_TAG_TYPES.has(type)) {
+      let namesGa4Destination = false;
       for (const key of GA4_DESTINATION_KEYS) {
         for (const id of readKey(key)) {
+          namesGa4Destination = true;
           if (!approvedGa4.has(id)) {
             refuse(
               GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
@@ -771,6 +784,17 @@ export function auditGtmContainerExport({
             );
           }
         }
+      }
+
+      // A configuration tag establishes the destination the events that follow are sent to, so it
+      // has to say which one, in a field this audit reads. Checking only the ids it happens to find
+      // would certify a tag that names its property somewhere this parser does not look — the same
+      // proof a Google Ads conversion already owes about its own action.
+      if (isGoogleConfigurationTag(candidate) && !namesGa4Destination) {
+        refuse(
+          GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+          `${label} configures a Google destination without naming one this audit can check`,
+        );
       }
     }
 
