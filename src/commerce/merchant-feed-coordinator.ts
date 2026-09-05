@@ -112,6 +112,12 @@ export function createMerchantFeedCoordinator({
     });
   }
 
+  function activeFailureSentinel(nowMs: number): MerchantFeedCoordinatorResult | null {
+    if (failureSentinel === undefined || nowMs >= failureSentinel.retryAtMs) return null;
+    observe("backoff_hit");
+    return failureFromSentinel(failureSentinel, nowMs);
+  }
+
   function installFailureSentinel(
     failureClass: MerchantFeedFailureClass,
     failedAtMs: number,
@@ -232,11 +238,8 @@ export function createMerchantFeedCoordinator({
       throw new TypeError("Merchant feed cache key is not part of the configured bounded domain");
     }
 
-    const beforeRevisionAtMs = now();
-    if (failureSentinel !== undefined && beforeRevisionAtMs < failureSentinel.retryAtMs) {
-      observe("backoff_hit");
-      return failureFromSentinel(failureSentinel, beforeRevisionAtMs);
-    }
+    const backedOff = activeFailureSentinel(now());
+    if (backedOff !== null) return backedOff;
 
     const revisionRead = await readRevisionOrFail();
     if (!revisionRead.ok) return revisionRead.result;
@@ -263,6 +266,11 @@ export function createMerchantFeedCoordinator({
     while (inFlight !== undefined) {
       if (inFlight.pricingRevision >= currentRevision) return inFlight.promise;
       await inFlight.promise;
+      // A request that observed a newer revision may wait for an older generation to leave the
+      // single-flight slot. If that older generation failed for a real reason, its negative sentinel
+      // still protects the expensive path; only revision/transition coherence retries omit it.
+      const afterWaitBackoff = activeFailureSentinel(now());
+      if (afterWaitBackoff !== null) return afterWaitBackoff;
     }
 
     return startGeneration(currentRevision, generate);
