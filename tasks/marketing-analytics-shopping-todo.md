@@ -130,22 +130,28 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
 
 **Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
-that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 45 cases in
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 55 cases in
 `tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
-a tag type it has no reviewed parser for, a dangling trigger reference, a tag whose firing paths are
-not *all* live-guarded, a Meta payload nested anywhere in the parameters or reached through a
-variable, a Google configuration tag that does not prove `send_page_view` is false, an unapproved or
-unresolvable destination id, an export from another container, or an empty approval set all refuse
-the container. It refuses a workspace export that names no saved version, so a mutable container
-cannot be certified.
+an export format version it was not written against, a tag type it has no reviewed parser for, a
+dangling trigger reference, a tag whose firing paths are not *all* live-guarded, a Meta payload
+nested anywhere in the parameters or reached through a variable, a Google configuration tag that
+does not prove `send_page_view` is false, a destination id that is unapproved, unresolvable, or
+carried on a field its tag type does not deliver through, a Google Ads conversion whose
+`(id, label)` pair is not approved as a pair, an export from another container, or an empty approval
+set all refuse the container. It refuses a workspace export that names no saved version, so a
+mutable container cannot be certified.
 
-**Open design question this raised — TikTok delivery through GTM.** The audit certifies only tag
+**Blocker this raised — the TikTok GTM tag needs a reviewed parser.** The audit certifies only tag
 types whose vendor the type itself fixes (Google's built-ins). A gallery template or Custom HTML tag
 is refused, because its delivery lives in template or script code the export does not contain, so a
 live firing guard says when it fires but nothing bounds where it sends. TikTok's GTM tag is a gallery
-template, so delivering TikTok through GTM cannot be certified as the audit stands. Resolving this
-needs an owner decision: add a reviewed parser for that exact template, or deliver TikTok outside
-GTM. It is recorded here rather than settled by loosening the gate.
+template, so it does not pass the gate as the audit stands.
+
+Under the locked v1 contract — plan §3.7 and spec, *TikTok Pixel runs through GTM* — the valid path
+is to add a reviewed parser for that exact TikTok template before T8 can close. Delivering TikTok
+outside GTM is **not** an option available at this level: it would be an architecture change
+requiring an explicit, separately approved spec and plan amendment, not a choice this checklist can
+open.
 
 Nothing else in T8 may proceed: with no container id, GA4/Ads/TikTok ids (O4) and no Tag Manager
 access, there is no container to configure, no immutable version to save, and no export to checksum.

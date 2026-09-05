@@ -9,11 +9,18 @@
  * Two design choices follow from that, and both are deliberate:
  *
  * **It fails closed on anything it does not understand.** Google's published export schema could not
- * be fetched in the environment this was written in, so the parser refuses malformed shapes, and a
- * tag whose type it has no reviewed parser for is refused outright rather than certified by its
- * firing guard. A live guard says *when* a tag fires, never *where* it delivers; for a Custom HTML
- * tag or a gallery template the delivery lives in code the export does not even contain. A schema
- * surprise therefore becomes a loud failure, never a silently passing check.
+ * be fetched in the environment this was written in, so the parser is pinned to the one export
+ * format it was written against, refuses malformed shapes, and refuses a tag whose type it has no
+ * reviewed parser for rather than certifying it on its firing guard. A live guard says *when* a tag
+ * fires, never *where* it delivers; for a Custom HTML tag or a gallery template the delivery lives
+ * in code the export does not even contain. A schema surprise therefore becomes a loud failure,
+ * never a silently passing check.
+ *
+ * **It keeps vendor identity all the way through.** Approval is checked field by field against the
+ * vendor that field belongs to, and a Google Ads conversion is approved as a whole `(id, label)`
+ * pair. Flattening the approved ids into one set would prove only that a literal appears somewhere
+ * among them — not that a GA4 field names a GA4 property, or that a reviewed Ads account is
+ * reporting a reviewed conversion action.
  *
  * **It collects every violation.** An operator fixing a container wants the whole list, not the
  * first problem; and a partial list invites a second review round that believes it is the last.
@@ -25,6 +32,8 @@
 export const GTM_AUDIT_CODES = {
   /** The export could not be parsed as a container version at all. */
   MALFORMED_EXPORT: "MALFORMED_EXPORT",
+  /** The export declares a format version this parser was not written against. */
+  UNSUPPORTED_EXPORT_FORMAT: "UNSUPPORTED_EXPORT_FORMAT",
   /** A mutable workspace export, or one naming no saved version. */
   NOT_A_SAVED_VERSION: "NOT_A_SAVED_VERSION",
   /** A tag that can fire without `la_tracking_mode == live`. */
@@ -63,7 +72,14 @@ export type GtmApprovedDestinations = Readonly<{
   /** The reviewed `GTM-...` container. Binds the artifact to the container it must have come from. */
   gtmContainerId: string;
   ga4MeasurementIds: readonly string[];
-  googleAdsConversionIds: readonly string[];
+  /**
+   * Reviewed Google Ads conversions, as whole `(id, label)` pairs.
+   *
+   * The label is what names the conversion action; the id alone only names the account. Approving
+   * the two separately would let a tag pair an approved id with the label of a conversion nobody
+   * reviewed, so they are approved together and must match together.
+   */
+  googleAdsConversions: readonly Readonly<{ conversionId: string; conversionLabel: string }>[];
   tiktokPixelIds: readonly string[];
 }>;
 
@@ -73,6 +89,9 @@ export type GtmAuditResult = Readonly<{
   containerVersionId: string | null;
   containerPublicId: string | null;
 }>;
+
+/** The container export format this parser was written against. */
+const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
 
 /** The application-owned dataLayer fact every production tag must be gated on. */
 const TRACKING_MODE_VARIABLE = "la_tracking_mode";
@@ -114,12 +133,41 @@ const REVIEWED_TAG_TYPES: ReadonlySet<string> = new Set([
   "awct", // Google Ads Conversion Tracking
 ]);
 
-/** Parameter keys that name a vendor destination, wherever they appear in a tag's parameters. */
-const DESTINATION_PARAMETER_KEYS: ReadonlySet<string> = new Set([
-  "measurementId",
-  "conversionId",
-  "pixelId",
-  "tagId",
+/**
+ * Parameter keys that name a vendor destination, grouped by the vendor whose namespace they belong
+ * to.
+ *
+ * The grouping is the point. Checking every id against one flat union proves only that a literal
+ * appears somewhere in the approved set — not that a GA4 field names a GA4 property or that an Ads
+ * field names an Ads conversion. A tag pairing an approved TikTok pixel id with a GA4 parameter
+ * would satisfy a union and satisfies nothing here.
+ */
+const GA4_DESTINATION_KEYS: readonly string[] = ["measurementId", "measurementIdOverride", "tagId"];
+const ADS_CONVERSION_ID_KEY = "conversionId";
+const ADS_CONVERSION_LABEL_KEY = "conversionLabel";
+const TIKTOK_DESTINATION_KEYS: readonly string[] = ["pixelId"];
+
+const ALL_DESTINATION_KEYS: ReadonlySet<string> = new Set([
+  ...GA4_DESTINATION_KEYS,
+  ADS_CONVERSION_ID_KEY,
+  ADS_CONVERSION_LABEL_KEY,
+  ...TIKTOK_DESTINATION_KEYS,
+]);
+
+/** Which vendor's destination fields each reviewed tag type is allowed to carry. */
+const GA4_TAG_TYPES: ReadonlySet<string> = new Set(["gaawc", "googtag", "gaawe"]);
+const ADS_TAG_TYPES: ReadonlySet<string> = new Set(["awct"]);
+
+/**
+ * Parameter keys that carry a Google tag's configuration settings.
+ *
+ * Only these are followed when looking for the page-view toggle. Following every reference on the
+ * tag was a fail-open: an unrelated variable that happened to hold `send_page_view = false` proved
+ * the toggle off for a tag that never wired it as configuration settings at all.
+ */
+const CONFIGURATION_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  "configSettingsTable",
+  "configSettingsVariable",
 ]);
 
 /**
@@ -349,22 +397,24 @@ function tagIsMeta(tag: Record<string, unknown>, variables: VariableIndex): bool
 }
 
 /**
- * Every destination this tag would deliver to, resolved through the container's variables.
+ * The literals a given destination key carries on this tag, resolved through the container's
+ * variables.
  *
  * A `{{reference}}` is followed rather than skipped. Skipping it was a fail-open: a live-guarded tag
  * could name `{{Production GA4 ID}}`, the literal would never appear on the tag, and the approval
  * check would have nothing to compare. A reference that cannot be resolved to a literal is reported
  * as unresolved so the artifact is refused instead of quietly certified.
  */
-function destinationIds(
+function destinationValues(
   tag: Record<string, unknown>,
+  key: string,
   variables: VariableIndex,
 ): Readonly<{ resolved: string[]; unresolved: string[] }> {
   const resolved: string[] = [];
   const unresolved: string[] = [];
 
-  for (const [key, value] of collectKeyedValues(tag.parameter)) {
-    if (!DESTINATION_PARAMETER_KEYS.has(key) || value.length === 0) continue;
+  for (const [candidateKey, value] of collectKeyedValues(tag.parameter)) {
+    if (candidateKey !== key || value.length === 0) continue;
 
     const reference = referencedVariableName(value);
     if (reference === null) {
@@ -380,6 +430,15 @@ function destinationIds(
   return { resolved, unresolved };
 }
 
+/** Every destination key this tag actually carries, whatever vendor it belongs to. */
+function destinationKeysPresent(tag: Record<string, unknown>): Set<string> {
+  const present = new Set<string>();
+  for (const [key, value] of collectKeyedValues(tag.parameter)) {
+    if (ALL_DESTINATION_KEYS.has(key) && value.length > 0) present.add(key);
+  }
+  return present;
+}
+
 /**
  * Whether this Google configuration tag positively proves it sends no page view.
  *
@@ -389,29 +448,43 @@ function destinationIds(
  * cannot be shown to be safe, and is refused.
  */
 function provesPageViewsDisabled(tag: Record<string, unknown>, variables: VariableIndex): boolean {
-  const sources: unknown[] = [tag.parameter];
+  const parameters = readParameters(tag.parameter);
+  const claims: string[] = [];
 
-  // Follow any settings variable the tag references, so its table is read as if it were inline.
-  for (const value of collectStrings(tag.parameter).strings) {
-    for (const name of embeddedVariableNames(value)) {
-      const referenced = variables.get(name);
-      if (referenced !== undefined) sources.push(referenced.source);
-    }
+  // The legacy direct toggle, read only from the tag's own top-level parameters.
+  for (const parameter of parameters) {
+    const key = readString(parameter.key);
+    if (key !== null && PAGE_VIEW_KEYS.has(key)) claims.push(readString(parameter.value) ?? "");
   }
 
-  // Every claim the artifact makes about the toggle, in either shape it can be written: a direct
-  // key on the tag, or a `parameter`/`parameterValue` row of a settings table. Each claim is read
-  // from the row that makes it, never assembled from cells of different rows.
-  const claims: string[] = [];
-  for (const source of sources) {
-    for (const [key, value] of collectKeyedValues(source)) {
-      if (PAGE_VIEW_KEYS.has(key)) claims.push(value);
-    }
-    for (const row of collectMapRows(source)) {
-      const named = row.get("parameter");
-      if (named === undefined || !PAGE_VIEW_KEYS.has(named)) continue;
-      // A row naming the toggle but carrying no value proves nothing, and says so as an empty claim.
-      claims.push(row.get("parameterValue") ?? "");
+  // Configuration settings: the inline table, and the variable the tag names as its settings
+  // carrier. Nothing else is followed, so an unrelated variable that happens to hold the toggle
+  // cannot answer for a tag that never wired it.
+  for (const parameter of parameters) {
+    const key = readString(parameter.key);
+    if (key === null || !CONFIGURATION_SETTINGS_KEYS.has(key)) continue;
+
+    const settings: unknown[] = [parameter];
+    const named = readString(parameter.value);
+    const reference = named === null ? null : referencedVariableName(named);
+    const carrier = reference === null ? undefined : variables.get(reference);
+    if (carrier !== undefined) settings.push(carrier.source);
+
+    for (const source of settings) {
+      for (const row of collectMapRows(source)) {
+        // The settings table spells one setting as two cells, `parameter` naming it and
+        // `parameterValue` holding its value. A row naming the toggle and then saying nothing about
+        // it is an open question, and says so as an empty claim.
+        const setting = row.get("parameter");
+        if (setting !== undefined && PAGE_VIEW_KEYS.has(setting)) {
+          claims.push(row.get("parameterValue") ?? "");
+        }
+        // Some shapes spell the same row as a direct key instead.
+        for (const spelling of PAGE_VIEW_KEYS) {
+          const direct = row.get(spelling);
+          if (direct !== undefined) claims.push(direct);
+        }
+      }
     }
   }
 
@@ -434,16 +507,28 @@ export function auditGtmContainerExport({
   const findings: GtmAuditFinding[] = [];
   const refuse = (code: GtmAuditCode, detail: string) => findings.push(Object.freeze({ code, detail }));
 
-  const approvedIds = new Set([
-    ...approved.ga4MeasurementIds,
-    ...approved.googleAdsConversionIds,
-    ...approved.tiktokPixelIds,
-  ]);
-  if (approvedIds.size === 0) {
+  const approvedGa4 = new Set(approved.ga4MeasurementIds);
+  const approvedTiktok = new Set(approved.tiktokPixelIds);
+  const approvedAdsPairs = new Set(
+    approved.googleAdsConversions.map((pair) => `${pair.conversionId}\u0000${pair.conversionLabel}`),
+  );
+  const approvedAdsIds = new Set(approved.googleAdsConversions.map((pair) => pair.conversionId));
+
+  if (approvedGa4.size + approvedAdsPairs.size + approvedTiktok.size === 0) {
     // Owner gate O4. Passing here would certify a container against no reviewed destination at all.
     refuse(
       GTM_AUDIT_CODES.NO_APPROVED_DESTINATIONS,
       "no reviewed vendor destination ids were supplied (owner gate O4)",
+    );
+  }
+
+  // The parser was written against one export format. A different one may spell the same fields
+  // differently, so it is refused rather than read hopefully.
+  const declaredFormat = isRecord(source) ? source.exportFormatVersion : undefined;
+  if (declaredFormat !== SUPPORTED_EXPORT_FORMAT_VERSION) {
+    refuse(
+      GTM_AUDIT_CODES.UNSUPPORTED_EXPORT_FORMAT,
+      `export declares format version ${JSON.stringify(declaredFormat) ?? "none"}; this audit reads only version ${SUPPORTED_EXPORT_FORMAT_VERSION}`,
     );
   }
 
@@ -484,6 +569,11 @@ export function auditGtmContainerExport({
     );
   }
 
+  // An unreadable variable list is not an empty one: every reference would resolve to nothing and
+  // the artifact would look cleaner than it is.
+  if (version.variable !== undefined && !Array.isArray(version.variable)) {
+    refuse(GTM_AUDIT_CODES.MALFORMED_EXPORT, "containerVersion.variable is not an array");
+  }
   const variables = indexVariables(Array.isArray(version.variable) ? version.variable : []);
 
   // A workspace export carries no saved version, and "0" is the placeholder an unsaved export uses.
@@ -560,16 +650,86 @@ export function auditGtmContainerExport({
       );
     }
 
-    const destinations = destinationIds(candidate, variables);
-    for (const id of destinations.resolved) {
-      if (!approvedIds.has(id)) {
+    // Which destination fields this tag type is entitled to carry. A field outside that set is a
+    // vendor it was never meant to reach, so it is refused rather than checked against a union that
+    // would happily accept another vendor's approved id.
+    const allowedKeys = new Set<string>(
+      GA4_TAG_TYPES.has(type)
+        ? GA4_DESTINATION_KEYS
+        : ADS_TAG_TYPES.has(type)
+          ? [ADS_CONVERSION_ID_KEY, ADS_CONVERSION_LABEL_KEY]
+          : [],
+    );
+    for (const key of destinationKeysPresent(candidate)) {
+      if (!allowedKeys.has(key)) {
         refuse(
           GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
-          `${label} delivers to an unreviewed destination id`,
+          `${label} carries the destination field "${key}", which its tag type does not deliver through`,
         );
       }
     }
-    for (const reference of destinations.unresolved) {
+
+    const unresolved = new Set<string>();
+    const readKey = (key: string) => {
+      const values = destinationValues(candidate, key, variables);
+      for (const reference of values.unresolved) unresolved.add(reference);
+      return values.resolved;
+    };
+
+    if (GA4_TAG_TYPES.has(type)) {
+      for (const key of GA4_DESTINATION_KEYS) {
+        for (const id of readKey(key)) {
+          if (!approvedGa4.has(id)) {
+            refuse(
+              GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+              `${label} names a GA4 destination the owner has not reviewed`,
+            );
+          }
+        }
+      }
+    }
+
+    if (ADS_TAG_TYPES.has(type)) {
+      // The id names the account; the label names the conversion action. Approving them separately
+      // would let an approved id carry the label of a conversion nobody reviewed, so the pair is
+      // what must match — and a conversion that names no label proves nothing about which action it
+      // reports.
+      const conversionIds = readKey(ADS_CONVERSION_ID_KEY);
+      const conversionLabels = readKey(ADS_CONVERSION_LABEL_KEY);
+
+      if (conversionIds.length === 0 || conversionLabels.length === 0) {
+        refuse(
+          GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+          `${label} does not name both a conversion id and a conversion label, so the conversion action it reports cannot be checked`,
+        );
+      }
+
+      for (const conversionId of conversionIds) {
+        for (const conversionLabel of conversionLabels) {
+          if (!approvedAdsPairs.has(`${conversionId}\u0000${conversionLabel}`)) {
+            refuse(
+              GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+              approvedAdsIds.has(conversionId)
+                ? `${label} pairs a reviewed conversion id with a conversion label the owner has not reviewed`
+                : `${label} names a Google Ads conversion the owner has not reviewed`,
+            );
+          }
+        }
+      }
+    }
+
+    for (const key of TIKTOK_DESTINATION_KEYS) {
+      for (const id of readKey(key)) {
+        if (!approvedTiktok.has(id)) {
+          refuse(
+            GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+            `${label} names a TikTok destination the owner has not reviewed`,
+          );
+        }
+      }
+    }
+
+    for (const reference of unresolved) {
       refuse(
         GTM_AUDIT_CODES.UNRESOLVED_DESTINATION_REFERENCE,
         `${label} names its destination through "${reference}", which this audit cannot resolve to a reviewed literal`,

@@ -26,7 +26,7 @@ import {
 const APPROVED: GtmApprovedDestinations = {
   gtmContainerId: "GTM-FIXTURE",
   ga4MeasurementIds: ["G-FIXTURE001"],
-  googleAdsConversionIds: ["AW-FIXTURE001"],
+  googleAdsConversions: [{ conversionId: "AW-FIXTURE001", conversionLabel: "FixtureLabel01" }],
   tiktokPixelIds: ["FIXTUREPIXEL01"],
 };
 
@@ -76,6 +76,7 @@ function adsConversionTag(overrides: Record<string, unknown> = {}) {
     firingTriggerId: [LIVE_TRIGGER_ID],
     parameter: [
       { type: "TEMPLATE", key: "conversionId", value: "AW-FIXTURE001" },
+      { type: "TEMPLATE", key: "conversionLabel", value: "FixtureLabel01" },
       { type: "TEMPLATE", key: "orderId", value: "{{publicCode}}" },
     ],
     ...overrides,
@@ -835,6 +836,166 @@ describe("GTM container export static audit", () => {
     assert.equal(result.ok, true);
   });
 
+  it("does not let an unrelated variable answer for configuration settings the tag never wired", () => {
+    // The tag names no settings table and no settings variable, so nothing about it says page views
+    // are off. Following every reference on the tag let a variable it merely mentions supply the
+    // proof — a `false` about a configuration this tag does not use.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "TEMPLATE", key: "note", value: "{{Unrelated settings}}" },
+          ],
+        }],
+        variable: [{
+          variableId: "101",
+          name: "Unrelated settings",
+          type: "gtcs",
+          parameter: [{
+            type: "LIST",
+            key: "configSettingsTable",
+            list: [{
+              type: "MAP",
+              map: [
+                { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                { type: "TEMPLATE", key: "parameterValue", value: "false" },
+              ],
+            }],
+          }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW),
+      "only a settings carrier the tag actually names may prove the toggle",
+    );
+  });
+
+  it("fails a Google Ads conversion that pairs a reviewed id with an unreviewed label", () => {
+    // The id names the account; the label names the conversion action. Approving them separately
+    // would let a reviewed account report a conversion nobody looked at.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [adsConversionTag({ parameter: [
+          { type: "TEMPLATE", key: "conversionId", value: "AW-FIXTURE001" },
+          { type: "TEMPLATE", key: "conversionLabel", value: "SomeOtherLabel" },
+        ] })],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  it("fails a Google Ads conversion that names no label at all", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [adsConversionTag({ parameter: [
+          { type: "TEMPLATE", key: "conversionId", value: "AW-FIXTURE001" },
+        ] })],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  it("fails a Google Ads conversion whose label is reviewed under a different id", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [adsConversionTag({ parameter: [
+          { type: "TEMPLATE", key: "conversionId", value: "AW-FIXTURE002" },
+          { type: "TEMPLATE", key: "conversionLabel", value: "FixtureLabel01" },
+        ] })],
+      }),
+      approved: {
+        ...APPROVED,
+        googleAdsConversions: [
+          { conversionId: "AW-FIXTURE001", conversionLabel: "FixtureLabel01" },
+          { conversionId: "AW-FIXTURE002", conversionLabel: "FixtureLabel02" },
+        ],
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  it("does not let one vendor's approved id satisfy another vendor's field", () => {
+    // A flat union of approved ids proves only that a literal appears somewhere in the approved set.
+    // Here the pixel id is genuinely approved — for TikTok, not for a Google tag.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "TEMPLATE", key: "pixelId", value: "FIXTUREPIXEL01" },
+            { type: "BOOLEAN", key: "sendPageView", value: "false" },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  it("does not let a GA4 measurement id satisfy a Google Ads conversion", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [adsConversionTag({ parameter: [
+          { type: "TEMPLATE", key: "conversionId", value: "G-FIXTURE001" },
+          { type: "TEMPLATE", key: "conversionLabel", value: "FixtureLabel01" },
+        ] })],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  for (const [label, exportFormatVersion] of [
+    ["declares no export format", undefined],
+    ["declares a format this parser was not written against", 999],
+    ["declares its format as a string", "2"],
+  ] as const) {
+    it(`refuses an export that ${label}`, () => {
+      const source = { ...containerExport(), exportFormatVersion };
+      const result = auditGtmContainerExport({ source, approved: APPROVED });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNSUPPORTED_EXPORT_FORMAT));
+    });
+  }
+
+  it("refuses a variable list that is not an array rather than reading it as empty", () => {
+    // An unreadable variable list is not an empty one: every reference would resolve to nothing and
+    // the container would look cleaner than it is.
+    const result = auditGtmContainerExport({
+      source: containerExport({ variable: { "Prod GA4": "G-FIXTURE001" } }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
   it("refuses an export from a container the owner did not approve", () => {
     // Same destination ids, different container: without this the audit would certify an artifact
     // that was never the reviewed one.
@@ -870,7 +1031,7 @@ describe("GTM container export static audit", () => {
       approved: {
         gtmContainerId: "GTM-FIXTURE",
         ga4MeasurementIds: [],
-        googleAdsConversionIds: [],
+        googleAdsConversions: [],
         tiktokPixelIds: [],
       },
     });
