@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import {
   createMerchantFeedCoordinator,
@@ -42,15 +43,21 @@ describe("Merchant feed coordinator", () => {
     const second = await instance.get({ generate });
     const many = await Promise.all(Array.from({ length: 20 }, () => instance.get({ generate })));
 
-    expect(first).toMatchObject({ ok: true, cache: "generated" });
-    expect(second).toMatchObject({ ok: true, cache: "hit" });
-    expect(many.every((result) => result.ok && result.cache === "hit")).toBe(true);
-    expect(generations).toBe(1);
-    expect(events).toEqual(expect.arrayContaining(["cold_generation", "generation_success", "success_cache_hit"]));
+    assert.equal(first.ok, true);
+    if (!first.ok) assert.fail("first result must be successful");
+    assert.equal(first.cache, "generated");
+    assert.equal(second.ok, true);
+    if (!second.ok) assert.fail("second result must be successful");
+    assert.equal(second.cache, "hit");
+    assert.equal(many.every((result) => result.ok && result.cache === "hit"), true);
+    assert.equal(generations, 1);
+    assert.equal(events.includes("cold_generation"), true);
+    assert.equal(events.includes("generation_success"), true);
+    assert.equal(events.includes("success_cache_hit"), true);
 
     nowMs = MERCHANT_FEED_CACHE_TTL_SECONDS * 1000 - 1;
     await instance.get({ generate });
-    expect(generations).toBe(1);
+    assert.equal(generations, 1);
   });
 
   it("collapses concurrent cold requests and TTL-expiry rebuilds into one generation", async () => {
@@ -64,7 +71,7 @@ describe("Merchant feed coordinator", () => {
     };
     const coldRequests = Array.from({ length: 25 }, () => instance.get({ generate: cold }));
     await Promise.resolve();
-    expect(generations).toBe(1);
+    assert.equal(generations, 1);
     coldGate.resolve(success("<feed>old</feed>"));
     await Promise.all(coldRequests);
 
@@ -76,11 +83,11 @@ describe("Merchant feed coordinator", () => {
     };
     const rebuildRequests = Array.from({ length: 16 }, () => instance.get({ generate: rebuild }));
     await Promise.resolve();
-    expect(generations).toBe(2);
+    assert.equal(generations, 2);
     rebuildGate.resolve(success("<feed>new</feed>"));
     const rebuilt = await Promise.all(rebuildRequests);
-    expect(rebuilt.every((result) => result.ok && result.body === "<feed>new</feed>")).toBe(true);
-    expect(generations).toBe(2);
+    assert.equal(rebuilt.every((result) => result.ok && result.body === "<feed>new</feed>"), true);
+    assert.equal(generations, 2);
   });
 
   it("backs off failures cheaply and admits one single-flight retry at expiry", async () => {
@@ -93,11 +100,11 @@ describe("Merchant feed coordinator", () => {
     };
 
     await instance.get({ generate: fail });
-    expect(generations).toBe(1);
+    assert.equal(generations, 1);
     nowMs = MERCHANT_FEED_FAILURE_BACKOFF_SECONDS * 1000 - 1;
     const backedOff = await Promise.all(Array.from({ length: 20 }, () => instance.get({ generate: fail })));
-    expect(backedOff.every((result) => !result.ok && result.backoff)).toBe(true);
-    expect(generations).toBe(1);
+    assert.equal(backedOff.every((result) => !result.ok && result.backoff), true);
+    assert.equal(generations, 1);
 
     nowMs = MERCHANT_FEED_FAILURE_BACKOFF_SECONDS * 1000;
     const gate = deferred<MerchantFeedGenerationResult>();
@@ -107,21 +114,37 @@ describe("Merchant feed coordinator", () => {
     };
     const requests = Array.from({ length: 12 }, () => instance.get({ generate: retry }));
     await Promise.resolve();
-    expect(generations).toBe(2);
+    assert.equal(generations, 2);
     gate.resolve(success("<feed>recovered</feed>"));
     await Promise.all(requests);
-    expect(generations).toBe(2);
+    assert.equal(generations, 2);
   });
 
   it("keeps a valid success isolated and rejects unconfigured cache keys", async () => {
     let generations = 0;
     const instance = coordinator({ now: () => 1_000 });
-    await instance.get({ generate: async () => { generations += 1; return success("<feed>good</feed>"); } });
+    await instance.get({
+      generate: async () => {
+        generations += 1;
+        return success("<feed>good</feed>");
+      },
+    });
 
-    const hit = await instance.get({ generate: async () => { generations += 1; return { ok: false, failureClass: "GENERATION_FAILURE" }; } });
-    expect(hit).toMatchObject({ ok: true, cache: "hit", body: "<feed>good</feed>" });
-    expect(generations).toBe(1);
+    const hit = await instance.get({
+      generate: async () => {
+        generations += 1;
+        return { ok: false, failureClass: "GENERATION_FAILURE" };
+      },
+    });
+    assert.equal(hit.ok, true);
+    if (!hit.ok) assert.fail("cached result must stay successful");
+    assert.equal(hit.cache, "hit");
+    assert.equal(hit.body, "<feed>good</feed>");
+    assert.equal(generations, 1);
 
-    await expect(instance.get({ requestedKey: `${KEY}:noise`, generate: async () => success() })).rejects.toThrow(/bounded domain/);
+    await assert.rejects(
+      instance.get({ requestedKey: `${KEY}:noise`, generate: async () => success() }),
+      /bounded domain/,
+    );
   });
 });
