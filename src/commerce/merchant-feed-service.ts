@@ -16,10 +16,22 @@ import { createMerchantOfferRepository, MerchantOfferReadError } from "./merchan
 import { readStorefrontOrigin } from "./storefront-origin.ts";
 
 const MERCHANT_FEED_SCHEMA_VERSION = "rss-v1";
+const PROMOTION_PRICING_REVISION_ID = "current";
 
 function observeMerchantFeed(event: MerchantFeedEvent): void {
   // Bounded event names only: no request data, product data, exceptions, credentials or PII.
   console.info(`[merchant-feed] ${event}`);
+}
+
+async function readPromotionPricingRevision(): Promise<bigint> {
+  const row = await prisma.promotionPricingRevision.findUnique({
+    where: { id: PROMOTION_PRICING_REVISION_ID },
+    select: { revision: true },
+  });
+  if (row === null) {
+    throw new Error("Promotion pricing revision row is missing; migrations are not deployed");
+  }
+  return row.revision;
 }
 
 let runtimeCoordinator:
@@ -33,7 +45,11 @@ function coordinatorFor(key: string) {
   if (runtimeCoordinator === undefined) {
     runtimeCoordinator = Object.freeze({
       key,
-      coordinator: createMerchantFeedCoordinator({ key, observe: observeMerchantFeed }),
+      coordinator: createMerchantFeedCoordinator({
+        key,
+        readPricingRevision: readPromotionPricingRevision,
+        observe: observeMerchantFeed,
+      }),
     });
   } else if (runtimeCoordinator.key !== key) {
     // A process should have exactly one trusted shop/schema domain. Treat env drift as a config
@@ -86,10 +102,11 @@ export async function getMerchantFeed(): Promise<MerchantFeedCoordinatorResult> 
   return coordinator.get({
     generate: async () => {
       try {
-        const mapped = await createMerchantOfferRepository(prisma).readMerchantOffers({
+        const snapshot = await createMerchantOfferRepository(prisma).readMerchantFeedSnapshot({
           shopId,
           origin,
         });
+        const mapped = snapshot.mapping;
 
         if (mapped.market.status !== "APPROVED" || mapped.activationBlockedReasons.length > 0) {
           return Object.freeze({ ok: false as const, failureClass: "MARKET_UNRESOLVED" as const });
@@ -100,7 +117,11 @@ export async function getMerchantFeed(): Promise<MerchantFeedCoordinatorResult> 
           market: mapped.market.policy,
           origin,
         });
-        return Object.freeze({ ok: true as const, ...serialized });
+        return Object.freeze({
+          ok: true as const,
+          ...serialized,
+          nextPricingTransitionAtMs: snapshot.nextPricingTransitionAtMs,
+        });
       } catch (error) {
         return Object.freeze({ ok: false as const, failureClass: classifyGenerationFailure(error) });
       }
