@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_MERCHANT_DB_ROUND_TRIPS,
   MAX_MERCHANT_OFFERS,
+  MAX_MERCHANT_PROMOTION_VARIANTS_PER_QUERY,
 } from "../../src/commerce/merchant-feed-limits.ts";
 import { createMerchantOfferRepository } from "../../src/commerce/merchant-offer-repository.ts";
 
@@ -34,7 +35,7 @@ function candidateProducts(variantCount: number) {
 }
 
 describe("Merchant public-feed repository query envelope", () => {
-  it("keeps the whole U25 candidate read at or below eight DB operations for 5,000 variants", async () => {
+  it("counts the whole U25 candidate read and stays at or below eight DB operations for 5,000 variants", async () => {
     const productFindMany = vi.fn(async () => candidateProducts(MAX_MERCHANT_OFFERS));
     const promotionFindMany = vi.fn(async () => []);
     const forbiddenVariantMirrorRead = vi.fn(async () => {
@@ -49,6 +50,9 @@ describe("Merchant public-feed repository query envelope", () => {
 
     await repository.readCandidateProducts({ shopId: 920007, now: new Date("2026-09-05T00:00:00Z") });
 
+    const expectedPromotionQueries = Math.ceil(
+      MAX_MERCHANT_OFFERS / MAX_MERCHANT_PROMOTION_VARIANTS_PER_QUERY,
+    );
     const dbOperations =
       productFindMany.mock.calls.length +
       promotionFindMany.mock.calls.length +
@@ -56,7 +60,7 @@ describe("Merchant public-feed repository query envelope", () => {
 
     expect(productFindMany).toHaveBeenCalledTimes(1);
     expect(forbiddenVariantMirrorRead).not.toHaveBeenCalled();
-    expect(promotionFindMany).toHaveBeenCalledTimes(MAX_MERCHANT_DB_ROUND_TRIPS - 1);
+    expect(promotionFindMany).toHaveBeenCalledTimes(expectedPromotionQueries);
     expect(dbOperations).toBeLessThanOrEqual(MAX_MERCHANT_DB_ROUND_TRIPS);
   });
 });
