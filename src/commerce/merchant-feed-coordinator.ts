@@ -169,8 +169,7 @@ export function createMerchantFeedCoordinator({
   ): Promise<MerchantFeedCoordinatorResult> {
     observe("cold_generation");
 
-    let promise!: Promise<MerchantFeedCoordinatorResult>;
-    promise = (async () => {
+    const promise = (async () => {
       try {
         let generated: MerchantFeedGenerationResult;
         try {
@@ -251,7 +250,7 @@ export function createMerchantFeedCoordinator({
     if (successCache !== undefined) {
       if (
         decisionAtMs < successCache.expiresAtMs &&
-        successCache.pricingRevision >= currentRevision
+        successCache.pricingRevision === currentRevision
       ) {
         observe("success_cache_hit");
         return Object.freeze({
@@ -266,11 +265,11 @@ export function createMerchantFeedCoordinator({
     }
 
     while (inFlight !== undefined) {
-      if (inFlight.pricingRevision >= currentRevision) return inFlight.promise;
+      if (inFlight.pricingRevision === currentRevision) return inFlight.promise;
       await inFlight.promise;
-      // A request that observed a newer revision may wait for an older generation to leave the
-      // single-flight slot. If that older generation failed for a real reason, its negative sentinel
-      // still protects the expensive path; only revision/transition coherence retries omit it.
+      // A request that observed a different revision waits for the current generation to leave the
+      // single-flight slot. If that generation failed for a real reason, its negative sentinel still
+      // protects the expensive path; only revision/transition coherence retries omit it.
       const afterWaitBackoff = activeFailureSentinel(now());
       if (afterWaitBackoff !== null) return afterWaitBackoff;
     }
