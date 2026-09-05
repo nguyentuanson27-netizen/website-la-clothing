@@ -11,7 +11,13 @@ export type MerchantFeedFailureClass =
   | "QUERY_BUDGET_FAILURE";
 
 export type MerchantFeedGenerationResult =
-  | Readonly<{ ok: true; body: string; byteLength: number; offerCount: number }>
+  | Readonly<{
+      ok: true;
+      body: string;
+      byteLength: number;
+      offerCount: number;
+      nextPricingTransitionAtMs: number | null;
+    }>
   | Readonly<{ ok: false; failureClass: MerchantFeedFailureClass }>;
 
 export type MerchantFeedEvent =
@@ -23,7 +29,9 @@ export type MerchantFeedEvent =
   | "offer_overflow"
   | "byte_overflow"
   | "query_budget_failure"
-  | "market_unresolved";
+  | "market_unresolved"
+  | "pricing_revision_changed"
+  | "pricing_transition_crossed";
 
 export type MerchantFeedCoordinatorResult =
   | Readonly<{
@@ -44,12 +52,18 @@ type SuccessCache = Readonly<{
   body: string;
   byteLength: number;
   offerCount: number;
+  pricingRevision: bigint;
   expiresAtMs: number;
 }>;
 
 type FailureSentinel = Readonly<{
   failureClass: MerchantFeedFailureClass;
   retryAtMs: number;
+}>;
+
+type InFlightGeneration = Readonly<{
+  pricingRevision: bigint;
+  promise: Promise<MerchantFeedCoordinatorResult>;
 }>;
 
 function failureEvent(failureClass: MerchantFeedFailureClass): MerchantFeedEvent {
@@ -69,20 +83,25 @@ function failureEvent(failureClass: MerchantFeedFailureClass): MerchantFeedEvent
 
 export function createMerchantFeedCoordinator({
   key,
+  readPricingRevision,
   now = Date.now,
   observe = () => undefined,
 }: Readonly<{
   key: string;
+  readPricingRevision: () => Promise<bigint>;
   now?: () => number;
   observe?: (event: MerchantFeedEvent) => void;
 }>) {
   if (typeof key !== "string" || key.length === 0 || key.length > 256) {
     throw new TypeError("Merchant feed coordinator requires one bounded trusted key");
   }
+  if (typeof readPricingRevision !== "function") {
+    throw new TypeError("Merchant feed coordinator requires the durable promotion pricing revision");
+  }
 
   let successCache: SuccessCache | undefined;
   let failureSentinel: FailureSentinel | undefined;
-  let inFlight: Promise<MerchantFeedCoordinatorResult> | undefined;
+  let inFlight: InFlightGeneration | undefined;
 
   function failureFromSentinel(sentinel: FailureSentinel, nowMs: number) {
     return Object.freeze({
@@ -91,6 +110,115 @@ export function createMerchantFeedCoordinator({
       retryAfterSeconds: Math.max(1, Math.ceil((sentinel.retryAtMs - nowMs) / 1000)),
       backoff: true,
     });
+  }
+
+  function installFailureSentinel(
+    failureClass: MerchantFeedFailureClass,
+    failedAtMs: number,
+  ): MerchantFeedCoordinatorResult {
+    failureSentinel = Object.freeze({
+      failureClass,
+      retryAtMs: failedAtMs + MERCHANT_FEED_FAILURE_BACKOFF_SECONDS * 1000,
+    });
+    observe(failureEvent(failureClass));
+    return Object.freeze({
+      ok: false as const,
+      failureClass,
+      retryAfterSeconds: MERCHANT_FEED_FAILURE_BACKOFF_SECONDS,
+      backoff: false,
+    });
+  }
+
+  function coherenceRetry(event: "pricing_revision_changed" | "pricing_transition_crossed") {
+    observe(event);
+    return Object.freeze({
+      ok: false as const,
+      failureClass: "GENERATION_FAILURE" as const,
+      retryAfterSeconds: 1,
+      backoff: false,
+    });
+  }
+
+  async function readRevisionOrFail(): Promise<
+    | Readonly<{ ok: true; revision: bigint }>
+    | Readonly<{ ok: false; result: MerchantFeedCoordinatorResult }>
+  > {
+    try {
+      const revision = await readPricingRevision();
+      if (typeof revision !== "bigint" || revision < 0n) throw new TypeError("invalid revision");
+      return Object.freeze({ ok: true as const, revision });
+    } catch {
+      return Object.freeze({
+        ok: false as const,
+        result: installFailureSentinel("GENERATION_FAILURE", now()),
+      });
+    }
+  }
+
+  function startGeneration(
+    pricingRevision: bigint,
+    generate: () => Promise<MerchantFeedGenerationResult>,
+  ): Promise<MerchantFeedCoordinatorResult> {
+    observe("cold_generation");
+
+    let promise!: Promise<MerchantFeedCoordinatorResult>;
+    promise = (async () => {
+      try {
+        let generated: MerchantFeedGenerationResult;
+        try {
+          generated = await generate();
+        } catch {
+          generated = { ok: false, failureClass: "GENERATION_FAILURE" };
+        }
+
+        if (!generated.ok) {
+          return installFailureSentinel(generated.failureClass, now());
+        }
+
+        const beforePublishRevision = await readRevisionOrFail();
+        if (!beforePublishRevision.ok) return beforePublishRevision.result;
+        if (beforePublishRevision.revision !== pricingRevision) {
+          return coherenceRetry("pricing_revision_changed");
+        }
+
+        const publicationAtMs = now();
+        if (
+          generated.nextPricingTransitionAtMs !== null &&
+          generated.nextPricingTransitionAtMs <= publicationAtMs
+        ) {
+          return coherenceRetry("pricing_transition_crossed");
+        }
+
+        const normalExpiryAtMs =
+          publicationAtMs + MERCHANT_FEED_CACHE_TTL_SECONDS * 1000;
+        const expiresAtMs =
+          generated.nextPricingTransitionAtMs === null
+            ? normalExpiryAtMs
+            : Math.min(normalExpiryAtMs, generated.nextPricingTransitionAtMs);
+
+        successCache = Object.freeze({
+          body: generated.body,
+          byteLength: generated.byteLength,
+          offerCount: generated.offerCount,
+          pricingRevision,
+          expiresAtMs,
+        });
+        failureSentinel = undefined;
+        observe("generation_success");
+        return Object.freeze({
+          ok: true as const,
+          body: generated.body,
+          byteLength: generated.byteLength,
+          offerCount: generated.offerCount,
+          cache: "generated" as const,
+        });
+      } finally {
+        if (inFlight?.promise === promise) inFlight = undefined;
+      }
+    })();
+
+    inFlight = Object.freeze({ pricingRevision, promise });
+    return promise;
   }
 
   async function get({
@@ -104,65 +232,40 @@ export function createMerchantFeedCoordinator({
       throw new TypeError("Merchant feed cache key is not part of the configured bounded domain");
     }
 
-    const nowMs = now();
-    if (successCache !== undefined && nowMs < successCache.expiresAtMs) {
-      observe("success_cache_hit");
-      return Object.freeze({
-        ok: true,
-        body: successCache.body,
-        byteLength: successCache.byteLength,
-        offerCount: successCache.offerCount,
-        cache: "hit",
-      });
-    }
-
-    if (failureSentinel !== undefined && nowMs < failureSentinel.retryAtMs) {
+    const beforeRevisionAtMs = now();
+    if (failureSentinel !== undefined && beforeRevisionAtMs < failureSentinel.retryAtMs) {
       observe("backoff_hit");
-      return failureFromSentinel(failureSentinel, nowMs);
+      return failureFromSentinel(failureSentinel, beforeRevisionAtMs);
     }
 
-    if (inFlight !== undefined) return inFlight;
+    const revisionRead = await readRevisionOrFail();
+    if (!revisionRead.ok) return revisionRead.result;
+    const currentRevision = revisionRead.revision;
+    const decisionAtMs = now();
 
-    observe("cold_generation");
-    inFlight = (async () => {
-      try {
-        let generated: MerchantFeedGenerationResult;
-        try {
-          generated = await generate();
-        } catch {
-          generated = { ok: false, failureClass: "GENERATION_FAILURE" };
-        }
-
-        const completedAtMs = now();
-        if (!generated.ok) {
-          failureSentinel = Object.freeze({
-            failureClass: generated.failureClass,
-            retryAtMs: completedAtMs + MERCHANT_FEED_FAILURE_BACKOFF_SECONDS * 1000,
-          });
-          observe(failureEvent(generated.failureClass));
-          return Object.freeze({
-            ok: false as const,
-            failureClass: generated.failureClass,
-            retryAfterSeconds: MERCHANT_FEED_FAILURE_BACKOFF_SECONDS,
-            backoff: false,
-          });
-        }
-
-        successCache = Object.freeze({
-          body: generated.body,
-          byteLength: generated.byteLength,
-          offerCount: generated.offerCount,
-          expiresAtMs: completedAtMs + MERCHANT_FEED_CACHE_TTL_SECONDS * 1000,
+    if (successCache !== undefined) {
+      if (
+        decisionAtMs < successCache.expiresAtMs &&
+        successCache.pricingRevision >= currentRevision
+      ) {
+        observe("success_cache_hit");
+        return Object.freeze({
+          ok: true,
+          body: successCache.body,
+          byteLength: successCache.byteLength,
+          offerCount: successCache.offerCount,
+          cache: "hit",
         });
-        failureSentinel = undefined;
-        observe("generation_success");
-        return Object.freeze({ ...generated, cache: "generated" as const });
-      } finally {
-        inFlight = undefined;
       }
-    })();
+      successCache = undefined;
+    }
 
-    return inFlight;
+    while (inFlight !== undefined) {
+      if (inFlight.pricingRevision >= currentRevision) return inFlight.promise;
+      await inFlight.promise;
+    }
+
+    return startGeneration(currentRevision, generate);
   }
 
   return Object.freeze({ get, key });
