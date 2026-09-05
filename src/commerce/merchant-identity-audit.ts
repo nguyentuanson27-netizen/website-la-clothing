@@ -14,8 +14,8 @@
  *
  *   - infer a GTIN. `pancakeBarcode` is a field name, not proof of a GTIN, and the audit does not
  *     read it at all rather than tempt a later reader;
- *   - invent `gender`, `age_group` or `condition`. Those are owner-approved apparel facts (O3), so
- *     they are reported as an explicit blocked state rather than derived from a name or category;
+ *   - invent `gender`, `age_group` or `condition`. U25/M3 owns those resolved values; this legacy
+ *     mirror-only M1 summary reports that the override runtime exists but does not audit its values;
  *   - synthesize historical upstream-lifecycle evidence into a mirror-only runtime result. The
  *     runtime summary deliberately reports only what this DB read can prove; the authoritative
  *     time-separated durability evidence is recorded separately in the reviewed M1 audit document.
@@ -83,14 +83,12 @@ export type TextReadiness = "READY" | "MISSING" | "MALFORMED";
 export type DuplicateIdentifier = Readonly<{ value: string; occurrences: number }>;
 
 /**
- * M1's report shape is frozen against its recorded exact-SHA operational evidence.
+ * `apparelFacts` is current executable metadata, not a frozen copy of the historical M1 artifact.
  *
- * `apparelFacts` describes the O3 state this read-only audit can establish from the mirror, which is
- * the owner policy plus the absence of any override reading in M1 itself. U25 / M3 implements the
- * runtime — persistence, validation, admin editing and effective-fact resolution — and reports each
- * product's resolved facts through `merchant-offer-mapper.ts`. Do not read `productOverrides` here
- * as a live statement about the repository; re-establishing Merchant readiness after M3 is a fresh
- * M1 run, recorded as its own attributable evidence.
+ * The exact-SHA evidence in `docs/audits/merchant-identity-m1.md` remains historical and unchanged.
+ * On current code, U25/M3 has implemented the website-owned override runtime, while this legacy M1
+ * mirror-only summary still does not read/validate those product override rows. Its verdict therefore
+ * says `NOT_AUDITED_BY_M1` instead of falsely claiming the runtime is missing or claiming readiness.
  */
 export type MerchantIdentitySummary = Readonly<{
   totalVariations: number;
@@ -111,8 +109,8 @@ export type MerchantIdentitySummary = Readonly<{
   merchantFactsReady: number;
   apparelFacts: Readonly<{
     policy: "RESOLVED";
-    productOverrides: "NOT_IMPLEMENTED";
-    verdict: "BLOCKED";
+    productOverrides: "IMPLEMENTED";
+    verdict: "NOT_AUDITED_BY_M1";
   }>;
   durability: Readonly<{
     mirrorReconcilesByExternalId: boolean;
@@ -367,8 +365,8 @@ export function summarizeMerchantIdentity(
     merchantFactsReady,
     apparelFacts: Object.freeze({
       policy: "RESOLVED" as const,
-      productOverrides: "NOT_IMPLEMENTED" as const,
-      verdict: "BLOCKED" as const,
+      productOverrides: "IMPLEMENTED" as const,
+      verdict: "NOT_AUDITED_BY_M1" as const,
     }),
     durability: Object.freeze({
       mirrorReconcilesByExternalId: true,
