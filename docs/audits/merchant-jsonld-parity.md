@@ -1,17 +1,26 @@
 # Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 
 Two public consumers describe the same standalone variant to two different audiences. This audit
-records that they publish the same truth about the facts they share.
+records where they publish the same truth about the facts they share, and what remains open.
 
-PR #199 proved the parity and left one reachable divergence open. **U27a closed it**, and this audit
-now records both the finding and its reconciliation.
+It has been written in two passes:
 
-- **Base SHA:** `2d5ea84045f61fc1249076379dd0816d37499546` (`main` after PR #198).
-- **Final implementation/test SHA:** the head of PR #199, recorded in that PR's description and
-  shown on its exact-head checks. This audit adds tests and documentation only; no `src/` file is
-  changed, so the runtime behaviour it describes is the behaviour already on the base SHA.
-- **Pancake API used:** NO. **Production database used:** NO. Every case is reproducible from
-  repository fixtures.
+- **PR #199** proved the parity across identity, grouping, MPN, URL, price and the resolvable
+  availability domain, and recorded one reachable divergence it deliberately did not equalize. That
+  pass changed no `src/` file.
+- **PR #200 (U27a)** closed that **availability** divergence in runtime code, in both the
+  exact-variant and product-level paths. It does change `src/`. It did **not** close the convergence
+  launch gate, which stays open on the family-collapse granularity contract described below.
+
+| | PR #199 | PR #200 (U27a) |
+| --- | --- | --- |
+| Base SHA | `2d5ea84045f61fc1249076379dd0816d37499546` | `22fea2ce9e48368b7ce64fa502d45b7c03bf98d3` |
+| Scope | tests, docs and task reconciliation only | runtime fix plus tests and docs |
+| `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` |
+| Head SHA | recorded in that PR's description | recorded in that PR's description |
+
+- **Pancake API used:** NO. **Production database used:** NO, in either pass. Every case is
+  reproducible from repository fixtures.
 
 ## Authorities
 
