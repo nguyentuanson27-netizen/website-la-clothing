@@ -23,11 +23,11 @@ export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
 export class MerchantOfferReadError extends Error {}
 
 /**
- * U26 deliberately uses flat model reads here rather than Prisma relation loading. The public feed
- * has a reviewed whole-generation DB budget, while `relationLoadStrategy` is still a Prisma preview
- * feature that would require enabling `relationJoins` for the generated client. Keeping the reads
- * flat makes the eight-query ceiling local to this repository and avoids changing relation-loading
- * behaviour elsewhere in the application.
+ * U26 keeps the public feed inside eight whole-generation DB operations without enabling Prisma's
+ * preview relation-join feature. The coordinator owns two durable promotion-revision reads (capture
+ * and pre-publish recheck), so this repository is capped at six flat/bounded data reads. Two pairs
+ * that used to need separate Prisma model reads are deliberately folded into parameterized SQL:
+ * product editorial+Merchant facts, and promotion target+enabled-campaign facts.
  */
 const productSelection = {
   id: true,
@@ -73,23 +73,6 @@ const compositeSelection = {
   componentVariantId: true,
 } satisfies Prisma.CompositeComponentMirrorSelect;
 
-const promotionTargetSelection = {
-  campaignId: true,
-  productId: true,
-  variantId: true,
-} satisfies Prisma.PromotionTargetSelect;
-
-const promotionCampaignSelection = {
-  id: true,
-  name: true,
-  kind: true,
-  discountType: true,
-  percentageValue: true,
-  fixedPriceVnd: true,
-  startsAt: true,
-  endsAt: true,
-} satisfies Prisma.PromotionCampaignSelect;
-
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 type SelectedVariant = Prisma.VariantMirrorGetPayload<{ select: typeof variantSelection }>;
 type SelectedProductContent = Prisma.ProductContentGetPayload<{ select: typeof contentSelection }>;
@@ -97,11 +80,28 @@ type SelectedMerchantFacts = Prisma.ProductMerchantFactsGetPayload<{
   select: typeof merchantFactsSelection;
 }>;
 type SelectedWarehouseStock = Prisma.WarehouseStockGetPayload<{ select: typeof stockSelection }>;
-type SelectedPromotionTarget = Prisma.PromotionTargetGetPayload<{
-  select: typeof promotionTargetSelection;
+
+type ProductFactRow = Readonly<{
+  productId: string;
+  contentStatus: SelectedProductContent["status"] | null;
+  editorialDescription: string | null;
+  merchantFactsPresent: boolean;
+  merchantGender: SelectedMerchantFacts["gender"] | null;
+  merchantAgeGroup: SelectedMerchantFacts["ageGroup"] | null;
+  merchantCondition: SelectedMerchantFacts["condition"] | null;
 }>;
-type SelectedPromotionCampaign = Prisma.PromotionCampaignGetPayload<{
-  select: typeof promotionCampaignSelection;
+
+type JoinedPromotionRow = Readonly<{
+  campaignId: string;
+  productId: string | null;
+  variantId: string | null;
+  name: string;
+  kind: ApplicablePromotionCampaign["kind"];
+  discountType: ApplicablePromotionCampaign["discountType"];
+  percentageValue: number | null;
+  fixedPriceVnd: bigint | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
 }>;
 
 type LoadedCandidateVariant = SelectedVariant &
@@ -118,6 +118,11 @@ type LoadedCandidateProduct = SelectedProduct &
     variants: readonly LoadedCandidateVariant[];
   }>;
 
+type LoadedMerchantCandidates = Readonly<{
+  products: readonly MerchantCandidateProduct[];
+  nextPricingTransitionAtMs: number | null;
+}>;
+
 function aggregateWarehouseStock(quantities: readonly number[]): number {
   for (const quantity of quantities) {
     if (!Number.isFinite(quantity) || quantity < 0) return Number.NaN;
@@ -133,12 +138,10 @@ function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
 
 function buildCampaignsByVariantId({
   variants,
-  targets,
-  campaigns,
+  promotionRows,
 }: Readonly<{
   variants: readonly SelectedVariant[];
-  targets: readonly SelectedPromotionTarget[];
-  campaigns: readonly SelectedPromotionCampaign[];
+  promotionRows: readonly JoinedPromotionRow[];
 }>): ReadonlyMap<string, readonly ApplicablePromotionCampaign[]> {
   const knownVariantIds = new Set(variants.map((variant) => variant.id));
   const variantsByProductId = new Map<string, string[]>();
@@ -148,12 +151,6 @@ function buildCampaignsByVariantId({
     else owned.push(variant.id);
   }
 
-  const campaignById = new Map(
-    campaigns.map((campaign) => [
-      campaign.id,
-      Object.freeze({ ...campaign }) as ApplicablePromotionCampaign,
-    ]),
-  );
   const campaignsByVariantId = new Map<string, ApplicablePromotionCampaign[]>();
   const seenByVariantId = new Map<string, Set<string>>();
   for (const variantId of knownVariantIds) {
@@ -168,20 +165,50 @@ function buildCampaignsByVariantId({
     campaignsByVariantId.get(variantId)?.push(campaign);
   };
 
-  for (const target of targets) {
-    const campaign = campaignById.get(target.campaignId);
-    if (campaign === undefined) continue;
-    if (target.variantId !== null) {
-      attach(target.variantId, campaign);
+  for (const row of promotionRows) {
+    const campaign: ApplicablePromotionCampaign = Object.freeze({
+      id: row.campaignId,
+      name: row.name,
+      kind: row.kind,
+      discountType: row.discountType,
+      percentageValue: row.percentageValue,
+      fixedPriceVnd: row.fixedPriceVnd,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+    });
+    if (row.variantId !== null) {
+      attach(row.variantId, campaign);
       continue;
     }
-    if (target.productId === null) continue;
-    for (const variantId of variantsByProductId.get(target.productId) ?? []) {
+    if (row.productId === null) continue;
+    for (const variantId of variantsByProductId.get(row.productId) ?? []) {
       attach(variantId, campaign);
     }
   }
 
   return campaignsByVariantId;
+}
+
+function nextRelevantPricingTransitionAtMs(
+  promotionRows: readonly JoinedPromotionRow[],
+  now: Date,
+): number | null {
+  const nowMs = now.getTime();
+  let nextMs: number | null = null;
+  const seenCampaignIds = new Set<string>();
+
+  for (const row of promotionRows) {
+    if (seenCampaignIds.has(row.campaignId)) continue;
+    seenCampaignIds.add(row.campaignId);
+    for (const boundary of [row.startsAt, row.endsAt]) {
+      if (boundary === null) continue;
+      const boundaryMs = boundary.getTime();
+      if (boundaryMs <= nowMs) continue;
+      if (nextMs === null || boundaryMs < nextMs) nextMs = boundaryMs;
+    }
+  }
+
+  return nextMs;
 }
 
 function toCandidateProduct(
@@ -251,15 +278,15 @@ function toCandidateProduct(
 }
 
 export function createMerchantOfferRepository(client: PrismaClient) {
-  async function readCandidateProducts({
+  async function loadCandidateProducts({
     shopId,
     now = new Date(),
-  }: Readonly<{ shopId: number; now?: Date }>): Promise<MerchantCandidateProduct[]> {
+  }: Readonly<{ shopId: number; now?: Date }>): Promise<LoadedMerchantCandidates> {
     if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
       throw new MerchantOfferReadError("Merchant shop id must fit a positive PostgreSQL INTEGER");
     }
 
-    // 1/8 — bounded product authority.
+    // 1/6 — bounded product authority.
     const products = await client.productMirror.findMany({
       where: { pancakeShopId: shopId, isPresent: true, isActive: true },
       select: productSelection,
@@ -271,11 +298,13 @@ export function createMerchantOfferRepository(client: PrismaClient) {
         `Catalog exceeds the Merchant candidate bound of ${MAX_MERCHANT_CANDIDATE_PRODUCTS} products; refusing a truncated feed`,
       );
     }
-    if (products.length === 0) return [];
+    if (products.length === 0) {
+      return Object.freeze({ products: [], nextPricingTransitionAtMs: null });
+    }
 
     const productIds = products.map((product) => product.id);
 
-    // 2/8 — all active/present variants, bounded before any fan-out reads.
+    // 2/6 — all active/present variants, bounded before any fan-out reads.
     const variants = await client.variantMirror.findMany({
       where: { productId: { in: productIds }, isPresent: true, isActive: true },
       select: variantSelection,
@@ -290,17 +319,25 @@ export function createMerchantOfferRepository(client: PrismaClient) {
 
     const variantIds = variants.map((variant) => variant.id);
 
-    // 3/8 and 4/8 — website-owned product facts, each flat and product-bounded.
-    const contents = await client.productContent.findMany({
-      where: { productId: { in: productIds } },
-      select: contentSelection,
-    });
-    const merchantFacts = await client.productMerchantFacts.findMany({
-      where: { productId: { in: productIds } },
-      select: merchantFactsSelection,
-    });
+    // 3/6 — both website-owned product-fact tables in one parameterized, product-bounded read.
+    const productFacts = await client.$queryRawUnsafe<ProductFactRow[]>(
+      `SELECT
+         p."id" AS "productId",
+         c."status"::text AS "contentStatus",
+         c."editorialDescription" AS "editorialDescription",
+         (m."id" IS NOT NULL) AS "merchantFactsPresent",
+         m."gender"::text AS "merchantGender",
+         m."ageGroup"::text AS "merchantAgeGroup",
+         m."condition"::text AS "merchantCondition"
+       FROM "ProductMirror" p
+       LEFT JOIN "ProductContent" c ON c."productId" = p."id"
+       LEFT JOIN "ProductMerchantFacts" m ON m."productId" = p."id"
+       WHERE p."id" = ANY($1::text[])
+       ORDER BY p."id"`,
+      productIds,
+    );
 
-    // 5/8 and 6/8 — variant inventory and composite membership. Empty variant sets stay cheap.
+    // 4/6 and 5/6 — variant inventory and composite membership. Empty variant sets stay cheap.
     const stocks =
       variantIds.length === 0
         ? []
@@ -322,32 +359,52 @@ export function createMerchantOfferRepository(client: PrismaClient) {
             select: compositeSelection,
           });
 
-    // 7/8 and 8/8 — promotion membership and enabled campaign facts. Campaign rows are loaded flat,
-    // so no preview relation strategy or hidden per-relation query is part of the budget.
-    const promotionTargets =
+    // 6/6 — target membership and enabled campaign facts in one parameterized bounded-domain read.
+    // This is also where the next known pricing boundary is discovered for cache-expiry capping.
+    const promotionRows =
       variantIds.length === 0
         ? []
-        : await client.promotionTarget.findMany({
-            where: {
-              OR: [{ variantId: { in: variantIds } }, { productId: { in: productIds } }],
-            },
-            select: promotionTargetSelection,
-          });
-    const promotionCampaignIds = [
-      ...new Set(promotionTargets.map((target) => target.campaignId)),
-    ];
-    const promotionCampaigns =
-      promotionCampaignIds.length === 0
-        ? []
-        : await client.promotionCampaign.findMany({
-            where: { id: { in: promotionCampaignIds }, isEnabled: true },
-            select: promotionCampaignSelection,
-          });
+        : await client.$queryRawUnsafe<JoinedPromotionRow[]>(
+            `SELECT
+               t."campaignId" AS "campaignId",
+               t."productId" AS "productId",
+               t."variantId" AS "variantId",
+               c."name" AS "name",
+               c."kind"::text AS "kind",
+               c."discountType"::text AS "discountType",
+               c."percentageValue" AS "percentageValue",
+               c."fixedPriceVnd" AS "fixedPriceVnd",
+               c."startsAt" AS "startsAt",
+               c."endsAt" AS "endsAt"
+             FROM "PromotionTarget" t
+             INNER JOIN "PromotionCampaign" c ON c."id" = t."campaignId"
+             WHERE c."isEnabled" = TRUE
+               AND (t."variantId" = ANY($1::text[]) OR t."productId" = ANY($2::text[]))
+             ORDER BY t."campaignId", t."id"`,
+            variantIds,
+            productIds,
+          );
 
-    const contentByProductId = new Map(contents.map((content) => [content.productId, content]));
-    const merchantFactsByProductId = new Map(
-      merchantFacts.map((facts) => [facts.productId, facts]),
-    );
+    const contentByProductId = new Map<string, SelectedProductContent>();
+    const merchantFactsByProductId = new Map<string, SelectedMerchantFacts>();
+    for (const row of productFacts) {
+      if (row.contentStatus !== null) {
+        contentByProductId.set(row.productId, {
+          productId: row.productId,
+          status: row.contentStatus,
+          editorialDescription: row.editorialDescription,
+        });
+      }
+      if (row.merchantFactsPresent) {
+        merchantFactsByProductId.set(row.productId, {
+          productId: row.productId,
+          gender: row.merchantGender,
+          ageGroup: row.merchantAgeGroup,
+          condition: row.merchantCondition,
+        });
+      }
+    }
+
     const stocksByVariantId = new Map<string, SelectedWarehouseStock[]>();
     for (const stock of stocks) {
       const existing = stocksByVariantId.get(stock.variantId);
@@ -369,11 +426,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       else existing.push(loaded);
     }
 
-    const campaignsByVariantId = buildCampaignsByVariantId({
-      variants,
-      targets: promotionTargets,
-      campaigns: promotionCampaigns,
-    });
+    const campaignsByVariantId = buildCampaignsByVariantId({ variants, promotionRows });
     const loadedProducts: LoadedCandidateProduct[] = products.map((product) => ({
       ...product,
       content: contentByProductId.get(product.id) ?? null,
@@ -381,7 +434,19 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       variants: variantsByProductId.get(product.id) ?? [],
     }));
 
-    return loadedProducts.map((product) => toCandidateProduct(product, campaignsByVariantId, now));
+    return Object.freeze({
+      products: loadedProducts.map((product) =>
+        toCandidateProduct(product, campaignsByVariantId, now),
+      ),
+      nextPricingTransitionAtMs: nextRelevantPricingTransitionAtMs(promotionRows, now),
+    });
+  }
+
+  async function readCandidateProducts({
+    shopId,
+    now = new Date(),
+  }: Readonly<{ shopId: number; now?: Date }>): Promise<MerchantCandidateProduct[]> {
+    return [...(await loadCandidateProducts({ shopId, now })).products];
   }
 
   async function readMerchantOffers({
@@ -389,9 +454,21 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     origin,
     now = new Date(),
   }: Readonly<{ shopId: number; origin: string; now?: Date }>): Promise<MerchantMappingResult> {
-    const products = await readCandidateProducts({ shopId, now });
-    return mapMerchantOffers({ products, origin });
+    const loaded = await loadCandidateProducts({ shopId, now });
+    return mapMerchantOffers({ products: loaded.products, origin });
   }
 
-  return { readCandidateProducts, readMerchantOffers };
+  async function readMerchantFeedSnapshot({
+    shopId,
+    origin,
+    now = new Date(),
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>) {
+    const loaded = await loadCandidateProducts({ shopId, now });
+    return Object.freeze({
+      mapping: mapMerchantOffers({ products: loaded.products, origin }),
+      nextPricingTransitionAtMs: loaded.nextPricingTransitionAtMs,
+    });
+  }
+
+  return { readCandidateProducts, readMerchantOffers, readMerchantFeedSnapshot };
 }
