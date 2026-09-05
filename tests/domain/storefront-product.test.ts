@@ -5,6 +5,7 @@ import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
   resolveStorefrontPrice,
+  toOptionIdentityKey,
 } from "../../src/commerce/storefront-product.ts";
 
 test("storefront price resolves only when mirrored raw price fields agree", () => {
@@ -175,6 +176,39 @@ test("storefront size-only variants fail closed on duplicate sizes", () => {
 
   assert.equal(options[0]?.unavailableReason, "AMBIGUOUS_OPTION");
   assert.equal(options[1]?.unavailableReason, "AMBIGUOUS_OPTION");
+});
+
+/**
+ * Case is not what tells two options apart, so a catalog that spells one option two ways is still
+ * one ambiguous option rather than two buyable ones. Pinned here, in the model that owns the rule:
+ * `toOptionIdentityKey` is exported and reused by consumers asking "do these actually differ?", so
+ * the rule needs a regression of its own rather than only a downstream one.
+ */
+test("storefront options that differ only in letter case are the same option, not two", () => {
+  const options = buildStorefrontVariantOptions([
+    {
+      id: "cased-a",
+      pancakeVariationId: "pancake-cased-a",
+      color: "Đen",
+      size: "M",
+      sellableStock: 2,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+    {
+      id: "cased-b",
+      pancakeVariationId: "pancake-cased-b",
+      color: "đen",
+      size: "m",
+      sellableStock: 3,
+      retailPrice: 590_000,
+      retailPriceAfterDiscount: 590_000,
+    },
+  ]);
+
+  assert.equal(options[0]?.unavailableReason, "AMBIGUOUS_OPTION");
+  assert.equal(options[1]?.unavailableReason, "AMBIGUOUS_OPTION");
+  assert.equal(toOptionIdentityKey("Đen"), toOptionIdentityKey("đen"));
 });
 
 test("storefront price range keeps resolved sold-out prices separate from purchase availability", () => {

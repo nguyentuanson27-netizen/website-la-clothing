@@ -38,6 +38,25 @@ const onePriceOptions = [
   },
 ];
 
+const oneVariant = {
+  url: "https://shop.example.com/shop/ao-oxford-relaxed?variant=pv-a",
+  color: null,
+  size: "M",
+  price: 590_000,
+  availability: "IN_STOCK" as const,
+  imageUrl: null,
+};
+
+const twoIdentifiedVariants = [
+  { ...oneVariant, mpn: "A132-M" },
+  {
+    ...oneVariant,
+    url: "https://shop.example.com/shop/ao-oxford-relaxed?variant=pv-b",
+    mpn: "A132-L",
+    size: "L",
+  },
+];
+
 test("P14 builds factual Product, Offer, and BreadcrumbList from visible server-authoritative facts", () => {
   const structured = buildProductStructuredData({
     origin: "https://shop.example.com",
@@ -135,18 +154,62 @@ test("P14 omits Offer instead of misrepresenting variant price ranges or unresol
   assert.equal("offers" in unresolved["@graph"][0], false);
 });
 
-test("P14 does not claim ProductGroup variant markup without crawlable preselected variant URLs", () => {
+test("P14/U27 refuses ProductGroup when structural or variant-identifier gates are not proven", () => {
+  for (const productGroup of [
+    undefined,
+    null,
+    { productGroupID: "pancake-product-1", variesBy: [], variants: twoIdentifiedVariants },
+    { productGroupID: "pancake-product-1", variesBy: ["SIZE" as const], variants: [] },
+    { productGroupID: "", variesBy: ["SIZE" as const], variants: twoIdentifiedVariants },
+    { productGroupID: " pancake-product-1 ", variesBy: ["SIZE" as const], variants: twoIdentifiedVariants },
+    { productGroupID: "p".repeat(129), variesBy: ["SIZE" as const], variants: twoIdentifiedVariants },
+    // Looks structurally valid, but no reviewed variant identifier exists.
+    {
+      productGroupID: "pancake-product-1",
+      variesBy: ["SIZE" as const],
+      variants: [
+        oneVariant,
+        { ...oneVariant, url: "https://shop.example.com/shop/ao-oxford-relaxed?variant=pv-b", size: "L" },
+      ],
+    },
+    // A manufacturer MPN must distinguish variants rather than being duplicated across the family.
+    {
+      productGroupID: "pancake-product-1",
+      variesBy: ["SIZE" as const],
+      variants: twoIdentifiedVariants.map((variant) => ({ ...variant, mpn: "DUP" })),
+    },
+  ]) {
+    const serialized = JSON.stringify(
+      buildProductStructuredData({
+        origin: "https://shop.example.com",
+        product,
+        variantOptions: onePriceOptions,
+        productGroup,
+      }),
+    );
+
+    for (const forbidden of ["ProductGroup", "hasVariant", "productGroupID", "variesBy"]) {
+      assert.equal(serialized.includes(forbidden), false, forbidden);
+    }
+  }
+});
+
+test("U27 serializer publishes ProductGroup only with unique reviewed MPNs", () => {
   const structured = buildProductStructuredData({
     origin: "https://shop.example.com",
     product,
     variantOptions: onePriceOptions,
+    productGroup: {
+      productGroupID: "pancake-product-1",
+      variesBy: ["SIZE"],
+      variants: twoIdentifiedVariants,
+    },
   });
-  const serialized = JSON.stringify(structured);
 
-  assert.equal(serialized.includes("ProductGroup"), false);
-  assert.equal(serialized.includes("hasVariant"), false);
-  assert.equal(serialized.includes("productGroupID"), false);
-  assert.equal(serialized.includes("variesBy"), false);
+  const group = structured["@graph"][0];
+  assert.equal(group["@type"], "ProductGroup");
+  assert.deepEqual(group.hasVariant.map((variant) => variant.mpn), ["A132-M", "A132-L"]);
+  assert.equal("offers" in group, false);
 });
 
 test("P14 omits invented product and merchant-policy facts", () => {

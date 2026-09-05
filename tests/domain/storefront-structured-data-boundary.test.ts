@@ -1,67 +1,593 @@
+/**
+ * U27 — #152 W4d + the variant-level portion of W5.
+ *
+ * These tests pin the boundary between the PDP storefront projection and published JSON-LD. Every
+ * emitted fact must reuse an existing authority: U12 variant addressability, promotion-aware PDP
+ * price/availability, trusted media, product external identity, and ADR 0008 manufacturer MPN.
+ */
+
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
+import {
+  buildStorefrontProductProjection,
+  type StorefrontProductProjection,
+  type StorefrontProjectionOption,
+} from "../../src/commerce/storefront-projection.ts";
+import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import { buildPromotionalStorefrontPricing } from "../../src/commerce/storefront-promotion-projection.ts";
+import {
+  resolveDeepLinkedVariantSelection,
+  VARIANT_QUERY_PARAM,
+} from "../../src/commerce/storefront-variant-deep-link.ts";
 import { buildStorefrontProductStructuredData } from "../../src/seo/storefront-product-structured-data.ts";
+import {
+  serializeJsonLd,
+  type ProductStructuredDataDocument,
+} from "../../src/seo/structured-data.ts";
 
-const baseProduct = {
-  slug: "set-a",
-  name: "Set A",
-  editorialDescription: null,
-  media: { gallery: [] },
-  variants: [
-    {
-      id: "parent-m",
-      pancakeVariationId: "pancake-parent-m",
-      color: null,
-      size: "M",
-      sellableStock: 0,
-      retailPrice: 790_000,
-      retailPriceAfterDiscount: 790_000,
-    },
-  ],
-};
+const ORIGIN = "https://shop.example.com";
+const SLUG = "ao-oxford-relaxed";
+const PRODUCT_URL = `${ORIGIN}/shop/${SLUG}`;
+const BLACK_IMAGE = "https://content.pancake.vn/catalog/1/2/3/oxford-den.jpg";
+const CREAM_IMAGE = "https://content.pancake.vn/catalog/1/2/3/oxford-kem.jpg";
+const NOW = new Date("2026-09-04T12:00:00.000Z");
 
-test("composite child availability cannot make a sold-out parent Product schema InStock", () => {
-  const product = {
-    ...baseProduct,
-    projection: {
-      mode: "composite" as const,
-      options: [
-        {
-          id: "parent-m",
-          kindKey: "parent",
-          kindLabel: "Set",
-          color: null,
-          size: "M",
-          price: 790_000,
-          purchasable: false,
-          unavailableReason: "OUT_OF_STOCK" as const,
-        },
-        {
-          id: "component-m",
-          kindKey: "component:shirt",
-          kindLabel: "Ao A",
-          color: null,
-          size: "M",
-          price: 790_000,
-          purchasable: true,
-          unavailableReason: null,
-        },
+function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
+  return {
+    id: "cuid-a",
+    pancakeVariationId: "pv-a",
+    color: "Đen",
+    size: "M",
+    price: 890_000,
+    basePriceVnd: 890_000,
+    isDiscounted: false,
+    purchasable: true,
+    unavailableReason: null,
+    kindKey: null,
+    kindLabel: null,
+    ...overrides,
+  };
+}
+
+type BoundaryProduct = Parameters<typeof buildStorefrontProductStructuredData>[0]["product"];
+
+function product(overrides: Partial<BoundaryProduct> = {}): BoundaryProduct {
+  return {
+    pancakeProductId: "pancake-product-1",
+    slug: SLUG,
+    name: "Áo Oxford Relaxed",
+    editorialDescription: null,
+    media: {
+      gallery: [
+        { url: BLACK_IMAGE, alt: "Áo Oxford Relaxed" },
+        { url: CREAM_IMAGE, alt: "Áo Oxford Relaxed - Ảnh 2" },
       ],
     },
+    galleryIndexByVariantId: { "cuid-a": 0, "cuid-b": 0, "cuid-c": 1 },
+    variantMpnById: {
+      "cuid-a": "A132-M",
+      "cuid-b": "A132-L",
+      "cuid-c": "A132-KEM-M",
+    },
+    projection: {
+      mode: "standalone",
+      options: [
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", color: "Đen", size: "M" }),
+        option({
+          id: "cuid-b",
+          pancakeVariationId: "pv-b",
+          color: "Đen",
+          size: "L",
+          price: 910_000,
+          basePriceVnd: 910_000,
+        }),
+        option({ id: "cuid-c", pancakeVariationId: "pv-c", color: "Kem", size: "M" }),
+      ],
+    },
+    ...overrides,
   };
+}
 
-  const structured = buildStorefrontProductStructuredData({
-    origin: "https://shop.example.com",
-    product,
+function standaloneProjection(
+  options: readonly StorefrontProjectionOption[],
+): StorefrontProductProjection {
+  return { mode: "standalone", options: [...options] };
+}
+
+function build(overrides: Partial<BoundaryProduct> = {}): ProductStructuredDataDocument {
+  return buildStorefrontProductStructuredData({ origin: ORIGIN, product: product(overrides) });
+}
+
+function productGroupNode(document: ProductStructuredDataDocument) {
+  const node = document["@graph"][0];
+  assert.equal(node["@type"], "ProductGroup", "expected the variant ProductGroup shape");
+  return node;
+}
+
+function singleProductNode(document: ProductStructuredDataDocument) {
+  const node = document["@graph"][0];
+  assert.equal(node["@type"], "Product", "expected the product-level Product shape");
+  return node;
+}
+
+function facts(
+  overrides: Partial<StorefrontVariantFacts> & Pick<StorefrontVariantFacts, "id">,
+): StorefrontVariantFacts {
+  return {
+    pancakeVariationId: `pv-${overrides.id}`,
+    color: "Đen",
+    size: "M",
+    sellableStock: 4,
+    retailPrice: 890_000,
+    retailPriceAfterDiscount: 890_000,
+    ...overrides,
+  };
+}
+
+function projectedProduct(
+  variants: readonly StorefrontVariantFacts[],
+  campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]> = new Map(),
+): BoundaryProduct {
+  return product({
+    galleryIndexByVariantId: {},
+    variantMpnById: Object.fromEntries(
+      variants.map((variant) => [variant.id, `MPN-${variant.id}`]),
+    ),
+    projection: buildStorefrontProductProjection({
+      parentVariants: variants,
+      componentGroups: [],
+      hasCompositeGraph: false,
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now: NOW }),
+    }),
+  });
+}
+
+test("U27 publishes one ProductGroup with variant-specific names, unique manufacturer MPN and exact Offer per variant", () => {
+  const document = build();
+  const group = productGroupNode(document);
+
+  assert.equal(document["@context"], "https://schema.org");
+  assert.equal(document["@graph"].length, 2);
+  assert.equal(document["@graph"][1]["@type"], "BreadcrumbList");
+  assert.equal(group["@id"], `${PRODUCT_URL}#product`);
+  assert.equal(group.name, "Áo Oxford Relaxed");
+  assert.equal(group.url, PRODUCT_URL);
+  assert.deepEqual(group.brand, { "@id": `${ORIGIN}/#organization` });
+  assert.equal(group.productGroupID, "pancake-product-1");
+  assert.deepEqual(group.variesBy, ["https://schema.org/color", "https://schema.org/size"]);
+  assert.equal(group.hasVariant.length, 3);
+  assert.deepEqual(group.hasVariant.map((variant) => variant.name), [
+    "Áo Oxford Relaxed — Đen — M",
+    "Áo Oxford Relaxed — Đen — L",
+    "Áo Oxford Relaxed — Kem — M",
+  ]);
+
+  assert.deepEqual(group.hasVariant[0], {
+    "@type": "Product",
+    "@id": `${PRODUCT_URL}?variant=pv-a#product`,
+    name: "Áo Oxford Relaxed — Đen — M",
+    url: `${PRODUCT_URL}?variant=pv-a`,
+    mpn: "A132-M",
+    color: "Đen",
+    size: "M",
+    image: [BLACK_IMAGE],
+    offers: {
+      "@type": "Offer",
+      url: `${PRODUCT_URL}?variant=pv-a`,
+      priceCurrency: "VND",
+      price: 890_000,
+      availability: "https://schema.org/InStock",
+    },
+  });
+});
+
+test("U27 preserves exact per-variant price and never publishes aggregate pricing", () => {
+  const group = productGroupNode(build());
+  assert.deepEqual(group.hasVariant.map((variant) => variant.offers.price), [890_000, 910_000, 890_000]);
+  assert.equal("offers" in group, false);
+
+  const serialized = serializeJsonLd(group);
+  for (const forbidden of ["AggregateOffer", "lowPrice", "highPrice", "offerCount"]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden);
+  }
+});
+
+test("U27 publishes OutOfStock only for stock-only unavailability and excludes unresolved price", () => {
+  const group = productGroupNode(
+    build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({
+          id: "cuid-b",
+          pancakeVariationId: "pv-b",
+          size: "L",
+          price: 910_000,
+          purchasable: false,
+          unavailableReason: "OUT_OF_STOCK",
+        }),
+        option({
+          id: "cuid-c",
+          pancakeVariationId: "pv-unresolved",
+          size: "XL",
+          price: null,
+          purchasable: false,
+          unavailableReason: "PRICE_UNRESOLVED",
+        }),
+      ]),
+    }),
+  );
+
+  assert.deepEqual(
+    group.hasVariant.map((variant) => [variant.url, variant.offers.availability]),
+    [
+      [`${PRODUCT_URL}?variant=pv-a`, "https://schema.org/InStock"],
+      [`${PRODUCT_URL}?variant=pv-b`, "https://schema.org/OutOfStock"],
+    ],
+  );
+  assert.equal(serializeJsonLd(group).includes("pv-unresolved"), false);
+});
+
+test("U27 does not translate unexplained unavailability into a false stock claim", () => {
+  const group = productGroupNode(
+    build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+        option({
+          id: "cuid-c",
+          pancakeVariationId: "pv-unexplained",
+          size: "XL",
+          purchasable: false,
+          unavailableReason: null,
+        }),
+      ]),
+    }),
+  );
+
+  assert.equal(group.hasVariant.length, 2);
+  assert.equal(serializeJsonLd(group).includes("pv-unexplained"), false);
+});
+
+test("U27 every published URL round-trips through U12 and every variant name/MPN matches the reselected facts", () => {
+  const fixture = product();
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({ origin: ORIGIN, product: fixture }),
+  );
+
+  assert.deepEqual(group.hasVariant.map((variant) => variant.mpn), [
+    "A132-M",
+    "A132-L",
+    "A132-KEM-M",
+  ]);
+
+  for (const variant of group.hasVariant) {
+    const query = new URL(variant.url).searchParams.get(VARIANT_QUERY_PARAM);
+    const reselected = resolveDeepLinkedVariantSelection({
+      projection: fixture.projection,
+      variantQuery: query,
+    });
+    assert.ok(reselected, `${variant.url} must reselect a variant`);
+    const matched = fixture.projection.options.find((item) => item.id === reselected.variantId)!;
+    const expectedName = [fixture.name, matched.color, matched.size]
+      .filter((value): value is string => value !== null)
+      .join(" — ");
+    assert.notEqual(variant.name, group.name);
+    assert.equal(variant.name, expectedName);
+    assert.equal(variant.color, matched.color);
+    assert.equal(variant.size, matched.size);
+    assert.equal(variant.offers.price, matched.price);
+    assert.equal(variant.offers.url, variant.url);
+  }
+
+  const serialized = serializeJsonLd(group);
+  for (const forbidden of ["cuid-a", "cuid-b", "cuid-c", "kindKey", "kindLabel", "sku", "gtin"]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden);
+  }
+});
+
+test("U27 duplicate or malformed identities fail closed rather than being rewritten or substituted", () => {
+  const duplicateVariation = build({
+    projection: standaloneProjection([
+      option({ id: "cuid-a", pancakeVariationId: "pv-dup", size: "M" }),
+      option({ id: "cuid-b", pancakeVariationId: "pv-dup", size: "L" }),
+    ]),
+  });
+  assert.equal(duplicateVariation["@graph"][0]["@type"], "Product");
+
+  for (const variantMpnById of [
+    { "cuid-a": "DUP", "cuid-b": "DUP" },
+    { "cuid-a": null, "cuid-b": "A132-L" },
+    { "cuid-a": " A132-M ", "cuid-b": "A132-L" },
+    { "cuid-a": "x".repeat(71), "cuid-b": "A132-L" },
+    { "cuid-a": "A132\u0001M", "cuid-b": "A132-L" },
+  ] as const) {
+    const document = build({
+      variantMpnById,
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+      ]),
+    });
+    assert.equal(document["@graph"][0]["@type"], "Product");
+  }
+});
+
+test("U27 one malformed MPN excludes only that variant when a truthful family still remains", () => {
+  const group = productGroupNode(
+    build({
+      variantMpnById: {
+        "cuid-a": "A132-M",
+        "cuid-b": "A132-L",
+        "cuid-c": " A132-KEM-M ",
+      },
+    }),
+  );
+
+  assert.deepEqual(group.hasVariant.map((variant) => variant.mpn), ["A132-M", "A132-L"]);
+  assert.equal(group.variesBy.includes("https://schema.org/color"), false);
+  assert.deepEqual(group.variesBy, ["https://schema.org/size"]);
+});
+
+test("U27 variesBy uses the storefront option identity rule rather than raw casing", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", color: "Đen", size: "M" }),
+        facts({ id: "cuid-b", color: "đen", size: "L" }),
+      ]),
+    }),
+  );
+
+  assert.deepEqual(group.variesBy, ["https://schema.org/size"]);
+  assert.equal(group.hasVariant.length, 2);
+});
+
+test("U27 variesBy names only dimensions that actually differ", () => {
+  const sizeOnly = productGroupNode(
+    build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", color: null, size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", color: null, size: "L" }),
+      ]),
+    }),
+  );
+  assert.deepEqual(sizeOnly.variesBy, ["https://schema.org/size"]);
+
+  const colorOnly = productGroupNode(
+    build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", color: "Đen", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", color: "Kem", size: "M" }),
+      ]),
+    }),
+  );
+  assert.deepEqual(colorOnly.variesBy, ["https://schema.org/color"]);
+});
+
+test("U27 variant image comes only from the trusted resolved gallery mapping", () => {
+  const group = productGroupNode(
+    build({
+      galleryIndexByVariantId: { "cuid-c": 1 },
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", color: "Đen", size: "M" }),
+        option({ id: "cuid-c", pancakeVariationId: "pv-c", color: "Kem", size: "M" }),
+      ]),
+    }),
+  );
+  assert.equal("image" in group.hasVariant[0]!, false);
+  assert.deepEqual(group.hasVariant[1]!.image, [CREAM_IMAGE]);
+
+  const invalidIndexes = productGroupNode(
+    build({
+      galleryIndexByVariantId: { "cuid-a": 99, "cuid-b": -1 },
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+      ]),
+    }),
+  );
+  assert.equal("image" in invalidIndexes.hasVariant[0]!, false);
+  assert.equal("image" in invalidIndexes.hasVariant[1]!, false);
+});
+
+test("U27 single or non-publishable family keeps the product-level fallback", () => {
+  const single = singleProductNode(
+    build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+      ]),
+    }),
+  );
+  assert.deepEqual(single.offers, {
+    "@type": "Offer",
+    url: PRODUCT_URL,
+    priceCurrency: "VND",
+    price: 890_000,
+    availability: "https://schema.org/InStock",
   });
 
-  const productNode = structured["@graph"][0];
-  assert.deepEqual(productNode.offers, {
+  const unpriced = singleProductNode(
+    build({
+      projection: standaloneProjection([
+        option({
+          id: "cuid-a",
+          pancakeVariationId: "pv-a",
+          size: "M",
+          price: null,
+          purchasable: false,
+          unavailableReason: "PRICE_UNRESOLVED",
+        }),
+      ]),
+    }),
+  );
+  assert.equal("offers" in unpriced, false);
+});
+
+test("U27 never remodels a composite component as a normal sibling variant", () => {
+  const document = buildStorefrontProductStructuredData({
+    origin: ORIGIN,
+    product: product({
+      projection: {
+        mode: "composite",
+        options: [
+          option({
+            id: "parent-m",
+            pancakeVariationId: "pv-parent-m",
+            color: null,
+            size: "M",
+            price: 790_000,
+            purchasable: false,
+            unavailableReason: "OUT_OF_STOCK",
+            kindKey: "parent",
+            kindLabel: "Set",
+          }),
+          option({
+            id: "component-m",
+            pancakeVariationId: "pv-component-m",
+            color: null,
+            size: "M",
+            price: 790_000,
+            kindKey: "component-1",
+            kindLabel: "Áo A",
+          }),
+        ],
+      },
+    }),
+  });
+
+  const node = singleProductNode(document);
+  assert.deepEqual(node.offers, {
     "@type": "Offer",
-    url: "https://shop.example.com/shop/set-a",
+    url: PRODUCT_URL,
     priceCurrency: "VND",
     price: 790_000,
     availability: "https://schema.org/OutOfStock",
   });
+  const serialized = serializeJsonLd(document);
+  assert.equal(serialized.includes("ProductGroup"), false);
+  assert.equal(serialized.includes("pv-component-m"), false);
+});
+
+test("U27 rejects unusable product group identity", () => {
+  for (const pancakeProductId of ["", "   ", " pancake-product-1 ", "p".repeat(129)]) {
+    const document = build({ pancakeProductId });
+    assert.equal(document["@graph"][0]["@type"], "Product");
+  }
+});
+
+test("U27 hostile mirrored text cannot break JSON-LD and no unsupported claims are invented", () => {
+  const serialized = serializeJsonLd(
+    build({
+      name: "</script><script>alert('u27')</script>",
+      variantMpnById: {
+        "cuid-a": "A132</script>M",
+        "cuid-b": "A132-L",
+      },
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a</script>", color: "<img src=x>", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", color: "Kem", size: "M" }),
+      ]),
+    }),
+  );
+  assert.equal(serialized.includes("<"), false);
+  assert.match(serialized, /\\u003c\/script>/);
+
+  const group = productGroupNode(build());
+  for (const forbidden of [
+    "aggregateRating",
+    "review",
+    "gtin",
+    "gtin13",
+    "material",
+    "shippingDetails",
+    "hasMerchantReturnPolicy",
+    "itemCondition",
+  ]) {
+    assert.equal(forbidden in group, false, forbidden);
+    for (const variant of group.hasVariant) {
+      assert.equal(forbidden in variant, false, `${forbidden} on variant`);
+    }
+  }
+});
+
+test("U27 real promotion projection publishes the exact discounted price the page charges", () => {
+  const campaign: ApplicablePromotionCampaign = {
+    id: "campaign-1",
+    name: "Thu 2026",
+    kind: "PROMOTION",
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    fixedPriceVnd: null,
+    startsAt: new Date("2026-09-01T00:00:00.000Z"),
+    endsAt: new Date("2026-09-30T00:00:00.000Z"),
+  };
+
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct(
+        [
+          facts({ id: "cuid-a", size: "M", retailPrice: 1_000_000, retailPriceAfterDiscount: 1_000_000 }),
+          facts({ id: "cuid-b", size: "L", retailPrice: 1_000_000, retailPriceAfterDiscount: 1_000_000 }),
+        ],
+        new Map([["cuid-a", [campaign]]]),
+      ),
+    }),
+  );
+
+  assert.deepEqual(group.hasVariant.map((variant) => variant.offers.price), [800_000, 1_000_000]);
+});
+
+test("U27 mirrored after-discount field does not reopen the obsolete equality gate", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", size: "M", retailPrice: 890_000, retailPriceAfterDiscount: 690_000 }),
+        facts({ id: "cuid-b", size: "L", retailPrice: 910_000, retailPriceAfterDiscount: 910_000 }),
+      ]),
+    }),
+  );
+
+  assert.deepEqual(group.hasVariant.map((variant) => variant.offers.price), [890_000, 910_000]);
+});
+
+test("U27 real projection and boundary agree about publishable options", () => {
+  const group = productGroupNode(
+    buildStorefrontProductStructuredData({
+      origin: ORIGIN,
+      product: projectedProduct([
+        facts({ id: "cuid-a", size: "M" }),
+        facts({ id: "cuid-b", size: "L", sellableStock: 0 }),
+        facts({ id: "cuid-c", size: "XL", retailPrice: null, retailPriceAfterDiscount: null }),
+        facts({ id: "cuid-d", size: null }),
+        facts({ id: "cuid-e", size: "XXL" }),
+        facts({ id: "cuid-f", size: "XXL" }),
+      ]),
+    }),
+  );
+
+  assert.deepEqual(
+    group.hasVariant.map((variant) => [variant.size, variant.offers.availability]),
+    [
+      ["M", "https://schema.org/InStock"],
+      ["L", "https://schema.org/OutOfStock"],
+    ],
+  );
+});
+
+test("U27 unusable money is never published", () => {
+  for (const price of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+    const document = build({
+      projection: standaloneProjection([
+        option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+        option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+        option({ id: "cuid-c", pancakeVariationId: "pv-unusable", size: "XL", price }),
+      ]),
+    });
+    assert.equal(serializeJsonLd(document).includes("pv-unusable"), false, String(price));
+  }
 });

@@ -25,6 +25,12 @@ export type StorefrontProductProjection = Readonly<{
   options: StorefrontProjectionOption[];
 }>;
 
+/**
+ * The kind key a composite parent's own set options carry. Named here because this module mints it;
+ * a consumer that needs to tell the set apart from its components must not re-spell the literal.
+ */
+export const COMPOSITE_PARENT_KIND_KEY = "parent";
+
 type StorefrontProjectionSelection = Readonly<{
   kindKey: string | null;
   color: string | null;
@@ -96,7 +102,7 @@ export function buildStorefrontProductProjection({
   }
 
   const options: StorefrontProjectionOption[] = [
-    ...projectOptions(parentVariants, "parent", "Set", null, pricingRule),
+    ...projectOptions(parentVariants, COMPOSITE_PARENT_KIND_KEY, "Set", null, pricingRule),
   ];
 
   componentGroups.forEach((group, index) => {
@@ -114,6 +120,21 @@ export function buildStorefrontProductProjection({
   });
 
   return { mode: "composite", options };
+}
+
+/**
+ * The options that speak for the product itself.
+ *
+ * For a standalone product that is every option. For a composite it is the parent set only:
+ * a component's stock and price describe a part, and letting one speak for the whole is the
+ * confusion the composite projection exists to prevent.
+ */
+export function selectStorefrontProductLevelOptions(
+  projection: StorefrontProductProjection,
+): StorefrontProjectionOption[] {
+  return projection.mode === "standalone"
+    ? [...projection.options]
+    : projection.options.filter((option) => option.kindKey === COMPOSITE_PARENT_KIND_KEY);
 }
 
 function uniqueValues(
