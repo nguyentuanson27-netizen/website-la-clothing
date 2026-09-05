@@ -1,12 +1,3 @@
-/**
- * U25 / #153 M3 — the bounded canonical loader behind the Merchant offer mapper.
- *
- * U26 consumes this loader as the sole business-truth authority. Its public-feed path keeps the
- * canonical product read and uses trusted ownership already returned by that read to resolve
- * promotion targets in at most seven additional queries. Generic request-facing promotion readers
- * retain their tighter 200-id ownership-validation batches.
- */
-
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 import {
@@ -35,9 +26,7 @@ import { toMerchantApparelWireValues } from "./merchant-apparel-facts.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "./product-merchant-facts-repository.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
-
 export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
-
 export class MerchantOfferReadError extends Error {}
 
 const candidateSelection = {
@@ -67,9 +56,7 @@ const candidateSelection = {
   },
 } satisfies Prisma.ProductMirrorSelect;
 
-type SelectedCandidateProduct = Prisma.ProductMirrorGetPayload<{
-  select: typeof candidateSelection;
-}>;
+type SelectedCandidateProduct = Prisma.ProductMirrorGetPayload<{ select: typeof candidateSelection }>;
 
 function aggregateWarehouseStock(quantities: readonly number[]): number {
   for (const quantity of quantities) {
@@ -89,16 +76,12 @@ function toCandidateProduct(
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
   now: Date,
 ): MerchantCandidateProduct {
-  const variantImageUrls = product.variants.map((variant) =>
-    parseJsonStringArray(variant.pancakeImageUrls),
-  );
-
+  const variantImageUrls = product.variants.map((variant) => parseJsonStringArray(variant.pancakeImageUrls));
   const media = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
     variantImageUrls,
   });
-
   const galleryIndexByVariantId = resolveVariantGalleryIndexes({
     gallery: media.gallery,
     variants: product.variants.map((variant, index) => ({
@@ -106,14 +89,12 @@ function toCandidateProduct(
       imageUrls: variantImageUrls[index] ?? [],
     })),
   });
-
   const stockByVariantId = new Map(
     product.variants.map((variant) => [
       variant.id,
       aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
     ]),
   );
-
   const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
     id: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
@@ -123,11 +104,7 @@ function toCandidateProduct(
     retailPrice: variant.pancakeRetailPrice,
     retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
   }));
-
-  const hasCompositeGraph = product.variants.some(
-    (variant) => variant.compositeComponents.length > 0,
-  );
-
+  const hasCompositeGraph = product.variants.some((variant) => variant.compositeComponents.length > 0);
   const variations: MerchantCandidateVariation[] = product.variants.map((variant) => ({
     variantId: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
@@ -168,15 +145,15 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     }
 
     const products = await client.productMirror.findMany({
+      relationLoadStrategy: "join",
       where: { pancakeShopId: shopId, isPresent: true, isActive: true },
       select: candidateSelection,
       orderBy: [{ pancakeProductId: "asc" }],
       take: MAX_MERCHANT_CANDIDATE_PRODUCTS + 1,
     });
-
     if (products.length > MAX_MERCHANT_CANDIDATE_PRODUCTS) {
       throw new MerchantOfferReadError(
-        `Catalog exceeds the Merchant candidate bound of ${MAX_MERCHANT_CANDIDATE_PRODUCTS} products; raise it deliberately rather than publishing a truncated feed`,
+        `Catalog exceeds the Merchant candidate bound of ${MAX_MERCHANT_CANDIDATE_PRODUCTS} products; refusing a truncated feed`,
       );
     }
 
@@ -203,7 +180,6 @@ export function createMerchantOfferRepository(client: PrismaClient) {
         campaignsByVariantId.set(variantId, campaigns);
       }
     }
-
     return products.map((product) => toCandidateProduct(product, campaignsByVariantId, now));
   }
 
@@ -211,11 +187,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{
-    shopId: number;
-    origin: string;
-    now?: Date;
-  }>): Promise<MerchantMappingResult> {
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>): Promise<MerchantMappingResult> {
     const products = await readCandidateProducts({ shopId, now });
     return mapMerchantOffers({ products, origin });
   }
