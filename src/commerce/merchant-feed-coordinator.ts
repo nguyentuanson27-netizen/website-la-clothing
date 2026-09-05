@@ -151,7 +151,9 @@ export function createMerchantFeedCoordinator({
   > {
     try {
       const revision = await readPricingRevision();
-      if (typeof revision !== "bigint" || revision < 0n) throw new TypeError("invalid revision");
+      if (typeof revision !== "bigint" || revision < BigInt(0)) {
+        throw new TypeError("invalid revision");
+      }
       return Object.freeze({ ok: true as const, revision });
     } catch {
       return Object.freeze({
