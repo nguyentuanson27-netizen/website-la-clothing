@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildStorefrontVariantOptions,
+  resolveVariantAvailabilityFromWarehouseStocks,
   getStorefrontResolvedPriceRange,
   resolveStorefrontPrice,
   toOptionIdentityKey,
@@ -247,4 +248,31 @@ test("storefront price range keeps resolved sold-out prices separate from purcha
     maximum: 620_000,
   });
   assert.equal(options.some((option) => option.purchasable), true);
+});
+
+test("U27a mirrored inventory can state an availability only when every row is well formed", () => {
+  const resolve = (quantities: readonly number[]) =>
+    resolveVariantAvailabilityFromWarehouseStocks(quantities.map((quantity) => ({ quantity })));
+
+  // Well-formed inventory, including the empty and zero cases the storefront already treats as
+  // sold out. These stay publishable.
+  assert.equal(resolve([]), true);
+  assert.equal(resolve([0]), true);
+  assert.equal(resolve([5]), true);
+  assert.equal(resolve([2, 3]), true);
+  assert.equal(resolve([0, 0]), true);
+
+  // The rule is per row, not on the total. Each of these sums to something unremarkable, and each
+  // is still unusable: a catalog that reports a negative quantity is not reporting stock.
+  assert.equal(resolve([-3]), false, "a negative row is never a stock fact");
+  assert.equal(resolve([5, -3]), false, "a total of 2 built from a malformed row is still unusable");
+  assert.equal(resolve([3, -3]), false, "a zero total does not repair the rows that produced it");
+  assert.equal(resolve([100, -1]), false, "one bad row spoils the variant, however small");
+
+  // Non-finite rows are refused here too. The PDP repository already throws on them before a
+  // projection exists, so this is defence in depth rather than the live path.
+  assert.equal(resolve([Number.NaN]), false);
+  assert.equal(resolve([Number.POSITIVE_INFINITY]), false);
+  assert.equal(resolve([Number.NEGATIVE_INFINITY]), false);
+  assert.equal(resolve([5, Number.NaN]), false);
 });

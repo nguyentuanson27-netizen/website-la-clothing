@@ -54,6 +54,12 @@ type StorefrontStructuredDataProduct = Readonly<{
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   /** ADR 0008 manufacturer MPNs, keyed by internal id; internal ids themselves never leave JSON-LD. */
   variantMpnById: Readonly<Record<string, string | null>>;
+  /**
+   * Whether this variant's mirrored inventory can state an availability at all, keyed by internal id
+   * and never published. Resolved by the catalog read that still holds the raw warehouse rows; this
+   * boundary only consumes the verdict, and reads no stock of its own.
+   */
+  variantAvailabilityResolvedById: Readonly<Record<string, boolean>>;
   projection: StorefrontProductProjection;
 }>;
 
@@ -64,10 +70,20 @@ type StorefrontStructuredDataProduct = Readonly<{
  * only when the price is fully resolved *and* the option is either buyable or out of stock for
  * stock reasons alone. A variant whose price never resolved is not published as sold out — that
  * would answer a pricing question with a stock claim.
+ *
+ * U27a adds the prior question: whether the catalog can state an availability for this variant at
+ * all. A malformed mirrored quantity makes the storefront's own total meaningless — `[5, -3]` sums
+ * to an ordinary 2 — so the projection's sold-out-or-buyable verdict, correct as a shopper-facing
+ * fallback, is not a fact to publish. Unresolved is an omission and never a substitute claim: not
+ * `OutOfStock`, not `InStock`, not a pre-order or back-order stand-in. A variant missing from the
+ * map is unresolved too, so a caller that forgets to supply it publishes nothing rather than
+ * publishing something unverified.
  */
 function resolvePublishableOffer(
   option: StorefrontProjectionOption,
+  availabilityResolved: boolean,
 ): Readonly<{ price: number; availability: StructuredDataAvailability }> | null {
+  if (!availabilityResolved) return null;
   const { price } = option;
   if (price === null || !Number.isFinite(price) || price < 0) return null;
   if (option.purchasable) return { price, availability: "IN_STOCK" };
@@ -123,16 +139,6 @@ function readPublishableProductGroupID(pancakeProductId: string): string | null 
   return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
-function countPublishableMpns(product: StorefrontStructuredDataProduct): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const option of product.projection.options) {
-    const mpn = product.variantMpnById[option.id];
-    if (!isPublishableMpn(mpn)) continue;
-    counts.set(mpn, (counts.get(mpn) ?? 0) + 1);
-  }
-  return counts;
-}
-
 /**
  * The variants this page may publish, each proved addressable and uniquely identified first.
  *
@@ -141,6 +147,13 @@ function countPublishableMpns(product: StorefrontStructuredDataProduct): Map<str
  * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
  * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
  * variation UUID as a different identifier type.
+ *
+ * Uniqueness is decided last, over the candidates that survived every other check — the same order
+ * the Merchant mapper uses. It has to be: a variant already excluded on its own facts is not a
+ * claimant to anything, so counting it would let one doomed row suppress a perfectly good sibling,
+ * and the two consumers would publish different sets without either being wrong about duplicates.
+ * When two *surviving* candidates share a part number, both are still dropped — the catalog cannot
+ * say which one it names, and preferring either would be a guess.
  *
  * The resolver scans the option list, so this is quadratic in the number of options of one product
  * — a small in-memory array the page already holds, with no query behind it.
@@ -152,8 +165,7 @@ function resolvePublishableVariants({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): StructuredDataVariant[] {
-  const variants: StructuredDataVariant[] = [];
-  const mpnCounts = countPublishableMpns(product);
+  const candidates: Readonly<{ mpn: string; variant: StructuredDataVariant }>[] = [];
 
   for (const option of product.projection.options) {
     const reselected = resolveDeepLinkedVariantSelection({
@@ -173,23 +185,36 @@ function resolvePublishableVariants({
     if (variantPath === null) continue;
 
     const mpn = product.variantMpnById[option.id];
-    if (!isPublishableMpn(mpn) || mpnCounts.get(mpn) !== 1) continue;
+    if (!isPublishableMpn(mpn)) continue;
 
-    const offer = resolvePublishableOffer(option);
+    const offer = resolvePublishableOffer(
+      option,
+      product.variantAvailabilityResolvedById[option.id] === true,
+    );
     if (offer === null) continue;
 
-    variants.push({
-      url: new URL(variantPath, origin).href,
+    candidates.push({
       mpn,
-      color: option.color,
-      size: option.size,
-      price: offer.price,
-      availability: offer.availability,
-      imageUrl: resolveVariantImageUrl(product, option),
+      variant: {
+        url: new URL(variantPath, origin).href,
+        mpn,
+        color: option.color,
+        size: option.size,
+        price: offer.price,
+        availability: offer.availability,
+        imageUrl: resolveVariantImageUrl(product, option),
+      },
     });
   }
 
-  return variants;
+  const claimantsByMpn = new Map<string, number>();
+  for (const candidate of candidates) {
+    claimantsByMpn.set(candidate.mpn, (claimantsByMpn.get(candidate.mpn) ?? 0) + 1);
+  }
+
+  return candidates
+    .filter((candidate) => claimantsByMpn.get(candidate.mpn) === 1)
+    .map((candidate) => candidate.variant);
 }
 
 /**
@@ -216,6 +241,26 @@ function resolveProductGroup({
   return { productGroupID, variesBy, variants };
 }
 
+/**
+ * The options the product-level fallback may answer from.
+ *
+ * Suppressing the exact per-variant claim is only half of failing closed: the fallback offer is
+ * aggregated from these options, so an unresolved variant left in the list would republish the same
+ * availability one node up — a family that collapses to a single sold-out survivor would still
+ * advertise `InStock` on the strength of a sibling whose inventory the catalog cannot read.
+ *
+ * The filter matters in both directions. An unresolved sibling must not make the product claim
+ * stock it cannot support, and must not drag the offer into the price-disagreement refusal either,
+ * which would silently withhold an offer the surviving variant fully supports.
+ */
+function selectPublishableProductLevelOptions(
+  product: StorefrontStructuredDataProduct,
+): StorefrontProjectionOption[] {
+  return selectStorefrontProductLevelOptions(product.projection).filter(
+    (option) => product.variantAvailabilityResolvedById[option.id] === true,
+  );
+}
+
 export function buildStorefrontProductStructuredData({
   origin,
   product,
@@ -227,10 +272,10 @@ export function buildStorefrontProductStructuredData({
     origin,
     product,
     // The product-level fallback, for a product with no publishable variant family: a composite's
-    // parent set, or a standalone product with a single option. Unchanged behaviour, now resolved
-    // from the same projection the page renders so structured data cannot quote a price the page
-    // does not show.
-    variantOptions: selectStorefrontProductLevelOptions(product.projection),
+    // parent set, or a standalone product with a single option. Resolved from the same projection
+    // the page renders so structured data cannot quote a price the page does not show, and now
+    // narrowed to the variants whose inventory can state an availability at all.
+    variantOptions: selectPublishableProductLevelOptions(product),
     productGroup: resolveProductGroup({ origin, product }),
   });
 }

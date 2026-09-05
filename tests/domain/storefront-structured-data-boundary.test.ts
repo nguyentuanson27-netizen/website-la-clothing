@@ -71,6 +71,9 @@ function product(overrides: Partial<BoundaryProduct> = {}): BoundaryProduct {
       "cuid-b": "A132-L",
       "cuid-c": "A132-KEM-M",
     },
+    // U27a: the ordinary fixture has well-formed mirrored inventory, so every variant can state an
+    // availability. Cases about malformed inventory override this per variant.
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true, "cuid-c": true },
     projection: {
       mode: "standalone",
       options: [
@@ -430,6 +433,10 @@ test("U27 never remodels a composite component as a normal sibling variant", () 
   const document = buildStorefrontProductStructuredData({
     origin: ORIGIN,
     product: product({
+      // A composite parent set's own variants are this product's variants, so the catalog read
+      // resolves them exactly as it does a standalone family's. Components belong to other products
+      // and never reach the product-level selection.
+      variantAvailabilityResolvedById: { "parent-m": true, "component-m": true },
       projection: {
         mode: "composite",
         options: [
@@ -590,4 +597,135 @@ test("U27 unusable money is never published", () => {
     });
     assert.equal(serializeJsonLd(document).includes("pv-unusable"), false, String(price));
   }
+});
+test("U27a an availability-unresolved variant is omitted, never relabelled", () => {
+  // The middle variant's mirrored inventory is malformed, so the catalog cannot state an
+  // availability for it. The other two are untouched and still publish exactly as before.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false, "cuid-c": true },
+  });
+  const group = productGroupNode(document);
+  const published = group.hasVariant.map((variant) => variant.url);
+
+  assert.deepEqual(published, [
+    `${PRODUCT_URL}?variant=pv-a`,
+    `${PRODUCT_URL}?variant=pv-c`,
+  ]);
+
+  const serialized = JSON.stringify(document);
+  // Nothing is left behind describing the excluded variant: no offer, no MPN, no dangling URL.
+  assert.equal(serialized.includes("pv-b"), false, "no fact may survive the excluded variant");
+  assert.equal(serialized.includes("A132-L"), false, "the excluded variant's MPN is not published");
+  // And it is not translated into some other availability claim.
+  assert.equal(
+    group.hasVariant.every((variant) => variant.offers.url !== `${PRODUCT_URL}?variant=pv-b`),
+    true,
+  );
+});
+
+test("U27a variesBy is recomputed from the variants that survive exclusion", () => {
+  // cuid-a (Đen/M) and cuid-b (Đen/L) vary by size; cuid-c (Kem/M) adds the colour dimension.
+  // Dropping cuid-c must leave a size-only family rather than still claiming a colour axis.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true, "cuid-c": false },
+  });
+  const group = productGroupNode(document);
+
+  assert.deepEqual(group.variesBy, ["https://schema.org/size"]);
+  assert.equal(group.hasVariant.length, 2);
+});
+
+test("U27a the family collapses when exclusion leaves no real variant family", () => {
+  // Only one publishable variant remains, so there is no family to describe. U27's existing rules
+  // fall back to the product-level Product rather than publishing a one-member ProductGroup.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false, "cuid-c": false },
+  });
+
+  singleProductNode(document);
+  assert.equal(JSON.stringify(document).includes("pv-b"), false);
+  assert.equal(JSON.stringify(document).includes("pv-c"), false);
+});
+
+test("U27a a variant missing from the resolution map fails closed", () => {
+  // A caller that forgets an entry publishes nothing for that variant rather than something
+  // unverified. Absence is unresolved, not an implicit yes.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-c": true },
+  });
+  const group = productGroupNode(document);
+
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.url),
+    [`${PRODUCT_URL}?variant=pv-a`, `${PRODUCT_URL}?variant=pv-c`],
+  );
+});
+
+test("U27a the product-level fallback offer is never influenced by unresolved inventory", () => {
+  // The family collapses to a product-level Product because only one variant survives exclusion.
+  // The survivor is genuinely sold out; the excluded sibling is "purchasable" only because the
+  // storefront summed a malformed row. The fallback offer must answer from the survivor alone, or
+  // U27a would suppress the exact per-variant claim and then republish it one node up.
+  const document = build({
+    galleryIndexByVariantId: { "cuid-a": 0, "cuid-b": 0 },
+    variantMpnById: { "cuid-a": "A132-M", "cuid-b": "A132-L" },
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false },
+    projection: standaloneProjection([
+      option({
+        id: "cuid-a",
+        pancakeVariationId: "pv-a",
+        size: "M",
+        purchasable: false,
+        unavailableReason: "OUT_OF_STOCK",
+      }),
+      option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+    ]),
+  });
+
+  const node = singleProductNode(document);
+  assert.equal(
+    node.offers?.availability,
+    "https://schema.org/OutOfStock",
+    "an unresolved sibling must not make the product-level offer claim InStock",
+  );
+  assert.equal(node.offers?.price, 890_000);
+});
+
+test("U27a no product-level fallback offer survives when every variant is unresolved", () => {
+  const document = build({
+    galleryIndexByVariantId: { "cuid-a": 0, "cuid-b": 0 },
+    variantMpnById: { "cuid-a": "A132-M", "cuid-b": "A132-L" },
+    variantAvailabilityResolvedById: { "cuid-a": false, "cuid-b": false },
+    projection: standaloneProjection([
+      option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+      option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+    ]),
+  });
+
+  const node = singleProductNode(document);
+  assert.equal("offers" in node, false, "no resolved inventory means no published price or stock");
+});
+
+test("U27a an unresolved sibling cannot suppress the survivor's product-level offer either", () => {
+  // The filter has to work in both directions: an excluded variant's differing price must not
+  // trigger the price-disagreement refusal and silently drop an offer the survivor could support.
+  const document = build({
+    galleryIndexByVariantId: { "cuid-a": 0, "cuid-b": 0 },
+    variantMpnById: { "cuid-a": "A132-M", "cuid-b": "A132-L" },
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false },
+    projection: standaloneProjection([
+      option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+      option({
+        id: "cuid-b",
+        pancakeVariationId: "pv-b",
+        size: "L",
+        price: 910_000,
+        basePriceVnd: 910_000,
+      }),
+    ]),
+  });
+
+  const node = singleProductNode(document);
+  assert.equal(node.offers?.price, 890_000, "the survivor's own exact price is publishable");
+  assert.equal(node.offers?.availability, "https://schema.org/InStock");
 });

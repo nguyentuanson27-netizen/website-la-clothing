@@ -3,6 +3,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { resolveVariantAvailabilityFromWarehouseStocks } from "./storefront-product.ts";
 import {
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
@@ -188,6 +189,16 @@ function toStorefrontProduct(
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
     })),
+    // Server-only, and kept off the variant facts for the same reason `galleryIndexByVariantId` is:
+    // the purchase panel has no use for it, and widening the client option contract would ship a
+    // publication concern to the browser. Resolved here because this is the last place that still
+    // holds the raw warehouse rows — one pass over rows already in memory, no extra query.
+    variantAvailabilityResolvedById: Object.fromEntries(
+      product.variants.map((variant) => [
+        variant.id,
+        resolveVariantAvailabilityFromWarehouseStocks(variant.warehouseStocks),
+      ]),
+    ),
     // Server-resolved, and kept off the variant facts on purpose: it is a product-level mapping
     // into this product's gallery, not a property of the variant, and it must not widen what the
     // client option contract carries.

@@ -10,6 +10,27 @@ export type StorefrontVariantFacts = {
   retailPriceAfterDiscount: number | null;
 };
 
+/**
+ * Whether this variant's mirrored inventory says anything a machine may publish.
+ *
+ * The sum below is the shopper's answer and stays exactly as it was: a malformed row is absorbed
+ * into ordinary arithmetic, and the page keeps selling what it has always sold. This is the separate
+ * question of whether the catalog can *state* an availability to a vendor, and it is decided per row
+ * rather than on the total, because the total hides the defect — `[5, -3]` is an unusable pair of
+ * rows that adds up to a perfectly ordinary 2.
+ *
+ * The rule matches M1's mirrored-stock aggregation (`merchant-offer-repository`), deliberately and
+ * by value rather than by import: the Merchant feed and this catalog read are independent consumers
+ * of the same mirror, and making one call into the other would couple two downstream publishers
+ * that are meant to converge on upstream facts. `docs/audits/merchant-jsonld-parity.md` records the
+ * pairing, and `tests/domain/merchant-structured-data-parity.test.ts` proves the two agree.
+ */
+export function resolveVariantAvailabilityFromWarehouseStocks(
+  stocks: readonly { quantity: number }[],
+): boolean {
+  return stocks.every((stock) => Number.isFinite(stock.quantity) && stock.quantity >= 0);
+}
+
 export type StorefrontVariantUnavailableReason =
   | "MAPPING_REQUIRED"
   | "AMBIGUOUS_OPTION"
