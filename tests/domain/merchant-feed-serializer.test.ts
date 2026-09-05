@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import type { MerchantMarketPolicy, MerchantOffer } from "../../src/commerce/merchant-offer-mapper.ts";
 import {
@@ -47,18 +48,26 @@ describe("Merchant RSS serializer", () => {
       offer(),
     ];
 
-    const first = serializeMerchantFeed({ offers: input, market: MARKET, origin: "https://shop.example.test" });
-    const second = serializeMerchantFeed({ offers: [...input].reverse(), market: MARKET, origin: "https://shop.example.test" });
+    const first = serializeMerchantFeed({
+      offers: input,
+      market: MARKET,
+      origin: "https://shop.example.test",
+    });
+    const second = serializeMerchantFeed({
+      offers: [...input].reverse(),
+      market: MARKET,
+      origin: "https://shop.example.test",
+    });
 
-    expect(first.body).toBe(second.body);
-    expect(first.byteLength).toBe(new TextEncoder().encode(first.body).byteLength);
-    expect(first.body.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
-    expect(first.body).toContain('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">');
-    expect(first.body.endsWith("</channel></rss>\n")).toBe(true);
-    expect(first.body.indexOf("variation-1")).toBeLessThan(first.body.indexOf("variation-2"));
-    expect(first.body).toContain("<g:price>249000 VND</g:price>");
-    expect(first.body).toContain("<g:availability>in_stock</g:availability>");
-    expect(first.body).toContain("<g:item_group_id>product-1</g:item_group_id>");
+    assert.equal(first.body, second.body);
+    assert.equal(first.byteLength, new TextEncoder().encode(first.body).byteLength);
+    assert.equal(first.body.startsWith('<?xml version="1.0" encoding="UTF-8"?>'), true);
+    assert.equal(first.body.includes('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">'), true);
+    assert.equal(first.body.endsWith("</channel></rss>\n"), true);
+    assert.equal(first.body.indexOf("variation-1") < first.body.indexOf("variation-2"), true);
+    assert.equal(first.body.includes("<g:price>249000 VND</g:price>"), true);
+    assert.equal(first.body.includes("<g:availability>in_stock</g:availability>"), true);
+    assert.equal(first.body.includes("<g:item_group_id>product-1</g:item_group_id>"), true);
   });
 
   it("escapes XML text and counts UTF-8 bytes after escaping expansion", () => {
@@ -68,31 +77,35 @@ describe("Merchant RSS serializer", () => {
       origin: "https://shop.example.test",
     });
 
-    expect(result.body).toContain("Áo &amp; quần &lt;đẹp&gt; 👕");
-    expect(result.body).toContain("Đen &amp; Trắng");
-    expect(result.body).toContain("variant=variation-1&amp;view=full");
-    expect(result.body).not.toContain("<đẹp>");
-    expect(result.byteLength).toBeGreaterThan(result.body.length);
+    assert.equal(result.body.includes("Áo &amp; quần &lt;đẹp&gt; 👕"), true);
+    assert.equal(result.body.includes("Đen &amp; Trắng"), true);
+    assert.equal(result.body.includes("variant=variation-1&amp;view=full"), true);
+    assert.equal(result.body.includes("<đẹp>"), false);
+    assert.equal(result.byteLength > result.body.length, true);
   });
 
   it("rejects forbidden XML 1.0 control characters instead of producing malformed output", () => {
-    expect(() =>
-      serializeMerchantFeed({
-        offers: [offer({ title: "bad\u0001title" })],
-        market: MARKET,
-        origin: "https://shop.example.test",
-      }),
-    ).toThrow(MerchantFeedSerializationError);
+    assert.throws(
+      () =>
+        serializeMerchantFeed({
+          offers: [offer({ title: "bad\u0001title" })],
+          market: MARKET,
+          origin: "https://shop.example.test",
+        }),
+      MerchantFeedSerializationError,
+    );
   });
 
-  it.each([
+  for (const [count, allowed] of [
     [MAX_MERCHANT_OFFERS - 1, true],
     [MAX_MERCHANT_OFFERS, true],
     [MAX_MERCHANT_OFFERS + 1, false],
-  ])("enforces the offer-count boundary at %i", (count, allowed) => {
-    if (allowed) expect(() => assertMerchantOfferCount(count)).not.toThrow();
-    else expect(() => assertMerchantOfferCount(count)).toThrow(/5,000|5000/);
-  });
+  ] as const) {
+    it(`enforces the offer-count boundary at ${count}`, () => {
+      if (allowed) assert.doesNotThrow(() => assertMerchantOfferCount(count));
+      else assert.throws(() => assertMerchantOfferCount(count), /5,000|5000/);
+    });
+  }
 
   it("accepts the exact UTF-8 byte boundary and rejects the next byte without a partial body", () => {
     const baseline = serializeMerchantFeed({
@@ -101,26 +114,28 @@ describe("Merchant RSS serializer", () => {
       origin: "https://shop.example.test",
     });
 
-    expect(() =>
+    assert.doesNotThrow(() =>
       serializeMerchantFeed({
         offers: [offer()],
         market: MARKET,
         origin: "https://shop.example.test",
         maxBytes: baseline.byteLength,
       }),
-    ).not.toThrow();
+    );
 
-    expect(() =>
-      serializeMerchantFeed({
-        offers: [offer()],
-        market: MARKET,
-        origin: "https://shop.example.test",
-        maxBytes: baseline.byteLength - 1,
-      }),
-    ).toThrow(MerchantFeedByteOverflowError);
+    assert.throws(
+      () =>
+        serializeMerchantFeed({
+          offers: [offer()],
+          market: MARKET,
+          origin: "https://shop.example.test",
+          maxBytes: baseline.byteLength - 1,
+        }),
+      MerchantFeedByteOverflowError,
+    );
   });
 
   it("keeps the reviewed production byte ceiling at 16 MiB", () => {
-    expect(MAX_MERCHANT_FEED_BYTES).toBe(16 * 1024 * 1024);
+    assert.equal(MAX_MERCHANT_FEED_BYTES, 16 * 1024 * 1024);
   });
 });
