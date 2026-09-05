@@ -238,8 +238,8 @@ try {
     },
   ]);
 
-  // U27 — the PDP publishes one ProductGroup whose variants each carry their own exact Offer and
-  // the owner-confirmed manufacturer MPN from mirrored Pancake `display_id` (ADR 0008).
+  // U27 — the PDP publishes one ProductGroup whose variants each carry a factual, variant-specific
+  // name, their own exact Offer, and the owner-confirmed manufacturer MPN (ADR 0008).
   const productDocument = findDocumentWithType(documents, "ProductGroup");
   const productNodes = graphNodes(productDocument);
   const mediumUrl = `${PUBLIC_ORIGIN}/shop/${slug}?variant=${MEDIUM_VARIATION}`;
@@ -262,7 +262,7 @@ try {
       {
         "@type": "Product",
         "@id": `${largeUrl}#product`,
-        name: productName,
+        name: `${productName} — Đen — L`,
         url: largeUrl,
         mpn: LARGE_MPN,
         color: "Đen",
@@ -279,7 +279,7 @@ try {
       {
         "@type": "Product",
         "@id": `${mediumUrl}#product`,
-        name: productName,
+        name: `${productName} — Đen — M`,
         url: mediumUrl,
         mpn: MEDIUM_MPN,
         color: "Đen",
@@ -353,12 +353,19 @@ try {
     assert.equal(productJson.includes(forbidden), false, `U27 must not publish ${forbidden}`);
   }
 
-  // URL parity, over real HTTP: the URL published in each variant Offer must open that same
-  // variant, with that same price and option, on the served page.
+  const publishedVariants = (productNodes[0]!["hasVariant"] as JsonRecord[]) ?? [];
+
+  // URL/name parity, over real HTTP: each published variant Product must have a factual name more
+  // specific than the group, and its Offer URL must reopen the same option at the same price.
   for (const [variantUrl, size, renderedPrice] of [
     [mediumUrl, "M", "590.000"],
     [largeUrl, "L", "690.000"],
   ] as const) {
+    const structuredVariant = publishedVariants.find((variant) => variant.url === variantUrl);
+    assert.ok(structuredVariant, `${variantUrl} must have a nested Product`);
+    assert.notEqual(structuredVariant.name, productName, "variant name must be more specific than group name");
+    assert.equal(structuredVariant.name, `${productName} — Đen — ${size}`);
+
     const variantPage = await requestPath(new URL(variantUrl).pathname + new URL(variantUrl).search);
     assert.equal(variantPage.status, 200, `${variantUrl} must render\n${serverOutput}`);
 
@@ -390,7 +397,7 @@ try {
   );
 
   console.log(
-    "P14/P16/U27 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and ProductGroup brand, one ProductGroup carrying unique manufacturer MPNs plus exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
+    "P14/P16/U27 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and ProductGroup brand, one ProductGroup carrying factual variant-specific names, unique manufacturer MPNs and exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
   );
 } finally {
   await stopServer();
