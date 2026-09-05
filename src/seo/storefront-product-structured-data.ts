@@ -54,6 +54,12 @@ type StorefrontStructuredDataProduct = Readonly<{
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   /** ADR 0008 manufacturer MPNs, keyed by internal id; internal ids themselves never leave JSON-LD. */
   variantMpnById: Readonly<Record<string, string | null>>;
+  /**
+   * Whether this variant's mirrored inventory can state an availability at all, keyed by internal id
+   * and never published. Resolved by the catalog read that still holds the raw warehouse rows; this
+   * boundary only consumes the verdict, and reads no stock of its own.
+   */
+  variantAvailabilityResolvedById: Readonly<Record<string, boolean>>;
   projection: StorefrontProductProjection;
 }>;
 
@@ -64,10 +70,20 @@ type StorefrontStructuredDataProduct = Readonly<{
  * only when the price is fully resolved *and* the option is either buyable or out of stock for
  * stock reasons alone. A variant whose price never resolved is not published as sold out — that
  * would answer a pricing question with a stock claim.
+ *
+ * U27a adds the prior question: whether the catalog can state an availability for this variant at
+ * all. A malformed mirrored quantity makes the storefront's own total meaningless — `[5, -3]` sums
+ * to an ordinary 2 — so the projection's sold-out-or-buyable verdict, correct as a shopper-facing
+ * fallback, is not a fact to publish. Unresolved is an omission and never a substitute claim: not
+ * `OutOfStock`, not `InStock`, not a pre-order or back-order stand-in. A variant missing from the
+ * map is unresolved too, so a caller that forgets to supply it publishes nothing rather than
+ * publishing something unverified.
  */
 function resolvePublishableOffer(
   option: StorefrontProjectionOption,
+  availabilityResolved: boolean,
 ): Readonly<{ price: number; availability: StructuredDataAvailability }> | null {
+  if (!availabilityResolved) return null;
   const { price } = option;
   if (price === null || !Number.isFinite(price) || price < 0) return null;
   if (option.purchasable) return { price, availability: "IN_STOCK" };
@@ -175,7 +191,10 @@ function resolvePublishableVariants({
     const mpn = product.variantMpnById[option.id];
     if (!isPublishableMpn(mpn) || mpnCounts.get(mpn) !== 1) continue;
 
-    const offer = resolvePublishableOffer(option);
+    const offer = resolvePublishableOffer(
+      option,
+      product.variantAvailabilityResolvedById[option.id] === true,
+    );
     if (offer === null) continue;
 
     variants.push({

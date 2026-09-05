@@ -71,6 +71,9 @@ function product(overrides: Partial<BoundaryProduct> = {}): BoundaryProduct {
       "cuid-b": "A132-L",
       "cuid-c": "A132-KEM-M",
     },
+    // U27a: the ordinary fixture has well-formed mirrored inventory, so every variant can state an
+    // availability. Cases about malformed inventory override this per variant.
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true, "cuid-c": true },
     projection: {
       mode: "standalone",
       options: [
@@ -590,4 +593,66 @@ test("U27 unusable money is never published", () => {
     });
     assert.equal(serializeJsonLd(document).includes("pv-unusable"), false, String(price));
   }
+});
+test("U27a an availability-unresolved variant is omitted, never relabelled", () => {
+  // The middle variant's mirrored inventory is malformed, so the catalog cannot state an
+  // availability for it. The other two are untouched and still publish exactly as before.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false, "cuid-c": true },
+  });
+  const group = productGroupNode(document);
+  const published = group.hasVariant.map((variant) => variant.url);
+
+  assert.deepEqual(published, [
+    `${PRODUCT_URL}?variant=pv-a`,
+    `${PRODUCT_URL}?variant=pv-c`,
+  ]);
+
+  const serialized = JSON.stringify(document);
+  // Nothing is left behind describing the excluded variant: no offer, no MPN, no dangling URL.
+  assert.equal(serialized.includes("pv-b"), false, "no fact may survive the excluded variant");
+  assert.equal(serialized.includes("A132-L"), false, "the excluded variant's MPN is not published");
+  // And it is not translated into some other availability claim.
+  assert.equal(
+    group.hasVariant.every((variant) => variant.offers.url !== `${PRODUCT_URL}?variant=pv-b`),
+    true,
+  );
+});
+
+test("U27a variesBy is recomputed from the variants that survive exclusion", () => {
+  // cuid-a (Đen/M) and cuid-b (Đen/L) vary by size; cuid-c (Kem/M) adds the colour dimension.
+  // Dropping cuid-c must leave a size-only family rather than still claiming a colour axis.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true, "cuid-c": false },
+  });
+  const group = productGroupNode(document);
+
+  assert.deepEqual(group.variesBy, ["https://schema.org/size"]);
+  assert.equal(group.hasVariant.length, 2);
+});
+
+test("U27a the family collapses when exclusion leaves no real variant family", () => {
+  // Only one publishable variant remains, so there is no family to describe. U27's existing rules
+  // fall back to the product-level Product rather than publishing a one-member ProductGroup.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false, "cuid-c": false },
+  });
+
+  singleProductNode(document);
+  assert.equal(JSON.stringify(document).includes("pv-b"), false);
+  assert.equal(JSON.stringify(document).includes("pv-c"), false);
+});
+
+test("U27a a variant missing from the resolution map fails closed", () => {
+  // A caller that forgets an entry publishes nothing for that variant rather than something
+  // unverified. Absence is unresolved, not an implicit yes.
+  const document = build({
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-c": true },
+  });
+  const group = productGroupNode(document);
+
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.url),
+    [`${PRODUCT_URL}?variant=pv-a`, `${PRODUCT_URL}?variant=pv-c`],
+  );
 });

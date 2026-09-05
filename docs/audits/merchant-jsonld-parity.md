@@ -1,8 +1,10 @@
 # Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 
 Two public consumers describe the same standalone variant to two different audiences. This audit
-records where they publish the same truth about the facts they share, and names the one reachable
-place where they still do not. That remaining divergence keeps the convergence launch gate OPEN.
+records that they publish the same truth about the facts they share.
+
+PR #199 proved the parity and left one reachable divergence open. **U27a closed it**, and this audit
+now records both the finding and its reconciliation.
 
 - **Base SHA:** `2d5ea84045f61fc1249076379dd0816d37499546` (`main` after PR #198).
 - **Final implementation/test SHA:** the head of PR #199, recorded in that PR's description and
@@ -73,62 +75,95 @@ The two formats are compared on meaning, never on literal strings.
 | D — variant URL | MATCH byte-for-byte, and the published identity reopens the same option through the U12 resolver |
 | E — manufacturer MPN | MATCH: `pancakeDisplayId` only; never the website-local SKU, the internal CUID, or the variation id |
 | F — missing / blank / untrimmed / duplicate MPN | COMPATIBLE FAIL-CLOSED on both sides |
-| G — unresolved availability | **OPEN DIVERGENCE** for a negative quantity — see below |
+| G — unresolved availability | COMPATIBLE FAIL-CLOSED on both sides since U27a — see below |
 | H — unresolved price | COMPATIBLE FAIL-CLOSED; no `0`, no minimum, no base-price stand-in |
 | I — unaddressable variation identity | COMPATIBLE FAIL-CLOSED on both sides |
 | J — composite | COMPATIBLE FAIL-CLOSED: Merchant reports `COMPOSITE_DEFERRED`, U27 publishes no `ProductGroup` |
 | Grouping | MATCH: every emitted sibling groups under `pancakeProductId`, never a slug, local id, kind key, MPN or index |
-| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, within the resolvable stock domain |
+| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants |
 
-## Open divergence — negative mirrored warehouse quantity
+## Closed divergence — negative mirrored warehouse quantity (U27a)
 
-One eligibility difference exists. It is recorded rather than equalized, and **it keeps the
-`Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency` gate in
-`tasks/growth-commerce-master-todo.md` OPEN.** This audit closes no launch prerequisite.
+### What PR #199 found
 
-The two consumers reduce the same warehouse rows identically wherever the quantity is usable — no
-rows and an explicit zero both sum to `0` (out of stock), and a positive sum is in stock. They part
-on a **negative** mirrored quantity:
+The two consumers reduce the same warehouse rows identically wherever every quantity is usable — no
+rows and an explicit zero both sum to `0` (out of stock), and a positive sum is in stock. They parted
+on a **negative** mirrored quantity, and the rule is per row rather than on the total:
 
-| Warehouse rows | Merchant (M1 `aggregateWarehouseStock`) | Storefront / U27 |
-| --- | --- | --- |
-| `[]`, `[0]`, `[5]` | `0`, `0`, `5` | same |
-| `[-3]` | `NaN` → `AVAILABILITY_UNRESOLVED`, offer excluded | `-3` → `<= 0` → sold out → exact `OutOfStock` Offer published |
-| `[NaN]` | `NaN` → excluded | the PDP repository throws before a projection exists → no JSON-LD at all |
+| Warehouse rows | Merchant (M1 `aggregateWarehouseStock`) | Storefront total | U27 before U27a |
+| --- | --- | --- | --- |
+| `[-3]` | `NaN` → `AVAILABILITY_UNRESOLVED`, omitted | `-3` | exact `OutOfStock` Offer |
+| `[5, -3]` | `NaN` → omitted | `2` | exact **`InStock`** Offer |
+| `[3, -3]` | `NaN` → omitted | `0` | exact `OutOfStock` Offer |
+| `[100, -1]` | `NaN` → omitted | `99` | exact **`InStock`** Offer |
 
-Only the negative row is a live difference; a non-finite quantity already fails closed on both sides.
-`WarehouseStock.quantity` is a `Float` with no non-negative constraint, and the mirror reflects
-whatever the vendor reports, so it is reachable rather than theoretical.
+`[5, -3]` is why the total cannot decide this: it sums to an unremarkable `2`, and a fix keyed on
+"the total went negative" would have closed `[-3]` while still publishing a false `InStock`.
+`WarehouseStock.quantity` is a `Float` with no non-negative constraint and the mirror reflects
+whatever the vendor reports, so the class was reachable rather than theoretical.
 
-Neither consumer is violating its own contract. M1 chose the strictest reading for a machine feed,
-where publishing an offer whose availability is uncertain is an account-level risk. U27's stated
-availability authority is the PDP projection, and markup that disagreed with the page it sits on
-would be its own defect. The feed is simply stricter than the page.
+### Root cause
 
-Closing it would require U27 to gain an availability-resolution signal it does not have today — the
-projection cannot distinguish "stock is zero" from "stock is corrupt" — which means plumbing a new
-per-variant signal out of the shared storefront catalog read that the whole PDP depends on, and
-changing published U27 output. That is an owner decision and its own scoped unit, not something to
-smuggle into a verification PR.
+M1 treats any malformed row as making the whole variant's availability unstatable. The storefront
+absorbs the same row into ordinary arithmetic, because for a shopper "how many can I buy" has a
+usable answer either way. U27 consumed that shopper-facing verdict and published it as an exact
+machine-readable claim — a claim the feed had already declined to make.
 
-`tests/domain/merchant-structured-data-parity.test.ts` pins the current behaviour explicitly so the
-difference cannot drift unnoticed in either direction.
+### Reconciliation
 
-### What closing this gate requires
+A server-only per-variant availability-resolution signal, carried the same way U27 already receives
+`variantMpnById` and `galleryIndexByVariantId`:
 
-One of:
+```
+storefront catalog read (still holds raw warehouse rows)
+        │  resolveVariantAvailabilityFromWarehouseStocks
+        ↓
+variantAvailabilityResolvedById   (keyed by internal VariantMirror.id, never published)
+        ↓
+PDP detail repository → U27 serialization boundary
+```
 
-1. **Scoped runtime reconciliation** — U27 gains an availability-resolution signal (today its input
-   carries only the projection, whose `sellableStock` has already summed the raw quantities away),
-   so an unresolvable-availability variant is omitted rather than published as sold out. That
-   touches the shared storefront catalog read and changes published U27 output, so it is its own
-   unit.
-2. **Explicit owner acceptance** — the owner decides that "Merchant omits the offer" and "U27
-   publishes `OutOfStock`" are compatible outcomes for an unresolvable quantity, and the gate's
-   normative wording in `tasks/growth-commerce-master-todo.md` is updated to define that
-   compatibility.
+- The rule lives in `src/commerce/storefront-product.ts` beside the variant-fact semantics it
+  belongs to, so it stays free of Prisma and usable from pure domain tests.
+- It is resolved in `src/commerce/storefront-catalog.ts`, the last place holding the raw rows: one
+  pass over rows already in memory, **no additional database query** and no N+1.
+- `src/seo/storefront-product-structured-data.ts` gates publication on it. Unresolved is an
+  **omission**, never a substitute claim — not `OutOfStock`, `InStock`, pre-order or back-order. A
+  variant missing from the map is unresolved too, so a caller that forgets it publishes nothing
+  rather than something unverified.
+- U27 still reads no database, imports nothing from the Merchant modules, and keeps the PDP
+  projection as its price/addressability/resolved-availability authority. The two consumers converge
+  on upstream facts; neither calls the other.
+- The rule matches M1's by value, deliberately not by import, and the parity suite proves the two
+  agree rather than trusting the comment.
 
-Neither has happened, so the gate stays open.
+### What did not change
+
+- **Shopper-facing PDP behaviour is untouched.** `sumWarehouseStocks` still sums finite rows, so
+  `[5, -3]` is still two units, still priced, still purchasable, and the option/cart/checkout paths
+  are unchanged. `resolveVariantAvailabilityFromWarehouseStocks` answers a separate question and
+  introduces no app-wide throw for a finite negative quantity.
+- **Merchant was not weakened and not modified.** `merchant-offer-mapper.ts`,
+  `merchant-offer-repository.ts`, `merchant-identity-audit.ts`, `merchant-feed-serializer.ts` and
+  `merchant-feed-service.ts` carry no diff in U27a.
+- **No client contract widening.** The signal never reaches `StorefrontSelectableOption` or the
+  browser; the purchase panel has no use for it.
+- **No database constraint and no sync normalization.** How the mirror should represent malformed
+  upstream data is a separate design question, deliberately untouched.
+
+### ProductGroup behaviour after exclusion
+
+An excluded variant leaves nothing behind: no `hasVariant` entry, no `offers`, no MPN, no dangling
+URL. `variesBy` is recomputed from the survivors, so dropping the only other colour leaves a
+size-only family rather than a claimed colour axis. When exclusion leaves no real family, U27's
+existing rules collapse the group to the product-level `Product` rather than publishing a one-member
+`ProductGroup`.
+
+### Non-finite quantities
+
+Unchanged and still fail closed. The PDP repository throws on a non-finite quantity before a
+projection exists, so no JSON-LD is published at all; the resolution rule also refuses them as
+defence in depth. U27a did not broaden that behaviour.
 
 ## Checkpoint E evidence
 
@@ -164,9 +199,9 @@ Therefore:
 business-fact parity
   identity / grouping / MPN / URL / price  = GREEN
   availability, resolvable stock domain    = GREEN
-  availability, negative quantity          = OPEN DIVERGENCE (owner decision pending)
+  availability, any negative row           = COMPATIBLE FAIL-CLOSED (U27a)
 
-feed <-> JSON-LD consistency launch gate   = OPEN
+feed <-> JSON-LD consistency launch gate   = PASS
 production feed activation                 = BLOCKED by O2
 ```
 
@@ -191,6 +226,6 @@ no multi-replica claim. Nothing here adds Redis, replicas, or a deployment chang
 
 ## Remaining gates
 
-- **Feed ↔ JSON-LD consistency launch gate:** OPEN, on the negative-quantity divergence above.
+- **Feed ↔ JSON-LD consistency launch gate:** **PASS** as of U27a.
 - **O2:** OPEN. **M5 / U41:** BLOCKED.
 - Next unit: `U28 / T8`.

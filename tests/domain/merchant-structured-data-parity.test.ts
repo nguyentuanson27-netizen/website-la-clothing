@@ -33,7 +33,10 @@ import {
   type MerchantMarketPolicy,
 } from "../../src/commerce/merchant-offer-mapper.ts";
 import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
-import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import {
+  resolveVariantAvailabilityFromWarehouseStocks,
+  type StorefrontVariantFacts,
+} from "../../src/commerce/storefront-product.ts";
 import {
   buildStorefrontProductProjection,
   type StorefrontProductProjection,
@@ -84,6 +87,15 @@ type CatalogVariant = Readonly<{
   color: string | null;
   size: string | null;
   sellableStock: number;
+  /**
+   * Raw mirrored warehouse rows, when a case needs them.
+   *
+   * The two repositories reduce these rows by different rules, so a case about malformed inventory
+   * has to start from the rows themselves rather than from an already-summed total: `[5, -3]` sums
+   * to a perfectly ordinary `2`, and a fixture that only carried the total could not express it.
+   * When absent, `sellableStock` stands alone and every row is treated as well-formed.
+   */
+  warehouseQuantities?: readonly number[];
   retailPrice: number | null;
   retailPriceAfterDiscount: number | null;
   isComposite?: boolean;
@@ -99,6 +111,35 @@ type CatalogProduct = Readonly<{
   variants: readonly CatalogVariant[];
   apparelOverrides?: PersistedMerchantApparelOverrides;
 }>;
+
+/**
+ * The storefront's own reduction: a plain sum of finite quantities.
+ *
+ * Deliberately unchanged by U27a — the shopper-facing PDP keeps treating a malformed negative row as
+ * ordinary arithmetic, so `[5, -3]` is still 2 units and still purchasable on the page.
+ */
+function storefrontSellableStock(row: CatalogVariant): number {
+  const quantities = row.warehouseQuantities;
+  return quantities === undefined
+    ? row.sellableStock
+    : quantities.reduce((total, quantity) => total + quantity, 0);
+}
+
+/**
+ * M1's reduction, as `merchant-offer-repository.aggregateWarehouseStock` performs it.
+ *
+ * Modeled here the same way this file already models the rest of that repository's plumbing: any
+ * non-finite or negative row makes the whole variant's availability unresolvable, which is a
+ * stronger rule than "the total came out negative".
+ */
+function merchantStockQuantity(row: CatalogVariant): number {
+  const quantities = row.warehouseQuantities;
+  if (quantities === undefined) return row.sellableStock;
+  for (const quantity of quantities) {
+    if (!Number.isFinite(quantity) || quantity < 0) return Number.NaN;
+  }
+  return quantities.reduce((total, quantity) => total + quantity, 0);
+}
 
 const RESOLVED_APPAREL: PersistedMerchantApparelOverrides = {
   gender: "male",
@@ -158,7 +199,7 @@ function buildSharedProjection(product: CatalogProduct): StorefrontProductProjec
     pancakeVariationId: row.pancakeVariationId,
     color: row.color,
     size: row.size,
-    sellableStock: row.sellableStock,
+    sellableStock: storefrontSellableStock(row),
     retailPrice: row.retailPrice,
     retailPriceAfterDiscount: row.retailPriceAfterDiscount,
   }));
@@ -193,7 +234,7 @@ function toMerchantCandidate(
     pancakeVariationId: row.pancakeVariationId,
     pancakeDisplayId: row.pancakeDisplayId,
     isComposite: row.isComposite ?? false,
-    stockQuantity: row.sellableStock,
+    stockQuantity: merchantStockQuantity(row),
   }));
 
   return {
@@ -239,6 +280,16 @@ function toStructuredDataProduct(
     galleryIndexByVariantId: Object.fromEntries(galleryIndexEntries(product)),
     variantMpnById: Object.fromEntries(
       product.variants.map((row) => [row.variantId, row.pancakeDisplayId]),
+    ),
+    // Server-only, keyed by internal id exactly like `variantMpnById`, and produced by the catalog
+    // read that still holds the raw warehouse rows.
+    variantAvailabilityResolvedById: Object.fromEntries(
+      product.variants.map((row) => [
+        row.variantId,
+        resolveVariantAvailabilityFromWarehouseStocks(
+          (row.warehouseQuantities ?? [row.sellableStock]).map((quantity) => ({ quantity })),
+        ),
+      ]),
     ),
     projection,
   };
@@ -667,25 +718,27 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
   });
 
   /**
-   * The one identified eligibility difference between the two consumers, pinned deliberately.
+   * U27a — the convergence this file previously only documented.
    *
-   * A negative mirrored warehouse quantity is not a stock fact. M1's aggregation refuses it
-   * (`AVAILABILITY_UNRESOLVED`) and the Merchant feed excludes the offer. The storefront sums it to
-   * a negative number, which the PDP reads as `<= 0` and therefore renders — and publishes — as
-   * sold out. U27's stated availability authority is that PDP projection, and page markup that
-   * disagreed with the page it sits on would be its own defect, so neither consumer is violating
-   * its own contract here; the feed is simply stricter than the page.
+   * A negative mirrored warehouse quantity is not a stock fact. M1 refuses the whole variant, so the
+   * feed omits the offer; before U27a the storefront summed the row as ordinary arithmetic and U27
+   * published an exact availability claim the feed had already declined to make.
    *
-   * Recorded rather than silently equalized. `docs/audits/merchant-jsonld-parity.md` carries the
-   * mechanism and reachability, and closing it needs an owner decision about whether U27 gains an
-   * availability-resolution signal — not a change smuggled into a verification PR.
+   * The rule is per-row, not per-total, which is why the mixed cases matter more than `[-3]`:
+   * `[5, -3]` sums to a perfectly ordinary 2. A convergence keyed on "the total went negative"
+   * would pass `[-3]` and still publish a false `InStock` for `[5, -3]`.
    *
-   * A non-finite quantity is NOT part of this difference: the PDP repository throws on it before a
-   * projection exists, so no JSON-LD is published at all and both consumers fail closed.
+   * The shopper-facing page is deliberately untouched: the PDP still prices and sells `[5, -3]` as
+   * two units. Only the exact machine-readable claim is withheld.
    */
-  it("records the known negative-quantity availability difference between the two consumers", () => {
-    const { merchant, jsonLd, merchantExclusions } = runParity(
-      catalogProduct({
+  for (const [label, warehouseQuantities, storefrontTotal] of [
+    ["a single negative row", [-3], -3],
+    ["a negative row under a positive total", [5, -3], 2],
+    ["a negative row under a zero total", [3, -3], 0],
+    ["one tiny negative row under a large total", [100, -1], 99],
+  ] as const) {
+    it(`omits the exact variant offer on both sides for ${label}`, () => {
+      const product = catalogProduct({
         variants: [
           variant(),
           variant({
@@ -693,7 +746,7 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
             pancakeVariationId: "pv-black-l",
             pancakeDisplayId: "LA-OXF-BLK-L",
             size: "L",
-            sellableStock: -1,
+            warehouseQuantities,
           }),
           variant({
             variantId: "cuid-black-xl",
@@ -702,30 +755,94 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
             size: "XL",
           }),
         ],
+      });
+      const { merchant, jsonLd, merchantExclusions, projection } = runParity(product);
+
+      assert.deepEqual(
+        merchantExclusions.get("pv-black-l"),
+        ["AVAILABILITY_UNRESOLVED"],
+        "Merchant reports unresolved availability rather than guessing a stock state",
+      );
+      assert.equal(publishedIds(merchant).includes("pv-black-l"), false);
+      assert.equal(
+        publishedIds(jsonLd).includes("pv-black-l"),
+        false,
+        "U27 must not publish an availability claim the feed refused to make",
+      );
+
+      // Not translated into some other claim either: the variant is absent, not relabelled.
+      assert.equal(
+        jsonLd.some((row) => row.variantExternalId === "pv-black-l"),
+        false,
+      );
+
+      // The shopper-facing projection is untouched — this is a publication rule, not a stock one.
+      const option = projection.options.find((candidate) => candidate.id === "cuid-black-l");
+      assert.ok(option !== undefined);
+      assert.equal(option.price, 890_000, "an unresolved row must not disturb PDP pricing");
+      assert.equal(
+        option.purchasable,
+        storefrontTotal > 0,
+        "the PDP keeps its own arithmetic and its own sold-out verdict",
+      );
+
+      // Every well-formed sibling still publishes identically on both sides.
+      assert.deepEqual(publishedIds(merchant), ["pv-black-m", "pv-black-xl"]);
+      assert.deepEqual(merchant, jsonLd);
+    });
+  }
+
+  for (const [label, warehouseQuantities, availability] of [
+    ["no warehouse rows at all", [], "OUT_OF_STOCK"],
+    ["an explicit zero row", [0], "OUT_OF_STOCK"],
+    ["a single positive row", [5], "IN_STOCK"],
+    ["several well-formed rows", [2, 3], "IN_STOCK"],
+  ] as const) {
+    it(`keeps ${label} publishable and identical on both sides`, () => {
+      const { merchant, jsonLd } = runParity(
+        catalogProduct({
+          variants: [
+            variant(),
+            variant({
+              variantId: "cuid-black-l",
+              pancakeVariationId: "pv-black-l",
+              pancakeDisplayId: "LA-OXF-BLK-L",
+              size: "L",
+              warehouseQuantities,
+            }),
+          ],
+        }),
+      );
+
+      assert.deepEqual(merchant, jsonLd);
+      const row = merchant.find((candidate) => candidate.variantExternalId === "pv-black-l");
+      assert.ok(row !== undefined, "a well-formed variant stays publishable");
+      assert.equal(row.availability, availability);
+      assert.equal(row.priceVnd, 890_000);
+    });
+  }
+
+  it("collapses the family when the only sibling left is availability-unresolved", () => {
+    // Two variants, one unresolved. U27's existing ProductGroup rules need a real varying dimension
+    // among the survivors, so the group falls back rather than publishing a one-member family — and
+    // nothing is left describing the excluded variant.
+    const { merchant, jsonLd } = runParity(
+      catalogProduct({
+        variants: [
+          variant(),
+          variant({
+            variantId: "cuid-black-l",
+            pancakeVariationId: "pv-black-l",
+            pancakeDisplayId: "LA-OXF-BLK-L",
+            size: "L",
+            warehouseQuantities: [4, -1],
+          }),
+        ],
       }),
     );
 
-    assert.deepEqual(
-      merchantExclusions.get("pv-black-l"),
-      ["AVAILABILITY_UNRESOLVED"],
-      "Merchant reports unresolved availability rather than guessing a stock state",
-    );
-    assert.equal(publishedIds(merchant).includes("pv-black-l"), false);
-    assert.equal(
-      publishedIds(jsonLd).includes("pv-black-l"),
-      true,
-      "current U27 behaviour: the PDP projection's sold-out verdict is published as an exact Offer",
-    );
-
-    // Every other variant still agrees exactly, so the difference is bounded to this one row.
-    const shared = merchant.map((row) => row.variantExternalId);
-    assert.deepEqual(shared, ["pv-black-m", "pv-black-xl"]);
-    for (const id of shared) {
-      assert.deepEqual(
-        merchant.find((row) => row.variantExternalId === id),
-        jsonLd.find((row) => row.variantExternalId === id),
-      );
-    }
+    assert.deepEqual(publishedIds(merchant), ["pv-black-m"]);
+    assert.deepEqual(publishedIds(jsonLd), [], "no ProductGroup survives a single-member family");
   });
 
   it("fails closed on both sides for an unaddressable variation identity", () => {
