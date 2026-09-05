@@ -18,14 +18,6 @@ import { prisma } from "../db/prisma.ts";
 
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
-/**
- * The subset of the client this lookup needs.
- *
- * Declaring it structurally is what lets a caller pass a `Prisma.TransactionClient` instead of the
- * shared singleton. A cart mutation must resolve candidates inside the same serialized transaction
- * that commits the write, or the price it validates and the price it commits can come from two
- * different instants of the campaign table.
- */
 export type PromotionCandidateReadClient = {
   variantMirror: { findMany: (args: unknown) => Promise<Array<{ id: string; productId: string }>> };
   promotionTarget: {
@@ -39,23 +31,16 @@ export type PromotionCandidateReadClient = {
   };
 };
 
-/**
- * Bounded because this runs on storefront and cart paths. The current anonymous cart caps at 50
- * distinct items and a catalog page at 48, so this leaves generous headroom while keeping a single
- * malformed request from turning into an unbounded scan.
- */
 export const MAX_CANDIDATE_VARIANTS_PER_LOOKUP = 200;
 
 export class PromotionCandidateLookupError extends Error {}
 
 export type ApplicableCampaignLookup = Readonly<{
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
-  /**
-   * Requested variants that do not exist in the mirror. Reported rather than silently treated as
-   * "no promotion", so a caller can fail closed instead of quoting a price for something unknown.
-   */
   unknownVariantIds: readonly string[];
 }>;
+
+export type TrustedPromotionVariantOwner = Readonly<{ id: string; productId: string }>;
 
 const campaignSelection = {
   id: true,
@@ -68,45 +53,18 @@ const campaignSelection = {
   endsAt: true,
 } as const;
 
-export async function readApplicablePromotionCampaigns({
-  variantIds,
-  client = prisma as unknown as PromotionCandidateReadClient,
+async function readTargetsForKnownVariants({
+  variants,
+  client,
 }: Readonly<{
-  variantIds: readonly string[];
-  client?: PromotionCandidateReadClient;
-}>): Promise<ApplicableCampaignLookup> {
-  if (!Array.isArray(variantIds)) {
-    throw new PromotionCandidateLookupError("Variant identities must be a bounded array");
-  }
-  if (variantIds.length > MAX_CANDIDATE_VARIANTS_PER_LOOKUP) {
-    throw new PromotionCandidateLookupError(
-      `Promotion candidate lookup is bounded to ${MAX_CANDIDATE_VARIANTS_PER_LOOKUP} variants per call`,
-    );
-  }
-
-  const requested = [...new Set(variantIds)];
-  if (requested.length === 0) {
-    return Object.freeze({
-      campaignsByVariantId: new Map(),
-      unknownVariantIds: Object.freeze([]),
-    });
-  }
-
-  // A variant's owning product is its own `productId`. A composite component therefore follows its
-  // real owner rather than the parent set it happens to be sold through, which is what keeps a
-  // parent's campaign from silently repricing somebody else's product.
-  const variants = await client.variantMirror.findMany({
-    where: { id: { in: requested } },
-    select: { id: true, productId: true },
-  });
-
+  variants: readonly TrustedPromotionVariantOwner[];
+  client: PromotionCandidateReadClient;
+}>): Promise<ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>> {
   const knownVariantIds = new Set(variants.map((variant) => variant.id));
-  const unknownVariantIds = requested.filter((id) => !knownVariantIds.has(id));
   const productIds = [...new Set(variants.map((variant) => variant.productId))];
 
-  // Draft and Disabled campaigns are not storefront-effective, so they are never candidates. Window
-  // membership is deliberately left to the resolver: it owns the half-open interval contract, and
-  // filtering by time here would put that rule in two places.
+  if (knownVariantIds.size === 0) return new Map();
+
   const targets = await client.promotionTarget.findMany({
     where: {
       campaign: { isEnabled: true },
@@ -135,8 +93,6 @@ export async function readApplicablePromotionCampaigns({
 
   const attach = (variantId: string, campaign: ApplicablePromotionCampaign) => {
     const already = seen.get(variantId);
-    // A campaign that covers a variant both directly and through its product is still one
-    // candidate; counting it twice would look like a conflict with itself.
     if (already === undefined || already.has(campaign.id)) return;
     already.add(campaign.id);
     campaignsByVariantId.get(variantId)?.push(campaign);
@@ -154,8 +110,82 @@ export async function readApplicablePromotionCampaigns({
     }
   }
 
+  return campaignsByVariantId;
+}
+
+/**
+ * Trusted ownership path for bounded server-owned projections that already loaded VariantMirror
+ * identity and owner product in the same canonical query. It deliberately does not re-read
+ * VariantMirror, so U26 can prove a whole-generation DB budget rather than hiding two queries inside
+ * every batch. Request-controlled variant ids must continue to use `readApplicablePromotionCampaigns`.
+ */
+export async function readApplicablePromotionCampaignsForKnownVariants({
+  variants,
+  client = prisma as unknown as PromotionCandidateReadClient,
+}: Readonly<{
+  variants: readonly TrustedPromotionVariantOwner[];
+  client?: PromotionCandidateReadClient;
+}>): Promise<ApplicableCampaignLookup> {
+  if (!Array.isArray(variants)) {
+    throw new PromotionCandidateLookupError("Known variants must be a bounded array");
+  }
+
+  const ids = new Set<string>();
+  for (const variant of variants) {
+    if (
+      variant === null ||
+      typeof variant !== "object" ||
+      typeof variant.id !== "string" ||
+      variant.id.length === 0 ||
+      typeof variant.productId !== "string" ||
+      variant.productId.length === 0 ||
+      ids.has(variant.id)
+    ) {
+      throw new PromotionCandidateLookupError("Known variants must have unique trusted identities");
+    }
+    ids.add(variant.id);
+  }
+
   return Object.freeze({
-    campaignsByVariantId,
+    campaignsByVariantId: await readTargetsForKnownVariants({ variants, client }),
+    unknownVariantIds: Object.freeze([]),
+  });
+}
+
+export async function readApplicablePromotionCampaigns({
+  variantIds,
+  client = prisma as unknown as PromotionCandidateReadClient,
+}: Readonly<{
+  variantIds: readonly string[];
+  client?: PromotionCandidateReadClient;
+}>): Promise<ApplicableCampaignLookup> {
+  if (!Array.isArray(variantIds)) {
+    throw new PromotionCandidateLookupError("Variant identities must be a bounded array");
+  }
+  if (variantIds.length > MAX_CANDIDATE_VARIANTS_PER_LOOKUP) {
+    throw new PromotionCandidateLookupError(
+      `Promotion candidate lookup is bounded to ${MAX_CANDIDATE_VARIANTS_PER_LOOKUP} variants per call`,
+    );
+  }
+
+  const requested = [...new Set(variantIds)];
+  if (requested.length === 0) {
+    return Object.freeze({
+      campaignsByVariantId: new Map(),
+      unknownVariantIds: Object.freeze([]),
+    });
+  }
+
+  const variants = await client.variantMirror.findMany({
+    where: { id: { in: requested } },
+    select: { id: true, productId: true },
+  });
+
+  const knownVariantIds = new Set(variants.map((variant) => variant.id));
+  const unknownVariantIds = requested.filter((id) => !knownVariantIds.has(id));
+
+  return Object.freeze({
+    campaignsByVariantId: await readTargetsForKnownVariants({ variants, client }),
     unknownVariantIds: Object.freeze(unknownVariantIds),
   });
 }
