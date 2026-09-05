@@ -85,6 +85,18 @@ const SNAPSHOT: PancakeParsedCatalogVariation[] = [
   variation({ id: "m3-variation-xl", displayId: "A300-XL", size: "XL", quantity: 2 }),
 ];
 
+function batchingSnapshot(count: number): PancakeParsedCatalogVariation[] {
+  return Array.from({ length: count }, (_, index) => {
+    const number = index + 1;
+    return variation({
+      id: `m3-batch-${number}`,
+      displayId: `BATCH-${number}`,
+      size: `SIZE-${number}`,
+      quantity: 1,
+    });
+  });
+}
+
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: SHOP_ID } });
@@ -387,10 +399,7 @@ test("M3 a persisted apparel value outside the reviewed allowlist fails closed",
   }
 });
 
-test("M3 the loader reads one bounded catalog pass rather than a query per offer", async () => {
-  await catalog.syncSnapshot({ shopId: SHOP_ID, variations: SNAPSHOT, syncedAt: SYNCED_AT });
-  await publishStorefront();
-
+test("M3 the loader uses bounded promotion batches rather than a query per offer", async () => {
   let queries = 0;
   const counting = new PrismaClient({ adapter: new PrismaPg({ connectionString }) }).$extends({
     query: {
@@ -400,31 +409,38 @@ test("M3 the loader reads one bounded catalog pass rather than a query per offer
       },
     },
   });
-
   const counted = createMerchantOfferRepository(counting as unknown as PrismaClient);
-  const result = await counted.readMerchantOffers({
-    shopId: SHOP_ID,
-    origin: ORIGIN,
-    now: SYNCED_AT,
-  });
 
-  assert.equal(result.offers.length, 3);
-  assert.ok(queries <= 8, `expected a bounded read, observed ${queries} queries`);
-
-  // The same bound holds as the catalog grows: adding variations must not add round trips.
-  const before = queries;
-  queries = 0;
   await catalog.syncSnapshot({
     shopId: SHOP_ID,
-    variations: [
-      ...SNAPSHOT,
-      variation({ id: "m3-variation-s", displayId: "A300-S", size: "S", quantity: 7 }),
-      variation({ id: "m3-variation-xxl", displayId: "A300-XXL", size: "XXL", quantity: 1 }),
-    ],
+    variations: batchingSnapshot(200),
     syncedAt: SYNCED_AT,
   });
   await publishStorefront();
-  await counted.readMerchantOffers({ shopId: SHOP_ID, origin: ORIGIN, now: SYNCED_AT });
+  const at200 = await counted.readMerchantOffers({ shopId: SHOP_ID, origin: ORIGIN, now: SYNCED_AT });
+  const queriesAt200 = queries;
+  assert.equal(at200.offers.length, 200);
+  assert.ok(queriesAt200 > 0);
 
-  assert.equal(queries, before, "read cost must not scale with the number of offers");
+  queries = 0;
+  await catalog.syncSnapshot({
+    shopId: SHOP_ID,
+    variations: batchingSnapshot(201),
+    syncedAt: SYNCED_AT,
+  });
+  await publishStorefront();
+  const at201 = await counted.readMerchantOffers({ shopId: SHOP_ID, origin: ORIGIN, now: SYNCED_AT });
+  const queriesAt201 = queries;
+  assert.equal(at201.offers.length, 201);
+
+  // The promotion candidate repository owns a 200-id safety cap and performs two reads per batch.
+  // Crossing 200 therefore adds one bounded batch (+2 Prisma operations); this is intentionally not
+  // a constant-round-trip claim. U26/M4 owns the stricter public-feed round-trip envelope.
+  assert.equal(queriesAt201, queriesAt200 + 2);
+  assert.ok(
+    queriesAt201 < at201.offers.length,
+    `expected batching rather than per-offer reads, observed ${queriesAt201} for ${at201.offers.length} offers`,
+  );
+
+  await counting.$disconnect();
 });
