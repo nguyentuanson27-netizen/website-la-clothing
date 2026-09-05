@@ -63,6 +63,7 @@ type FailureSentinel = Readonly<{
 
 type InFlightGeneration = Readonly<{
   pricingRevision: bigint;
+  token: symbol;
   promise: Promise<MerchantFeedCoordinatorResult>;
 }>;
 
@@ -169,6 +170,7 @@ export function createMerchantFeedCoordinator({
   ): Promise<MerchantFeedCoordinatorResult> {
     observe("cold_generation");
 
+    const token = Symbol("merchant-feed-generation");
     const promise = (async () => {
       try {
         let generated: MerchantFeedGenerationResult;
@@ -220,11 +222,11 @@ export function createMerchantFeedCoordinator({
           cache: "generated" as const,
         });
       } finally {
-        if (inFlight?.promise === promise) inFlight = undefined;
+        if (inFlight?.token === token) inFlight = undefined;
       }
     })();
 
-    inFlight = Object.freeze({ pricingRevision, promise });
+    inFlight = Object.freeze({ pricingRevision, token, promise });
     return promise;
   }
 
