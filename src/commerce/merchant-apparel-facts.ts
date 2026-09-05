@@ -101,6 +101,10 @@ function readField(overrides: unknown, field: MerchantApparelField): unknown {
   return (overrides as Record<string, unknown>)[field];
 }
 
+function hasOwnField(overrides: object, field: MerchantApparelField): boolean {
+  return Object.prototype.hasOwnProperty.call(overrides, field);
+}
+
 function isAllowedValue(field: MerchantApparelField, value: unknown): value is string {
   return typeof value === "string" && ALLOWED_VALUES[field].includes(value);
 }
@@ -122,13 +126,13 @@ export function resolveEffectiveApparelFacts(
   const isObject = typeof overrides === "object" && overrides !== null;
 
   for (const field of APPAREL_FIELDS) {
-    if (!isObject) {
+    if (!isObject || !hasOwnField(overrides, field)) {
       unresolved.push(field);
       continue;
     }
 
     const value = readField(overrides, field);
-    if (value === null || value === undefined) {
+    if (value === null) {
       facts[field] = MERCHANT_SHOP_APPAREL_DEFAULTS[field];
       inherited[field] = true;
       continue;
