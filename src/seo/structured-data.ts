@@ -294,9 +294,9 @@ export function buildProductStructuredData({
   // and an identity that is bounded and unaltered. A family of one can never vary by anything,
   // which is exactly what the product-level shape already says better.
   //
-  // The identifier rules repeat the boundary's deliberately. There is one production caller today,
-  // but the bound is on untrusted mirrored text and this is the function that writes it into a
-  // public document, so it holds the bound itself rather than inheriting it from whoever calls.
+  // The identifier rule lives here and the boundary asks it, rather than the reverse: the bound is
+  // on untrusted mirrored text, and this is the function that writes it into a public document. So
+  // this check is the one that decides — do not remove it as redundant with the caller's.
   const publishedGroup =
     productGroup !== null
     && isPublishableIdentifier(productGroup.productGroupID)
