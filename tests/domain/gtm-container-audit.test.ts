@@ -118,7 +118,34 @@ function tiktokTemplateTag(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The application-owned mode fact, as a Data Layer Variable.
+ *
+ * Every firing guard names this variable, so the container has to define it as a read of the
+ * dataLayer key the application pushes. A container without it — or with a Constant of the same
+ * name — has guards that prove nothing, which is its own regression below.
+ */
+function trackingModeVariable(overrides: Record<string, unknown> = {}) {
+  return {
+    variableId: "1",
+    name: "la_tracking_mode",
+    type: "v",
+    parameter: [
+      { type: "INTEGER", key: "dataLayerVersion", value: "2" },
+      { type: "TEMPLATE", key: "name", value: "la_tracking_mode" },
+    ],
+    ...overrides,
+  };
+}
+
 function containerExport(overrides: Record<string, unknown> = {}) {
+  const { variable, ...rest } = overrides;
+
+  // A container with no `variable` override gets the correct mode variable, so an unrelated fixture
+  // is not accidentally testing a missing guard source. A test that passes its own list owns the
+  // whole list, mode variable included — that is how the missing and malformed cases are written.
+  const variables = variable === undefined ? [trackingModeVariable()] : variable;
+
   return {
     exportFormatVersion: 2,
     containerVersion: {
@@ -128,8 +155,8 @@ function containerExport(overrides: Record<string, unknown> = {}) {
       container: { publicId: "GTM-FIXTURE" },
       tag: [ga4ConfigTag(), adsConversionTag(), ga4EventTag()],
       trigger: [liveGuardTrigger(), unguardedTrigger()],
-      variable: [],
-      ...overrides,
+      variable: variables,
+      ...rest,
     },
   };
 }
@@ -450,7 +477,7 @@ describe("GTM container export static audit", () => {
           { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
           { type: "BOOLEAN", key: "sendPageView", value: "false" },
         ] })],
-        variable: [constantVariable("Prod GA4", "G-FIXTURE001")],
+        variable: [trackingModeVariable(), constantVariable("Prod GA4", "G-FIXTURE001")],
       }),
       approved: APPROVED,
     });
@@ -467,7 +494,7 @@ describe("GTM container export static audit", () => {
           { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
           { type: "BOOLEAN", key: "sendPageView", value: "false" },
         ] })],
-        variable: [constantVariable("Prod GA4", "G-NOTAPPROVED")],
+        variable: [trackingModeVariable(), constantVariable("Prod GA4", "G-NOTAPPROVED")],
       }),
       approved: APPROVED,
     });
@@ -492,7 +519,7 @@ describe("GTM container export static audit", () => {
             { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
             { type: "BOOLEAN", key: "sendPageView", value: "false" },
           ] })],
-          variable: variables,
+          variable: [trackingModeVariable(), ...variables],
         }),
         approved: APPROVED,
       });
@@ -516,7 +543,7 @@ describe("GTM container export static audit", () => {
             map: [{ type: "TEMPLATE", key: "pixelId", value: "{{Prod TikTok}}" }],
           }],
         }],
-        variable: [constantVariable("Prod TikTok", "NOTAPPROVEDPIXEL")],
+        variable: [trackingModeVariable(), constantVariable("Prod TikTok", "NOTAPPROVEDPIXEL")],
       }),
       approved: APPROVED,
     });
@@ -589,7 +616,7 @@ describe("GTM container export static audit", () => {
             { type: "TEMPLATE", key: "configSettingsVariable", value: "{{Config settings}}" },
           ],
         }],
-        variable: [{
+        variable: [trackingModeVariable(), {
           variableId: "101",
           name: "Config settings",
           type: "gtcs",
@@ -787,7 +814,7 @@ describe("GTM container export static audit", () => {
           firingTriggerId: [LIVE_TRIGGER_ID],
           parameter: [{ type: "TEMPLATE", key: "html", value: "<script>{{Vendor snippet body}}</script>" }],
         }],
-        variable: [constantVariable("Vendor snippet body", "fbq('track','Purchase')")],
+        variable: [trackingModeVariable(), constantVariable("Vendor snippet body", "fbq('track','Purchase')")],
       }),
       approved: APPROVED,
     });
@@ -807,6 +834,7 @@ describe("GTM container export static audit", () => {
           parameter: [{ type: "TEMPLATE", key: "html", value: "<script>{{Outer}}</script>" }],
         }],
         variable: [
+          trackingModeVariable(),
           constantVariable("Outer", "wrap({{Inner}})"),
           constantVariable("Inner", "fbevents.js"),
         ],
@@ -827,7 +855,7 @@ describe("GTM container export static audit", () => {
           { type: "BOOLEAN", key: "sendPageView", value: "false" },
           { type: "TEMPLATE", key: "note", value: "{{A}}" },
         ] })],
-        variable: [constantVariable("A", "sees {{B}}"), constantVariable("B", "sees {{A}}")],
+        variable: [trackingModeVariable(), constantVariable("A", "sees {{B}}"), constantVariable("B", "sees {{A}}")],
       }),
       approved: APPROVED,
     });
@@ -852,7 +880,7 @@ describe("GTM container export static audit", () => {
             { type: "TEMPLATE", key: "note", value: "{{Unrelated settings}}" },
           ],
         }],
-        variable: [{
+        variable: [trackingModeVariable(), {
           variableId: "101",
           name: "Unrelated settings",
           type: "gtcs",
@@ -994,6 +1022,147 @@ describe("GTM container export static audit", () => {
 
     assert.equal(result.ok, false);
     assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("accepts guards built on a Data Layer Variable that reads the application's mode key", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({ variable: [trackingModeVariable()] }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  for (const [label, definition] of [
+    ["a Constant that simply returns live", {
+      variableId: "1",
+      name: "la_tracking_mode",
+      type: "c",
+      parameter: [{ type: "TEMPLATE", key: "value", value: "live" }],
+    }],
+    ["a Constant wearing a Data Layer Variable's parameter shape", {
+      variableId: "1",
+      name: "la_tracking_mode",
+      type: "c",
+      parameter: [
+        { type: "TEMPLATE", key: "name", value: "la_tracking_mode" },
+        { type: "TEMPLATE", key: "value", value: "live" },
+      ],
+    }],
+    ["a Custom JavaScript variable", {
+      variableId: "1",
+      name: "la_tracking_mode",
+      type: "jsm",
+      parameter: [{ type: "TEMPLATE", key: "javascript", value: "function(){return 'live'}" }],
+    }],
+    ["a Data Layer Variable reading some other key", {
+      variableId: "1",
+      name: "la_tracking_mode",
+      type: "v",
+      parameter: [
+        { type: "INTEGER", key: "dataLayerVersion", value: "2" },
+        { type: "TEMPLATE", key: "name", value: "something_else" },
+      ],
+    }],
+  ] as const) {
+    it(`refuses a container whose mode variable is ${label}`, () => {
+      // The guard names a variable; without this it proves only the name. A variable that returns
+      // "live" unconditionally satisfies every production guard, and preview sees the same "live".
+      const result = auditGtmContainerExport({
+        source: containerExport({ variable: [definition] }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.TRACKING_MODE_VARIABLE_NOT_APP_OWNED));
+      assert.ok(
+        codes(result).includes(GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD),
+        "no tag may be certified by a guard whose source is not the application's fact",
+      );
+    });
+  }
+
+  it("refuses a container that defines no mode variable at all", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        variable: [{ variableId: "9", name: "Something else", type: "c", parameter: [] }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TRACKING_MODE_VARIABLE_NOT_APP_OWNED));
+  });
+
+  it("refuses a container that defines the mode variable twice", () => {
+    // Two definitions leave the audit reading whichever it saw last, which is not the one a
+    // reviewer looked at.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        variable: [
+          trackingModeVariable({ variableId: "2", type: "c", parameter: [
+            { type: "TEMPLATE", key: "value", value: "live" },
+          ] }),
+          trackingModeVariable(),
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TRACKING_MODE_VARIABLE_NOT_APP_OWNED));
+  });
+
+  it("refuses a live-guarded destination tag that another tag sequences", () => {
+    // The bypass: a Conversion Linker needs no guard of its own, and a setup tag runs before its
+    // primary. The GA4 tag's own live trigger is never evaluated on that path, yet it delivers.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [
+          {
+            tagId: "5",
+            name: "Conversion Linker",
+            type: "gclidw",
+            firingTriggerId: [ALWAYS_TRIGGER_ID],
+            parameter: [],
+            setupTag: [{ tagName: "GA4 configuration", stopOnSetupFailure: false }],
+          },
+          ga4ConfigTag(),
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      codes(result).includes(GTM_AUDIT_CODES.TAG_SEQUENCING_NOT_AUDITABLE),
+      "a firing path that skips the tag's own trigger must not be invisible to the audit",
+    );
+  });
+
+  it("refuses a destination tag that sequences another tag after itself", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [
+          adsConversionTag({
+            teardownTag: [{ tagName: "Conversion Linker", stopTeardownOnFailure: false }],
+          }),
+          { tagId: "5", name: "Conversion Linker", type: "gclidw", firingTriggerId: [ALWAYS_TRIGGER_ID], parameter: [] },
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TAG_SEQUENCING_NOT_AUDITABLE));
+  });
+
+  it("leaves a container with no tag sequencing alone", () => {
+    const result = auditGtmContainerExport({ source: containerExport(), approved: APPROVED });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
   });
 
   it("refuses an export from a container the owner did not approve", () => {

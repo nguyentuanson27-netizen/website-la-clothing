@@ -40,6 +40,10 @@ export const GTM_AUDIT_CODES = {
   TAG_WITHOUT_LIVE_GUARD: "TAG_WITHOUT_LIVE_GUARD",
   /** A tag type whose delivery this audit has no reviewed parser for. */
   UNAUDITABLE_TAG_TYPE: "UNAUDITABLE_TAG_TYPE",
+  /** The mode variable the guards name is not a data-layer read of the application-owned fact. */
+  TRACKING_MODE_VARIABLE_NOT_APP_OWNED: "TRACKING_MODE_VARIABLE_NOT_APP_OWNED",
+  /** Tag sequencing gives a delivering tag a firing path this audit cannot account for. */
+  TAG_SEQUENCING_NOT_AUDITABLE: "TAG_SEQUENCING_NOT_AUDITABLE",
   /** Meta belongs to the direct first-party integration, never to GTM. */
   META_TAG_PRESENT: "META_TAG_PRESENT",
   /** GA4 would send its own page view beside the application's canonical one. */
@@ -98,6 +102,18 @@ const TRACKING_MODE_VARIABLE = "la_tracking_mode";
 const LIVE_MODE = "live";
 
 /**
+ * The GTM variable type that reads a value out of the dataLayer.
+ *
+ * The guard is only worth anything if the thing it reads is the fact the application pushes. A
+ * variable merely *named* `la_tracking_mode` proves nothing: a Constant (`c`) or a Custom
+ * JavaScript variable (`jsm`) of that name could return `live` unconditionally, and then every
+ * production tag would satisfy the static check while preview sessions saw `live` too and shipped
+ * real traffic. Preview isolation has to be mechanical, so the variable type is checked, not the
+ * name.
+ */
+const DATA_LAYER_VARIABLE_TYPE = "v";
+
+/**
  * Tag types that carry no vendor delivery of their own.
  *
  * Kept deliberately small. Everything absent from it — including a type this list has never seen —
@@ -121,9 +137,11 @@ const NON_DELIVERING_TAG_TYPES: ReadonlySet<string> = new Set([
  * live guard would confuse *when* it fires with *where* it delivers. It is refused instead.
  *
  * The consequence is deliberate and worth stating: delivering TikTok through its gallery template
- * cannot be certified by this audit as written. Admitting it means adding a reviewed parser for that
- * exact template — a human review step, correctly gated — or delivering TikTok outside GTM. Neither
- * is decidable here while owner gate O4 is open, so the audit refuses rather than assumes.
+ * cannot be certified by this audit as written. Under the locked v1 contract — plan §3.7, *TikTok
+ * Pixel runs through GTM* — the only path that admits it is a reviewed parser for that exact
+ * template, a human review step this audit deliberately leaves to a person. Delivering TikTok
+ * outside GTM is not an alternative available here: that is an architecture change needing its own
+ * approved amendment, not something this gate may open by loosening.
  */
 const REVIEWED_TAG_TYPES: ReadonlySet<string> = new Set([
   "gclidw", // Conversion Linker — first-party cookies only
@@ -203,6 +221,27 @@ function parameterValue(parameters: readonly Parameter[], key: string): string |
     if (readString(parameter.key) === key) return readString(parameter.value);
   }
   return null;
+}
+
+/**
+ * Whether the container's `la_tracking_mode` variable really is the application's dataLayer fact.
+ *
+ * This is what makes every firing guard mean anything. The guards name a variable; without this,
+ * naming is all they prove. The variable must exist exactly once, be a Data Layer Variable, and
+ * read exactly the `la_tracking_mode` key — anything else, including a Constant or a computed
+ * variable that happens to return `live`, would let preview sessions satisfy the same guard as
+ * production.
+ */
+function trackingModeVariableIsAppOwned(variables: VariableIndex): boolean {
+  const variable = variables.get(TRACKING_MODE_VARIABLE);
+  if (variable === undefined || variable.duplicated) return false;
+  if (!isRecord(variable.source)) return false;
+  if (readString(variable.source.type) !== DATA_LAYER_VARIABLE_TYPE) return false;
+
+  // A Data Layer Variable names the key it reads in its `name` parameter, which need not match the
+  // variable's own name.
+  const dataLayerKey = parameterValue(readParameters(variable.source.parameter), "name");
+  return dataLayerKey === TRACKING_MODE_VARIABLE;
 }
 
 /**
@@ -319,7 +358,10 @@ function collectMapRows(value: unknown, depth = 0): Array<ReadonlyMap<string, st
  * table, a data-layer read — cannot be evaluated statically, so it stays unresolved and any
  * destination that depends on it is refused rather than assumed approved.
  */
-type VariableIndex = ReadonlyMap<string, Readonly<{ literal: string | null; source: unknown }>>;
+type VariableIndex = ReadonlyMap<
+  string,
+  Readonly<{ literal: string | null; source: unknown; duplicated: boolean }>
+>;
 
 const VARIABLE_REFERENCE = /^\{\{(.+)\}\}$/;
 const EMBEDDED_VARIABLE_REFERENCE = /\{\{([^{}]+)\}\}/g;
@@ -340,7 +382,7 @@ function embeddedVariableNames(value: string): string[] {
 }
 
 function indexVariables(variables: readonly unknown[]): VariableIndex {
-  const index = new Map<string, { literal: string | null; source: unknown }>();
+  const index = new Map<string, { literal: string | null; source: unknown; duplicated: boolean }>();
   for (const candidate of variables) {
     if (!isRecord(candidate)) continue;
     const name = readString(candidate.name);
@@ -351,7 +393,9 @@ function indexVariables(variables: readonly unknown[]): VariableIndex {
     // A constant whose value is itself a reference is not a literal this audit can stand behind.
     const literal = rawValue !== null && referencedVariableName(rawValue) === null ? rawValue : null;
 
-    index.set(name, { literal, source: candidate });
+    // Two definitions of one name leave the audit reading whichever it saw last, which is not the
+    // one a reviewer looked at. The duplicate is remembered so it can be refused instead.
+    index.set(name, { literal, source: candidate, duplicated: index.has(name) });
   }
   return index;
 }
@@ -584,13 +628,43 @@ export function auditGtmContainerExport({
     );
   }
 
-  const guardedTriggerIds = new Set(
+  // The guards name a variable; whether that variable is the application's fact is a property of the
+  // container, checked once. If it is not, no trigger in this container can carry a guard, so the
+  // guarded set is emptied rather than left to certify tags on a name match.
+  const modeVariableIsAppOwned = trackingModeVariableIsAppOwned(variables);
+  if (!modeVariableIsAppOwned) {
+    refuse(
+      GTM_AUDIT_CODES.TRACKING_MODE_VARIABLE_NOT_APP_OWNED,
+      `${TRACKING_MODE_VARIABLE} is not a single Data Layer Variable reading the ${TRACKING_MODE_VARIABLE} key, so no firing guard built on it can be trusted`,
+    );
+  }
+
+  // Tag sequencing is a firing path that never passes through a tag's own firingTriggerId: a setup
+  // tag runs before its primary and a cleanup tag after it. A delivering tag on either end of such
+  // an edge can therefore execute without its own live trigger ever being evaluated. This audit does
+  // not model that graph — the export format was never read from primary documentation — so it
+  // refuses delivering tags that take part in sequencing rather than guessing at the semantics.
+  const sequencedTagNames = new Set<string>();
+  for (const candidate of tags) {
+    if (!isRecord(candidate)) continue;
+    for (const key of ["setupTag", "teardownTag"]) {
+      const edges = candidate[key];
+      if (!Array.isArray(edges)) continue;
+      for (const edge of edges) {
+        if (!isRecord(edge)) continue;
+        const named = readString(edge.tagName);
+        if (named !== null) sequencedTagNames.add(named);
+      }
+    }
+  }
+
+  const guardedTriggerIds = modeVariableIsAppOwned ? new Set(
     triggers
       .filter(isRecord)
       .filter(triggerCarriesLiveGuard)
       .map((trigger) => readString(trigger.triggerId))
       .filter((id): id is string => id !== null),
-  );
+  ) : new Set<string>();
 
   for (const candidate of tags) {
     if (!isRecord(candidate)) {
@@ -627,6 +701,17 @@ export function auditGtmContainerExport({
     }
 
     if (!NON_DELIVERING_TAG_TYPES.has(type)) {
+      const declaresSequencing = ["setupTag", "teardownTag"].some(
+        (key) => Array.isArray(candidate[key]) && (candidate[key] as unknown[]).length > 0,
+      );
+      const isSequenced = sequencedTagNames.has(readString(candidate.name) ?? "\u0000");
+      if (declaresSequencing || isSequenced) {
+        refuse(
+          GTM_AUDIT_CODES.TAG_SEQUENCING_NOT_AUDITABLE,
+          `${label} takes part in tag sequencing, which can fire it without its own trigger being evaluated`,
+        );
+      }
+
       const firingTriggerIds = Array.isArray(candidate.firingTriggerId)
         ? candidate.firingTriggerId.map(readString).filter((id): id is string => id !== null)
         : [];
