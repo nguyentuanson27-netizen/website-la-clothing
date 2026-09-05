@@ -1,0 +1,114 @@
+name: Merchant feed runtime
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merchant-feed-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: la_clothing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d la_clothing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3220
+      APP_DOMAIN: 127.0.0.1:3220
+      SEARCH_INDEXING_ENABLED: "false"
+      PANCAKE_SHOP_ID: "920007"
+      NEXT_TELEMETRY_DISABLED: "1"
+      LA_SHIPPING_FEE_VND: "17000"
+      LA_FREE_SHIPPING_SUBTOTAL_VND: "650000"
+      LA_FREE_SHIPPING_MIN_QUANTITY: "5"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Build
+        run: pnpm build
+
+      - name: Exercise public Merchant feed route
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm start --hostname 127.0.0.1 --port 3220 >"$RUNNER_TEMP/merchant-feed-runtime.log" 2>&1 &
+          APP_PID=$!
+          cleanup() {
+            kill "$APP_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for attempt in {1..40}; do
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+              cat "$RUNNER_TEMP/merchant-feed-runtime.log"
+              exit 1
+            fi
+            if curl --fail --silent --show-error http://127.0.0.1:3220/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/merchant-feed-runtime.log"
+            exit 1
+          fi
+
+          first_status="$(curl --silent --output "$RUNNER_TEMP/feed-first.txt" --dump-header "$RUNNER_TEMP/feed-first.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/google-merchant?country=VN&currency=VND&foo=1')"
+          second_status="$(curl --silent --output "$RUNNER_TEMP/feed-second.txt" --dump-header "$RUNNER_TEMP/feed-second.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/google-merchant?country=US&currency=USD&foo=2')"
+
+          test "$first_status" = "503"
+          test "$second_status" = "503"
+          grep -Fqi 'retry-after: 60' "$RUNNER_TEMP/feed-first.headers"
+          grep -Fqi 'retry-after: 60' "$RUNNER_TEMP/feed-second.headers"
+          grep -Fqi 'x-la-merchant-feed-failure: MARKET_UNRESOLVED' "$RUNNER_TEMP/feed-first.headers"
+          grep -Fqi 'x-la-merchant-feed-failure: MARKET_UNRESOLVED' "$RUNNER_TEMP/feed-second.headers"
+          test "$(cat "$RUNNER_TEMP/feed-first.txt")" = "Merchant feed temporarily unavailable."
+          test "$(cat "$RUNNER_TEMP/feed-second.txt")" = "Merchant feed temporarily unavailable."
+
+          test "$(grep -Fc '[merchant-feed] cold_generation' "$RUNNER_TEMP/merchant-feed-runtime.log")" = "1"
+          grep -Fq '[merchant-feed] market_unresolved' "$RUNNER_TEMP/merchant-feed-runtime.log"
+          grep -Fq '[merchant-feed] backoff_hit' "$RUNNER_TEMP/merchant-feed-runtime.log"

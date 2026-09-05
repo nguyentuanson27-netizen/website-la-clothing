@@ -1,34 +1,3 @@
-/**
- * U25 / #153 M3 — the bounded canonical loader behind the Merchant offer mapper.
- *
- * It answers one question — "what does the storefront currently publish?" — and hands the answer to
- * a pure function. The split matters: the mapper never queries, while this loader uses one bounded
- * product read plus bounded promotion-candidate batches rather than a query per offer.
- *
- * Every fact here is loaded through the authority that already owns it:
- *
- *   - visibility is the storefront's own predicate: present and active product, present and active
- *     variants. A hidden product has no landing page, so it has no offer;
- *   - pricing is `buildPromotionalStorefrontPricing`, the same rule object the product page, the
- *     listings, the cart and the checkout price from, resolved against one instant per read;
- *   - media is `resolveStorefrontProductMedia` plus `resolveVariantGalleryIndexes`, so raw mirrored
- *     URLs never leave this module;
- *   - the option projection is `buildStorefrontProductProjection`, so the feed's notion of an option
- *     is the page's notion of an option;
- *   - apparel overrides are the website-owned `ProductMerchantFacts` row, read as untrusted values
- *     that the pure resolver validates.
- *
- * Query shape is deliberately bounded: one product read that carries its variants, warehouse stock,
- * composite edges, published content and overrides, then promotion-candidate reads in the existing
- * 200-variant batches. The number of batches can grow with catalog size, but there is no per-offer
- * N+1 lookup and the read refuses an over-large product catalog rather than silently truncating it.
- * The stricter public-feed round-trip envelope remains U26 / M4's responsibility.
- *
- * Composite products are still fetched. They are excluded by the mapper with `COMPOSITE_DEFERRED`
- * rather than filtered out here, so the diagnostics can account for every catalog row the way the
- * M1 audit does.
- */
-
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 import {
@@ -37,8 +6,7 @@ import {
   type MerchantCandidateVariation,
   type MerchantMappingResult,
 } from "./merchant-offer-mapper.ts";
-import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
-import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import { MAX_MERCHANT_CANDIDATE_VARIANTS } from "./merchant-feed-limits.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 import {
   resolveStorefrontProductMedia,
@@ -51,56 +19,110 @@ import { toMerchantApparelWireValues } from "./merchant-apparel-facts.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "./product-merchant-facts-repository.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
-
-/**
- * The loader's own safety bound. It refuses rather than truncates, because a feed that quietly
- * dropped half the catalog would look healthy. The public feed's offer and byte envelope is a
- * separate contract and belongs to U26 / M4.
- */
 export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
-
 export class MerchantOfferReadError extends Error {}
 
-const candidateSelection = {
+/**
+ * U26 keeps the public feed inside eight whole-generation DB operations without enabling Prisma's
+ * preview relation-join feature. The coordinator owns two durable promotion-revision reads (capture
+ * and pre-publish recheck), so this repository is capped at six flat/bounded data reads. Two pairs
+ * that used to need separate Prisma model reads are deliberately folded into parameterized SQL:
+ * product editorial+Merchant facts, and promotion target+enabled-campaign facts.
+ */
+const productSelection = {
   id: true,
   pancakeProductId: true,
   slug: true,
   name: true,
   primaryImageUrl: true,
-  // Only a PUBLISHED description is a fact the storefront shows, so only that is a Merchant fact.
-  content: { select: { status: true, editorialDescription: true } },
-  // Website-owned ADR 0007 overrides. Absent row means every fact inherits the shop default.
-  merchantFacts: { select: { gender: true, ageGroup: true, condition: true } },
-  variants: {
-    where: { isPresent: true, isActive: true },
-    orderBy: [{ pancakeVariationId: "asc" }],
-    select: {
-      id: true,
-      pancakeVariationId: true,
-      // ADR 0008: the manufacturer MPN is the mirrored Pancake display_id. `sku` is a distinct
-      // website-owned field and is deliberately not selected, so it cannot become a fallback.
-      pancakeDisplayId: true,
-      color: true,
-      size: true,
-      pancakeRetailPrice: true,
-      pancakeRetailPriceAfterDiscount: true,
-      pancakeImageUrls: true,
-      warehouseStocks: { orderBy: [{ pancakeWarehouseId: "asc" }], select: { quantity: true } },
-      // Either side of a composite edge defers the variation in Merchant v1, so both are probed.
-      compositeParents: { select: { parentVariantId: true }, take: 1 },
-      compositeComponents: { select: { componentVariantId: true }, take: 1 },
-    },
-  },
 } satisfies Prisma.ProductMirrorSelect;
 
-type SelectedCandidateProduct = Prisma.ProductMirrorGetPayload<{
-  select: typeof candidateSelection;
+const variantSelection = {
+  id: true,
+  productId: true,
+  pancakeVariationId: true,
+  pancakeDisplayId: true,
+  color: true,
+  size: true,
+  pancakeRetailPrice: true,
+  pancakeRetailPriceAfterDiscount: true,
+  pancakeImageUrls: true,
+} satisfies Prisma.VariantMirrorSelect;
+
+const contentSelection = {
+  productId: true,
+  status: true,
+  editorialDescription: true,
+} satisfies Prisma.ProductContentSelect;
+
+const merchantFactsSelection = {
+  productId: true,
+  gender: true,
+  ageGroup: true,
+  condition: true,
+} satisfies Prisma.ProductMerchantFactsSelect;
+
+const stockSelection = {
+  variantId: true,
+  pancakeWarehouseId: true,
+  quantity: true,
+} satisfies Prisma.WarehouseStockSelect;
+
+const compositeSelection = {
+  parentVariantId: true,
+  componentVariantId: true,
+} satisfies Prisma.CompositeComponentMirrorSelect;
+
+type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
+type SelectedVariant = Prisma.VariantMirrorGetPayload<{ select: typeof variantSelection }>;
+type SelectedProductContent = Prisma.ProductContentGetPayload<{ select: typeof contentSelection }>;
+type SelectedMerchantFacts = Prisma.ProductMerchantFactsGetPayload<{
+  select: typeof merchantFactsSelection;
+}>;
+type SelectedWarehouseStock = Prisma.WarehouseStockGetPayload<{ select: typeof stockSelection }>;
+
+type ProductFactRow = Readonly<{
+  productId: string;
+  contentStatus: SelectedProductContent["status"] | null;
+  editorialDescription: string | null;
+  merchantFactsPresent: boolean;
+  merchantGender: SelectedMerchantFacts["gender"] | null;
+  merchantAgeGroup: SelectedMerchantFacts["ageGroup"] | null;
+  merchantCondition: SelectedMerchantFacts["condition"] | null;
 }>;
 
-/**
- * M1 Merchant availability semantics: any unsafe or negative warehouse quantity poisons the whole
- * fact. Summing first would let a positive warehouse hide a negative mirrored one (-3 + 4 => 1).
- */
+type JoinedPromotionRow = Readonly<{
+  campaignId: string;
+  productId: string | null;
+  variantId: string | null;
+  name: string;
+  kind: ApplicablePromotionCampaign["kind"];
+  discountType: ApplicablePromotionCampaign["discountType"];
+  percentageValue: number | null;
+  fixedPriceVnd: bigint | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+}>;
+
+type LoadedCandidateVariant = SelectedVariant &
+  Readonly<{
+    warehouseStocks: readonly SelectedWarehouseStock[];
+    isCompositeParent: boolean;
+    isCompositeComponent: boolean;
+  }>;
+
+type LoadedCandidateProduct = SelectedProduct &
+  Readonly<{
+    content: SelectedProductContent | null;
+    merchantFacts: SelectedMerchantFacts | null;
+    variants: readonly LoadedCandidateVariant[];
+  }>;
+
+type LoadedMerchantCandidates = Readonly<{
+  products: readonly MerchantCandidateProduct[];
+  nextPricingTransitionAtMs: number | null;
+}>;
+
 function aggregateWarehouseStock(quantities: readonly number[]): number {
   for (const quantity of quantities) {
     if (!Number.isFinite(quantity) || quantity < 0) return Number.NaN;
@@ -114,21 +136,94 @@ function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
     : [];
 }
 
+function buildCampaignsByVariantId({
+  variants,
+  promotionRows,
+}: Readonly<{
+  variants: readonly SelectedVariant[];
+  promotionRows: readonly JoinedPromotionRow[];
+}>): ReadonlyMap<string, readonly ApplicablePromotionCampaign[]> {
+  const knownVariantIds = new Set(variants.map((variant) => variant.id));
+  const variantsByProductId = new Map<string, string[]>();
+  for (const variant of variants) {
+    const owned = variantsByProductId.get(variant.productId);
+    if (owned === undefined) variantsByProductId.set(variant.productId, [variant.id]);
+    else owned.push(variant.id);
+  }
+
+  const campaignsByVariantId = new Map<string, ApplicablePromotionCampaign[]>();
+  const seenByVariantId = new Map<string, Set<string>>();
+  for (const variantId of knownVariantIds) {
+    campaignsByVariantId.set(variantId, []);
+    seenByVariantId.set(variantId, new Set());
+  }
+
+  const attach = (variantId: string, campaign: ApplicablePromotionCampaign) => {
+    const seen = seenByVariantId.get(variantId);
+    if (seen === undefined || seen.has(campaign.id)) return;
+    seen.add(campaign.id);
+    campaignsByVariantId.get(variantId)?.push(campaign);
+  };
+
+  for (const row of promotionRows) {
+    const campaign: ApplicablePromotionCampaign = Object.freeze({
+      id: row.campaignId,
+      name: row.name,
+      kind: row.kind,
+      discountType: row.discountType,
+      percentageValue: row.percentageValue,
+      fixedPriceVnd: row.fixedPriceVnd,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+    });
+    if (row.variantId !== null) {
+      attach(row.variantId, campaign);
+      continue;
+    }
+    if (row.productId === null) continue;
+    for (const variantId of variantsByProductId.get(row.productId) ?? []) {
+      attach(variantId, campaign);
+    }
+  }
+
+  return campaignsByVariantId;
+}
+
+function nextRelevantPricingTransitionAtMs(
+  promotionRows: readonly JoinedPromotionRow[],
+  now: Date,
+): number | null {
+  const nowMs = now.getTime();
+  let nextMs: number | null = null;
+  const seenCampaignIds = new Set<string>();
+
+  for (const row of promotionRows) {
+    if (seenCampaignIds.has(row.campaignId)) continue;
+    seenCampaignIds.add(row.campaignId);
+    for (const boundary of [row.startsAt, row.endsAt]) {
+      if (boundary === null) continue;
+      const boundaryMs = boundary.getTime();
+      if (boundaryMs <= nowMs) continue;
+      if (nextMs === null || boundaryMs < nextMs) nextMs = boundaryMs;
+    }
+  }
+
+  return nextMs;
+}
+
 function toCandidateProduct(
-  product: SelectedCandidateProduct,
+  product: LoadedCandidateProduct,
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
   now: Date,
 ): MerchantCandidateProduct {
   const variantImageUrls = product.variants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
-
   const media = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
     variantImageUrls,
   });
-
   const galleryIndexByVariantId = resolveVariantGalleryIndexes({
     gallery: media.gallery,
     variants: product.variants.map((variant, index) => ({
@@ -136,16 +231,12 @@ function toCandidateProduct(
       imageUrls: variantImageUrls[index] ?? [],
     })),
   });
-
-  // Summed once and shared, so the stock the storefront projection sees and the stock the Merchant
-  // availability fact is classified from cannot drift apart.
   const stockByVariantId = new Map(
     product.variants.map((variant) => [
       variant.id,
       aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
     ]),
   );
-
   const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
     id: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
@@ -155,16 +246,12 @@ function toCandidateProduct(
     retailPrice: variant.pancakeRetailPrice,
     retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
   }));
-
-  const hasCompositeGraph = product.variants.some(
-    (variant) => variant.compositeComponents.length > 0,
-  );
-
+  const hasCompositeGraph = product.variants.some((variant) => variant.isCompositeParent);
   const variations: MerchantCandidateVariation[] = product.variants.map((variant) => ({
     variantId: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
     pancakeDisplayId: variant.pancakeDisplayId,
-    isComposite: variant.compositeParents.length > 0 || variant.compositeComponents.length > 0,
+    isComposite: variant.isCompositeParent || variant.isCompositeComponent,
     stockQuantity: stockByVariantId.get(variant.id) ?? Number.NaN,
   }));
 
@@ -178,14 +265,10 @@ function toCandidateProduct(
     galleryIndexByVariantId,
     projection: buildStorefrontProductProjection({
       parentVariants,
-      // A composite product is deferred in Merchant v1, so its component groups are not assembled:
-      // the projection only has to say "this is a set", which the presence of the graph decides.
       componentGroups: [],
       hasCompositeGraph,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     }),
-    // Read as stored, not as trusted: the mapper's resolver is what decides whether these values
-    // are usable, and an absent row is inheritance rather than an unknown state.
     apparelOverrides:
       product.merchantFacts === null
         ? INHERITED_APPAREL_OVERRIDES
@@ -195,56 +278,197 @@ function toCandidateProduct(
 }
 
 export function createMerchantOfferRepository(client: PrismaClient) {
-  async function readCandidateProducts({
+  async function loadCandidateProducts({
     shopId,
     now = new Date(),
-  }: Readonly<{ shopId: number; now?: Date }>): Promise<MerchantCandidateProduct[]> {
+  }: Readonly<{ shopId: number; now?: Date }>): Promise<LoadedMerchantCandidates> {
     if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
       throw new MerchantOfferReadError("Merchant shop id must fit a positive PostgreSQL INTEGER");
     }
 
+    // 1/6 — bounded product authority.
     const products = await client.productMirror.findMany({
       where: { pancakeShopId: shopId, isPresent: true, isActive: true },
-      select: candidateSelection,
-      // A stable catalog order makes the mapper's input — and therefore the feed and its
-      // diagnostics — reproducible across reads.
+      select: productSelection,
       orderBy: [{ pancakeProductId: "asc" }],
       take: MAX_MERCHANT_CANDIDATE_PRODUCTS + 1,
     });
-
     if (products.length > MAX_MERCHANT_CANDIDATE_PRODUCTS) {
       throw new MerchantOfferReadError(
-        `Catalog exceeds the Merchant candidate bound of ${MAX_MERCHANT_CANDIDATE_PRODUCTS} products; raise it deliberately rather than publishing a truncated feed`,
+        `Catalog exceeds the Merchant candidate bound of ${MAX_MERCHANT_CANDIDATE_PRODUCTS} products; refusing a truncated feed`,
+      );
+    }
+    if (products.length === 0) {
+      return Object.freeze({ products: [], nextPricingTransitionAtMs: null });
+    }
+
+    const productIds = products.map((product) => product.id);
+
+    // 2/6 — all active/present variants, bounded before any fan-out reads.
+    const variants = await client.variantMirror.findMany({
+      where: { productId: { in: productIds }, isPresent: true, isActive: true },
+      select: variantSelection,
+      orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }],
+      take: MAX_MERCHANT_CANDIDATE_VARIANTS + 1,
+    });
+    if (variants.length > MAX_MERCHANT_CANDIDATE_VARIANTS) {
+      throw new MerchantOfferReadError(
+        `Catalog exceeds the Merchant candidate-variant query envelope of ${MAX_MERCHANT_CANDIDATE_VARIANTS}; refusing rather than exceeding the public-feed DB budget`,
       );
     }
 
-    const variantIds = products.flatMap((product) =>
-      product.variants.map((variant) => variant.id),
-    );
-    // Bounded batching, not a per-offer lookup: each call stays inside the candidate repository's
-    // own 200-id safety cap while the whole projection is still resolved.
-    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
-      variantIds,
-      // The same structural cast every other caller uses to hand the candidate repository a client;
-      // the repository declares only the two model reads it performs.
-      client: client as unknown as PromotionCandidateReadClient,
-    });
+    const variantIds = variants.map((variant) => variant.id);
 
-    return products.map((product) => toCandidateProduct(product, campaignsByVariantId, now));
+    // 3/6 — both website-owned product-fact tables in one parameterized, product-bounded read.
+    const productFacts = await client.$queryRawUnsafe<ProductFactRow[]>(
+      `SELECT
+         p."id" AS "productId",
+         c."status"::text AS "contentStatus",
+         c."editorialDescription" AS "editorialDescription",
+         (m."id" IS NOT NULL) AS "merchantFactsPresent",
+         m."gender"::text AS "merchantGender",
+         m."ageGroup"::text AS "merchantAgeGroup",
+         m."condition"::text AS "merchantCondition"
+       FROM "ProductMirror" p
+       LEFT JOIN "ProductContent" c ON c."productId" = p."id"
+       LEFT JOIN "ProductMerchantFacts" m ON m."productId" = p."id"
+       WHERE p."id" = ANY($1::text[])
+       ORDER BY p."id"`,
+      productIds,
+    );
+
+    // 4/6 and 5/6 — variant inventory and composite membership. Empty variant sets stay cheap.
+    const stocks =
+      variantIds.length === 0
+        ? []
+        : await client.warehouseStock.findMany({
+            where: { variantId: { in: variantIds } },
+            select: stockSelection,
+            orderBy: [{ variantId: "asc" }, { pancakeWarehouseId: "asc" }],
+          });
+    const compositeEdges =
+      variantIds.length === 0
+        ? []
+        : await client.compositeComponentMirror.findMany({
+            where: {
+              OR: [
+                { parentVariantId: { in: variantIds } },
+                { componentVariantId: { in: variantIds } },
+              ],
+            },
+            select: compositeSelection,
+          });
+
+    // 6/6 — target membership and enabled campaign facts in one parameterized bounded-domain read.
+    // This is also where the next known pricing boundary is discovered for cache-expiry capping.
+    const promotionRows =
+      variantIds.length === 0
+        ? []
+        : await client.$queryRawUnsafe<JoinedPromotionRow[]>(
+            `SELECT
+               t."campaignId" AS "campaignId",
+               t."productId" AS "productId",
+               t."variantId" AS "variantId",
+               c."name" AS "name",
+               c."kind"::text AS "kind",
+               c."discountType"::text AS "discountType",
+               c."percentageValue" AS "percentageValue",
+               c."fixedPriceVnd" AS "fixedPriceVnd",
+               c."startsAt" AS "startsAt",
+               c."endsAt" AS "endsAt"
+             FROM "PromotionTarget" t
+             INNER JOIN "PromotionCampaign" c ON c."id" = t."campaignId"
+             WHERE c."isEnabled" = TRUE
+               AND (t."variantId" = ANY($1::text[]) OR t."productId" = ANY($2::text[]))
+             ORDER BY t."campaignId", t."id"`,
+            variantIds,
+            productIds,
+          );
+
+    const contentByProductId = new Map<string, SelectedProductContent>();
+    const merchantFactsByProductId = new Map<string, SelectedMerchantFacts>();
+    for (const row of productFacts) {
+      if (row.contentStatus !== null) {
+        contentByProductId.set(row.productId, {
+          productId: row.productId,
+          status: row.contentStatus,
+          editorialDescription: row.editorialDescription,
+        });
+      }
+      if (row.merchantFactsPresent) {
+        merchantFactsByProductId.set(row.productId, {
+          productId: row.productId,
+          gender: row.merchantGender,
+          ageGroup: row.merchantAgeGroup,
+          condition: row.merchantCondition,
+        });
+      }
+    }
+
+    const stocksByVariantId = new Map<string, SelectedWarehouseStock[]>();
+    for (const stock of stocks) {
+      const existing = stocksByVariantId.get(stock.variantId);
+      if (existing === undefined) stocksByVariantId.set(stock.variantId, [stock]);
+      else existing.push(stock);
+    }
+    const compositeParentIds = new Set(compositeEdges.map((edge) => edge.parentVariantId));
+    const compositeComponentIds = new Set(compositeEdges.map((edge) => edge.componentVariantId));
+    const variantsByProductId = new Map<string, LoadedCandidateVariant[]>();
+    for (const variant of variants) {
+      const loaded: LoadedCandidateVariant = {
+        ...variant,
+        warehouseStocks: stocksByVariantId.get(variant.id) ?? [],
+        isCompositeParent: compositeParentIds.has(variant.id),
+        isCompositeComponent: compositeComponentIds.has(variant.id),
+      };
+      const existing = variantsByProductId.get(variant.productId);
+      if (existing === undefined) variantsByProductId.set(variant.productId, [loaded]);
+      else existing.push(loaded);
+    }
+
+    const campaignsByVariantId = buildCampaignsByVariantId({ variants, promotionRows });
+    const loadedProducts: LoadedCandidateProduct[] = products.map((product) => ({
+      ...product,
+      content: contentByProductId.get(product.id) ?? null,
+      merchantFacts: merchantFactsByProductId.get(product.id) ?? null,
+      variants: variantsByProductId.get(product.id) ?? [],
+    }));
+
+    return Object.freeze({
+      products: loadedProducts.map((product) =>
+        toCandidateProduct(product, campaignsByVariantId, now),
+      ),
+      nextPricingTransitionAtMs: nextRelevantPricingTransitionAtMs(promotionRows, now),
+    });
+  }
+
+  async function readCandidateProducts({
+    shopId,
+    now = new Date(),
+  }: Readonly<{ shopId: number; now?: Date }>): Promise<MerchantCandidateProduct[]> {
+    return [...(await loadCandidateProducts({ shopId, now })).products];
   }
 
   async function readMerchantOffers({
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{
-    shopId: number;
-    origin: string;
-    now?: Date;
-  }>): Promise<MerchantMappingResult> {
-    const products = await readCandidateProducts({ shopId, now });
-    return mapMerchantOffers({ products, origin });
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>): Promise<MerchantMappingResult> {
+    const loaded = await loadCandidateProducts({ shopId, now });
+    return mapMerchantOffers({ products: loaded.products, origin });
   }
 
-  return { readCandidateProducts, readMerchantOffers };
+  async function readMerchantFeedSnapshot({
+    shopId,
+    origin,
+    now = new Date(),
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>) {
+    const loaded = await loadCandidateProducts({ shopId, now });
+    return Object.freeze({
+      mapping: mapMerchantOffers({ products: loaded.products, origin }),
+      nextPricingTransitionAtMs: loaded.nextPricingTransitionAtMs,
+    });
+  }
+
+  return { readCandidateProducts, readMerchantOffers, readMerchantFeedSnapshot };
 }

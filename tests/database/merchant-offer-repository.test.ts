@@ -399,7 +399,7 @@ test("M3 a persisted apparel value outside the reviewed allowlist fails closed",
   }
 });
 
-test("M3 the loader uses bounded promotion batches rather than a query per offer", async () => {
+test("M4 the loader stays inside the whole-generation query envelope as offer count grows", async () => {
   let queries = 0;
   const counting = new PrismaClient({ adapter: new PrismaPg({ connectionString }) }).$extends({
     query: {
@@ -420,7 +420,7 @@ test("M3 the loader uses bounded promotion batches rather than a query per offer
   const at200 = await counted.readMerchantOffers({ shopId: SHOP_ID, origin: ORIGIN, now: SYNCED_AT });
   const queriesAt200 = queries;
   assert.equal(at200.offers.length, 200);
-  assert.ok(queriesAt200 > 0);
+  assert.ok(queriesAt200 > 0 && queriesAt200 <= 8);
 
   queries = 0;
   await catalog.syncSnapshot({
@@ -433,13 +433,12 @@ test("M3 the loader uses bounded promotion batches rather than a query per offer
   const queriesAt201 = queries;
   assert.equal(at201.offers.length, 201);
 
-  // The promotion candidate repository owns a 200-id safety cap and performs two reads per batch.
-  // Crossing 200 therefore adds one bounded batch (+2 Prisma operations); this is intentionally not
-  // a constant-round-trip claim. U26/M4 owns the stricter public-feed round-trip envelope.
-  assert.equal(queriesAt201, queriesAt200 + 2);
+  // U26 replaces the old 200-id promotion batching path with a flat, bounded feed loader. Crossing
+  // 200 offers must not add query batches; the stricter public-feed contract is <=8 DB operations.
+  assert.equal(queriesAt201, queriesAt200);
   assert.ok(
-    queriesAt201 < at201.offers.length,
-    `expected batching rather than per-offer reads, observed ${queriesAt201} for ${at201.offers.length} offers`,
+    queriesAt201 <= 8,
+    `expected <=8 whole-generation reads, observed ${queriesAt201} for ${at201.offers.length} offers`,
   );
 
   await counting.$disconnect();
