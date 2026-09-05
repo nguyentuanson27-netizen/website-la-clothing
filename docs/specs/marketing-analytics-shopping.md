@@ -1,6 +1,6 @@
 # Spec: Marketing Analytics, Ads Tracking & Google Shopping
 
-Status: **T1–T7, M1 implementation, and M2 implemented; M1 operational real-catalog closure / Checkpoint D remains pending an attributable exact-SHA rerun. T8 and M3–M5/V1 remain proposed and require reviewed approval before `/build`.**
+Status: **T1–T7, M1, and M2 implemented; M1 operational real-catalog closure is GREEN and Checkpoint D PASSED. T8 and M3–M5/V1 remain proposed and require reviewed approval before `/build`.**
 
 This specification defines the approved product outcome and safety boundaries. The implementation-level choices are normative in `tasks/marketing-analytics-shopping-plan.md`. In particular, the plan intentionally narrows conceptual examples here where the current storefront cannot truthfully supply a variant-level fact yet.
 

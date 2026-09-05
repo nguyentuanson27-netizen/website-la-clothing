@@ -1,6 +1,6 @@
 # Growth + Commerce master execution checklist — PR #151 + #152 + #153
 
-Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS and Checkpoint B PASS. U9/M1 implementation is delivered by PR #175 + PR #194, but U9 operational acceptance / #153 Checkpoint D remains OPEN pending one attributable exact-SHA real-catalog rerun. Wave 5 U25–U28 remains open and launch gates remain independent.**
+Status: **WAVES 0–4 runtime implementation is delivered through U24; Checkpoint A PASS, Checkpoint B PASS, and Checkpoint D PASS. U9/M1 operational closure is GREEN (executed on `84c99db3de6757c3ded4396644eb4dae25869e09`, tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`). Wave 5 remains open: U25/M3 is unblocked by M1 operational evidence and awaits approval before build; U26 depends on accepted U25/M3, while U27 and U28 retain their own prerequisites.**
 
 Source plan: `tasks/growth-commerce-master-plan.md`
 
@@ -41,7 +41,7 @@ not resolve downstream owner or launch gates.
 
 - [x] **U7** #151 P2 + #152 W3 — central exact pricing resolver + approved real-catalog `pnpm pancake:catalog:audit` evidence. *(PR #162 resolver, PR #163 mirrored-money audit, PR #174 W3 evidence; merged)* W3 verdict **PASS** — real-catalog evidence does not contradict the approved `retailPrice` ownership assumption, so the U7 stop rule was not triggered. The `retailPrice === retailPriceAfterDiscount` availability gate is deliberately still in place and remains U15/P6 work.
 - [x] **U8** #153 T4 — propagate `pancakeProductId` / `pancakeVariationId`; keep `VariantMirror.id` internal-only. *(PR #164 cart lines, PR #165 product/option facts; merged)* Composite lines carry the actual purchased component variation ID; unresolvable/private lines fail closed to no external identity.
-- [ ] **U9** #153 M1 + #152 W4a — **read-only** Merchant identity/durability/catalog audit. **Implementation delivered**: PR #175 proves external-ID durability via §3.3 Option B; PR #194 fixes manufacturer-MPN authority (`display_id` → mirrored `pancakeDisplayId`), media parity, Unicode validation and read-only ownership without repurposing website-owned `VariantMirror.sku`. ADR 0008 records the source/lifecycle contract; no GTIN inference; composites deferred. **Operational acceptance remains open** until `pnpm merchant:identity:audit` is rerun in the authorized current-catalog context on an exact committed post-fix SHA with clean/dirty state and refreshed counts recorded.
+- [x] **U9** #153 M1 + #152 W4a — **read-only** Merchant identity/durability/catalog audit. **Implementation delivered**: PR #175 proves external-ID durability via §3.3 Option B; PR #194 fixes manufacturer-MPN authority (`display_id` → mirrored `pancakeDisplayId`), media parity, Unicode validation and read-only ownership without repurposing website-owned `VariantMirror.sku`. ADR 0008 records the source/lifecycle contract; no GTIN inference; composites deferred. **Operational acceptance is GREEN**: executed on exact committed post-fix SHA `84c99db3de6757c3ded4396644eb4dae25869e09` (tree `ac2e395edafaf5acc83fe98c632145ef7b084aa3`) on the production mirror with verified CLEAN worktree state; 149/149 MPNs present/valid/unique (`mpnReady = true`), 149/149 media ready, 116 composite deferred. Checkpoint D is GREEN.
 - [x] **U10** #151 P3 — repository/lifecycle/runtime health, real component ownership and affected-variant recovery. *(PR #167 lifecycle, PR #168 candidate repository, PR #169 runtime health; merged)* Candidate lookup is two bounded queries with an N+1 guard; lifecycle is derived, so it stays correct across restart and zero traffic.
 - [x] **U11** #151 P4 — race-safe admin domain + default-off activation gate + transactional durable revision. *(PR #170 activation validation, PR #171 activation service, PR #172 admin operations; merged)* Activation gate remains **off**; disable/end-early stay campaign-row bounded so rollback survives coverage above 2000.
 
@@ -119,9 +119,9 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 5 — downstream consumers
 
-- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **Blocked until U9/M1 operational exact-SHA real-catalog rerun closes #153 Checkpoint D.**
+- [ ] **U25** #153 M3 — standalone Merchant mapper from audited IDs + canonical effective price + exact U12 URL. **M1/Checkpoint D dependency is satisfied; U25 is unblocked by M1 operational evidence and awaits approved `/build`.**
 - [ ] **U26** #153 M4 + #151 — bounded public feed/cache/single-flight/backoff + durable promotion revision; no request-controlled cache dimensions. Depends on accepted U25/M3 contract.
-- [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13. *(PR #196 open, not merged. Markup delivered; W4d's own "unique reliable variant ID" condition stays OPEN by ADR 0008 — identifiers belong to U25/M3 and U32 — and every published variant URL is `noindex, nofollow` under the merged W4c query contract. Both are recorded in `docs/audits/seo-geo-audit.md` W4d; the URL form is an owner decision U27 did not reopen.)*
+- [ ] **U27** #152 W4d + **variant-level portion of W5 only** — ProductGroup/variant Product+Offer after U12/U17; no `AggregateOffer`; own focused HTTP/structured-data verification; do not wait for U13.
 - [ ] Before Merchant/index launch, prove feed vs JSON-LD identity/price/availability consistency.
 - [ ] **U28** #153 T8 — exact saved GTM version/export/checksum; preview isolation; only then actual loader/CSP; live publishes the same reviewed version.
 
@@ -154,19 +154,6 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 - [ ] Meta-to-GTM migration / Enhanced Conversions / customer PII remain out of scope.
 - [ ] Composite Merchant offers remain out of v1.
 - [ ] Coupons/stacking/BXGY/personalized promotion expansion remains out of #151 v1.
-
-## Recorded defects — owner needed, not on any unit's critical path
-
-- [ ] **D1 — PDP selection model compares option text case-sensitively.**
-  `src/commerce/storefront-selection.ts` dedupes and matches color/size with raw strings, while the
-  option model (`toOptionIdentityKey` in `src/commerce/storefront-product.ts`) treats values that
-  differ only in case as one option. A catalog spelling one color `Đen` and `đen` therefore renders
-  **two** color chips on the PDP, while U27's variant structured data correctly reports the family
-  as varying by size alone. Pre-existing; surfaced by U27 (PR #196) rather than caused by it —
-  before U27 the markup diverged in the worse direction, contradicting the identity model. Fixing
-  it changes which options a shopper can pick, so it was deliberately left out of U27's variant-level
-  scope. Two candidate fixes: use `toOptionIdentityKey` in the selection model, or normalize the
-  mirrored values upstream. Detail in `docs/audits/seo-geo-audit.md` W4d.
 
 # Owner decision gates
 
