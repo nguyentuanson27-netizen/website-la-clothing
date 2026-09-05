@@ -13,6 +13,11 @@ const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;
  */
 const MAX_PUBLISHED_IDENTIFIER_LENGTH = 128;
 
+/** ADR 0008 / Google Merchant MPN bound, reused by U27 for a truthful variant identifier. */
+const MAX_PUBLISHED_MPN_LENGTH = 70;
+const INVALID_PUBLISHED_IDENTIFIER_UNICODE_REGEX = /\p{Cc}|\p{Cf}|\p{Co}|\p{Cn}/u;
+const SUPPLEMENTARY_CODE_POINT_REGEX = /[\u{10000}-\u{10FFFF}]/u;
+
 /** The full schema.org URIs Google reads for the dimensions a variant family varies by. */
 const SCHEMA_URI_BY_DIMENSION = {
   COLOR: "https://schema.org/color",
@@ -39,12 +44,12 @@ export type StructuredDataAvailability = "IN_STOCK" | "OUT_OF_STOCK";
  *
  * Every field is a fact with an existing owner. In particular `url` is the exact deep link written
  * by the addressing contract that reads it back — this module never constructs a variant URL, so
- * there is no second URL implementation to drift from U12. Eligibility (is this variation
- * addressable, is its price resolved, is its availability knowable) is likewise settled before a
- * variant reaches here: this module publishes, it does not decide.
+ * there is no second URL implementation to drift from U12. `mpn` is the owner-confirmed LA Clothing
+ * manufacturer identifier from ADR 0008; it is not the website-owned `VariantMirror.sku` field.
  */
 export type StructuredDataVariant = Readonly<{
   url: string;
+  mpn?: string | null;
   color: string | null;
   size: string | null;
   price: number;
@@ -92,6 +97,7 @@ type ProductVariantNode = {
   "@id": string;
   name: string;
   url: string;
+  mpn?: string;
   color?: string;
   size?: string;
   image?: string[];
@@ -243,6 +249,28 @@ export function isPublishableIdentifier(value: string): boolean {
   );
 }
 
+/**
+ * Public structured data repeats the audited MPN trust boundary deliberately. The M1 audit remains
+ * the operational evidence authority; this guard prevents a later malformed mirror value from
+ * becoming public JSON-LD merely because an earlier catalog-wide audit was green.
+ */
+export function isPublishableMpn(value: string | null | undefined): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value) return false;
+  if (Array.from(value).length > MAX_PUBLISHED_MPN_LENGTH) return false;
+  if (typeof value.isWellFormed === "function" && !value.isWellFormed()) return false;
+  if (SUPPLEMENTARY_CODE_POINT_REGEX.test(value)) return false;
+  return !INVALID_PUBLISHED_IDENTIFIER_UNICODE_REGEX.test(value);
+}
+
+function hasUniquePublishableVariantMpns(variants: readonly StructuredDataVariant[]): boolean {
+  const mpns: string[] = [];
+  for (const variant of variants) {
+    if (!isPublishableMpn(variant.mpn)) return false;
+    mpns.push(variant.mpn);
+  }
+  return new Set(mpns).size === mpns.length;
+}
+
 function buildVariantNode(name: string, variant: StructuredDataVariant): ProductVariantNode {
   const node: ProductVariantNode = {
     "@type": "Product",
@@ -261,6 +289,9 @@ function buildVariantNode(name: string, variant: StructuredDataVariant): Product
     },
   };
 
+  // `publishedGroup` already requires every member to have a unique publishable MPN. Keep this
+  // local guard as serialization defense if the helper is ever reused independently.
+  if (isPublishableMpn(variant.mpn)) node.mpn = variant.mpn;
   if (variant.color !== null) node.color = variant.color;
   if (variant.size !== null) node.size = variant.size;
   if (variant.imageUrl !== null) node.image = [variant.imageUrl];
@@ -289,19 +320,15 @@ export function buildProductStructuredData({
   const images = product.media.gallery.map((item) => item.url);
 
   // The caller decides whether a family is publishable — whether these rows really are siblings,
-  // and whether their identity is one this catalog holds. What is checked here is what this module
-  // must not serialize whatever a caller believes: a group needs members, something it varies by,
-  // and an identity that is bounded and unaltered. A family of one can never vary by anything,
-  // which is exactly what the product-level shape already says better.
-  //
-  // The identifier rule lives here and the boundary asks it, rather than the reverse: the bound is
-  // on untrusted mirrored text, and this is the function that writes it into a public document. So
-  // this check is the one that decides — do not remove it as redundant with the caller's.
+  // and whether their identity is one this catalog holds. This module still owns the serialization
+  // boundary: a group needs a bounded product identity, members, a real varying dimension, and a
+  // unique reviewed manufacturer MPN on every variant before it can become public markup.
   const publishedGroup =
     productGroup !== null
     && isPublishableIdentifier(productGroup.productGroupID)
     && productGroup.variesBy.length > 0
     && productGroup.variants.length > 0
+    && hasUniquePublishableVariantMpns(productGroup.variants)
       ? productGroup
       : null;
 
