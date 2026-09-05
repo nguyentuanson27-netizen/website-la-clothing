@@ -42,7 +42,7 @@ function coordinator(
 ) {
   return createMerchantFeedCoordinator({
     key: KEY,
-    readPricingRevision: options.readPricingRevision ?? (async () => 1n),
+    readPricingRevision: options.readPricingRevision ?? (async () => BigInt(1)),
     now: options.now,
     observe: options.observe,
   });
@@ -169,7 +169,7 @@ describe("Merchant feed coordinator", () => {
   });
 
   it("invalidates a cached feed immediately after the durable pricing revision increments", async () => {
-    let revision = 10n;
+    let revision = BigInt(10);
     let generations = 0;
     const instance = coordinator({ readPricingRevision: async () => revision });
     const generate = async () => {
@@ -180,7 +180,7 @@ describe("Merchant feed coordinator", () => {
     const first = await instance.get({ generate });
     assert.equal(first.ok && first.body, "<feed>revision-10</feed>");
 
-    revision = 11n;
+    revision = BigInt(11);
     const afterMutation = await instance.get({ generate });
     assert.equal(afterMutation.ok, true);
     if (!afterMutation.ok) assert.fail("new revision must rebuild successfully");
@@ -190,7 +190,7 @@ describe("Merchant feed coordinator", () => {
   });
 
   it("does not publish an in-flight revision after a newer durable revision commits", async () => {
-    let revision = 20n;
+    let revision = BigInt(20);
     let generations = 0;
     const generationGate = deferred<MerchantFeedGenerationResult>();
     const instance = coordinator({ readPricingRevision: async () => revision });
@@ -204,7 +204,7 @@ describe("Merchant feed coordinator", () => {
     await Promise.resolve();
     assert.equal(generations, 1);
 
-    revision = 21n;
+    revision = BigInt(21);
     generationGate.resolve(success("<feed>stale-20</feed>"));
     const stale = await oldRequest;
     assert.equal(stale.ok, false, "revision N output must be discarded after N+1 is observed");
@@ -222,7 +222,7 @@ describe("Merchant feed coordinator", () => {
   });
 
   it("never joins a newer-revision request onto a stale in-flight generation", async () => {
-    let revision = 40n;
+    let revision = BigInt(40);
     let runningGenerations = 0;
     let maxRunningGenerations = 0;
     let generations = 0;
@@ -243,7 +243,7 @@ describe("Merchant feed coordinator", () => {
     await Promise.resolve();
     assert.equal(generations, 1);
 
-    revision = 41n;
+    revision = BigInt(41);
     const freshRequest = instance.get({
       generate: async () => {
         generations += 1;
@@ -272,7 +272,7 @@ describe("Merchant feed coordinator", () => {
   });
 
   it("preserves a real failure backoff after a newer-revision request waits for a stale flight", async () => {
-    let revision = 50n;
+    let revision = BigInt(50);
     let generations = 0;
     const oldGate = deferred<MerchantFeedGenerationResult>();
     const instance = coordinator({ readPricingRevision: async () => revision });
@@ -284,7 +284,7 @@ describe("Merchant feed coordinator", () => {
       },
     });
     await Promise.resolve();
-    revision = 51n;
+    revision = BigInt(51);
 
     const newerRequest = instance.get({
       generate: async () => {
@@ -352,7 +352,7 @@ describe("Merchant feed coordinator", () => {
     const instance = coordinator({
       readPricingRevision: async () => {
         if (failRevisionRead) throw new Error("database unavailable");
-        return 30n;
+        return BigInt(30);
       },
     });
 
