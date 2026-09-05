@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { createMerchantFeedCoordinator } from "../../src/commerce/merchant-feed-coordinator.ts";
 import {
   MAX_MERCHANT_DB_ROUND_TRIPS,
   MAX_MERCHANT_OFFERS,
 } from "../../src/commerce/merchant-feed-limits.ts";
 import { createMerchantOfferRepository } from "../../src/commerce/merchant-offer-repository.ts";
+
+const KEY = "merchant-feed:rss-v1:shop:920007";
 
 function candidateVariants(variantCount: number) {
   return Array.from({ length: variantCount }, (_, index) => ({
@@ -22,10 +25,11 @@ function candidateVariants(variantCount: number) {
 }
 
 describe("Merchant public-feed repository query envelope", () => {
-  it("loads 5,000 variants completely with at most eight bounded database operations", async () => {
+  it("loads 5,000 variants completely while the whole generation stays at eight DB operations", async () => {
     const calls = new Map<string, number>();
+    const count = (name: string) => calls.set(name, (calls.get(name) ?? 0) + 1);
     const counted = <T>(name: string, value: T) => async () => {
-      calls.set(name, (calls.get(name) ?? 0) + 1);
+      count(name);
       return value;
     };
     const variants = candidateVariants(MAX_MERCHANT_OFFERS);
@@ -43,16 +47,6 @@ describe("Merchant public-feed repository query envelope", () => {
         ]),
       },
       variantMirror: { findMany: counted("variantMirror", variants) },
-      productContent: {
-        findMany: counted("productContent", [
-          {
-            productId: "product-internal-1",
-            status: "PUBLISHED",
-            editorialDescription: "Published description",
-          },
-        ]),
-      },
-      productMerchantFacts: { findMany: counted("productMerchantFacts", []) },
       warehouseStock: {
         findMany: counted(
           "warehouseStock",
@@ -64,52 +58,80 @@ describe("Merchant public-feed repository query envelope", () => {
         ),
       },
       compositeComponentMirror: { findMany: counted("compositeComponentMirror", []) },
-      promotionTarget: {
-        findMany: counted("promotionTarget", [
-          {
-            campaignId: "campaign-1",
-            productId: null,
-            variantId: variants[0]!.id,
-          },
-        ]),
-      },
-      promotionCampaign: {
-        findMany: counted("promotionCampaign", [
-          {
-            id: "campaign-1",
-            name: "Campaign 1",
-            kind: "PROMOTION",
-            discountType: "PERCENTAGE",
-            percentageValue: 10,
-            fixedPriceVnd: null,
-            startsAt: null,
-            endsAt: null,
-          },
-        ]),
+      $queryRawUnsafe: async (sql: string) => {
+        if (sql.includes('FROM "ProductMirror" p')) {
+          count("productFactsJoin");
+          return [
+            {
+              productId: "product-internal-1",
+              contentStatus: "PUBLISHED",
+              editorialDescription: "Published description",
+              merchantFactsPresent: false,
+              merchantGender: null,
+              merchantAgeGroup: null,
+              merchantCondition: null,
+            },
+          ];
+        }
+        if (sql.includes('FROM "PromotionTarget" t')) {
+          count("promotionJoin");
+          return [
+            {
+              campaignId: "campaign-1",
+              productId: null,
+              variantId: variants[0]!.id,
+              name: "Campaign 1",
+              kind: "PROMOTION",
+              discountType: "PERCENTAGE",
+              percentageValue: 10,
+              fixedPriceVnd: null,
+              startsAt: null,
+              endsAt: null,
+            },
+          ];
+        }
+        throw new Error("unexpected Merchant raw query");
       },
     } as never);
 
-    const products = await repository.readCandidateProducts({
-      shopId: 920007,
-      now: new Date("2026-09-05T00:00:00Z"),
+    let loadedVariantCount = 0;
+    const coordinator = createMerchantFeedCoordinator({
+      key: KEY,
+      readPricingRevision: async () => {
+        count("promotionPricingRevision");
+        return 7n;
+      },
     });
 
-    assert.equal(products.length, 1);
-    assert.equal(products[0]?.variations.length, MAX_MERCHANT_OFFERS);
-    const dbOperations = [...calls.values()].reduce((sum, count) => sum + count, 0);
-    assert.equal(dbOperations <= MAX_MERCHANT_DB_ROUND_TRIPS, true);
-    assert.equal(dbOperations, 8);
-    for (const model of [
-      "productMirror",
-      "variantMirror",
-      "productContent",
-      "productMerchantFacts",
-      "warehouseStock",
-      "compositeComponentMirror",
-      "promotionTarget",
-      "promotionCampaign",
-    ]) {
-      assert.equal(calls.get(model), 1, `${model} must be read once`);
-    }
+    const result = await coordinator.get({
+      generate: async () => {
+        const products = await repository.readCandidateProducts({
+          shopId: 920007,
+          now: new Date("2026-09-05T00:00:00Z"),
+        });
+        loadedVariantCount = products[0]?.variations.length ?? 0;
+        return {
+          ok: true as const,
+          body: "<feed />",
+          byteLength: 8,
+          offerCount: loadedVariantCount,
+          nextPricingTransitionAtMs: null,
+        };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(loadedVariantCount, MAX_MERCHANT_OFFERS);
+    const dbOperations = [...calls.values()].reduce((sum, callCount) => sum + callCount, 0);
+    assert.equal(dbOperations, MAX_MERCHANT_DB_ROUND_TRIPS);
+    assert.deepEqual(Object.fromEntries(calls), {
+      promotionPricingRevision: 2,
+      productMirror: 1,
+      variantMirror: 1,
+      productFactsJoin: 1,
+      warehouseStock: 1,
+      compositeComponentMirror: 1,
+      promotionJoin: 1,
+    });
   });
 });
