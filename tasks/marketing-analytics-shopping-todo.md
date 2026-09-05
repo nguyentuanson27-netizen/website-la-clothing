@@ -1,6 +1,6 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED. Checkpoint E remains pending exact-head verification. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. Merchant↔variant JSON-LD parity is proved with one documented availability difference. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure + exact-SHA operational closure audit). Checkpoint D is **GREEN / PASSED**. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
@@ -9,7 +9,7 @@ T8, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the f
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, M2, M3 and M4 are implemented on their focused branches/PRs; **Checkpoint D is passed and Checkpoint E is pending exact-head verification for PR #198.**
+PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, M2, M3 and M4 are implemented on their focused branches/PRs; **Checkpoint D is passed and Checkpoint E is PASSED on PR #198's exact head `1d003dc4d917c138a2c12f93c98b4a38be487754`.**
 
 ## Owner/account gates
 
@@ -24,7 +24,7 @@ PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T
 - [ ] **R1 Preview isolation:** production destination tags require `la_tracking_mode=live`; preview never relies on Tag Assistant as a sandbox.
 - [x] **R2 Atomic cart deltas:** update/remove transaction returns committed old/new/removed quantities from inside the cart lock. *(Delivered T6 / PR #186.)*
 - [x] **R3 Merchant composite:** composite Merchant offers are deferred in v1 and standalone IDs have accepted durability evidence. *(Satisfied by M1 / PR #175 + PR #194 + exact-SHA operational closure.)*
-- [x] **R4 Merchant envelope:** max 5,000 offers, 16 MiB, ≤8 DB round trips; overflow never partial `200`. *(Implemented U26 / PR #198; final exact-head Checkpoint E verification remains below.)*
+- [x] **R4 Merchant envelope:** max 5,000 offers, 16 MiB, ≤8 DB round trips; overflow never partial `200`. *(Implemented U26 / PR #198; Checkpoint E verified below on the exact head.)*
 
 ### Review `5062244480`
 - [ ] **R5 GTM live interlock:** PR-A contains **no GTM loader**. Requested preview/live stay operationally disabled until T8 has an exact saved GTM version + reviewed export. PR-C owns first GTM script/CSP opening.
@@ -209,9 +209,17 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] Tests cover RSS output, escaping/Unicode/control chars, deterministic order, offer/byte boundaries, whole-generation query budget, success miss/repeated hit, concurrent cold miss, concurrent TTL expiry, request-noise key isolation, sequential/concurrent failure backoff, backoff expiry single retry, and success-cache/failure-sentinel isolation.
 
 ### Checkpoint E
-- [ ] Focused Merchant mapping/route/cache/backoff tests green on final exact PR-E head.
-- [ ] `pnpm test`, `pnpm test:db`, `pnpm typecheck`, `pnpm lint`, `pnpm build` green on exact PR-E head.
-- [ ] Real Next runtime smoke confirms cached/backoff route status/content type/complete body/no secrets and cheap repeated failure behavior on final exact PR-E head.
+**GREEN / PASSED** on PR #198's final exact head `1d003dc4d917c138a2c12f93c98b4a38be487754` (merged to `main` as `2d5ea84045f61fc1249076379dd0816d37499546`). Evidence is exact-head, not stale-head: CI #1964, Merchant feed runtime #27, Catalog indexation runtime #952, P18 final QA runtime #746 and VPS container verification #889 all concluded `success` on that SHA.
+- [x] Focused Merchant mapping/route/cache/backoff tests green on final exact PR-E head.
+- [x] `pnpm test`, `pnpm test:db`, `pnpm typecheck`, `pnpm lint`, `pnpm build` green on exact PR-E head (CI #1964 `verify`).
+- [x] Real Next runtime smoke confirms cached/backoff route status/content type/complete body/no secrets and cheap repeated failure behavior on final exact PR-E head (Merchant feed runtime #27: bounded `503`, `retry-after: 60`, `x-la-merchant-feed-failure: MARKET_UNRESOLVED`, one `cold_generation`, request query noise ignored).
+
+### Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
+- [x] One catalog fixture and one storefront projection feed both consumers, and the Merchant side is read back from serialized RSS bytes rather than the mapper's in-memory result: `tests/domain/merchant-structured-data-parity.test.ts`.
+- [x] Variation identity, `item_group_id` ↔ `productGroupID`, ADR 0008 manufacturer MPN, exact U12 variant URL, exact promotion-aware price and availability semantics all MATCH, as does the publishable standalone variant set.
+- [x] Missing/blank/untrimmed/duplicate MPN, unresolved price, unaddressable identity and composite candidates fail closed compatibly on both sides; neither consumer invents a fallback identifier, URL or price.
+- [x] O2 stays unresolved: the parity suite passes a clearly named test-only market fixture straight to the serializer, nothing in `src/` imports it, and `/feeds/google-merchant` keeps failing closed.
+- [ ] **Known difference, owner decision pending:** a negative mirrored warehouse quantity reads as `AVAILABILITY_UNRESOLVED` to M1/Merchant (offer excluded) but as sold out to the PDP projection, so U27 publishes an exact `OutOfStock` Offer for it. Recorded in `docs/audits/merchant-jsonld-parity.md`; not equalized inside a verification PR because closing it changes published U27 output and the shared storefront catalog read.
 
 ## PR-F — Merchant activation + final convergence
 

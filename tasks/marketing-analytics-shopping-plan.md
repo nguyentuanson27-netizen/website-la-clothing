@@ -1,8 +1,8 @@
 # Marketing analytics & Google Shopping — implementation plan
 
-Status: **T1–T7, M1, M2, and M3 IMPLEMENTED; Checkpoint D PASSED. T8 and M4–M5/V1 remain proposed and require human approval before `/build`.**
+Status: **T1–T7, M1, M2, M3 and M4 IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. T8 and M5/V1 remain proposed and require human approval before `/build`.**
 
-T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED**. T8, M4, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
+T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED** and **Checkpoint E is GREEN / PASSED** (M4 delivered by U26 / PR #198). T8, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
 
 Source specification: `docs/specs/marketing-analytics-shopping.md`.
 
@@ -487,7 +487,7 @@ Focused cart/PDP/checkout tests + `pnpm test` + `pnpm typecheck` + `pnpm lint`; 
 
 ### Checkpoint D
 
-**GREEN / PASSED.** The authoritative exact-tree M1 audit on `84c99db3de6757c3ded4396644eb4dae25869e09` confirms intended standalone identity/MPN/media/composite readiness for this checkpoint, while PR #175 supplies external-ID durability and U12 / PR #180 supplies standalone deep-link/addressability evidence. Composite inventory remains intentionally absent from Merchant v1. **M3 is delivered by U25; M4 is still unimplemented. M4/M5 retain their own feed-safety, O2/activation and approval gates.**
+**GREEN / PASSED.** The authoritative exact-tree M1 audit on `84c99db3de6757c3ded4396644eb4dae25869e09` confirms intended standalone identity/MPN/media/composite readiness for this checkpoint, while PR #175 supplies external-ID durability and U12 / PR #180 supplies standalone deep-link/addressability evidence. Composite inventory remains intentionally absent from Merchant v1. **M3 is delivered by U25 and M4 by U26 / PR #198. M5 retains its own feed-safety, O2/activation and approval gates.**
 
 ---
 
