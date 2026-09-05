@@ -309,7 +309,10 @@ describe("Merchant feed coordinator", () => {
     const instance = coordinator({ now: () => nowMs });
     const generate = async () => {
       generations += 1;
-      return success(`<feed>generation-${generations}</feed>`, startAtMs);
+      return success(
+        `<feed>generation-${generations}</feed>`,
+        nowMs < startAtMs ? startAtMs : null,
+      );
     };
 
     await instance.get({ generate });
@@ -331,7 +334,10 @@ describe("Merchant feed coordinator", () => {
     const instance = coordinator({ now: () => nowMs });
     const generate = async () => {
       generations += 1;
-      return success(`<feed>generation-${generations}</feed>`, endAtMs);
+      return success(
+        `<feed>generation-${generations}</feed>`,
+        nowMs < endAtMs ? endAtMs : null,
+      );
     };
 
     await instance.get({ generate });
