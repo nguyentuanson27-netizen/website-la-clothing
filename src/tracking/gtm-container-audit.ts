@@ -33,6 +33,10 @@ export const GTM_AUDIT_CODES = {
   GA4_AUTOMATIC_PAGE_VIEW: "GA4_AUTOMATIC_PAGE_VIEW",
   /** A vendor destination id the owner has not reviewed. */
   UNAPPROVED_DESTINATION: "UNAPPROVED_DESTINATION",
+  /** A destination named through a variable this audit cannot resolve to a literal. */
+  UNRESOLVED_DESTINATION_REFERENCE: "UNRESOLVED_DESTINATION_REFERENCE",
+  /** The export came from a container the owner did not approve. */
+  CONTAINER_NOT_APPROVED: "CONTAINER_NOT_APPROVED",
   /** Owner gate O4 is unresolved, so there is nothing to audit the container against. */
   NO_APPROVED_DESTINATIONS: "NO_APPROVED_DESTINATIONS",
 } as const;
@@ -52,6 +56,8 @@ export type GtmAuditFinding = Readonly<{
  * (artifact, approval) — the two things a reviewer must look at together.
  */
 export type GtmApprovedDestinations = Readonly<{
+  /** The reviewed `GTM-...` container. Binds the artifact to the container it must have come from. */
+  gtmContainerId: string;
   ga4MeasurementIds: readonly string[];
   googleAdsConversionIds: readonly string[];
   tiktokPixelIds: readonly string[];
@@ -86,6 +92,17 @@ const DESTINATION_PARAMETER_KEYS: ReadonlySet<string> = new Set([
   "pixelId",
   "tagId",
 ]);
+
+/**
+ * Tag types that configure a Google destination and can therefore emit an automatic page view.
+ *
+ * `gaawc` is the legacy GA4 Configuration tag; `googtag` is the Google tag it became. Both are
+ * listed because an export may predate the upgrade.
+ */
+const GOOGLE_CONFIGURATION_TAG_TYPES: ReadonlySet<string> = new Set(["gaawc", "googtag"]);
+
+/** How the page-view toggle is spelled across the tag, its settings table and a settings variable. */
+const PAGE_VIEW_KEYS: ReadonlySet<string> = new Set(["sendPageView", "send_page_view"]);
 
 /** Substrings that mark a tag as a Meta integration however it was authored. */
 const META_MARKERS = ["facebook", "meta_pixel", "metapixel", "fbq(", "fbevents", "connect.facebook"];
@@ -188,24 +205,119 @@ function collectKeyedValues(value: unknown, depth = 0): Array<readonly [string, 
   return pairs;
 }
 
+/**
+ * The container's variables, indexed by the name a `{{reference}}` uses.
+ *
+ * Only constant variables resolve to a literal. Anything computed — a JavaScript variable, a lookup
+ * table, a data-layer read — cannot be evaluated statically, so it stays unresolved and any
+ * destination that depends on it is refused rather than assumed approved.
+ */
+type VariableIndex = ReadonlyMap<
+  string,
+  Readonly<{ literal: string | null; keyedValues: ReadonlyArray<readonly [string, string]> }>
+>;
+
+const VARIABLE_REFERENCE = /^\{\{(.+)\}\}$/;
+
+function referencedVariableName(value: string): string | null {
+  return VARIABLE_REFERENCE.exec(value.trim())?.[1]?.trim() ?? null;
+}
+
+function indexVariables(variables: readonly unknown[]): VariableIndex {
+  const index = new Map<
+    string,
+    { literal: string | null; keyedValues: ReadonlyArray<readonly [string, string]> }
+  >();
+  for (const candidate of variables) {
+    if (!isRecord(candidate)) continue;
+    const name = readString(candidate.name);
+    if (name === null) continue;
+
+    const parameters = readParameters(candidate.parameter);
+    const rawValue = readString(candidate.type) === "c" ? parameterValue(parameters, "value") : null;
+    // A constant whose value is itself a reference is not a literal this audit can stand behind.
+    const literal = rawValue !== null && referencedVariableName(rawValue) === null ? rawValue : null;
+
+    index.set(name, { literal, keyedValues: collectKeyedValues(candidate.parameter) });
+  }
+  return index;
+}
+
 function tagIsMeta(tag: Record<string, unknown>): boolean {
   const haystack = collectStrings(tag).strings.join(" ").toLowerCase();
   return META_MARKERS.some((marker) => haystack.includes(marker));
 }
 
-/** Every destination id this tag would deliver to, whatever vendor it belongs to. */
-function destinationIds(tag: Record<string, unknown>): string[] {
-  const ids: string[] = [];
+/**
+ * Every destination this tag would deliver to, resolved through the container's variables.
+ *
+ * A `{{reference}}` is followed rather than skipped. Skipping it was a fail-open: a live-guarded tag
+ * could name `{{Production GA4 ID}}`, the literal would never appear on the tag, and the approval
+ * check would have nothing to compare. A reference that cannot be resolved to a literal is reported
+ * as unresolved so the artifact is refused instead of quietly certified.
+ */
+function destinationIds(
+  tag: Record<string, unknown>,
+  variables: VariableIndex,
+): Readonly<{ resolved: string[]; unresolved: string[] }> {
+  const resolved: string[] = [];
+  const unresolved: string[] = [];
+
   for (const [key, value] of collectKeyedValues(tag.parameter)) {
-    if (!DESTINATION_PARAMETER_KEYS.has(key)) continue;
-    // A `{{variable}}` reference is not a literal id and is reviewed through the variable it names.
-    if (value.length > 0 && !value.includes("{{")) ids.push(value);
+    if (!DESTINATION_PARAMETER_KEYS.has(key) || value.length === 0) continue;
+
+    const reference = referencedVariableName(value);
+    if (reference === null) {
+      resolved.push(value);
+      continue;
+    }
+
+    const literal = variables.get(reference)?.literal ?? null;
+    if (literal === null) unresolved.push(reference);
+    else resolved.push(literal);
   }
-  return ids;
+
+  return { resolved, unresolved };
 }
 
-function isGa4ConfigurationTag(tag: Record<string, unknown>): boolean {
-  return readString(tag.type) === "gaawc";
+/**
+ * Whether this Google configuration tag positively proves it sends no page view.
+ *
+ * Positive proof is the requirement, not the absence of a contrary signal: the application owns the
+ * canonical page view, and the toggle now lives inside configuration settings or a referenced
+ * settings variable rather than on the tag. A tag whose settings this audit cannot read therefore
+ * cannot be shown to be safe, and is refused.
+ */
+function provesPageViewsDisabled(
+  tag: Record<string, unknown>,
+  variables: VariableIndex,
+): boolean {
+  const pairs: Array<readonly [string, string]> = [...collectKeyedValues(tag.parameter)];
+
+  // Follow any settings variable the tag references, so its table is read as if it were inline.
+  for (const [, value] of [...pairs]) {
+    const reference = referencedVariableName(value);
+    if (reference === null) continue;
+    const referenced = variables.get(reference);
+    if (referenced !== undefined) pairs.push(...referenced.keyedValues);
+  }
+
+  // The settings table spells the toggle as a `parameter`/`parameterValue` row rather than a direct
+  // key, so both shapes are read.
+  const direct = pairs.some(([key, value]) => PAGE_VIEW_KEYS.has(key) && value === "false");
+  const tabulated = pairs.some(
+    ([key, value], position) =>
+      key === "parameter"
+      && PAGE_VIEW_KEYS.has(value)
+      && pairs.slice(position + 1).some(
+        ([nextKey, nextValue]) => nextKey === "parameterValue" && nextValue === "false",
+      ),
+  );
+  return direct || tabulated;
+}
+
+function isGoogleConfigurationTag(tag: Record<string, unknown>): boolean {
+  return GOOGLE_CONFIGURATION_TAG_TYPES.has(readString(tag.type) ?? "");
 }
 
 export function auditGtmContainerExport({
@@ -258,6 +370,17 @@ export function auditGtmContainerExport({
   const containerPublicId = isRecord(version.container)
     ? readString(version.container.publicId)
     : null;
+
+  // Bind the artifact to the reviewed container. Without this, an export from a different container
+  // that happened to reuse the same destination ids would certify just as cleanly.
+  if (containerPublicId !== approved.gtmContainerId) {
+    refuse(
+      GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED,
+      "export does not come from the owner-approved GTM container",
+    );
+  }
+
+  const variables = indexVariables(Array.isArray(version.variable) ? version.variable : []);
 
   // A workspace export carries no saved version, and "0" is the placeholder an unsaved export uses.
   if (containerVersionId === null || containerVersionId === "" || containerVersionId === "0") {
@@ -315,23 +438,27 @@ export function auditGtmContainerExport({
       }
     }
 
-    if (isGa4ConfigurationTag(candidate)) {
-      const sendPageView = parameterValue(readParameters(candidate.parameter), "sendPageView");
-      if (sendPageView !== "false") {
-        refuse(
-          GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW,
-          `${label} does not disable GA4 automatic page views; the application owns the canonical page view`,
-        );
-      }
+    if (isGoogleConfigurationTag(candidate) && !provesPageViewsDisabled(candidate, variables)) {
+      refuse(
+        GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW,
+        `${label} does not prove page views are disabled; the application owns the canonical page view`,
+      );
     }
 
-    for (const id of destinationIds(candidate)) {
+    const destinations = destinationIds(candidate, variables);
+    for (const id of destinations.resolved) {
       if (!approvedIds.has(id)) {
         refuse(
           GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
           `${label} delivers to an unreviewed destination id`,
         );
       }
+    }
+    for (const reference of destinations.unresolved) {
+      refuse(
+        GTM_AUDIT_CODES.UNRESOLVED_DESTINATION_REFERENCE,
+        `${label} names its destination through "${reference}", which this audit cannot resolve to a reviewed literal`,
+      );
     }
   }
 

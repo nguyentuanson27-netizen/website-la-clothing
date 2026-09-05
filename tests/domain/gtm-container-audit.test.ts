@@ -24,6 +24,7 @@ import {
 
 /** Stand-in vendor ids. Real values are owner gate O4 and are not invented here. */
 const APPROVED: GtmApprovedDestinations = {
+  gtmContainerId: "GTM-FIXTURE",
   ga4MeasurementIds: ["G-FIXTURE001"],
   googleAdsConversionIds: ["AW-FIXTURE001"],
   tiktokPixelIds: ["FIXTUREPIXEL01"],
@@ -365,6 +366,249 @@ describe("GTM container export static audit", () => {
     }
   });
 
+  function constantVariable(name: string, value: string) {
+    return {
+      variableId: "100",
+      name,
+      type: "c",
+      parameter: [{ type: "TEMPLATE", key: "value", value }],
+    };
+  }
+
+  it("resolves a variable reference and accepts it when it names an approved destination", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ parameter: [
+          { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
+          { type: "BOOLEAN", key: "sendPageView", value: "false" },
+        ] })],
+        variable: [constantVariable("Prod GA4", "G-FIXTURE001")],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  it("fails a variable reference that resolves to an unapproved destination", () => {
+    // The indirection is the whole point of the finding: the literal never appears on the tag.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ parameter: [
+          { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
+          { type: "BOOLEAN", key: "sendPageView", value: "false" },
+        ] })],
+        variable: [constantVariable("Prod GA4", "G-NOTAPPROVED")],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  for (const [label, variables] of [
+    ["names no variable in the container", []],
+    ["names a variable this audit cannot resolve to a literal", [
+      { variableId: "100", name: "Prod GA4", type: "jsm", parameter: [] },
+    ]],
+    ["names a variable that itself defers to another reference", [
+      { variableId: "100", name: "Prod GA4", type: "c", parameter: [{ type: "TEMPLATE", key: "value", value: "{{Deeper}}" }] },
+    ]],
+  ] as const) {
+    it(`refuses a destination reference that ${label}`, () => {
+      const result = auditGtmContainerExport({
+        source: containerExport({
+          tag: [ga4ConfigTag({ parameter: [
+            { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
+            { type: "BOOLEAN", key: "sendPageView", value: "false" },
+          ] })],
+          variable: variables,
+        }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNRESOLVED_DESTINATION_REFERENCE));
+    });
+  }
+
+  it("resolves a variable reference nested inside list or map parameters", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "5",
+          name: "Nested indirect destination",
+          type: "cvt_generic_template",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{
+            type: "MAP",
+            key: "config",
+            map: [{ type: "TEMPLATE", key: "pixelId", value: "{{Prod TikTok}}" }],
+          }],
+        }],
+        variable: [constantVariable("Prod TikTok", "NOTAPPROVEDPIXEL")],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.UNAPPROVED_DESTINATION));
+  });
+
+  it("fails a current Google tag that never proves page views are off", () => {
+    // The GA4 Configuration tag became the Google tag, and the page-view toggle moved into
+    // configuration settings or a referenced settings variable. A live guard alone is not proof.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{ type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
+  });
+
+  it("accepts a Google tag that disables page views inside nested configuration settings", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [{
+                type: "MAP",
+                map: [
+                  { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                  { type: "TEMPLATE", key: "parameterValue", value: "false" },
+                ],
+              }],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  it("accepts a Google tag whose referenced settings variable disables page views", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "TEMPLATE", key: "configSettingsVariable", value: "{{Config settings}}" },
+          ],
+        }],
+        variable: [{
+          variableId: "101",
+          name: "Config settings",
+          type: "gtcs",
+          parameter: [{
+            type: "LIST",
+            key: "configSettingsTable",
+            list: [{
+              type: "MAP",
+              map: [
+                { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                { type: "TEMPLATE", key: "parameterValue", value: "false" },
+              ],
+            }],
+          }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
+  it("fails a Google tag whose settings variable cannot be found", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "TEMPLATE", key: "configSettingsVariable", value: "{{Missing settings}}" },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
+  });
+
+  it("fails a Google tag that explicitly sends page views", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [{
+                type: "MAP",
+                map: [
+                  { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                  { type: "TEMPLATE", key: "parameterValue", value: "true" },
+                ],
+              }],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW));
+  });
+
+  it("refuses an export from a container the owner did not approve", () => {
+    // Same destination ids, different container: without this the audit would certify an artifact
+    // that was never the reviewed one.
+    const result = auditGtmContainerExport({
+      source: containerExport({ container: { publicId: "GTM-SOMEONEELSE" } }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED));
+  });
+
   it("fails a destination id the owner has not approved", () => {
     const result = auditGtmContainerExport({
       source: containerExport({
@@ -385,7 +629,12 @@ describe("GTM container export static audit", () => {
     // that passed here would be certifying an unreviewed container.
     const result = auditGtmContainerExport({
       source: containerExport(),
-      approved: { ga4MeasurementIds: [], googleAdsConversionIds: [], tiktokPixelIds: [] },
+      approved: {
+        gtmContainerId: "GTM-FIXTURE",
+        ga4MeasurementIds: [],
+        googleAdsConversionIds: [],
+        tiktokPixelIds: [],
+      },
     });
 
     assert.equal(result.ok, false);
