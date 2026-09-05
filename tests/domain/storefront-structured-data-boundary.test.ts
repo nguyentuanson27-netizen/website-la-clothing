@@ -144,7 +144,7 @@ function projectedProduct(
   });
 }
 
-test("U27 publishes one ProductGroup with unique manufacturer MPN and exact Offer per variant", () => {
+test("U27 publishes one ProductGroup with variant-specific names, unique manufacturer MPN and exact Offer per variant", () => {
   const document = build();
   const group = productGroupNode(document);
 
@@ -158,11 +158,16 @@ test("U27 publishes one ProductGroup with unique manufacturer MPN and exact Offe
   assert.equal(group.productGroupID, "pancake-product-1");
   assert.deepEqual(group.variesBy, ["https://schema.org/color", "https://schema.org/size"]);
   assert.equal(group.hasVariant.length, 3);
+  assert.deepEqual(group.hasVariant.map((variant) => variant.name), [
+    "Áo Oxford Relaxed — Đen — M",
+    "Áo Oxford Relaxed — Đen — L",
+    "Áo Oxford Relaxed — Kem — M",
+  ]);
 
   assert.deepEqual(group.hasVariant[0], {
     "@type": "Product",
     "@id": `${PRODUCT_URL}?variant=pv-a#product`,
-    name: "Áo Oxford Relaxed",
+    name: "Áo Oxford Relaxed — Đen — M",
     url: `${PRODUCT_URL}?variant=pv-a`,
     mpn: "A132-M",
     color: "Đen",
@@ -245,7 +250,7 @@ test("U27 does not translate unexplained unavailability into a false stock claim
   assert.equal(serializeJsonLd(group).includes("pv-unexplained"), false);
 });
 
-test("U27 every published URL round-trips through U12 and every variant carries ADR 0008 MPN", () => {
+test("U27 every published URL round-trips through U12 and every variant name/MPN matches the reselected facts", () => {
   const fixture = product();
   const group = productGroupNode(
     buildStorefrontProductStructuredData({ origin: ORIGIN, product: fixture }),
@@ -265,6 +270,11 @@ test("U27 every published URL round-trips through U12 and every variant carries 
     });
     assert.ok(reselected, `${variant.url} must reselect a variant`);
     const matched = fixture.projection.options.find((item) => item.id === reselected.variantId)!;
+    const expectedName = [fixture.name, matched.color, matched.size]
+      .filter((value): value is string => value !== null)
+      .join(" — ");
+    assert.notEqual(variant.name, group.name);
+    assert.equal(variant.name, expectedName);
     assert.equal(variant.color, matched.color);
     assert.equal(variant.size, matched.size);
     assert.equal(variant.offers.price, matched.price);
