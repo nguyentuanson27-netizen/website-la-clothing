@@ -1,21 +1,15 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), and M3 (U25) IMPLEMENTED; Checkpoint D PASSED. T8 and M4–M5/V1 remain proposed and
-require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED. Checkpoint E remains pending exact-head verification. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure + exact-SHA operational closure audit). Checkpoint D is **GREEN / PASSED**. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
 
-T8, M4, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first
-actual GTM load and CSP opening. **M3 (U25) is implemented**: the standalone Merchant mapper, its
-bounded canonical loader and the ADR 0007 O3 runtime exist and are tested, but nothing is published
-— there is no `/feeds/google-merchant` route, no serializer and no cache, and the O2 market gate is
-still open, so Merchant activation remains blocked. M3 accepts no caller/request market authority;
-a future O2 approval must enter through a reviewed trusted configuration source.
+T8, M5 and V1 are **not** implemented. No GTM loader exists: T8 still owns the first actual GTM load and CSP opening. **M3 (U25) is implemented** as the standalone Merchant mapper/O3 runtime, and **M4 (U26 / PR #198) adds the bounded public delivery layer**: GET `/feeds/google-merchant`, RSS serialization, whole-generation query/offer/byte envelopes, complete-success cache, process-local single-flight, and fixed-key failure backoff. O2 remains open, so the production route currently fails closed with bounded `503` rather than publishing an unapproved market/currency feed. M3/M4 accept no caller/request market authority; a future O2 approval must enter through a reviewed trusted configuration source.
 
 Source spec: `docs/specs/marketing-analytics-shopping.md`
 
-PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, M2 and M3 are delivered; **Checkpoint D is passed**.
+PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T7, M1, M2, M3 and M4 are implemented on their focused branches/PRs; **Checkpoint D is passed and Checkpoint E is pending exact-head verification for PR #198.**
 
 ## Owner/account gates
 
@@ -30,18 +24,18 @@ PR #153 itself is docs-only; runtime work lands in the focused PRs below. T1–T
 - [ ] **R1 Preview isolation:** production destination tags require `la_tracking_mode=live`; preview never relies on Tag Assistant as a sandbox.
 - [x] **R2 Atomic cart deltas:** update/remove transaction returns committed old/new/removed quantities from inside the cart lock. *(Delivered T6 / PR #186.)*
 - [x] **R3 Merchant composite:** composite Merchant offers are deferred in v1 and standalone IDs have accepted durability evidence. *(Satisfied by M1 / PR #175 + PR #194 + exact-SHA operational closure.)*
-- [ ] **R4 Merchant envelope:** max 5,000 offers, 16 MiB, ≤8 DB round trips; overflow never partial `200`.
+- [x] **R4 Merchant envelope:** max 5,000 offers, 16 MiB, ≤8 DB round trips; overflow never partial `200`. *(Implemented U26 / PR #198; final exact-head Checkpoint E verification remains below.)*
 
 ### Review `5062244480`
 - [ ] **R5 GTM live interlock:** PR-A contains **no GTM loader**. Requested preview/live stay operationally disabled until T8 has an exact saved GTM version + reviewed export. PR-C owns first GTM script/CSP opening.
 - [x] **R6 Server-truth AddToCart:** successful server purchase action returns canonical bounded item facts from the same authorized selection committed to cart; browser does not use stale pre-request price. *(Delivered T5 / PR #186.)*
 - [x] **R7 Product vs variant identity:** list/select/initial unselected PDP use product-level `pancakeProductId`; exact variant `pancakeVariationId` begins only when a concrete variant is selected/committed. Price ranges are never reported as an exact selected price. *(Delivered T5 / PR #186.)*
-- [ ] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight for current one-app-service topology; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation. Multi-replica deployment requires shared cross-replica protection before activation.
+- [x] **R8 Feed amplification:** complete successful Merchant feed is cached for 300s under a fixed bounded key; concurrent cold requests are single-flight for current one-app-service topology; byte counting is incremental; repeated GETs within TTL do not re-run heavy DB generation. Multi-replica deployment requires shared cross-replica protection before activation. *(Implemented U26 / PR #198.)*
 
 ### Review `5062693858`
 - [x] **R9 PDP atomic add semantics:** PDP “Thêm vào giỏ hàng” uses a distinct server mutation that atomically increments the existing line by exactly `+1` under the cart lock; it must not reuse absolute `setItemQuantity(..., 1)` semantics. Success returns `previousQuantity`, committed `quantity`, and `addedQuantity=1`; no successful no-op/decrease may be reported as `add_to_cart`. *(Delivered T5 / PR #186.)*
 - [x] **R10 Mutation event snapshot:** PDP add, cart absolute update, and remove return a bounded non-PII `CommerceVariantItem` snapshot captured/resolved server-side at the accepted mutation truth point under the same serialized cart transaction. It includes `pancakeVariationId`, authoritative resolved `unitPriceVnd`, item name, color/size where available, and the relevant committed delta quantity. Any pre-transaction availability check is advisory only; accepted absolute update must revalidate current eligibility/stock under the serialized mutation. If a safe snapshot cannot be resolved, the commerce mutation remains authoritative but analytics fails closed with no stale client fallback. *(Delivered T5/T6 / PR #186.)*
-- [ ] **R11 Merchant failure backoff:** a failed/overflow heavy rebuild installs a fixed-key negative backoff sentinel for `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS=60`. Sequential or concurrent requests during backoff return a cheap bounded `503` (with bounded `Retry-After`) and do not invoke heavy generation. Failure state never overwrites/poisons a valid successful feed cache entry.
+- [x] **R11 Merchant failure backoff:** a failed/overflow heavy rebuild installs a fixed-key negative backoff sentinel for `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS=60`. Sequential or concurrent requests during backoff return a cheap bounded `503` (with bounded `Retry-After`) and do not invoke heavy generation. Failure state never overwrites/poisons a valid successful feed cache entry. *(Implemented U26 / PR #198.)*
 
 ### Review `5062818394`
 - [x] **R12 Canonical cart/checkout analytics projection:** propagate `pancakeVariationId` through canonical resolved cart facts used by cart/checkout (or one dedicated equivalent projection). `view_cart` and `begin_checkout` are **all-or-nothing**: if any non-empty line lacks safe external variant identity, authoritative price, positive quantity, or item name, suppress the whole event. Never substitute local `VariantMirror.id`, never drop only the unsafe line, and never report a partial merchandise total. *(Delivered T6 / PR #186.)*
@@ -192,31 +186,32 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] RED/GREEN tests cover inherited defaults, each independent override, mixed overrides, clearing back to inheritance, invalid values, Pancake resync preservation, fail-closed unresolved apparel facts, and exact Merchant text/apparel boundaries.
 - [x] **O2 remains unresolved without becoming an M3 implementation gap.** Target market, content language and feed currency have no owner approval, so the mapper reports `market: UNRESOLVED` and `activationBlockedReasons: ["MERCHANT_MARKET_UNRESOLVED"]`, emits `priceVnd` rather than currency-qualified Merchant `price`, accepts no market argument, and ignores an extra caller-supplied syntax-valid market object. The owner O2 checkbox above remains open and Merchant activation remains blocked.
 - [x] Current executable `MerchantIdentitySummary.apparelFacts` reports `productOverrides: IMPLEMENTED` with `verdict: NOT_AUDITED_BY_M1`; the historical exact-SHA `docs/audits/merchant-identity-m1.md` remains unchanged evidence of the pre-U25 state.
-- [x] Merchant candidate reads use bounded 200-variant promotion batches with no per-offer N+1; regression crosses 200→201 and proves the extra bounded batch instead of claiming constant DB round trips. The stricter ≤8 round-trip public-feed envelope remains R4/M4 above.
+- [x] U26 keeps the same M3 mapping authorities while replacing the public-feed loader's catalog-size-dependent promotion batching with flat bounded reads. Generic storefront/cart promotion candidate batching remains unchanged; the feed path is now independently covered by the stricter R4/M4 ≤8 whole-generation query envelope.
 
 ### M4 Cached/single-flight serializer + bounded public route + failure backoff
-- [ ] GET-only `/feeds/google-merchant` with safe standards-aware serialization.
-- [ ] `MAX_MERCHANT_OFFERS = 5_000`.
-- [ ] `MAX_MERCHANT_FEED_BYTES = 16 MiB` with **incremental UTF-8 byte accounting**; abort before next chunk exceeds limit.
-- [ ] `MAX_MERCHANT_DB_ROUND_TRIPS = 8`; no N+1.
-- [ ] `MERCHANT_FEED_CACHE_TTL_SECONDS = 300`.
-- [ ] `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS = 60`.
-- [ ] Fixed success-cache and failure-backoff key domain is configured shop + feed schema/version only; query/header noise cannot create unbounded keys.
-- [ ] Cache only complete successful serialized feed; failure sentinel stores bounded non-sensitive failure class/retry time only.
-- [ ] Repeated GETs within success TTL perform zero additional heavy DB generations.
-- [ ] Concurrent cold requests are collapsed by a tested single-flight mechanism for current one-app-service topology.
-- [ ] After a failed/overflow heavy rebuild, sequential or concurrent requests inside 60s backoff return cheap `503` with bounded `Retry-After` and perform zero additional heavy DB generations.
-- [ ] Backoff expiry admits one new single-flight rebuild attempt, not one attempt per waiting request.
-- [ ] Failure/backoff state never overwrites, corrupts, or marks a complete successful feed body as failed.
-- [ ] If production changes to multiple app replicas, block activation until shared cross-replica cache/single-flight/backoff protection is proved.
-- [ ] Failed/overflow rebuild never publishes/caches partial result as success.
-- [ ] Overflow target `503`; never partial/truncated `200`.
-- [ ] Tests: parse output, escaping/Unicode/control chars, malformed URLs, deterministic order, offer/byte limit and limit+1, query budget, first miss/repeated hit, concurrent cold miss, concurrent TTL expiry, query-string cache noise, sequential failure backoff, concurrent failed rebuild, backoff expiry single retry, success-cache/failure-sentinel isolation.
+*(Implemented on U26 / PR #198; O2 remains unresolved, so runtime delivery currently fails closed with `503` rather than publishing unapproved country/language/currency.)*
+- [x] GET-only `/feeds/google-merchant` with safe standards-aware RSS 2.0 serialization.
+- [x] `MAX_MERCHANT_OFFERS = 5_000`.
+- [x] `MAX_MERCHANT_FEED_BYTES = 16 MiB` with **incremental UTF-8 byte accounting**; abort before next chunk exceeds limit.
+- [x] `MAX_MERCHANT_DB_ROUND_TRIPS = 8`; no N+1. Public-feed repository uses at most eight flat, bounded Prisma model reads and refuses over-bound product/variant catalogs rather than truncating.
+- [x] `MERCHANT_FEED_CACHE_TTL_SECONDS = 300`.
+- [x] `MERCHANT_FEED_FAILURE_BACKOFF_SECONDS = 60`.
+- [x] Fixed success-cache and failure-backoff key domain is configured shop + feed schema/version only; query/header noise cannot create unbounded keys.
+- [x] Cache only complete successful serialized feed; failure sentinel stores bounded non-sensitive failure class/retry time only.
+- [x] Repeated GETs within success TTL perform zero additional heavy DB generations.
+- [x] Concurrent cold requests are collapsed by a tested process-local single-flight mechanism for current one-app-service topology.
+- [x] After a failed/overflow heavy rebuild, sequential or concurrent requests inside 60s backoff return cheap `503` with bounded `Retry-After` and perform zero additional heavy DB generations.
+- [x] Backoff expiry admits one new single-flight rebuild attempt, not one attempt per waiting request.
+- [x] Failure/backoff state never overwrites, corrupts, or marks a complete successful feed body as failed.
+- [x] If production changes to multiple app replicas, activation remains blocked until shared cross-replica cache/single-flight/backoff protection is proved; U26 makes no multi-replica protection claim.
+- [x] Failed/overflow rebuild never publishes/caches partial result as success.
+- [x] Overflow target `503`; never partial/truncated `200`.
+- [x] Tests cover RSS output, escaping/Unicode/control chars, deterministic order, offer/byte boundaries, whole-generation query budget, success miss/repeated hit, concurrent cold miss, concurrent TTL expiry, request-noise key isolation, sequential/concurrent failure backoff, backoff expiry single retry, and success-cache/failure-sentinel isolation.
 
 ### Checkpoint E
-- [ ] Focused Merchant mapping/route/cache/backoff tests green.
+- [ ] Focused Merchant mapping/route/cache/backoff tests green on final exact PR-E head.
 - [ ] `pnpm test`, `pnpm test:db`, `pnpm typecheck`, `pnpm lint`, `pnpm build` green on exact PR-E head.
-- [ ] Real Next runtime smoke confirms cached/backoff route status/content type/complete body/no secrets and cheap repeated failure behavior.
+- [ ] Real Next runtime smoke confirms cached/backoff route status/content type/complete body/no secrets and cheap repeated failure behavior on final exact PR-E head.
 
 ## PR-F — Merchant activation + final convergence
 
