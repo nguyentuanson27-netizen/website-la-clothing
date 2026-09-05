@@ -138,6 +138,11 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         parentVariants: product.variants,
         componentGroups,
         hasCompositeGraph,
+        // The PDP's price authority. Passing the default rule here would quietly un-promote every
+        // surface built from this projection — the panel, and the variant structured data that
+        // reads the same options. That wiring is gated by `tests/a11y-runtime/pdp-promotion.spec.ts`
+        // (a rendering fact, so it lives in the browser suite); the domain suites cover what each
+        // consumer does with the options, not which rule produced them.
         pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
       }),
     };

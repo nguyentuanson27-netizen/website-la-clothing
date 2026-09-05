@@ -140,12 +140,26 @@ test("P14 omits Offer instead of misrepresenting variant price ranges or unresol
  * publishable variant family. The product-level path stays exactly what P14 published, so a caller
  * that names no family — or one the caller could not make addressable — never gets variant markup.
  */
+const oneVariant = {
+  url: "https://shop.example.com/shop/ao-oxford-relaxed?variant=pv-a",
+  color: null,
+  size: "M",
+  price: 590_000,
+  availability: "IN_STOCK" as const,
+  imageUrl: null,
+};
+
 test("P14/U27 the product-level path claims no ProductGroup variant markup", () => {
   for (const productGroup of [
     undefined,
     null,
-    { productGroupID: "pancake-product-1", variesBy: [], variants: [] },
-    { productGroupID: "", variesBy: ["SIZE" as const], variants: [] },
+    // Each of these is on its own enough to refuse the group shape, whatever the caller believes:
+    // nothing it varies by, no members, and three identities this catalog does not hold as written.
+    { productGroupID: "pancake-product-1", variesBy: [], variants: [oneVariant] },
+    { productGroupID: "pancake-product-1", variesBy: ["SIZE" as const], variants: [] },
+    { productGroupID: "", variesBy: ["SIZE" as const], variants: [oneVariant] },
+    { productGroupID: " pancake-product-1 ", variesBy: ["SIZE" as const], variants: [oneVariant] },
+    { productGroupID: "p".repeat(129), variesBy: ["SIZE" as const], variants: [oneVariant] },
   ]) {
     const serialized = JSON.stringify(
       buildProductStructuredData({

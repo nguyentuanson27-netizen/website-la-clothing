@@ -2,6 +2,8 @@ const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
 const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;
+import { MAX_VARIANT_QUERY_LENGTH } from "../commerce/storefront-variant-deep-link.ts";
+
 /** The full schema.org URIs Google reads for the dimensions a variant family varies by. */
 const SCHEMA_URI_BY_DIMENSION = {
   COLOR: "https://schema.org/color",
@@ -220,6 +222,14 @@ function buildOffer(
   };
 }
 
+/**
+ * Bounded, non-blank mirrored catalog text, published exactly as the catalog holds it. Trimming
+ * would publish an identity no other consumer uses, so an untrimmed value is refused instead.
+ */
+function isPublishableIdentifier(value: string): boolean {
+  return value.length > 0 && value.length <= MAX_VARIANT_QUERY_LENGTH && value.trim() === value;
+}
+
 function buildVariantNode(name: string, variant: StructuredDataVariant): ProductVariantNode {
   const node: ProductVariantNode = {
     "@type": "Product",
@@ -265,12 +275,18 @@ export function buildProductStructuredData({
   const shopUrl = new URL("/shop", origin).href;
   const images = product.media.gallery.map((item) => item.url);
 
-  // The caller decides whether a family is publishable; this is the shape invariant alone. A group
-  // needs an identity, members, and something it varies by — and a family of one can never vary by
-  // anything, which is exactly what the product-level shape already says better.
+  // The caller decides whether a family is publishable — whether these rows really are siblings,
+  // and whether their identity is one this catalog holds. What is checked here is what this module
+  // must not serialize whatever a caller believes: a group needs members, something it varies by,
+  // and an identity that is bounded and unaltered. A family of one can never vary by anything,
+  // which is exactly what the product-level shape already says better.
+  //
+  // The identifier rules repeat the boundary's deliberately. There is one production caller today,
+  // but the bound is on untrusted mirrored text and this is the function that writes it into a
+  // public document, so it holds the bound itself rather than inheriting it from whoever calls.
   const publishedGroup =
     productGroup !== null
-    && productGroup.productGroupID.length > 0
+    && isPublishableIdentifier(productGroup.productGroupID)
     && productGroup.variesBy.length > 0
     && productGroup.variants.length > 0
       ? productGroup

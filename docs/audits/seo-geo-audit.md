@@ -140,8 +140,8 @@ precision. Các trạng thái dưới đây có nghĩa:
   + một `Product` variant với `Offer` **exact** cho từng variant publishable, thay thế (không đứng
   cạnh) `Product` product-level cũ, nên trang không còn hai product-schema authority mâu thuẫn.
 
-  **Hai trong bốn điều kiện Google nêu ở ngay trên (dòng 128–133) vẫn CHƯA được đáp ứng**, và U27
-  cố ý không tự quyết định chúng:
+  **Hai trong bốn điều kiện Google nêu ở danh sách "Với single-page variant model" ngay trên vẫn
+  CHƯA được đáp ứng**, và U27 cố ý không tự quyết định chúng:
 
   1. *"mỗi variant có unique ID đáng tin"* — variant hiện **không** mang identifier nào
      (`sku`/`gtin`/`mpn`). Đây là ranh giới ADR 0008: MPN authority là `pancakeDisplayId` và thuộc
@@ -174,6 +174,15 @@ precision. Các trạng thái dưới đây có nghĩa:
     hoá thành một variant family;
   - `variesBy` so sánh color/size qua đúng identity rule của option model (`toOptionIdentityKey`),
     nên hai dòng catalog chỉ khác hoa/thường không bị coi là hai giá trị.
+
+  **Đã ghi nhận, KHÔNG sửa trong U27:** selection model của PDP
+  (`src/commerce/storefront-selection.ts`) vẫn dedupe/so khớp color/size bằng raw string, nên với
+  cùng input `Đen`/`đen` nó hiển thị **hai** color chip trong khi JSON-LD (đúng theo option identity
+  rule) nói family chỉ vary theo size. Đây là defect có sẵn của storefront mà việc sửa `variesBy`
+  làm lộ ra, không phải do U27 tạo ra — trước đó markup sai theo hướng tệ hơn (mâu thuẫn với chính
+  identity model). Sửa nó là thay đổi hành vi UI ngoài scope U27: hoặc selection model dùng
+  `toOptionIdentityKey`, hoặc mirror normalize từ upstream. Variant node vẫn phát nguyên văn
+  `Đen`/`đen` vì bịa ra một casing chuẩn là phát text catalog không có.
 
   **Forward dependency:** `productGroupID = pancakeProductId` trên thực tế đặt trước semantics
   `item_group_id` mà U25/M3 sẽ dùng cho Merchant feed. Master checklist đã có dòng "prove feed vs
