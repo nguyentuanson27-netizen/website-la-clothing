@@ -16,13 +16,17 @@ U27 does not create a second authority for any commerce fact:
 - manufacturer MPN: ADR 0008, Pancake variation `display_id` mirrored as
   `VariantMirror.pancakeDisplayId`;
 - product family identity: `pancakeProductId`;
+- variant name specificity: existing product family `name` plus factual storefront `color` / `size`
+  values already published for that variant; no merchandising attribute is inferred;
 - price: the same promotion-aware PDP projection rendered to the shopper;
 - availability: the same projection's `purchasable` / `unavailableReason` state;
 - media: trusted storefront gallery + server-resolved `galleryIndexByVariantId`;
 - canonical/search exposure: existing W4c / ADR 0004 policy, unchanged by U27.
 
 Local `VariantMirror.sku`, barcode, local CUID, kind key, array position, and color/size concatenation
-are not substitutes for the reviewed manufacturer MPN or public variation identity.
+are not substitutes for the reviewed manufacturer MPN or public variation identity. Color/size are
+used only as factual variant-identifying text when making each nested `Product.name` more specific
+than the shared `ProductGroup.name`.
 
 ## ProductGroup contract
 
@@ -34,19 +38,24 @@ A standalone family may publish `ProductGroup` only when:
 3. each surviving variant round-trips through the U12 resolver to the same option;
 4. each surviving variant has a current, bounded, valid and unique ADR-0008 manufacturer MPN;
 5. each surviving variant has an exact resolved price and either is purchasable or is unavailable
-   specifically because it is out of stock.
+   specifically because it is out of stock;
+6. each surviving variant has at least one factual `color` / `size` value so its nested `Product.name`
+   can be more specific than the common group name without invented copy.
 
 Each published variant is a nested `Product` with:
 
+- `name` deterministically composed as product family name followed by present factual `color` then
+  `size`, separated by ` — ` (for example `Áo Oxford Relaxed — Đen — M`);
 - `url` / `@id` derived from the exact U12 query URL;
 - `mpn = pancakeDisplayId`;
 - truthful `color` / `size` when present;
 - trusted variant image when the resolved gallery mapping exists;
 - one exact `Offer` with VND price and `InStock` / `OutOfStock` availability.
 
-The group carries no `offers`, `AggregateOffer`, `lowPrice`, `highPrice`, or `offerCount`.
-`ProductGroup` replaces the old product-level `Product` at the graph position rather than joining it,
-so the page has one product-schema authority.
+The formatter does not infer category, gender, material, description, SKU, GTIN, MPN text, or other
+merchandising copy into the variant name. The group carries no `offers`, `AggregateOffer`,
+`lowPrice`, `highPrice`, or `offerCount`. `ProductGroup` replaces the old product-level `Product` at
+the graph position rather than joining it, so the page has one product-schema authority.
 
 If a truthful variant family cannot be established, U27 falls back to the existing product-level
 `Product` shape. Composite products are never remodelled as normal sibling variants; their fallback
@@ -70,9 +79,11 @@ facts and are never serialized.
 ## URL and canonical policy
 
 Google Search Central's current single-page product-variant guidance explicitly uses URL query
-parameters for distinct variant URLs and a single canonical base `ProductGroup` URL. U27 therefore
-keeps the already-reviewed U12/W4c query contract rather than introducing a fragment URL or a second
-canonical policy.
+parameters for distinct variant URLs and a single canonical base `ProductGroup` URL. The same current
+guidance also requires each nested variant `Product.name` to be more specific than the common
+`ProductGroup.name`, based on variant-identifying properties. U27 therefore keeps the reviewed U12/W4c
+query contract and makes variant names specific from factual color/size values rather than inventing
+new catalog copy.
 
 Current project search exposure is also unchanged: the temporary production domain remains globally
 noindex by ADR 0004/enforcement, and non-canonical query requests remain fail-closed under the
@@ -86,11 +97,14 @@ Official sources re-checked for this correction on 2026-09-05:
 - https://schema.org/Product
 - https://schema.org/mpn
 
+Google Search Central's Product Variant page reported `Last updated 2026-05-20 UTC` at review time.
+
 ## Regression / HTTP evidence required on the PR head
 
 The PR test contract covers:
 
 - ProductGroup + exact nested Product/Offer shape;
+- variant-specific nested `Product.name` values derived only from family name + factual color/size;
 - unique ADR-0008 MPN on every published variant;
 - missing/invalid/duplicate MPN fail-closed behavior;
 - U12 builder/resolver URL round trip;
@@ -102,12 +116,13 @@ The PR test contract covers:
 - no internal ids, local SKU, inferred GTIN, AggregateOffer, rating/review, shipping or return-policy
   claims;
 - JSON-LD script-breakout escaping;
-- real HTTP reopening of every published variant URL and parity with rendered option/price.
+- real HTTP reopening of every published variant URL and parity with nested variant name, rendered
+  option, and rendered price.
 
 `scripts/structured-data-http-smoke.ts` seeds distinct manufacturer MPNs, parses the served JSON-LD,
-asserts those MPNs and exact Offers, excludes unpriceable/inactive variants and their MPNs, then
-requests each published variant URL to prove it preselects the same variant and renders the same
-price.
+asserts factual variant-specific names, those MPNs and exact Offers, excludes unpriceable/inactive
+variants and their MPNs, then requests each published variant URL to prove it preselects the same
+variant and renders the same price.
 
 ## Known exclusions
 
