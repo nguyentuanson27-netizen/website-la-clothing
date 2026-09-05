@@ -139,16 +139,6 @@ function readPublishableProductGroupID(pancakeProductId: string): string | null 
   return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
-function countPublishableMpns(product: StorefrontStructuredDataProduct): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const option of product.projection.options) {
-    const mpn = product.variantMpnById[option.id];
-    if (!isPublishableMpn(mpn)) continue;
-    counts.set(mpn, (counts.get(mpn) ?? 0) + 1);
-  }
-  return counts;
-}
-
 /**
  * The variants this page may publish, each proved addressable and uniquely identified first.
  *
@@ -157,6 +147,13 @@ function countPublishableMpns(product: StorefrontStructuredDataProduct): Map<str
  * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
  * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
  * variation UUID as a different identifier type.
+ *
+ * Uniqueness is decided last, over the candidates that survived every other check — the same order
+ * the Merchant mapper uses. It has to be: a variant already excluded on its own facts is not a
+ * claimant to anything, so counting it would let one doomed row suppress a perfectly good sibling,
+ * and the two consumers would publish different sets without either being wrong about duplicates.
+ * When two *surviving* candidates share a part number, both are still dropped — the catalog cannot
+ * say which one it names, and preferring either would be a guess.
  *
  * The resolver scans the option list, so this is quadratic in the number of options of one product
  * — a small in-memory array the page already holds, with no query behind it.
@@ -168,8 +165,7 @@ function resolvePublishableVariants({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): StructuredDataVariant[] {
-  const variants: StructuredDataVariant[] = [];
-  const mpnCounts = countPublishableMpns(product);
+  const candidates: Readonly<{ mpn: string; variant: StructuredDataVariant }>[] = [];
 
   for (const option of product.projection.options) {
     const reselected = resolveDeepLinkedVariantSelection({
@@ -189,7 +185,7 @@ function resolvePublishableVariants({
     if (variantPath === null) continue;
 
     const mpn = product.variantMpnById[option.id];
-    if (!isPublishableMpn(mpn) || mpnCounts.get(mpn) !== 1) continue;
+    if (!isPublishableMpn(mpn)) continue;
 
     const offer = resolvePublishableOffer(
       option,
@@ -197,18 +193,28 @@ function resolvePublishableVariants({
     );
     if (offer === null) continue;
 
-    variants.push({
-      url: new URL(variantPath, origin).href,
+    candidates.push({
       mpn,
-      color: option.color,
-      size: option.size,
-      price: offer.price,
-      availability: offer.availability,
-      imageUrl: resolveVariantImageUrl(product, option),
+      variant: {
+        url: new URL(variantPath, origin).href,
+        mpn,
+        color: option.color,
+        size: option.size,
+        price: offer.price,
+        availability: offer.availability,
+        imageUrl: resolveVariantImageUrl(product, option),
+      },
     });
   }
 
-  return variants;
+  const claimantsByMpn = new Map<string, number>();
+  for (const candidate of candidates) {
+    claimantsByMpn.set(candidate.mpn, (claimantsByMpn.get(candidate.mpn) ?? 0) + 1);
+  }
+
+  return candidates
+    .filter((candidate) => claimantsByMpn.get(candidate.mpn) === 1)
+    .map((candidate) => candidate.variant);
 }
 
 /**

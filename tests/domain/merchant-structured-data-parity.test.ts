@@ -657,6 +657,96 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     assert.deepEqual(publishedIds(jsonLd), publishedIds(merchant));
   });
 
+  /**
+   * MPN uniqueness has to be judged over the same set on both sides.
+   *
+   * Merchant decides each candidate on its own facts first and only then looks for duplicates among
+   * the survivors, so a variant already excluded for unresolved availability or an unresolved price
+   * cannot make a sibling's part number ambiguous. U27 counted MPNs across every projection option,
+   * so an already-doomed variant still poisoned a perfectly good sibling — and the two consumers
+   * published different sets without either one being "wrong" about duplicates.
+   */
+  for (const [label, brokenOverrides] of [
+    ["unresolved availability", { warehouseQuantities: [5, -3] }],
+    ["an unresolved price", { retailPrice: null, retailPriceAfterDiscount: null }],
+  ] as const) {
+    it(`does not let a variant excluded for ${label} poison a sibling's MPN uniqueness`, () => {
+      const { merchant, jsonLd } = runParity(
+        catalogProduct({
+          variants: [
+            // A and B share a part number, but B is excluded on its own facts before uniqueness
+            // is even a question, so A is the only claimant left and stays publishable.
+            variant({ pancakeDisplayId: "LA-OXF-DUP" }),
+            variant({
+              variantId: "cuid-black-l",
+              pancakeVariationId: "pv-black-l",
+              pancakeDisplayId: "LA-OXF-DUP",
+              size: "L",
+              ...brokenOverrides,
+            }),
+            variant({
+              variantId: "cuid-black-xl",
+              pancakeVariationId: "pv-black-xl",
+              pancakeDisplayId: "LA-OXF-BLK-XL",
+              size: "XL",
+            }),
+            variant({
+              variantId: "cuid-black-xxl",
+              pancakeVariationId: "pv-black-xxl",
+              pancakeDisplayId: "LA-OXF-BLK-XXL",
+              size: "XXL",
+            }),
+          ],
+        }),
+      );
+
+      assert.deepEqual(
+        publishedIds(merchant),
+        ["pv-black-m", "pv-black-xl", "pv-black-xxl"],
+        "Merchant dedupes among the candidates that survived their own checks",
+      );
+      assert.deepEqual(
+        publishedIds(jsonLd),
+        publishedIds(merchant),
+        "U27 must judge uniqueness over the same surviving set, not over every option",
+      );
+      assert.deepEqual(merchant, jsonLd);
+    });
+  }
+
+  it("still excludes both claimants when two publishable variants share one MPN", () => {
+    // The narrowing must not weaken the rule it narrows: when both claimants are otherwise
+    // publishable the catalog cannot say which one the part number names, so neither is published.
+    const { merchant, jsonLd } = runParity(
+      catalogProduct({
+        variants: [
+          variant({ pancakeDisplayId: "LA-OXF-DUP" }),
+          variant({
+            variantId: "cuid-black-l",
+            pancakeVariationId: "pv-black-l",
+            pancakeDisplayId: "LA-OXF-DUP",
+            size: "L",
+          }),
+          variant({
+            variantId: "cuid-black-xl",
+            pancakeVariationId: "pv-black-xl",
+            pancakeDisplayId: "LA-OXF-BLK-XL",
+            size: "XL",
+          }),
+          variant({
+            variantId: "cuid-black-xxl",
+            pancakeVariationId: "pv-black-xxl",
+            pancakeDisplayId: "LA-OXF-BLK-XXL",
+            size: "XXL",
+          }),
+        ],
+      }),
+    );
+
+    assert.deepEqual(publishedIds(merchant), ["pv-black-xl", "pv-black-xxl"]);
+    assert.deepEqual(publishedIds(jsonLd), publishedIds(merchant));
+  });
+
   it("fails closed on both sides when a variant's price never resolved", () => {
     const { merchant, jsonLd } = runParity(
       catalogProduct({

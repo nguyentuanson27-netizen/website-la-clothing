@@ -9,8 +9,9 @@ It has been written in two passes:
   availability domain, and recorded one reachable divergence it deliberately did not equalize. That
   pass changed no `src/` file.
 - **PR #200 (U27a)** closed that **availability** divergence in runtime code, in both the
-  exact-variant and product-level paths. It does change `src/`. It did **not** close the convergence
-  launch gate, which stays open on the family-collapse granularity contract described below.
+  exact-variant and product-level paths, and aligned U27's MPN-uniqueness domain with the Merchant
+  mapper's. It does change `src/`. It did **not** close the convergence launch gate, which stays
+  open on the family-collapse granularity contract described below.
 
 | | PR #199 | PR #200 (U27a) |
 | --- | --- | --- |
@@ -174,10 +175,40 @@ size-only family rather than a claimed colour axis. When exclusion leaves no rea
 existing rules collapse the group to the product-level `Product` rather than publishing a one-member
 `ProductGroup`.
 
+### Also closed — exclusion ordering around MPN uniqueness
+
+A second, separate mismatch surfaced in review of the same PR, and it is not the family-collapse
+contract.
+
+The two consumers judged uniqueness over different sets. The Merchant mapper decides each candidate
+on its own facts first and only then looks for duplicate ids and MPNs **among the survivors**
+(`drafts.filter(draft => draft.offer !== null)`). U27 counted publishable MPNs across **every**
+projection option before any other exclusion applied. So a variant already doomed — unresolved
+availability, unresolved price, unaddressable identity — still counted as a claimant and suppressed
+a perfectly good sibling that shared its part number:
+
+```
+A: MPN=DUP, stock [5]      valid
+B: MPN=DUP, stock [5, -3]  availability unresolved
+
+Merchant: B excluded before dedupe → DUP has one claimant → A publishes
+U27 (before): DUP counted twice → A rejected as a duplicate → A withheld
+```
+
+`resolvePublishableVariants` now collects the candidates that survived every other check and applies
+uniqueness to that set, mirroring the mapper's order. This closes the class rather than the two
+instances: an unaddressable variant, one with no landing path, one with a malformed MPN, an
+unresolved price and an unresolved availability are all excluded before they can claim anything.
+
+The rule it narrows is unchanged where it matters: when two *surviving* candidates share a part
+number, both are still dropped, because the catalog cannot say which one it names.
+
 ### Open contract — the family-collapse state
 
-U27a closed the availability divergence in both the exact-variant and product-level paths. One
-question remains, and it is a granularity question rather than a contradiction.
+U27a closed the availability divergence in both the exact-variant and product-level paths, and the
+exclusion-ordering mismatch above. One question remains **of those found so far**, and it is a
+granularity question rather than a contradiction. Two review passes each surfaced a further
+reachable mismatch, so this is stated as the remaining known gap rather than a proof of exhaustion.
 
 When exclusion leaves a single publishable sibling, U27's existing rules collapse the family to a
 product-level `Product`, because a one-member `ProductGroup` is not a variant family. In that state:
@@ -245,6 +276,7 @@ business-fact parity
   identity / grouping / MPN / URL / price  = GREEN
   availability, resolvable stock domain    = GREEN
   availability, any negative row           = COMPATIBLE FAIL-CLOSED (U27a)
+  exclusion ordering vs MPN uniqueness     = GREEN (U27a)
   exact-variant set, family-collapse state = OPEN CONTRACT (authority decision)
 
 feed <-> JSON-LD consistency launch gate   = OPEN
