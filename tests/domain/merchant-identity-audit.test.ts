@@ -132,7 +132,7 @@ test("M1 Merchant format and length limits enforce 1-50 chars for offer and prod
   assert.equal(
     classifyExternalIdentifier("v\uE0001", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
     "INVALID_FORMAT",
-    "BMP Private Use Area (U+E000) must be rejected",
+    "BMP Private Use Area (U+E000) must be rejected per Google Merchant specification",
   );
   assert.equal(
     classifyExternalIdentifier("v\uF8FF1", { maxLength: MERCHANT_ID_MAX_LENGTH, allowWhitespace: false }),
@@ -337,22 +337,20 @@ test("M1 the audit never asserts a GTIN", () => {
 });
 
 /**
- * ADR 0007 settled the O3 *policy*: approved shop defaults plus local product-owned overrides. What
- * does not exist yet is the runtime — no persistence, validation, admin editing or effective-fact
- * projection — so the audit still reports BLOCKED, but for the honest reason.
- *
- * Reporting `OWNER_BLOCKED` after that decision would state that a resolved owner gate is still
- * open, in a report whose whole job is to say where readiness stands.
+ * ADR 0007 settled the O3 policy and U25/M3 now implements persistence, server validation, admin
+ * editing and effective-fact projection. This older mirror-only M1 summary deliberately does not
+ * read `ProductMerchantFacts`, so it must report that limitation without claiming the runtime is
+ * missing and without claiming it has audited the resolved apparel values.
  */
-test("M1 apparel readiness separates the settled policy from the missing runtime", () => {
+test("M1 apparel readiness reports current runtime without pretending legacy M1 audits it", () => {
   const summary = summarizeMerchantIdentity([
     row({ title: "Áo sơ mi nam người lớn", publishedDescription: "Dành cho nam giới trưởng thành." }),
   ]);
 
   assert.deepEqual(summary.apparelFacts, {
     policy: "RESOLVED",
-    productOverrides: "NOT_IMPLEMENTED",
-    verdict: "BLOCKED",
+    productOverrides: "IMPLEMENTED",
+    verdict: "NOT_AUDITED_BY_M1",
   });
 });
 

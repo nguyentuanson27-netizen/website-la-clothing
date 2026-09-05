@@ -374,18 +374,18 @@ test("M1 malformed mirrored text is reported rather than silently emitted", asyn
   );
 });
 
-test("M1 apparel runtime stays blocked over the real catalog even though the policy is settled", async () => {
+test("M1 current runtime reports O3 implemented while legacy M1 has not audited the new override table", async () => {
   await insertProduct("p", "external-product-1");
   await insertVariant("v1", "p", "external-variation-1", "LA-A");
 
   const summary = summarizeMerchantIdentity(await readMerchantIdentityRows(SHOP_ID));
 
-  // Neither of these is a fact about the mirror, so no catalog shape can move them: the policy was
-  // decided by a human in ADR 0007, and the override runtime either exists or does not.
+  // These are current runtime metadata, not facts inferred from the mirror. ADR 0007 is settled and
+  // U25 implements the override runtime, while this legacy M1 reader still does not inspect O3 rows.
   assert.deepEqual(summary.apparelFacts, {
     policy: "RESOLVED",
-    productOverrides: "NOT_IMPLEMENTED",
-    verdict: "BLOCKED",
+    productOverrides: "IMPLEMENTED",
+    verdict: "NOT_AUDITED_BY_M1",
   });
   assert.equal(summary.durability.verdict, "BLOCKED");
 });

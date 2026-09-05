@@ -34,6 +34,32 @@ enum ProductContentStatus {
   PUBLISHED
 }
 
+/// ADR 0007 — Merchant apparel facts.
+///
+/// These are the reviewed Google Merchant controlled values, held as database enums so an
+/// out-of-allowlist value cannot be persisted at all. The application layer still validates every
+/// admin submission and every value it reads back: the database constraint is defence in depth, not
+/// the only gate.
+enum MerchantGender {
+  MALE
+  FEMALE
+  UNISEX
+}
+
+enum MerchantAgeGroup {
+  NEWBORN
+  INFANT
+  TODDLER
+  KIDS
+  ADULT
+}
+
+enum MerchantCondition {
+  NEW
+  REFURBISHED
+  USED
+}
+
 enum PromotionCampaignKind {
   PROMOTION
   FLASH_SALE
@@ -147,6 +173,7 @@ model ProductMirror {
   updatedAt         DateTime             @updatedAt
   variants          VariantMirror[]
   content           ProductContent?
+  merchantFacts     ProductMerchantFacts?
   slugHistory       ProductSlugHistory[]
   promotionTargets  PromotionTarget[]
 
@@ -175,6 +202,28 @@ model ProductContent {
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   product               ProductMirror        @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// ADR 0007 — website-owned Merchant apparel overrides for one product.
+///
+/// Absence is inheritance, never "unknown": a null column means this product uses the approved shop
+/// default for that fact, and clearing an override in admin removes the value rather than copying
+/// the current default into the row. The three facts are independent, so a product may override one
+/// and inherit the other two.
+///
+/// This table is website-owned. Pancake catalog sync never writes, clears or derives it — that is
+/// what keeps a resync from silently erasing a merchandising decision. It is deliberately separate
+/// from `ProductContent` so that an editorial publication state cannot gate a Merchant fact, and
+/// separate from the Pancake mirror columns so that ownership is visible in the schema itself.
+model ProductMerchantFacts {
+  id        String             @id @default(cuid())
+  productId String             @unique
+  gender    MerchantGender?
+  ageGroup  MerchantAgeGroup?
+  condition MerchantCondition?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  product   ProductMirror      @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model CollectionDefinition {
