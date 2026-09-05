@@ -42,6 +42,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       orderBy: [{ pancakeVariationId: "asc" }],
       select: {
         id: true,
+        pancakeDisplayId: true,
         compositeComponents: {
           orderBy: [{ componentVariantId: "asc" }],
           select: {
@@ -134,6 +135,12 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
     return {
       ...product,
+      // ADR 0008: the mirrored Pancake `display_id` is the manufacturer MPN authority. Keep this
+      // server-only map separate from `projection.options` so the purchase-panel client contract does
+      // not grow a Merchant/SEO-only fact just to let JSON-LD identify each variant.
+      variantMpnById: Object.fromEntries(
+        parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
+      ),
       projection: buildStorefrontProductProjection({
         parentVariants: product.variants,
         componentGroups,
