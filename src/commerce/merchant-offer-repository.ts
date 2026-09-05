@@ -1,32 +1,10 @@
 /**
  * U25 / #153 M3 — the bounded canonical loader behind the Merchant offer mapper.
  *
- * It answers one question — "what does the storefront currently publish?" — and hands the answer to
- * a pure function. The split matters: the mapper never queries, while this loader uses one bounded
- * product read plus bounded promotion-candidate batches rather than a query per offer.
- *
- * Every fact here is loaded through the authority that already owns it:
- *
- *   - visibility is the storefront's own predicate: present and active product, present and active
- *     variants. A hidden product has no landing page, so it has no offer;
- *   - pricing is `buildPromotionalStorefrontPricing`, the same rule object the product page, the
- *     listings, the cart and the checkout price from, resolved against one instant per read;
- *   - media is `resolveStorefrontProductMedia` plus `resolveVariantGalleryIndexes`, so raw mirrored
- *     URLs never leave this module;
- *   - the option projection is `buildStorefrontProductProjection`, so the feed's notion of an option
- *     is the page's notion of an option;
- *   - apparel overrides are the website-owned `ProductMerchantFacts` row, read as untrusted values
- *     that the pure resolver validates.
- *
- * Query shape is deliberately bounded: one product read that carries its variants, warehouse stock,
- * composite edges, published content and overrides, then promotion-candidate reads in the existing
- * 200-variant batches. The number of batches can grow with catalog size, but there is no per-offer
- * N+1 lookup and the read refuses an over-large product catalog rather than silently truncating it.
- * The stricter public-feed round-trip envelope remains U26 / M4's responsibility.
- *
- * Composite products are still fetched. They are excluded by the mapper with `COMPOSITE_DEFERRED`
- * rather than filtered out here, so the diagnostics can account for every catalog row the way the
- * M1 audit does.
+ * U26 consumes this loader as the sole business-truth authority. Its public-feed path keeps the
+ * canonical product read and uses trusted ownership already returned by that read to resolve
+ * promotion targets in at most seven additional queries. Generic request-facing promotion readers
+ * retain their tighter 200-id ownership-validation batches.
  */
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
@@ -37,8 +15,14 @@ import {
   type MerchantCandidateVariation,
   type MerchantMappingResult,
 } from "./merchant-offer-mapper.ts";
-import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
-import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
+import {
+  MAX_MERCHANT_CANDIDATE_VARIANTS,
+  MAX_MERCHANT_PROMOTION_VARIANTS_PER_QUERY,
+} from "./merchant-feed-limits.ts";
+import {
+  readApplicablePromotionCampaignsForKnownVariants,
+  type PromotionCandidateReadClient,
+} from "./promotion-candidate-repository.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 import {
   resolveStorefrontProductMedia,
@@ -52,11 +36,6 @@ import { INHERITED_APPAREL_OVERRIDES } from "./product-merchant-facts-repository
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
-/**
- * The loader's own safety bound. It refuses rather than truncates, because a feed that quietly
- * dropped half the catalog would look healthy. The public feed's offer and byte envelope is a
- * separate contract and belongs to U26 / M4.
- */
 export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
 
 export class MerchantOfferReadError extends Error {}
@@ -67,9 +46,7 @@ const candidateSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
-  // Only a PUBLISHED description is a fact the storefront shows, so only that is a Merchant fact.
   content: { select: { status: true, editorialDescription: true } },
-  // Website-owned ADR 0007 overrides. Absent row means every fact inherits the shop default.
   merchantFacts: { select: { gender: true, ageGroup: true, condition: true } },
   variants: {
     where: { isPresent: true, isActive: true },
@@ -77,8 +54,6 @@ const candidateSelection = {
     select: {
       id: true,
       pancakeVariationId: true,
-      // ADR 0008: the manufacturer MPN is the mirrored Pancake display_id. `sku` is a distinct
-      // website-owned field and is deliberately not selected, so it cannot become a fallback.
       pancakeDisplayId: true,
       color: true,
       size: true,
@@ -86,7 +61,6 @@ const candidateSelection = {
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
       warehouseStocks: { orderBy: [{ pancakeWarehouseId: "asc" }], select: { quantity: true } },
-      // Either side of a composite edge defers the variation in Merchant v1, so both are probed.
       compositeParents: { select: { parentVariantId: true }, take: 1 },
       compositeComponents: { select: { componentVariantId: true }, take: 1 },
     },
@@ -97,10 +71,6 @@ type SelectedCandidateProduct = Prisma.ProductMirrorGetPayload<{
   select: typeof candidateSelection;
 }>;
 
-/**
- * M1 Merchant availability semantics: any unsafe or negative warehouse quantity poisons the whole
- * fact. Summing first would let a positive warehouse hide a negative mirrored one (-3 + 4 => 1).
- */
 function aggregateWarehouseStock(quantities: readonly number[]): number {
   for (const quantity of quantities) {
     if (!Number.isFinite(quantity) || quantity < 0) return Number.NaN;
@@ -137,8 +107,6 @@ function toCandidateProduct(
     })),
   });
 
-  // Summed once and shared, so the stock the storefront projection sees and the stock the Merchant
-  // availability fact is classified from cannot drift apart.
   const stockByVariantId = new Map(
     product.variants.map((variant) => [
       variant.id,
@@ -178,14 +146,10 @@ function toCandidateProduct(
     galleryIndexByVariantId,
     projection: buildStorefrontProductProjection({
       parentVariants,
-      // A composite product is deferred in Merchant v1, so its component groups are not assembled:
-      // the projection only has to say "this is a set", which the presence of the graph decides.
       componentGroups: [],
       hasCompositeGraph,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
     }),
-    // Read as stored, not as trusted: the mapper's resolver is what decides whether these values
-    // are usable, and an absent row is inheritance rather than an unknown state.
     apparelOverrides:
       product.merchantFacts === null
         ? INHERITED_APPAREL_OVERRIDES
@@ -206,8 +170,6 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     const products = await client.productMirror.findMany({
       where: { pancakeShopId: shopId, isPresent: true, isActive: true },
       select: candidateSelection,
-      // A stable catalog order makes the mapper's input — and therefore the feed and its
-      // diagnostics — reproducible across reads.
       orderBy: [{ pancakeProductId: "asc" }],
       take: MAX_MERCHANT_CANDIDATE_PRODUCTS + 1,
     });
@@ -218,17 +180,29 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       );
     }
 
-    const variantIds = products.flatMap((product) =>
-      product.variants.map((variant) => variant.id),
+    const knownVariants = products.flatMap((product) =>
+      product.variants.map((variant) => ({ id: variant.id, productId: product.id })),
     );
-    // Bounded batching, not a per-offer lookup: each call stays inside the candidate repository's
-    // own 200-id safety cap while the whole projection is still resolved.
-    const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
-      variantIds,
-      // The same structural cast every other caller uses to hand the candidate repository a client;
-      // the repository declares only the two model reads it performs.
-      client: client as unknown as PromotionCandidateReadClient,
-    });
+    if (knownVariants.length > MAX_MERCHANT_CANDIDATE_VARIANTS) {
+      throw new MerchantOfferReadError(
+        `Catalog exceeds the Merchant candidate-variant query envelope of ${MAX_MERCHANT_CANDIDATE_VARIANTS}; refusing rather than exceeding the public-feed DB budget`,
+      );
+    }
+
+    const campaignsByVariantId = new Map<string, readonly ApplicablePromotionCampaign[]>();
+    for (
+      let offset = 0;
+      offset < knownVariants.length;
+      offset += MAX_MERCHANT_PROMOTION_VARIANTS_PER_QUERY
+    ) {
+      const result = await readApplicablePromotionCampaignsForKnownVariants({
+        variants: knownVariants.slice(offset, offset + MAX_MERCHANT_PROMOTION_VARIANTS_PER_QUERY),
+        client: client as unknown as PromotionCandidateReadClient,
+      });
+      for (const [variantId, campaigns] of result.campaignsByVariantId) {
+        campaignsByVariantId.set(variantId, campaigns);
+      }
+    }
 
     return products.map((product) => toCandidateProduct(product, campaignsByVariantId, now));
   }
