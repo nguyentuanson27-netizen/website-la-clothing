@@ -822,10 +822,17 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     });
   }
 
-  it("collapses the family when the only sibling left is availability-unresolved", () => {
-    // Two variants, one unresolved. U27's existing ProductGroup rules need a real varying dimension
-    // among the survivors, so the group falls back rather than publishing a one-member family — and
-    // nothing is left describing the excluded variant.
+  /**
+   * The family-collapse state, pinned as an open contract rather than as convergence.
+   *
+   * Merchant publishes the survivor with its variation identity; U27 falls back to a product-level
+   * `Product`, since a one-member `ProductGroup` is not a variant family. The two agree on product,
+   * price and availability and neither is false, but the publishable exact-variant sets differ — so
+   * the launch gate stays open on it. This is the pre-existing single-variant-family rule, not
+   * something U27a introduced. `docs/audits/merchant-jsonld-parity.md` records the three ways it
+   * can be reconciled; all three are authority decisions.
+   */
+  it("leaves the family-collapse state as a granularity difference, not an availability one", () => {
     const { merchant, jsonLd } = runParity(
       catalogProduct({
         variants: [
@@ -843,6 +850,9 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
 
     assert.deepEqual(publishedIds(merchant), ["pv-black-m"]);
     assert.deepEqual(publishedIds(jsonLd), [], "no ProductGroup survives a single-member family");
+    // The excluded variant is absent from both sides — the availability convergence still holds.
+    assert.equal(publishedIds(merchant).includes("pv-black-l"), false);
+    assert.equal(publishedIds(jsonLd).includes("pv-black-l"), false);
   });
 
   it("fails closed on both sides for an unaddressable variation identity", () => {

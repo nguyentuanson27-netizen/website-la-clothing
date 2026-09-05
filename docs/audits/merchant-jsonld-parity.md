@@ -80,7 +80,7 @@ The two formats are compared on meaning, never on literal strings.
 | I — unaddressable variation identity | COMPATIBLE FAIL-CLOSED on both sides |
 | J — composite | COMPATIBLE FAIL-CLOSED: Merchant reports `COMPOSITE_DEFERRED`, U27 publishes no `ProductGroup` |
 | Grouping | MATCH: every emitted sibling groups under `pancakeProductId`, never a slug, local id, kind key, MPN or index |
-| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants |
+| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, except the family-collapse state below |
 
 ## Closed divergence — negative mirrored warehouse quantity (U27a)
 
@@ -131,6 +131,12 @@ PDP detail repository → U27 serialization boundary
   **omission**, never a substitute claim — not `OutOfStock`, `InStock`, pre-order or back-order. A
   variant missing from the map is unresolved too, so a caller that forgets it publishes nothing
   rather than something unverified.
+- The same filter narrows the **product-level fallback** offer. Suppressing the exact per-variant
+  claim alone would have been half a fix: the fallback aggregates the standalone options, so a
+  family collapsing to one sold-out survivor would still have advertised `InStock` on the strength
+  of a sibling whose inventory the catalog cannot read. The filter matters in both directions — an
+  unresolved sibling must not manufacture stock, and must not drag the offer into the
+  price-disagreement refusal and withhold one the survivor fully supports.
 - U27 still reads no database, imports nothing from the Merchant modules, and keeps the PDP
   projection as its price/addressability/resolved-availability authority. The two consumers converge
   on upstream facts; neither calls the other.
@@ -158,6 +164,36 @@ URL. `variesBy` is recomputed from the survivors, so dropping the only other col
 size-only family rather than a claimed colour axis. When exclusion leaves no real family, U27's
 existing rules collapse the group to the product-level `Product` rather than publishing a one-member
 `ProductGroup`.
+
+### Open contract — the family-collapse state
+
+U27a closed the availability divergence in both the exact-variant and product-level paths. One
+question remains, and it is a granularity question rather than a contradiction.
+
+When exclusion leaves a single publishable sibling, U27's existing rules collapse the family to a
+product-level `Product`, because a one-member `ProductGroup` is not a variant family. In that state:
+
+- Merchant publishes an exact offer for the surviving variant, carrying its variation identity;
+- U27 publishes a product-level `Product` with the same price and the same availability, now derived
+  only from resolved inventory, but no exact *variant* identity for it.
+
+Neither statement is false and they agree on product, price and availability — but the publishable
+exact-variant sets are not equal, so the launch gate does not close on this evidence.
+
+This is the pre-existing single-variant-family rule, not something U27a introduced: it applies to any
+product with one variant, and PR #199 already recorded it as a format-specific eligibility
+difference. Reconciling it means one of:
+
+1. **Change U27 ProductGroup eligibility** so a single publishable variant still publishes an exact
+   variant `Product`/`Offer` — a change to U27's own design, and arguably wrong against schema.org,
+   where a `ProductGroup` describes a family.
+2. **Omit the survivor from Merchant** under the same condition — which weakens a feed that is
+   currently correct, to match a presentation rule of the other consumer.
+3. **Accept the granularity difference** and say so normatively in the gate's wording: a
+   product-level statement that agrees on product, price and availability satisfies "consistency"
+   even without variant-level identity.
+
+Each is an authority decision about what the gate means, not a defect to fix inside this unit.
 
 ### Non-finite quantities
 
@@ -200,8 +236,9 @@ business-fact parity
   identity / grouping / MPN / URL / price  = GREEN
   availability, resolvable stock domain    = GREEN
   availability, any negative row           = COMPATIBLE FAIL-CLOSED (U27a)
+  exact-variant set, family-collapse state = OPEN CONTRACT (authority decision)
 
-feed <-> JSON-LD consistency launch gate   = PASS
+feed <-> JSON-LD consistency launch gate   = OPEN
 production feed activation                 = BLOCKED by O2
 ```
 
@@ -226,6 +263,6 @@ no multi-replica claim. Nothing here adds Redis, replicas, or a deployment chang
 
 ## Remaining gates
 
-- **Feed ↔ JSON-LD consistency launch gate:** **PASS** as of U27a.
+- **Feed ↔ JSON-LD consistency launch gate:** OPEN, on the family-collapse contract below.
 - **O2:** OPEN. **M5 / U41:** BLOCKED.
 - Next unit: `U28 / T8`.

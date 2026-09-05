@@ -235,6 +235,26 @@ function resolveProductGroup({
   return { productGroupID, variesBy, variants };
 }
 
+/**
+ * The options the product-level fallback may answer from.
+ *
+ * Suppressing the exact per-variant claim is only half of failing closed: the fallback offer is
+ * aggregated from these options, so an unresolved variant left in the list would republish the same
+ * availability one node up — a family that collapses to a single sold-out survivor would still
+ * advertise `InStock` on the strength of a sibling whose inventory the catalog cannot read.
+ *
+ * The filter matters in both directions. An unresolved sibling must not make the product claim
+ * stock it cannot support, and must not drag the offer into the price-disagreement refusal either,
+ * which would silently withhold an offer the surviving variant fully supports.
+ */
+function selectPublishableProductLevelOptions(
+  product: StorefrontStructuredDataProduct,
+): StorefrontProjectionOption[] {
+  return selectStorefrontProductLevelOptions(product.projection).filter(
+    (option) => product.variantAvailabilityResolvedById[option.id] === true,
+  );
+}
+
 export function buildStorefrontProductStructuredData({
   origin,
   product,
@@ -246,10 +266,10 @@ export function buildStorefrontProductStructuredData({
     origin,
     product,
     // The product-level fallback, for a product with no publishable variant family: a composite's
-    // parent set, or a standalone product with a single option. Unchanged behaviour, now resolved
-    // from the same projection the page renders so structured data cannot quote a price the page
-    // does not show.
-    variantOptions: selectStorefrontProductLevelOptions(product.projection),
+    // parent set, or a standalone product with a single option. Resolved from the same projection
+    // the page renders so structured data cannot quote a price the page does not show, and now
+    // narrowed to the variants whose inventory can state an availability at all.
+    variantOptions: selectPublishableProductLevelOptions(product),
     productGroup: resolveProductGroup({ origin, product }),
   });
 }
