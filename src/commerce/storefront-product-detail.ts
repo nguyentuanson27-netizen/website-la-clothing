@@ -43,6 +43,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       select: {
         id: true,
         pancakeDisplayId: true,
+        sku: true,
         compositeComponents: {
           orderBy: [{ componentVariantId: "asc" }],
           select: {
@@ -140,6 +141,12 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       // not grow a Merchant/SEO-only fact just to let JSON-LD identify each variant.
       variantMpnById: Object.fromEntries(
         parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
+      ),
+      // U32a: the website-owned SKU, kept in its own server-only map for the same reason. It rides
+      // the select that already read this row, so publishing it costs no additional query. It is a
+      // different fact from the MPN above and must never be substituted for it.
+      variantSkuById: Object.fromEntries(
+        parentRelations.map((variant) => [variant.id, variant.sku]),
       ),
       projection: buildStorefrontProductProjection({
         parentVariants: product.variants,

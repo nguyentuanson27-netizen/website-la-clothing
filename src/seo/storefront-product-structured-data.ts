@@ -55,6 +55,11 @@ type StorefrontStructuredDataProduct = Readonly<{
   /** ADR 0008 manufacturer MPNs, keyed by internal id; internal ids themselves never leave JSON-LD. */
   variantMpnById: Readonly<Record<string, string | null>>;
   /**
+   * U32a website-owned SKUs, keyed the same way. Unlike the MPN this gates nothing: a variant with
+   * no publishable SKU is still published, simply without one.
+   */
+  variantSkuById: Readonly<Record<string, string | null>>;
+  /**
    * Whether this variant's mirrored inventory can state an availability at all, keyed by internal id
    * and never published. Resolved by the catalog read that still holds the raw warehouse rows; this
    * boundary only consumes the verdict, and reads no stock of its own.
@@ -198,6 +203,7 @@ function resolvePublishableVariants({
       variant: {
         url: new URL(variantPath, origin).href,
         mpn,
+        sku: product.variantSkuById[option.id] ?? null,
         color: option.color,
         size: option.size,
         price: offer.price,

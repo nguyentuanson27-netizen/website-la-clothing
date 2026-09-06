@@ -281,6 +281,7 @@ function toStructuredDataProduct(
     variantMpnById: Object.fromEntries(
       product.variants.map((row) => [row.variantId, row.pancakeDisplayId]),
     ),
+    variantSkuById: {},
     // Server-only, keyed by internal id exactly like `variantMpnById`, and produced by the catalog
     // read that still holds the raw warehouse rows.
     variantAvailabilityResolvedById: Object.fromEntries(
