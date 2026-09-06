@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createProductContentRepository } from "../../src/commerce/product-content-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { SEO_LENGTH_GUIDANCE } from "../../src/commerce/seo-length-guidance.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -245,4 +246,56 @@ test("admin editor projection reports no composite edges for a standalone produc
   const editorProduct = await repository.findForEditor(product.id);
   assert.equal(editorProduct?.variants.length, 1);
   assert.deepEqual(editorProduct?.variants[0]?.compositeComponents, []);
+});
+
+/**
+ * U34a / W16. Persistence half of the advisory guarantee: a title past the advisory 60 and a
+ * description past the advisory 155 round-trip through storage unchanged - not truncated, not
+ * normalised, not rejected here.
+ *
+ * This layer does not validate length; `PRODUCT_CONTENT_LIMITS` is enforced above it in
+ * product-content-admin. So this test cannot notice the advice becoming a limit, and does not
+ * claim to. That claim belongs to the admin editor browser spec, which submits an over-advisory
+ * title through the real form and server action, and which does go red if the enforced bound is
+ * tightened onto the advisory number.
+ */
+test("U34a persists SEO copy past the advisory length untouched", async () => {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: testShopId,
+      pancakeProductId: externalId,
+      slug: externalId,
+      name: "Advisory Length Product",
+      syncedAt: new Date("2026-09-06T00:00:00.000Z"),
+    },
+  });
+
+  // One character past each advisory target - the exact boundary the counter warns at.
+  const overLongTitle = "T".repeat(SEO_LENGTH_GUIDANCE.seoTitle + 1);
+  const overLongDescription = "D".repeat(SEO_LENGTH_GUIDANCE.seoDescription + 1);
+
+  const saved = await repository.saveContent({
+    productId: product.id,
+    status: "DRAFT",
+    editorialDescription: null,
+    careInstructions: null,
+    sizeGuide: null,
+    seoTitle: overLongTitle,
+    seoDescription: overLongDescription,
+    collectionSlugs: [],
+  });
+
+  assert.equal(saved.seoTitle, overLongTitle, "an over-advisory title must save unchanged");
+  assert.equal(
+    saved.seoDescription,
+    overLongDescription,
+    "an over-advisory description must save unchanged",
+  );
+
+  const readBack = await repository.findForEditor(product.id);
+  assert.equal(readBack?.content?.seoTitle?.length, SEO_LENGTH_GUIDANCE.seoTitle + 1);
+  assert.equal(
+    readBack?.content?.seoDescription?.length,
+    SEO_LENGTH_GUIDANCE.seoDescription + 1,
+  );
 });

@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { SEO_LENGTH_GUIDANCE } from "../../src/commerce/seo-length-guidance.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3212;
@@ -406,16 +407,50 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   });
   expect(sourceAfterSave).toEqual({ sourceDescription, slug: editedProductSlug });
 
+  // U34a / W16. The length readout is advice, and the proof is that copy past it still saves -
+  // for both fields, through the real form and Server Action, in one submit. 61 and 156 are each
+  // one character past their advisory target: the counters must say so, nothing may be disabled,
+  // and both values must persist exactly.
+  const overAdvisoryTitle = "A".repeat(SEO_LENGTH_GUIDANCE.seoTitle + 1);
+  const overAdvisoryDescription = "D".repeat(SEO_LENGTH_GUIDANCE.seoDescription + 1);
+  await page.getByLabel("SEO title").fill(overAdvisoryTitle);
+  await page.getByLabel("SEO description").fill(overAdvisoryDescription);
+
+  for (const recommended of [SEO_LENGTH_GUIDANCE.seoTitle, SEO_LENGTH_GUIDANCE.seoDescription]) {
+    await expect(page.getByText(`${recommended + 1}/${recommended}`)).toBeVisible();
+  }
+  await expect(page.getByText("dài hơn khuyến nghị, vẫn lưu được.")).toHaveCount(2);
+
+  const advisorySaveButton = page.getByRole("button", { name: "Lưu nội dung" });
+  await expect(advisorySaveButton).toBeEnabled();
+  await advisorySaveButton.click();
+  // The URL already carries ?saved=1 from the save above, so waiting on it would match instantly
+  // and read the database before this save landed. Wait for the outcome itself instead.
+  await expect
+    .poll(
+      async () =>
+        await prisma.productContent.findUnique({
+          where: { productId },
+          select: { seoTitle: true, seoDescription: true },
+        }),
+      { message: "over-advisory SEO copy must persist exactly as typed, in both fields" },
+    )
+    .toEqual({ seoTitle: overAdvisoryTitle, seoDescription: overAdvisoryDescription });
+
+  // Server-side validation must reject an oversized value even when the client-side maxlength is
+  // bypassed. Since U34a the field is a client component, so React owns the `maxLength` prop and
+  // re-applies it on any render after this attribute is removed - which would truncate the value
+  // before it ever left the browser. Strip the attribute, set the oversized value and submit in
+  // one task, leaving no window for that. What is under test is unchanged: the server's own bound,
+  // exercised with 501 characters the browser was not allowed to trim.
   const seoTitle = page.getByLabel("SEO title");
+  const errorText = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.";
   await seoTitle.evaluate((element) => {
     element.removeAttribute("maxlength");
     const input = element as HTMLInputElement;
     input.value = "x".repeat(501);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.form?.requestSubmit();
   });
-
-  const errorText = "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.";
-  await page.getByRole("button", { name: "Lưu nội dung" }).click();
   await page.waitForURL(
     (url) => url.pathname === editorPath && url.searchParams.get("error") === "invalid",
   );
