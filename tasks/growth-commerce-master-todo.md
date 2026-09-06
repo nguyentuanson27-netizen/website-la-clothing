@@ -132,7 +132,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 - [ ] **U29** #152 W2b — metadata cleanup only after U4 uniqueness proof. **Blocked by B5.** Stop at U29 and report; do not remove the discriminator, substitute one, or narrow the collision definition to make the verdict pass.
 - [ ] **U30** #152 P3 — W8 OG/Twitter, W10 static canonical, W14 branded/HTML 404 work in focused PRs. U30 stays open until all four substates land.
   - [x] **W8** root Open Graph/Twitter fallback. *(U30a — `src/seo/root-metadata.ts` + `src/seo/social-identity.ts`; the PDP card and the root fallback now share one brand identity, and the homepage is proved to serve the fallback in the metadata HTTP smoke. Social presentation only: no indexing policy, no canonical, and no relationship to Meta Pixel/CAPI.)*
-  - [ ] **W10** self-canonical for `/`, `/collections`, `/lookbook` when indexing is enabled.
+  - [x] **W10** self-canonical for `/`, `/collections`, `/lookbook` when indexing is enabled. *(U30b — `src/seo/static-page-metadata.ts`. Withheld under noindex and on any query state, matching the existing `/shop` contract; the origin comes from `readSearchExposure()`, so a forged request `Host` cannot reach the canonical. `/shop`, `/collections/<slug>`, pagination, variant queries and PDP canonicals are untouched.)*
   - [ ] **W14a** branded route-level HTML 404 with recovery navigation.
   - [ ] **W14b** unknown `/shop/<slug>` returns branded HTML 404 while current/historical slug lifecycle is unchanged.
 - [ ] **U31** #152 W9 — sitemap `lastModified` only after significant public-change timestamp semantics exist.

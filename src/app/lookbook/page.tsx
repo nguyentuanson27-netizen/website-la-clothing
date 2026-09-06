@@ -8,11 +8,26 @@ import { CommerceEventReporter } from "@/components/analytics/commerce-event-rep
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
 import { PancakeConfigError } from "@/integrations/pancake/config";
+import { readSearchExposure } from "@/seo/search-exposure";
+import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
-export const metadata: Metadata = {
-  title: "Lookbook",
-  description: "LA Clothing editorial and styling stories for the city uniform.",
+type LookbookPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+export async function generateMetadata({
+  searchParams,
+}: LookbookPageProps): Promise<Metadata> {
+  const exposure = readSearchExposure();
+  return buildStaticPageMetadata({
+    origin: exposure.origin,
+    indexingEnabled: exposure.indexingEnabled,
+    pathname: "/lookbook",
+    searchParams: await searchParams,
+    title: "Lookbook",
+    description: "LA Clothing editorial and styling stories for the city uniform.",
+  });
+}
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 

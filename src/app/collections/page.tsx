@@ -4,11 +4,26 @@ import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { prisma } from "@/db/prisma";
+import { readSearchExposure } from "@/seo/search-exposure";
+import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
-export const metadata: Metadata = {
-  title: "Bộ sưu tập",
-  description: "Khám phá các bộ sưu tập từ LA Clothing.",
+type CollectionsPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+export async function generateMetadata({
+  searchParams,
+}: CollectionsPageProps): Promise<Metadata> {
+  const exposure = readSearchExposure();
+  return buildStaticPageMetadata({
+    origin: exposure.origin,
+    indexingEnabled: exposure.indexingEnabled,
+    pathname: "/collections",
+    searchParams: await searchParams,
+    title: "Bộ sưu tập",
+    description: "Khám phá các bộ sưu tập từ LA Clothing.",
+  });
+}
 
 const repository = createCollectionDefinitionRepository(prisma);
 
