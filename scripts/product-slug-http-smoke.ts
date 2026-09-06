@@ -102,15 +102,18 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
   });
 }
 
-function anchorHasVisibleText(body: string, href: string, text: string): boolean {
-  const anchors = body.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
-  return anchors.some((anchor) => {
-    const hrefMatch = anchor.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
-    const anchorHref = hrefMatch?.[1] ?? hrefMatch?.[2] ?? null;
-    if (anchorHref !== href) return false;
-    const anchorText = anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    return anchorText.includes(text);
-  });
+/**
+ * What a visitor actually reads. Scripts are stripped deliberately: the streamed RSC payload
+ * embeds the request path, so two renders of the same page differ there while presenting
+ * identically.
+ */
+function visibleText(body: string): string {
+  return body
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function assertSecurityHeaders(response: HttpResponse, label: string) {
@@ -249,13 +252,22 @@ try {
     "unknown slug must not answer with a bare plain-text string",
   );
 
-  // Rendered by the app through its root layout - which is what makes this response the site's
-  // own 404 page rather than a second, separately maintained one. It is also the whole of the
-  // branding claim: whatever the route-level not-found page renders, this renders too.
+  // The response must be *the app's own 404 page*, not a second one maintained in the proxy.
+  // Asserting that by looking for a link somewhere in the document would prove nothing: the site
+  // header already links to /shop, /collections and /search, so the chrome would answer for the
+  // 404 body and the assertion would pass with no 404 page at all. Compare the rendered text
+  // against an unmatched route's 404 instead - the two must be the same page.
+  //
+  // This is also the whole of the branding claim, and the reason it does not depend on which
+  // not-found page is in the tree: whatever an unmatched route renders, an unknown slug renders
+  // identically. On a base without src/app/not-found.tsx that is Next's default page; with W14a
+  // merged it is the branded recovery page, with no further change here.
+  const unmatchedRouteResponse = await requestPath(`/khong-co-route-nao-${runId}`);
+  assert.equal(unmatchedRouteResponse.status, 404, "the unmatched-route baseline must itself be a 404");
   assert.equal(
-    anchorHasVisibleText(unknownResponse.body, "/shop", "Cửa hàng"),
-    true,
-    "unknown slug 404 must render through the site layout, not a synthetic proxy string",
+    visibleText(unknownResponse.body),
+    visibleText(unmatchedRouteResponse.body),
+    "unknown slug must render the same 404 page as any unmatched route, not a synthetic proxy string",
   );
 
   // The PDP route must never run for a slug that resolves to nothing: it would cost a second
@@ -306,7 +318,7 @@ try {
   assertSecurityHeaders(hostileResponse, "hostile slug 404");
 
   console.log(
-    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, unknown and hostile slugs are branded HTML 404s that neither redirect, reflect the slug nor disclose the catalog, and direct responses retain security headers.",
+    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, and unknown and hostile slugs render the app's own 404 page - the same one an unmatched route renders - without redirecting, reflecting the slug or disclosing the catalog, while direct responses retain security headers.",
   );
 } finally {
   await stopServer();

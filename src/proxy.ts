@@ -63,14 +63,21 @@ export async function proxy(request: NextRequest) {
   // through would also run the product lookup a second time and put the requested slug in the
   // streamed payload. The rewritten path carries neither.
   //
+  // Cloning the request URL and replacing the path is Next's own way to build a rewrite target:
+  // it keeps the framework's URL semantics rather than reassembling an origin by hand. The
+  // pathname is a constant and the query and fragment are dropped, so nothing the visitor sent
+  // reaches the rendered 404.
+  //
   // Next re-runs this proxy for the rewritten path, and that pass applies the search exposure
   // header too - so the wrapper here is redundant in outcome, and no test can tell the two
   // apart. It stays because all four exits of this function apply the header, and one exit that
   // silently relied on an internal rewrite for it would be the odd one out.
-  return applySearchExposureHeader(
-    request,
-    NextResponse.rewrite(new URL(UNRESOLVED_PRODUCT_PATH, request.nextUrl.origin)),
-  );
+  const destination = request.nextUrl.clone();
+  destination.pathname = UNRESOLVED_PRODUCT_PATH;
+  destination.search = "";
+  destination.hash = "";
+
+  return applySearchExposureHeader(request, NextResponse.rewrite(destination));
 }
 
 export const config = {
