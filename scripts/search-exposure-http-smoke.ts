@@ -61,14 +61,16 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
 }
 
 /**
- * Every route this smoke asserts on, so readiness means what the assertions need.
+ * The three exact paths asserted by the temporary-host browseability phase below - the one
+ * assertion group that has shown a startup-timing symptom in CI.
  *
- * Probing one route was not enough: the dev server compiles each route on its first request, and
- * `/` also reads the catalog, so a server that answers `/lookbook` can still be mid-compile on `/`.
- * Under CI load that surfaced as a 500 on the homepage immediately after a restart - a failure of
- * the wait, not of the behaviour under test.
+ * This is deliberately NOT every route the smoke asserts on: `/collections`, collection detail,
+ * `/cart`, robots/sitemap and the query/pagination states are asserted elsewhere and are not
+ * warmed here. Waiting on all three of these rather than `/lookbook` alone means readiness covers
+ * the paths that group requests, and nothing wider - `waitForServer` is not a guarantee that every
+ * asserted route has been compiled.
  */
-const READINESS_PATHS = ["/lookbook", "/shop", "/"] as const;
+const TEMPORARY_HOST_BROWSEABILITY_PATHS = ["/lookbook", "/shop", "/"] as const;
 
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -78,7 +80,9 @@ async function waitForServer(): Promise<void> {
 
     try {
       const responses = await Promise.all(
-        READINESS_PATHS.map((path) => fetch(`${BASE_URL}${path}`, { redirect: "manual" })),
+        TEMPORARY_HOST_BROWSEABILITY_PATHS.map(
+          (path) => fetch(`${BASE_URL}${path}`, { redirect: "manual" }),
+        ),
       );
       if (responses.every((response) => response.status < 500)) return;
     } catch {
@@ -357,7 +361,7 @@ try {
     "temporary host must expose no canonical URLs even when a deployment requests indexing",
   );
 
-  for (const indexablePathOnPermanentDomain of ["/lookbook", "/shop", "/"]) {
+  for (const indexablePathOnPermanentDomain of TEMPORARY_HOST_BROWSEABILITY_PATHS) {
     const requestedIndexingPage = await requestPath(indexablePathOnPermanentDomain);
     assert.equal(
       requestedIndexingPage.status,
