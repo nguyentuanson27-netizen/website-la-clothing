@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { PRODUCT_CONTENT_LIMITS } from "@/commerce/product-content-admin";
+import { SEO_LENGTH_GUIDANCE } from "@/commerce/seo-length-guidance";
+import { SeoLengthField } from "./seo-length-field";
 
 const inputClassName =
   "w-full border-b border-black/30 bg-transparent px-0 py-3 text-base outline-none transition-colors placeholder:text-black/35 focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
@@ -163,27 +165,25 @@ export function ProductEditorialForm({
             SEO
           </h2>
           <div className="mt-8 space-y-8">
-            <label className="block">
-              <span className="text-xs font-semibold uppercase tracking-[0.13em]">SEO title</span>
-              <input
-                className={inputClassName}
-                defaultValue={content?.seoTitle ?? ""}
-                maxLength={PRODUCT_CONTENT_LIMITS.seoTitle}
-                name="seoTitle"
-                type="text"
-              />
-            </label>
+            <SeoLengthField
+              className={inputClassName}
+              defaultValue={content?.seoTitle ?? ""}
+              label="SEO title"
+              maxLength={PRODUCT_CONTENT_LIMITS.seoTitle}
+              name="seoTitle"
+              recommendedLength={SEO_LENGTH_GUIDANCE.seoTitle}
+            />
 
-            <label className="block">
-              <span className="text-xs font-semibold uppercase tracking-[0.13em]">SEO description</span>
-              <textarea
-                className={textareaClassName}
-                defaultValue={content?.seoDescription ?? ""}
-                maxLength={PRODUCT_CONTENT_LIMITS.seoDescription}
-                name="seoDescription"
-                rows={5}
-              />
-            </label>
+            <SeoLengthField
+              className={textareaClassName}
+              defaultValue={content?.seoDescription ?? ""}
+              label="SEO description"
+              maxLength={PRODUCT_CONTENT_LIMITS.seoDescription}
+              multiline
+              name="seoDescription"
+              recommendedLength={SEO_LENGTH_GUIDANCE.seoDescription}
+              rows={5}
+            />
           </div>
         </section>
 
