@@ -69,6 +69,14 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
  * warmed here. Waiting on all three of these rather than `/lookbook` alone means readiness covers
  * the paths that group requests, and nothing wider - `waitForServer` is not a guarantee that every
  * asserted route has been compiled.
+ *
+ * This is defensive stabilization, not a verified root-cause fix. The CI failure it responds to was
+ * a 500 on `/` in this group immediately after a restart. The obvious mechanism - the old readiness
+ * rule returning while `/` was still mid-compile - was measured directly and did NOT reproduce: in
+ * six cold-start trials (`.next/dev` removed, this phase's env) `/lookbook` passed the old <500 bar
+ * after ~0.1-12s and `/` answered 200 at that same instant every time. So the exact cause of the CI
+ * 500 remains unreproduced; widening readiness removes a way this group could observe a route it
+ * never waited for, and is not evidence about what actually failed that run.
  */
 const TEMPORARY_HOST_BROWSEABILITY_PATHS = ["/lookbook", "/shop", "/"] as const;
 
