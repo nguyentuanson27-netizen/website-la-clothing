@@ -63,8 +63,14 @@ an HTTP 500 rather than a truncated or sharded sitemap. That is the failure W21 
 
 So production emits **0 sitemap URLs today**, and `listCanonicalPaths` — the only code that can
 throw the budget `RangeError` — is not reached. The cliff becomes reachable only after permanent-
-domain confirmation and the separate human approval that enables indexing. That gate, not catalog
-growth alone, is when this monitoring contract has to be live.
+domain confirmation and the separate human approval that enables indexing.
+
+That makes enablement the deadline for this work, not its starting gun: the baseline count and
+trigger contract have to exist **before** the flag flips, because the first request afterwards goes
+straight through the budget guard. See §5.
+
+The corollary is worth stating plainly: while indexing stays disabled the sitemap emits nothing, so
+today's safety comes from the gate rather than from any measured headroom.
 
 ---
 
@@ -198,7 +204,23 @@ Three properties make it trustworthy as capacity authority:
 | **How?** | `pnpm sitemap:capacity:audit` against the production database. |
 | **Where is evidence stored?** | The sanitized aggregate block appended to this document, one row per run, the way `pricing-evidence-w3.md` and `merchant-identity-m1.md` record their production runs. |
 | **What happens when the trigger fires?** | Open **U37b — sitemap index/sharding** as its own planned unit with acceptance criteria, and implement before the bound is reached. Explicitly **not** permitted: shipping an emergency partial sitemap, silently accepting the HTTP 500, or raising `MAX_DYNAMIC_SITEMAP_PATHS` past what a single sitemap may hold. |
-| **When must monitoring be live?** | From the moment search indexing is approved and enabled (§1). While `indexingEnabled` is false the sitemap emits nothing and the bound cannot be reached. |
+| **When must monitoring be live?** | The baseline measurement and trigger contract must be established **before Gate S enables indexing**; recurring monitoring runs from enablement onward. Enabling first would be the one ordering W21 exists to prevent: with the count unknown, the first request after enablement reaches the budget guard, and if the catalog is already over it `/sitemap.xml` answers 500 before any monitoring has run. |
+
+### U37 is a pre-enable gate for Gate S
+
+The ordering is the substance of W21, so it is written out rather than implied. Before indexing is
+approved or enabled:
+
+1. An authorized operator runs `pnpm sitemap:capacity:audit` against the production database on an
+   exact SHA and records the attributable block in §2.
+2. Confirm `exceedsDynamicBudget` is `false`. **If the catalog is already over the bound, do not
+   enable indexing** — open U37b and shard first. Enabling would publish a 500 at `/sitemap.xml`.
+3. Agree owner, cadence and the warning/act trigger values (D1–D3 below).
+4. Only once §8's three blockers are closed may Gate S / indexing enablement proceed.
+5. From enablement onward, the agreed cadence runs on the contract fixed in step 3.
+
+This matches how Gate S already treats applicable #152 operational gates — completed **before**
+explicit human approval, not measured afterwards.
 
 ### OWNER / OPERATIONS DECISION REQUIRED
 
@@ -293,6 +315,8 @@ U37 stays **open**. Three items remain, and none of them is sharding:
 2. **No owner (D1).**
 3. **No agreed cadence or trigger values (D2, D3).**
 
-The capacity *decision* is not blocked by any of these — the headroom is not close — but the W21
-contract asks for a monitored trigger with an owner, and that is an operations decision this audit
-cannot make on its own.
+The **runtime no-sharding action** is not blocked while indexing remains fail-closed, because the
+capacity path is not executed. The **capacity decision remains blocked** until an attributable
+production count exists and owner/cadence/trigger values are approved. U37 therefore stays open.
+
+All three are preconditions for enabling indexing, not follow-ups to it — see §5.
