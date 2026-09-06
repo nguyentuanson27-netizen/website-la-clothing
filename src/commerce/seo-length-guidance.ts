@@ -1,9 +1,12 @@
 /**
  * Advisory SEO lengths for the admin editor (U34a / W16).
  *
- * These are the points past which search results usually truncate, so the editor counts towards
- * them and says when copy runs long. They are advice and nothing else: no validation reads them,
- * no save path consults them, and nothing is blocked, disabled or gated on them. The only enforced
+ * These are the reviewed editorial/search-display guidance targets, so the editor counts towards
+ * them and says when copy runs long. They describe where copy tends to stop being shown well, not
+ * a deterministic limit any search engine publishes.
+ *
+ * They are advice and nothing else: no validation reads them, no save path consults them, and
+ * nothing is blocked, disabled or gated on them. The only enforced
  * bounds are `PRODUCT_CONTENT_LIMITS` in `product-content-admin.ts`, which sit far above these -
  * a domain test pins that gap so the advice cannot quietly become a limit.
  *

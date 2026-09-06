@@ -10,7 +10,7 @@ type SeoLengthFieldProps = {
   defaultValue: string;
   /** The enforced storage bound. Unchanged by this component and far above the advisory target. */
   maxLength: number;
-  /** Where search results usually truncate. Advice only — nothing here blocks or gates on it. */
+  /** Reviewed editorial/search-display guidance. Advice only — nothing here blocks or gates on it. */
   recommendedLength: number;
   multiline?: boolean;
   rows?: number;
