@@ -130,7 +130,11 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 ## Wave 6 — SEO/search follow-through
 
 - [ ] **U29** #152 W2b — metadata cleanup only after U4 uniqueness proof. **Blocked by B5.** Stop at U29 and report; do not remove the discriminator, substitute one, or narrow the collision definition to make the verdict pass.
-- [ ] **U30** #152 P3 — W8 OG/Twitter, W10 static canonical, W14 branded/HTML 404 work in focused PRs.
+- [ ] **U30** #152 P3 — W8 OG/Twitter, W10 static canonical, W14 branded/HTML 404 work in focused PRs. U30 stays open until all four substates land.
+  - [x] **W8** root Open Graph/Twitter fallback. *(U30a — `src/seo/root-metadata.ts` + `src/seo/social-identity.ts`; the PDP card and the root fallback now share one brand identity, and the homepage is proved to serve the fallback in the metadata HTTP smoke. Social presentation only: no indexing policy, no canonical, and no relationship to Meta Pixel/CAPI.)*
+  - [ ] **W10** self-canonical for `/`, `/collections`, `/lookbook` when indexing is enabled.
+  - [ ] **W14a** branded route-level HTML 404 with recovery navigation.
+  - [ ] **W14b** unknown `/shop/<slug>` returns branded HTML 404 while current/historical slug lifecycle is unchanged.
 - [ ] **U31** #152 W9 — sitemap `lastModified` only after significant public-change timestamp semantics exist.
 - [ ] **U32** product-level remainder of #152 W5 + W6 — verified product-level identifiers/attributes + Organization only; **do not redefine ProductGroup/variant Offer owned by U27**. Organization enrichment (address, contact point, social profiles) is **blocked by B2**; the product-level identifier work is not, and proceeds independently.
 - [ ] **U33** #152 P5/W13 — evergreen pages only after U6 human-approved facts; no invented policies. **Blocked by B1–B4 and B6.** Stop at U33 and report; build no page from inferred policy.

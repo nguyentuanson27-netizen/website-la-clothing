@@ -7,6 +7,7 @@ import { TrackingPageView } from "@/components/analytics/tracking-page-view";
 import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-bar";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
+import { buildRootMetadata } from "@/seo/root-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
@@ -16,20 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
   await connection();
   const exposure = readSearchExposure();
 
-  return {
-    title: {
-      default: "LA Clothing — Modern Menswear",
-      template: "%s — LA Clothing",
-    },
-    description: "Minimal, modern menswear by LA Clothing.",
-    metadataBase: new URL(exposure.origin),
-    robots: exposure.indexingEnabled
-      ? undefined
-      : {
-          index: false,
-          follow: false,
-        },
-  };
+  return buildRootMetadata(exposure);
 }
 
 export default async function RootLayout({
