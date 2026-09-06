@@ -191,6 +191,16 @@ test.beforeAll(async () => {
   });
   boundProductId = bound.id;
 
+  // W17 — the scan-bound product carries complete SEO copy but no editorial description, so the
+  // two content-health chips cannot pass by selecting the same rows.
+  await prisma.productContent.create({
+    data: {
+      productId: bound.id,
+      seoTitle: `Bulk Ops Scan Bound SEO ${runId}`,
+      seoDescription: "Mô tả tìm kiếm đầy đủ cho sản phẩm scan bound.",
+    },
+  });
+
   const child = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -213,6 +223,16 @@ test.beforeAll(async () => {
     },
   });
   childProductId = child.id;
+
+  // W17 — the one product an operator has finished: neither content-health chip may list it.
+  await prisma.productContent.create({
+    data: {
+      productId: child.id,
+      editorialDescription: "Nội dung biên tập đã hoàn tất cho sản phẩm child.",
+      seoTitle: `Bulk Ops Child SEO ${runId}`,
+      seoDescription: "Mô tả tìm kiếm đầy đủ cho sản phẩm child.",
+    },
+  });
 
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
@@ -285,6 +305,37 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
   ]);
   await expect(page.locator("tr", { hasText: stockedName })).toHaveCount(1);
   await expect(page.locator("tr", { hasText: plainName })).toHaveCount(0);
+
+  // W17 — the content-health chips are keyboard-operable links that mark themselves current and
+  // list exactly the products still missing that content.
+  const missingSeoChip = page.getByRole("link", { name: /^Thiếu SEO/ });
+  await missingSeoChip.focus();
+  await expect(missingSeoChip).toBeFocused();
+  await Promise.all([
+    page.waitForURL((url) => url.searchParams.get("health") === "missing-seo"),
+    page.keyboard.press("Enter"),
+  ]);
+  await expect(page.getByRole("link", { name: /^Thiếu SEO/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.locator("tr", { hasText: plainName })).toHaveCount(1);
+  await expect(page.locator("tr", { hasText: stockedName })).toHaveCount(1);
+  await expect(page.locator("tr", { hasText: boundName })).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: childName })).toHaveCount(0);
+
+  const missingEditorialChip = page.getByRole("link", { name: /^Thiếu nội dung biên tập/ });
+  await missingEditorialChip.focus();
+  await Promise.all([
+    page.waitForURL((url) => url.searchParams.get("health") === "missing-editorial"),
+    page.keyboard.press("Enter"),
+  ]);
+  await expect(page.locator("tr", { hasText: boundName })).toHaveCount(1);
+  await expect(page.locator("tr", { hasText: childName })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Thiếu SEO/ })).not.toHaveAttribute(
+    "aria-current",
+    "true",
+  );
 
   await Promise.all([
     page.waitForURL((url) => url.searchParams.get("health") === null),

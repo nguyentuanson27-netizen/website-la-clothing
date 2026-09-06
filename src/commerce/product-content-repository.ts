@@ -3,7 +3,9 @@ import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
 import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
 import {
   directoryHealthMetricsSql,
+  missingEditorialCondition,
   missingImageCondition,
+  missingSeoCondition,
   stockedInactiveCondition,
   zeroActiveCondition,
 } from "./admin-product-health.ts";
@@ -100,6 +102,10 @@ function adminHealthCondition(query: AdminProductDirectoryQuery): Prisma.Sql | n
       return stockedInactiveCondition(Prisma.sql`p`);
     case "missing-image":
       return missingImageCondition(Prisma.sql`p`);
+    case "missing-seo":
+      return missingSeoCondition(Prisma.sql`pc`);
+    case "missing-editorial":
+      return missingEditorialCondition(Prisma.sql`pc`);
     case null:
       return null;
   }

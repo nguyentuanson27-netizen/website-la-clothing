@@ -48,6 +48,8 @@ const healthLabels: Record<AdminProductHealthKey, string> = {
   "no-collection": "Không có collection",
   "catalog-inactive": "Catalog đang tắt",
   "missing-image": "Thiếu ảnh",
+  "missing-seo": "Thiếu SEO",
+  "missing-editorial": "Thiếu nội dung biên tập",
 };
 
 const sortLabels = {

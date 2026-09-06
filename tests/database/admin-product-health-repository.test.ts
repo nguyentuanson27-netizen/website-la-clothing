@@ -3,7 +3,11 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { parseAdminProductDirectorySearchParams } from "../../src/commerce/admin-product-directory.ts";
+import {
+  ADMIN_PRODUCT_HEALTH_KEYS,
+  buildAdminProductHealthTargets,
+  parseAdminProductDirectorySearchParams,
+} from "../../src/commerce/admin-product-directory.ts";
 import { trustedProductImageUrlProbeSql } from "../../src/commerce/admin-product-health.ts";
 import {
   MAX_MEDIA_CANDIDATES_SCANNED,
@@ -47,15 +51,31 @@ type SeedVariant = Readonly<{
   stocks?: readonly number[];
 }>;
 
+/**
+ * Content written straight to the row rather than through `parseTextField`, so a legacy value the
+ * editor could never save today — a blank or whitespace-only field — is still expressible here.
+ */
+type SeedContent = Readonly<{
+  status?: "DRAFT" | "REVIEWED" | "PUBLISHED";
+  editorialDescription?: string | null;
+  careInstructions?: string | null;
+  sizeGuide?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  collectionSlugs?: readonly string[];
+}>;
+
 type SeedProduct = Readonly<{
   key: string;
   isActive?: boolean;
   primaryImageUrl?: string | null;
   variants?: readonly SeedVariant[];
   collectionSlugs?: readonly string[];
+  content?: SeedContent;
 }>;
 
 async function seedProduct(product: SeedProduct): Promise<string> {
+  const content = product.content ?? (product.collectionSlugs ? {} : null);
   const created = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -66,12 +86,19 @@ async function seedProduct(product: SeedProduct): Promise<string> {
       isPresent: true,
       isActive: product.isActive ?? true,
       syncedAt,
-      ...(product.collectionSlugs
+      ...(content
         ? {
             content: {
               create: {
-                status: "DRAFT",
-                collectionSlugs: [...product.collectionSlugs],
+                status: content.status ?? "DRAFT",
+                editorialDescription: content.editorialDescription ?? null,
+                careInstructions: content.careInstructions ?? null,
+                sizeGuide: content.sizeGuide ?? null,
+                seoTitle: content.seoTitle ?? null,
+                seoDescription: content.seoDescription ?? null,
+                collectionSlugs: [
+                  ...(content.collectionSlugs ?? product.collectionSlugs ?? []),
+                ],
               },
             },
           }
@@ -409,6 +436,246 @@ test("a health page slices the full-catalog result set rather than filtering one
 
   const lastPage = await repository.listDirectoryPage({
     query: { ...healthQuery("stocked-inactive"), page: 3 },
+    pageSize: 2,
+  });
+  assert.equal(lastPage.page, 3);
+  assert.equal(lastPage.products.length, 1);
+});
+
+/**
+ * The `hasText` reading `src/commerce/catalog-acceptance.ts` applies to the same two content
+ * dimensions: a field counts as present only when it still has characters after `String.trim()`.
+ */
+function hasText(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+test("missing-seo needs both SEO fields, matching the catalog acceptance reading", async () => {
+  const complete = await seedProduct({
+    key: "seo-complete",
+    content: { seoTitle: "Áo linen", seoDescription: "Mô tả tìm kiếm." },
+  });
+  const titleOnly = await seedProduct({
+    key: "seo-title-only",
+    content: { seoTitle: "Áo linen", seoDescription: null },
+  });
+  const descriptionOnly = await seedProduct({
+    key: "seo-description-only",
+    content: { seoTitle: null, seoDescription: "Mô tả tìm kiếm." },
+  });
+  const neither = await seedProduct({
+    key: "seo-neither",
+    content: { editorialDescription: "Nội dung biên tập đầy đủ." },
+  });
+  const noContentRow = await seedProduct({ key: "seo-no-content-row" });
+
+  assert.deepEqual(
+    await listIds("missing-seo"),
+    [titleOnly, descriptionOnly, neither, noContentRow].sort(),
+    "a product is SEO-complete only when both seoTitle and seoDescription carry text",
+  );
+  assert.notEqual(complete, undefined);
+
+  const page = await repository.listDirectoryPage({ query: healthQuery("missing-seo") });
+  assert.equal(page.totalCount, 4);
+});
+
+test("missing-editorial is the editorial description alone, not the whole editorial section", async () => {
+  const complete = await seedProduct({
+    key: "editorial-complete",
+    content: { editorialDescription: "Bản phối vải linen dệt tại xưởng." },
+  });
+  const notesOnly = await seedProduct({
+    key: "editorial-notes-only",
+    content: {
+      editorialDescription: null,
+      careInstructions: "Giặt tay.",
+      sizeGuide: "Bảng size chuẩn.",
+    },
+  });
+  const emptyRow = await seedProduct({
+    key: "editorial-empty-row",
+    content: { seoTitle: "Có SEO", seoDescription: "Có mô tả SEO." },
+  });
+  const noContentRow = await seedProduct({ key: "editorial-no-content-row" });
+
+  assert.deepEqual(
+    await listIds("missing-editorial"),
+    [notesOnly, emptyRow, noContentRow].sort(),
+    "care instructions and the size guide do not satisfy the editorial health state",
+  );
+  assert.equal(
+    (await listIds("missing-editorial")).includes(complete),
+    false,
+    "an editorial description alone completes the editorial health state",
+  );
+
+  const page = await repository.listDirectoryPage({ query: healthQuery("missing-editorial") });
+  assert.equal(page.totalCount, 3);
+});
+
+test("a product with no ProductContent row is missing both content health states", async () => {
+  const noContentRow = await seedProduct({ key: "content-absent" });
+
+  assert.deepEqual(await listIds("missing-seo"), [noContentRow]);
+  assert.deepEqual(await listIds("missing-editorial"), [noContentRow]);
+});
+
+test("the blank-content predicate matches String.trim() for legacy whitespace rows", async () => {
+  // `String.prototype.trim()` strips WhiteSpace + LineTerminator, so the SQL mirror has to strip
+  // the same set: NBSP, LS, the ideographic space and ZWNBSP are blanks here, not content.
+  const fixtures = [
+    "",
+    " ",
+    "\t\n",
+    "\u00a0",
+    "\u2028",
+    "\u3000",
+    "\ufeff",
+    " nội dung ",
+    "\u00a0x",
+  ];
+
+  const seeded = await Promise.all(
+    fixtures.map(async (value, index) => ({
+      value,
+      id: await seedProduct({
+        key: `blank-${index}`,
+        content: {
+          seoTitle: value,
+          seoDescription: "Mô tả tìm kiếm.",
+          editorialDescription: value,
+        },
+      }),
+    })),
+  );
+
+  const missingSeo = new Set(await listIds("missing-seo"));
+  const missingEditorial = new Set(await listIds("missing-editorial"));
+
+  for (const { value, id } of seeded) {
+    assert.equal(
+      missingSeo.has(id),
+      !hasText(value),
+      `the database seoTitle reading drifted from String.trim() for ${JSON.stringify(value)}`,
+    );
+    assert.equal(
+      missingEditorial.has(id),
+      !hasText(value),
+      `the database editorial reading drifted from String.trim() for ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test("the content health filters compose with the directory's other dimensions", async () => {
+  const publishedMissingSeo = await seedProduct({
+    key: "compose-seo-published",
+    content: { status: "PUBLISHED", editorialDescription: "Có biên tập." },
+  });
+  await seedProduct({
+    key: "compose-seo-draft",
+    content: { status: "DRAFT" },
+  });
+  await seedProduct({
+    key: "compose-seo-published-complete",
+    content: { status: "PUBLISHED", seoTitle: "T", seoDescription: "D" },
+  });
+
+  const saleMissingEditorial = await seedProduct({
+    key: "compose-editorial-sale",
+    content: { collectionSlugs: ["health-sale"], seoTitle: "T", seoDescription: "D" },
+  });
+  await seedProduct({
+    key: "compose-editorial-sale-complete",
+    content: { collectionSlugs: ["health-sale"], editorialDescription: "Có biên tập." },
+  });
+  const inactiveMissingEditorial = await seedProduct({
+    key: "compose-editorial-inactive",
+    isActive: false,
+    content: { careInstructions: "Giặt tay." },
+  });
+
+  const composed = async (searchParams: Record<string, string>) => {
+    const query = parseAdminProductDirectorySearchParams({ q: token, ...searchParams });
+    const page = await repository.listDirectoryPage({ query });
+    return { ids: page.products.map(({ id }) => id).sort(), totalCount: page.totalCount };
+  };
+
+  assert.deepEqual(await composed({ health: "missing-seo", status: "PUBLISHED" }), {
+    ids: [publishedMissingSeo],
+    totalCount: 1,
+  });
+  assert.deepEqual(await composed({ health: "missing-seo", q: `${token} compose-seo-published` }), {
+    ids: [publishedMissingSeo],
+    totalCount: 1,
+  });
+  assert.deepEqual(await composed({ health: "missing-editorial", collection: "health-sale" }), {
+    ids: [saleMissingEditorial],
+    totalCount: 1,
+  });
+  assert.deepEqual(await composed({ health: "missing-editorial", activity: "inactive" }), {
+    ids: [inactiveMissingEditorial],
+    totalCount: 1,
+  });
+});
+
+test("every health chip's count equals the total of the page its own link opens", async () => {
+  await seedProduct({
+    key: "parity-complete",
+    content: {
+      seoTitle: "T",
+      seoDescription: "D",
+      editorialDescription: "E",
+      collectionSlugs: ["health-parity"],
+    },
+    variants: [{ key: "v1", isActive: true, imageUrls: [trustedUrl(1)] }],
+  });
+  await seedProduct({ key: "parity-bare" });
+  await seedProduct({
+    key: "parity-partial",
+    isActive: false,
+    content: { seoTitle: "T", editorialDescription: "   " },
+    variants: [{ key: "v1", isActive: false, stocks: [3] }],
+  });
+
+  for (const active of [
+    healthQuery(undefined),
+    healthQuery("missing-seo"),
+    parseAdminProductDirectorySearchParams({ q: token, status: "DRAFT" }),
+  ]) {
+    const targets = buildAdminProductHealthTargets(active);
+    const counts = await repository.countDirectoryFacets(targets);
+
+    for (const key of ADMIN_PRODUCT_HEALTH_KEYS) {
+      const { totalCount } = await repository.listDirectoryPage({ query: targets[key] });
+      assert.equal(
+        counts[key],
+        totalCount,
+        `health chip "${key}" advertises ${counts[key]} but its own link totals ${totalCount}`,
+      );
+    }
+  }
+});
+
+test("a content health page slices the full catalog rather than the current page", async () => {
+  for (let index = 0; index < 5; index += 1) {
+    await seedProduct({ key: `seo-paged-${index}` });
+  }
+  await seedProduct({
+    key: "seo-paged-complete",
+    content: { seoTitle: "T", seoDescription: "D" },
+  });
+
+  const firstPage = await repository.listDirectoryPage({
+    query: healthQuery("missing-seo"),
+    pageSize: 2,
+  });
+  assert.equal(firstPage.totalCount, 5, "the total counts the catalog, not the page");
+  assert.equal(firstPage.totalPages, 3);
+  assert.equal(firstPage.products.length, 2);
+
+  const lastPage = await repository.listDirectoryPage({
+    query: { ...healthQuery("missing-seo"), page: 3 },
     pageSize: 2,
   });
   assert.equal(lastPage.page, 3);
