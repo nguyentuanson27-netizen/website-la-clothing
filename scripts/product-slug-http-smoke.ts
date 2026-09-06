@@ -116,6 +116,27 @@ function visibleText(body: string): string {
     .trim();
 }
 
+/** The 404's own recovery section, located by the heading it is labelled by. */
+function sectionByAriaLabelledBy(body: string, id: string): string {
+  const sections = body.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+  return (
+    sections.find((section) => {
+      const labelledBy = section.match(/\baria-labelledby=(?:"([^"]+)"|'([^']+)')/i);
+      return (labelledBy?.[1] ?? labelledBy?.[2] ?? null) === id;
+    }) ?? ""
+  );
+}
+
+function anchorHasVisibleText(markup: string, href: string, text: string): boolean {
+  const anchors = markup.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
+  return anchors.some((anchor) => {
+    const hrefMatch = anchor.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
+    const anchorHref = hrefMatch?.[1] ?? hrefMatch?.[2] ?? null;
+    if (anchorHref !== href) return false;
+    return anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().includes(text);
+  });
+}
+
 function assertSecurityHeaders(response: HttpResponse, label: string) {
   assert.equal(response.xContentTypeOptions, "nosniff", `${label} must preserve X-Content-Type-Options`);
   assert.equal(response.xFrameOptions, "DENY", `${label} must preserve X-Frame-Options`);
@@ -258,10 +279,8 @@ try {
   // 404 body and the assertion would pass with no 404 page at all. Compare the rendered text
   // against an unmatched route's 404 instead - the two must be the same page.
   //
-  // This is also the whole of the branding claim, and the reason it does not depend on which
-  // not-found page is in the tree: whatever an unmatched route renders, an unknown slug renders
-  // identically. On a base without src/app/not-found.tsx that is Next's default page; with W14a
-  // merged it is the branded recovery page, with no further change here.
+  // It also carries the branding claim without depending on which not-found page is in the tree:
+  // whatever an unmatched route renders, an unknown slug renders identically.
   const unmatchedRouteResponse = await requestPath(`/khong-co-route-nao-${runId}`);
   assert.equal(unmatchedRouteResponse.status, 404, "the unmatched-route baseline must itself be a 404");
   assert.equal(
@@ -269,6 +288,39 @@ try {
     visibleText(unmatchedRouteResponse.body),
     "unknown slug must render the same 404 page as any unmatched route, not a synthetic proxy string",
   );
+
+  // W14 integrated: with W14a's page on the base, the page both routes render is the branded
+  // recovery surface. Every assertion below is scoped INSIDE that section - the site header links
+  // to /shop, /collections and /search too, so a document-wide search would be answered by the
+  // chrome and would keep passing with no recovery UI on the 404 at all.
+  const recoverySection = sectionByAriaLabelledBy(unknownResponse.body, "not-found-title");
+  assert.notEqual(
+    recoverySection,
+    "",
+    "unknown slug 404 must render W14a's branded recovery section",
+  );
+
+  const recoveryText = visibleText(recoverySection);
+  for (const copy of ["Không tìm thấy trang", "Trang bạn tìm không tồn tại."]) {
+    assert.equal(
+      recoveryText.includes(copy),
+      true,
+      `unknown slug 404 must state what happened, in the recovery section: ${copy}`,
+    );
+  }
+
+  for (const [href, label] of [
+    ["/", "Trang chủ"],
+    ["/shop", "Cửa hàng"],
+    ["/collections", "Bộ sưu tập"],
+    ["/search", "Tìm kiếm"],
+  ] as const) {
+    assert.equal(
+      anchorHasVisibleText(recoverySection, href, label),
+      true,
+      `unknown slug 404 must offer a way back to ${href} from inside the recovery section`,
+    );
+  }
 
   // The PDP route must never run for a slug that resolves to nothing: it would cost a second
   // product lookup on a path any visitor can invent, and it would put that slug in the payload.
@@ -318,7 +370,7 @@ try {
   assertSecurityHeaders(hostileResponse, "hostile slug 404");
 
   console.log(
-    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, and unknown and hostile slugs render the app's own 404 page - the same one an unmatched route renders - without redirecting, reflecting the slug or disclosing the catalog, while direct responses retain security headers.",
+    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, and unknown and hostile slugs render the app's own branded 404 recovery page - the same one an unmatched route renders - without redirecting, reflecting the slug or disclosing the catalog, while direct responses retain security headers.",
   );
 } finally {
   await stopServer();
