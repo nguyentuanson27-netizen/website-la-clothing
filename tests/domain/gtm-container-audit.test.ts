@@ -1431,6 +1431,105 @@ describe("GTM container export static audit", () => {
     });
   }
 
+  it("refuses a guarded and an unguarded trigger sharing one triggerId", () => {
+    // The guarded set is keyed by triggerId. With the id declared twice, the definition carrying the
+    // live filter vouches for the one that does not, and a tag firing on that id looks guarded.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ firingTriggerId: [LIVE_TRIGGER_ID] })],
+        trigger: [
+          liveGuardTrigger(),
+          { triggerId: LIVE_TRIGGER_ID, name: "All pages", type: "pageview" },
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses two guarded triggers sharing one triggerId", () => {
+    // Identity ambiguity does not depend on how the guard check happens to come out.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        trigger: [liveGuardTrigger(), liveGuardTrigger()],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  for (const [label, triggerId] of [
+    ["a numeric triggerId", 123],
+    ["an empty triggerId", ""],
+    ["no triggerId at all", undefined],
+  ] as const) {
+    it(`refuses a trigger with ${label}`, () => {
+      const result = auditGtmContainerExport({
+        source: containerExport({
+          trigger: [{ ...liveGuardTrigger(), triggerId }],
+        }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  for (const [label, firingTriggerId] of [
+    ["a non-string entry", [LIVE_TRIGGER_ID, 123]],
+    ["an empty-string entry", [LIVE_TRIGGER_ID, ""]],
+    ["a value that is not an array", LIVE_TRIGGER_ID],
+  ] as const) {
+    it(`refuses a tag whose firingTriggerId holds ${label}`, () => {
+      // Filtering the bad entry away would decide "guarded" from a firing list the artifact does not
+      // actually have — malformed data becoming ignored data at exactly the deciding point.
+      const result = auditGtmContainerExport({
+        source: containerExport({ tag: [ga4ConfigTag({ firingTriggerId })] }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  for (const [label, usageContext] of [
+    ["a non-string entry beside web", ["web", 123]],
+    ["a context this audit cannot read", ["web", "futureRuntime"]],
+    ["a value that is not an array", "web"],
+  ] as const) {
+    it(`refuses a container whose usageContext holds ${label}`, () => {
+      // The nested container is an approval boundary, so what it declares has to be readable in full
+      // before any part of it counts as proof of a web container.
+      const result = auditGtmContainerExport({
+        source: containerExport({ container: { publicId: "GTM-FIXTURE", usageContext } }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
+  it("accepts a container that serves web alongside another known context", () => {
+    // Usage contexts name the platforms a container serves, not exclusions, so web remains proved.
+    // This is a policy decision rather than a fact read from an artifact, and it is recorded as one.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        container: { publicId: "GTM-FIXTURE", usageContext: ["web", "amp"] },
+      }),
+      approved: APPROVED,
+    });
+
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.ok, true);
+  });
+
   it("refuses a container object whose publicId is not a string", () => {
     const result = auditGtmContainerExport({
       source: containerExport({ container: { publicId: 12345, usageContext: ["web"] } }),

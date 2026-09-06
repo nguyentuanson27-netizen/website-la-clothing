@@ -110,6 +110,27 @@ export type GtmAuditResult = Readonly<{
 /** The usage context a container must declare before the storefront may load it. */
 const WEB_USAGE_CONTEXT = "web";
 
+/**
+ * The usage contexts the published schema defines.
+ *
+ * The nested container is an approval boundary, so what it declares has to be readable in full
+ * before any part of it counts as proof. `["web", 123]` must not establish a web container by
+ * having the entry beside `web` quietly ignored.
+ *
+ * A container that declares `web` alongside another known context is still loadable in the browser:
+ * usage contexts name the platforms a container serves, not exclusions. That is a policy decision
+ * rather than a fact read from an artifact, and it is one to revisit against the first real export.
+ */
+const KNOWN_USAGE_CONTEXTS: ReadonlySet<string> = new Set([
+  "web",
+  "android",
+  "ios",
+  "androidSdk5",
+  "iosSdk5",
+  "amp",
+  "server",
+]);
+
 /** The container export format this parser was written against. */
 const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
 
@@ -687,6 +708,46 @@ function validateContainerVersionShape(
     if (!value.every(isRecord)) malformed(`containerVersion.${key} holds an entry that is not an object`);
   }
 
+  // Trigger identity. The guarded-trigger set is keyed by `triggerId`, so an id naming two triggers
+  // makes "guarded" ambiguous: the definition carrying the live filter would vouch for the one that
+  // does not. An id has to identify exactly one trigger before it can be used as a security fact.
+  const triggers = version.trigger;
+  if (Array.isArray(triggers)) {
+    const seen = new Set<string>();
+    for (const trigger of triggers) {
+      if (!isRecord(trigger)) continue; // Reported by the element check above.
+      const id = readString(trigger.triggerId);
+      if (id === null || id.length === 0) {
+        malformed("containerVersion.trigger holds an entry with no usable triggerId");
+        continue;
+      }
+      if (seen.has(id)) {
+        malformed(`containerVersion.trigger declares triggerId "${id}" more than once`);
+      }
+      seen.add(id);
+    }
+  }
+
+  // Firing references. Filtering out an entry that is not a string would be malformed data becoming
+  // ignored data at the exact point where the audit decides whether a tag is guarded. (Only firing
+  // triggers are read: a blocking trigger can remove a firing, never add one.)
+  const tags = version.tag;
+  if (Array.isArray(tags)) {
+    for (const tag of tags) {
+      if (!isRecord(tag)) continue; // Reported by the element check above.
+      const firing = tag.firingTriggerId;
+      if (firing === undefined) continue;
+      const label = readString(tag.name) ?? "unnamed";
+      if (!Array.isArray(firing)) {
+        malformed(`${label}: firingTriggerId is not an array`);
+        continue;
+      }
+      if (!firing.every((entry) => (readString(entry) ?? "").length > 0)) {
+        malformed(`${label}: firingTriggerId holds an entry that is not a non-empty string`);
+      }
+    }
+  }
+
   // The container the artifact claims to come from is what binds it to the owner's approval, so its
   // own shape has to hold up before that binding means anything.
   if (declared("container")) {
@@ -695,6 +756,15 @@ function validateContainerVersionShape(
     else {
       if (readString(container.publicId) === null) {
         malformed("containerVersion.container.publicId is not a string");
+      }
+
+      if (container.usageContext !== undefined) {
+        const contexts = container.usageContext;
+        if (!Array.isArray(contexts)) {
+          malformed("containerVersion.container.usageContext is not an array");
+        } else if (!contexts.every((entry) => KNOWN_USAGE_CONTEXTS.has(readString(entry) ?? ""))) {
+          malformed("containerVersion.container.usageContext holds an entry this audit cannot read");
+        }
       }
       // A version and the container it names must agree about which container that is.
       for (const key of ["accountId", "containerId"]) {
