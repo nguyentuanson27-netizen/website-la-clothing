@@ -33,6 +33,7 @@ const LARGE_VARIATION = `u27-http-large-${runId}`;
 const UNPRICED_VARIATION = `u27-http-unpriced-${runId}`;
 const INACTIVE_VARIATION = `u27-http-inactive-${runId}`;
 const MEDIUM_MPN = `U27-M-${runId}`;
+const MEDIUM_SKU = `LA-P14-M-${runId}`;
 const LARGE_MPN = `U27-L-${runId}`;
 const UNPRICED_MPN = `U27-XL-${runId}`;
 const INACTIVE_MPN = `U27-S-${runId}`;
@@ -165,12 +166,21 @@ try {
     pancakeVariationId: string,
     size: string,
     retailPrice: number | null,
-    options: Readonly<{ stock: number; mpn: string; isActive?: boolean; imageUrl?: string }>,
+    options: Readonly<{
+      stock: number;
+      mpn: string;
+      sku?: string;
+      barcode?: string;
+      isActive?: boolean;
+      imageUrl?: string;
+    }>,
   ): Promise<string> {
     const variant = await prisma.variantMirror.create({
       data: {
         pancakeVariationId,
         pancakeDisplayId: options.mpn,
+        sku: options.sku ?? null,
+        pancakeBarcode: options.barcode ?? null,
         productId: product.id,
         color: "Đen",
         size,
@@ -197,6 +207,9 @@ try {
   const mediumVariantMirrorId = await seedVariant(MEDIUM_VARIATION, "M", MEDIUM_PRICE, {
     stock: 3,
     mpn: MEDIUM_MPN,
+    sku: MEDIUM_SKU,
+    // A real, check-digit-valid EAN-13 shape. U32a must publish no GTIN from it.
+    barcode: "4006381333931",
     imageUrl: MEDIUM_IMAGE_URL,
   });
   await seedVariant(LARGE_VARIATION, "L", LARGE_PRICE, {
@@ -282,6 +295,9 @@ try {
         name: `${productName} — Đen — M`,
         url: mediumUrl,
         mpn: MEDIUM_MPN,
+        // U32a: declared in the exact-shape assertion, so the SKU is a stated part of the published
+        // contract rather than an addition this check would have let through unnoticed.
+        sku: MEDIUM_SKU,
         color: "Đen",
         size: "M",
         image: [MEDIUM_IMAGE_URL],
@@ -338,8 +354,9 @@ try {
     "offerCount",
     "aggregateRating",
     "review",
+    // U32a publishes the website-owned SKU, so it is no longer forbidden here - it is asserted
+    // below instead. `gtin` stays forbidden: the mirrored barcode's semantics are still unproven.
     "gtin",
-    "sku",
     "material",
     "shippingDetails",
     "hasMerchantReturnPolicy",
@@ -354,6 +371,25 @@ try {
   }
 
   const publishedVariants = (productNodes[0]!["hasVariant"] as JsonRecord[]) ?? [];
+
+  // U32a over real HTTP: the website-owned SKU reaches the variant it identifies, the sibling that
+  // has none publishes no `sku` at all, and the GTIN-shaped barcode on the medium row is published
+  // nowhere - not as `gtin*`, and not smuggled in as the SKU either.
+  const mediumNode = publishedVariants.find((variant) => variant.url === mediumUrl);
+  const largeNode = publishedVariants.find((variant) => variant.url === largeUrl);
+  assert.ok(mediumNode && largeNode, "both published variants must be present for the SKU check");
+  assert.equal(mediumNode.sku, MEDIUM_SKU, "the medium variant must publish its own website SKU");
+  assert.equal(
+    "sku" in largeNode,
+    false,
+    "a variant with no website SKU must publish no sku property",
+  );
+  assert.equal(mediumNode.mpn, MEDIUM_MPN, "publishing the SKU must not disturb the ADR 0008 MPN");
+  assert.equal(
+    productJson.includes("4006381333931"),
+    false,
+    "the mirrored barcode must not reach the published document in any property",
+  );
 
   // URL/name parity, over real HTTP: each published variant Product must have a factual name more
   // specific than the group, and its Offer URL must reopen the same option at the same price.

@@ -51,6 +51,8 @@ export type StructuredDataAvailability = "IN_STOCK" | "OUT_OF_STOCK";
 export type StructuredDataVariant = Readonly<{
   url: string;
   mpn?: string | null;
+  /** The website-owned `VariantMirror.sku`: Schema.org's merchant-specific identifier, not the MPN. */
+  sku?: string | null;
   color: string | null;
   size: string | null;
   price: number;
@@ -99,6 +101,7 @@ type ProductVariantNode = {
   name: string;
   url: string;
   mpn?: string;
+  sku?: string;
   color?: string;
   size?: string;
   image?: string[];
@@ -255,12 +258,29 @@ export function isPublishableIdentifier(value: string): boolean {
  * the operational evidence authority; this guard prevents a later malformed mirror value from
  * becoming public JSON-LD merely because an earlier catalog-wide audit was green.
  */
-export function isPublishableMpn(value: string | null | undefined): value is string {
+function isPublishableStoredIdentifier(
+  value: string | null | undefined,
+  maxCodePoints: number,
+): value is string {
   if (typeof value !== "string" || value.length === 0 || value.trim() !== value) return false;
-  if (Array.from(value).length > MAX_PUBLISHED_MPN_LENGTH) return false;
+  if (Array.from(value).length > maxCodePoints) return false;
   if (typeof value.isWellFormed === "function" && !value.isWellFormed()) return false;
   if (SUPPLEMENTARY_CODE_POINT_REGEX.test(value)) return false;
   return !INVALID_PUBLISHED_IDENTIFIER_UNICODE_REGEX.test(value);
+}
+
+export function isPublishableMpn(value: string | null | undefined): value is string {
+  return isPublishableStoredIdentifier(value, MAX_PUBLISHED_MPN_LENGTH);
+}
+
+/**
+ * The website-owned SKU carries no Merchant length contract of its own, so it takes the general
+ * published-identifier bound. It shares the hardening with the MPN deliberately: both are stored
+ * catalog strings reaching a public document, and two separately written rules that happen to agree
+ * today are how one of them quietly stops agreeing later.
+ */
+export function isPublishableSku(value: string | null | undefined): value is string {
+  return isPublishableStoredIdentifier(value, MAX_PUBLISHED_IDENTIFIER_LENGTH);
 }
 
 function hasUniquePublishableVariantMpns(variants: readonly StructuredDataVariant[]): boolean {
@@ -311,6 +331,9 @@ function buildVariantNode(name: string, variant: StructuredDataVariant): Product
   // `publishedGroup` already requires every member to have a unique publishable MPN. Keep this
   // local guard as serialization defense if the helper is ever reused independently.
   if (isPublishableMpn(variant.mpn)) node.mpn = variant.mpn;
+  // U32a: the merchant-specific identifier this shop assigned, on the variant it identifies. It
+  // gates nothing - a variant family stays publishable whether or not its SKUs are.
+  if (isPublishableSku(variant.sku)) node.sku = variant.sku;
   if (variant.color !== null) node.color = variant.color;
   if (variant.size !== null) node.size = variant.size;
   if (variant.imageUrl !== null) node.image = [variant.imageUrl];

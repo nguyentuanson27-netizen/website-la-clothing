@@ -71,6 +71,7 @@ function product(overrides: Partial<BoundaryProduct> = {}): BoundaryProduct {
       "cuid-b": "A132-L",
       "cuid-c": "A132-KEM-M",
     },
+    variantSkuById: {},
     // U27a: the ordinary fixture has well-formed mirrored inventory, so every variant can state an
     // availability. Cases about malformed inventory override this per variant.
     variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true, "cuid-c": true },
@@ -728,4 +729,37 @@ test("U27a an unresolved sibling cannot suppress the survivor's product-level of
   const node = singleProductNode(document);
   assert.equal(node.offers?.price, 890_000, "the survivor's own exact price is publishable");
   assert.equal(node.offers?.availability, "https://schema.org/InStock");
+});
+
+
+/**
+ * U32a. The website-owned SKU reaches the node it describes, and gates nothing on the way: a
+ * variant whose SKU is missing or unpublishable is still published, simply without one. That is
+ * the difference between it and the ADR 0008 MPN, which does decide publishability.
+ */
+test("U32a carries each variant's own SKU into its published node without gating publication", () => {
+  const document = build({
+    galleryIndexByVariantId: { "cuid-a": 0, "cuid-b": 0 },
+    variantMpnById: { "cuid-a": "A132-M", "cuid-b": "A132-L" },
+    variantSkuById: { "cuid-a": "LA-OXF-M", "cuid-b": null },
+    variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": true },
+    projection: standaloneProjection([
+      option({ id: "cuid-a", pancakeVariationId: "pv-a", size: "M" }),
+      option({ id: "cuid-b", pancakeVariationId: "pv-b", size: "L" }),
+    ]),
+  });
+
+  const group = productGroupNode(document);
+  assert.equal(group.hasVariant.length, 2, "a missing SKU must not drop a variant from the family");
+  assert.equal(group.hasVariant[0].sku, "LA-OXF-M");
+  assert.equal(
+    "sku" in group.hasVariant[1],
+    false,
+    "the sibling without a SKU publishes no sku property at all",
+  );
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.mpn),
+    ["A132-M", "A132-L"],
+    "SKU wiring leaves the ADR 0008 MPNs exactly as they were",
+  );
 });

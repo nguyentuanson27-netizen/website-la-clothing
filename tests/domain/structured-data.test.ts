@@ -274,3 +274,147 @@ test("P14 JSON-LD serialization neutralizes closing-script injection", () => {
   assert.equal(serialized.includes("</script>"), false);
   assert.match(serialized, /\\u003c\/script>/);
 });
+
+
+/**
+ * U32a / W5. `sku` is the website-owned `VariantMirror.sku` - Schema.org's merchant-specific
+ * identifier. It is deliberately a different fact from `mpn`, which ADR 0008 fixes as the
+ * owner-confirmed manufacturer identifier mirrored from Pancake `display_id`. Publishing one must
+ * never publish the other, and neither may stand in for the other.
+ */
+test("U32a publishes the website-owned SKU on the variant node it belongs to", () => {
+  const structured = buildProductStructuredData({
+    origin: "https://shop.example.com",
+    product,
+    variantOptions: onePriceOptions,
+    productGroup: {
+      productGroupID: "pancake-product-1",
+      variesBy: ["SIZE"],
+      variants: [
+        { ...twoIdentifiedVariants[0], sku: "LA-OXF-M" },
+        { ...twoIdentifiedVariants[1], sku: "LA-OXF-L" },
+      ],
+    },
+  });
+
+  const group = structured["@graph"][0];
+  assert.equal(group["@type"], "ProductGroup");
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.sku),
+    ["LA-OXF-M", "LA-OXF-L"],
+    "each variant node carries its own SKU, never a sibling's",
+  );
+  assert.deepEqual(
+    group.hasVariant.map((variant) => variant.mpn),
+    ["A132-M", "A132-L"],
+    "ADR 0008 MPNs are untouched by the SKU that sits beside them",
+  );
+});
+
+test("U32a omits SKU rather than publishing a junk value", () => {
+  const unpublishable = [null, undefined, "", "   ", " LA-OXF-M", "LA-OXF-M ", "L".repeat(129)];
+  for (const sku of unpublishable) {
+    const structured = buildProductStructuredData({
+      origin: "https://shop.example.com",
+      product,
+      variantOptions: onePriceOptions,
+      productGroup: {
+        productGroupID: "pancake-product-1",
+        variesBy: ["SIZE"],
+        variants: [
+          { ...twoIdentifiedVariants[0], sku },
+          { ...twoIdentifiedVariants[1], sku: "LA-OXF-L" },
+        ],
+      },
+    });
+
+    const group = structured["@graph"][0];
+    assert.equal(group["@type"], "ProductGroup");
+    assert.equal(
+      "sku" in group.hasVariant[0],
+      false,
+      `an unpublishable SKU must be absent, not empty or placeholder: ${JSON.stringify(sku)}`,
+    );
+    assert.equal(
+      group.hasVariant[1].sku,
+      "LA-OXF-L",
+      "one variant's unpublishable SKU must not suppress a sibling's good one",
+    );
+  }
+});
+
+/**
+ * Fail-closed on GTIN. `VariantMirror.pancakeBarcode` is a mirrored external value whose upstream
+ * type, format, check digit and lifecycle are unproven, so nothing may map it to a GTIN property.
+ * This asserts the absence structurally rather than trusting that no one wired it up.
+ */
+test("U32a publishes no GTIN property anywhere, whatever the catalog holds", () => {
+  const structured = buildProductStructuredData({
+    origin: "https://shop.example.com",
+    product,
+    variantOptions: onePriceOptions,
+    productGroup: {
+      productGroupID: "pancake-product-1",
+      variesBy: ["SIZE"],
+      variants: [
+        // A 13-digit EAN shape. Looking like a GTIN is not being one.
+        { ...twoIdentifiedVariants[0], sku: "4006381333931" },
+        { ...twoIdentifiedVariants[1], sku: "LA-OXF-L" },
+      ],
+    },
+  });
+
+  const serialized = serializeJsonLd(structured);
+  for (const property of ["gtin", "gtin8", "gtin12", "gtin13", "gtin14", "isbn"]) {
+    assert.equal(
+      new RegExp(`"${property}"\\s*:`).test(serialized),
+      false,
+      `${property} must never be published from an unproven barcode or a SKU that resembles one`,
+    );
+  }
+  const group = structured["@graph"][0];
+  assert.equal(group["@type"], "ProductGroup");
+  assert.equal(
+    group.hasVariant[0].sku,
+    "4006381333931",
+    "a GTIN-shaped value still publishes as the SKU it actually is",
+  );
+});
+
+
+/**
+ * U32b guard. Organization enrichment - logo, sameAs, contactPoint, address - is blocked by B2
+ * because no owner-approved first-party contact fact exists. This asserts the Organization entity
+ * stays exactly as narrow as it is, so a later product-schema slice cannot quietly widen it.
+ */
+test("U32b publishes no unapproved Organization fact", () => {
+  const site = buildSiteStructuredData({ origin: "https://shop.example.com" });
+  const organization = site["@graph"][0];
+
+  assert.equal(organization["@type"], "Organization");
+  assert.deepEqual(
+    Object.keys(organization).sort(),
+    ["@id", "@type", "name", "url"],
+    "the Organization entity must carry no fact beyond its identity and canonical URL",
+  );
+
+  const serialized = serializeJsonLd(site);
+  for (const blocked of [
+    "address",
+    "contactPoint",
+    "sameAs",
+    "logo",
+    "telephone",
+    "email",
+    "founder",
+    "foundingDate",
+    "vatID",
+    "taxID",
+  ]) {
+    assert.equal(
+      new RegExp(`"${blocked}"\\s*:`).test(serialized),
+      false,
+      `${blocked} is owner-blocked by B2 and must not be published`,
+    );
+  }
+});
