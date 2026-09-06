@@ -53,12 +53,13 @@ export function SeoLengthField({
         {multiline ? <textarea {...shared} rows={rows} /> : <input {...shared} type="text" />}
       </label>
       {/*
-        Advice, announced politely as it changes. Running long is stated as a fact about search
-        display and immediately paired with the reassurance that it still saves — the editor is
-        told what will happen in results, not warned off finishing their sentence.
+        Deliberately not a live region. The count changes on every keystroke, so announcing it
+        would read "1/60", "2/60", "3/60" over the editor as they type. `aria-describedby` above
+        already attaches this text to the field, so it is available on demand without narrating
+        every character. Running long is stated as a fact about search display and immediately
+        paired with the reassurance that it still saves.
       */}
       <p
-        aria-live="polite"
         className={`mt-2 text-xs ${overRecommended ? "text-black" : "text-black/55"}`}
         id={guidanceId}
       >

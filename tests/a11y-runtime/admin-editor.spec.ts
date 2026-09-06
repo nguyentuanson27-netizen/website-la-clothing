@@ -407,16 +407,19 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   });
   expect(sourceAfterSave).toEqual({ sourceDescription, slug: editedProductSlug });
 
-  // U34a / W16. The length readout is advice, and the proof is that copy past it still saves.
-  // 61 characters is one past the advisory 60: the counter must say so, and the save must succeed
-  // with the value intact. Nothing may be disabled, blocked or rejected on this threshold.
+  // U34a / W16. The length readout is advice, and the proof is that copy past it still saves -
+  // for both fields, through the real form and Server Action, in one submit. 61 and 156 are each
+  // one character past their advisory target: the counters must say so, nothing may be disabled,
+  // and both values must persist exactly.
   const overAdvisoryTitle = "A".repeat(SEO_LENGTH_GUIDANCE.seoTitle + 1);
+  const overAdvisoryDescription = "D".repeat(SEO_LENGTH_GUIDANCE.seoDescription + 1);
   await page.getByLabel("SEO title").fill(overAdvisoryTitle);
-  const titleGuidance = page.getByText(
-    `${SEO_LENGTH_GUIDANCE.seoTitle + 1}/${SEO_LENGTH_GUIDANCE.seoTitle}`,
-  );
-  await expect(titleGuidance).toBeVisible();
-  await expect(page.getByText("dài hơn khuyến nghị, vẫn lưu được.")).toBeVisible();
+  await page.getByLabel("SEO description").fill(overAdvisoryDescription);
+
+  for (const recommended of [SEO_LENGTH_GUIDANCE.seoTitle, SEO_LENGTH_GUIDANCE.seoDescription]) {
+    await expect(page.getByText(`${recommended + 1}/${recommended}`)).toBeVisible();
+  }
+  await expect(page.getByText("dài hơn khuyến nghị, vẫn lưu được.")).toHaveCount(2);
 
   const advisorySaveButton = page.getByRole("button", { name: "Lưu nội dung" });
   await expect(advisorySaveButton).toBeEnabled();
@@ -426,15 +429,13 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   await expect
     .poll(
       async () =>
-        (
-          await prisma.productContent.findUnique({
-            where: { productId },
-            select: { seoTitle: true },
-          })
-        )?.seoTitle,
-      { message: "an over-advisory SEO title must persist exactly as typed" },
+        await prisma.productContent.findUnique({
+          where: { productId },
+          select: { seoTitle: true, seoDescription: true },
+        }),
+      { message: "over-advisory SEO copy must persist exactly as typed, in both fields" },
     )
-    .toEqual(overAdvisoryTitle);
+    .toEqual({ seoTitle: overAdvisoryTitle, seoDescription: overAdvisoryDescription });
 
   // Server-side validation must reject an oversized value even when the client-side maxlength is
   // bypassed. Since U34a the field is a client component, so React owns the `maxLength` prop and
