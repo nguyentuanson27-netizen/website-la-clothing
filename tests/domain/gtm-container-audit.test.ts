@@ -1637,6 +1637,120 @@ describe("GTM container export static audit", () => {
     assert.equal(result.ok, true);
   });
 
+  it("refuses a settings row that declares one cell key twice", () => {
+    // A row is read as a key -> value table, so a repeated key keeps whichever cell came last:
+    // `parameterValue: "true"` then `"false"` would prove page views disabled by cell order alone.
+    // A row that says two things about one key says nothing about it.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            {
+              type: "LIST",
+              key: "configSettingsTable",
+              list: [{
+                type: "MAP",
+                map: [
+                  { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                  { type: "TEMPLATE", key: "parameterValue", value: "true" },
+                  { type: "TEMPLATE", key: "parameterValue", value: "false" },
+                ],
+              }],
+            },
+          ],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    assert.ok(
+      !codes(result).includes(GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW),
+      "the row must be refused as unreadable, not resolved to one of its two answers",
+    );
+  });
+
+  it("refuses a repeated cell key inside a variable's parameter rows", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        variable: [trackingModeVariable(), {
+          variableId: "101",
+          name: "Config settings",
+          type: "gtcs",
+          parameter: [{
+            type: "LIST",
+            key: "configSettingsTable",
+            list: [{
+              type: "MAP",
+              map: [
+                { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+                { type: "TEMPLATE", key: "parameter", value: "something_else" },
+              ],
+            }],
+          }],
+        }],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses two tags that share a name", () => {
+    // Sequencing edges name their partner by tagName, so a name has to identify one tag.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4EventTag({ tagId: "3" }), ga4EventTag({ tagId: "4" })],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses a tag with no usable name", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({ tag: [ga4ConfigTag({ name: "" })] }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  for (const [label, edges] of [
+    ["names a tag that is not in this version", [{ tagName: "Ghost", stopOnSetupFailure: false }]],
+    ["names nothing at all", [{ stopOnSetupFailure: false }]],
+    ["holds an entry that is not an object", ["Ghost"]],
+    ["is not an array", { tagName: "Conversion Linker" }],
+  ] as const) {
+    it(`refuses a sequencing edge that ${label}`, () => {
+      // An edge the audit cannot follow is a firing path it cannot account for. Passing over it
+      // would be the same "unresolvable reference becomes an ignored reference" this module has
+      // had to be corrected on repeatedly.
+      const result = auditGtmContainerExport({
+        source: containerExport({
+          tag: [
+            { tagId: "5", name: "Conversion Linker", type: "gclidw", firingTriggerId: [LIVE_TRIGGER_ID], parameter: [], setupTag: edges },
+            ga4ConfigTag(),
+          ],
+        }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
+
   it("refuses a container object whose publicId is not a string", () => {
     const result = auditGtmContainerExport({
       source: containerExport({ container: { publicId: 12345, usageContext: ["web"] } }),

@@ -472,6 +472,32 @@ function collectMapRows(value: unknown, depth = 0): Array<ReadonlyMap<string, st
 }
 
 /**
+ * Whether any `MAP` row in this tree declares one cell key twice.
+ *
+ * `collectMapRows` builds each row as a key→value table, so a repeated key silently keeps the last
+ * cell — and a settings row saying `parameterValue: "true"` and then `parameterValue: "false"` would
+ * prove page views disabled by the order its cells happen to be written in. A row that says two
+ * things about one key says nothing about it, so ambiguity is refused rather than resolved.
+ */
+function mapRowRepeatsAKey(value: unknown, depth = 0): boolean {
+  if (depth > MAX_PARAMETER_DEPTH) return false;
+  if (Array.isArray(value)) return value.some((entry) => mapRowRepeatsAKey(entry, depth + 1));
+  if (!isRecord(value)) return false;
+
+  if (Array.isArray(value.map)) {
+    const seen = new Set<string>();
+    for (const cell of value.map) {
+      if (!isRecord(cell)) continue;
+      const key = readString(cell.key);
+      if (key === null) continue;
+      if (seen.has(key)) return true;
+      seen.add(key);
+    }
+  }
+  return Object.values(value).some((entry) => mapRowRepeatsAKey(entry, depth + 1));
+}
+
+/**
  * The container's variables, indexed by the name a `{{reference}}` uses.
  *
  * Only constant variables resolve to a literal. Anything computed — a JavaScript variable, a lookup
@@ -764,6 +790,55 @@ function validateContainerVersionShape(
       }
       if (!firing.every((entry) => (readString(entry) ?? "").length > 0)) {
         malformed(`${label}: firingTriggerId holds an entry that is not a non-empty string`);
+      }
+    }
+  }
+
+  // Tag identity. Sequencing edges name their partner by `tagName`, so a name has to identify one
+  // tag before an edge through it can be reasoned about — and an edge naming no tag in this version
+  // is a reference the audit cannot follow, which is refused rather than passed over.
+  if (Array.isArray(tags)) {
+    const tagNames = new Set<string>();
+    for (const tag of tags) {
+      if (!isRecord(tag)) continue; // Reported by the element check above.
+      const name = readString(tag.name);
+      if (name === null || name.length === 0) {
+        malformed("containerVersion.tag holds an entry with no usable name");
+        continue;
+      }
+      if (tagNames.has(name)) {
+        malformed(`containerVersion.tag declares the name "${name}" more than once`);
+      }
+      tagNames.add(name);
+    }
+
+    for (const tag of tags) {
+      if (!isRecord(tag)) continue;
+      const label = readString(tag.name) ?? "unnamed";
+      for (const key of ["setupTag", "teardownTag"]) {
+        const edges = tag[key];
+        if (edges === undefined) continue;
+        if (!Array.isArray(edges)) {
+          malformed(`${label}: ${key} is not an array`);
+          continue;
+        }
+        for (const edge of edges) {
+          const named = isRecord(edge) ? readString(edge.tagName) : null;
+          if (named === null || named.length === 0 || !tagNames.has(named)) {
+            malformed(`${label}: ${key} names no tag in this version`);
+          }
+        }
+      }
+    }
+  }
+
+  // Parameter rows. Checked across tags and variables alike, because both are read as row tables.
+  for (const collection of [tags, version.variable]) {
+    if (!Array.isArray(collection)) continue;
+    for (const entry of collection) {
+      if (!isRecord(entry)) continue;
+      if (mapRowRepeatsAKey(entry.parameter)) {
+        malformed(`${readString(entry.name) ?? "unnamed"}: a parameter row declares one key twice`);
       }
     }
   }
