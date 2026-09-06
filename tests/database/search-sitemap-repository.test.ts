@@ -119,3 +119,89 @@ test("P12 sitemap repository validates the configured shop boundary", async () =
     RangeError,
   );
 });
+
+test("W21 capacity counts and the emitted path list cannot drift apart", async () => {
+  await prisma.productMirror.createMany({
+    data: [
+      {
+        pancakeShopId: shopId,
+        pancakeProductId: "p12-visible",
+        slug: "p12-visible-current",
+        name: "P12 Visible Product",
+        isPresent: true,
+        isActive: true,
+        syncedAt,
+      },
+      {
+        pancakeShopId: shopId,
+        pancakeProductId: "p12-inactive",
+        slug: "p12-inactive-current",
+        name: "P12 Inactive Product",
+        isPresent: true,
+        isActive: false,
+        syncedAt,
+      },
+      {
+        pancakeShopId: shopId,
+        pancakeProductId: "p12-stale",
+        slug: "p12-stale-current",
+        name: "P12 Stale Product",
+        isPresent: false,
+        isActive: true,
+        syncedAt,
+      },
+      {
+        pancakeShopId: otherShopId,
+        pancakeProductId: "p12-other-shop",
+        slug: "p12-other-shop-current",
+        name: "P12 Other Shop Product",
+        isPresent: true,
+        isActive: true,
+        syncedAt,
+      },
+    ],
+  });
+
+  await prisma.collectionDefinition.createMany({
+    data: [
+      {
+        slug: "p12-public-collection",
+        title: "P12 Public Collection",
+        description: "Published website-owned collection.",
+        isPublished: true,
+      },
+      {
+        slug: "p12-draft-collection",
+        title: "P12 Draft Collection",
+        description: "Draft website-owned collection.",
+        isPublished: false,
+      },
+    ],
+  });
+
+  const counts = await repository.countCanonicalPaths({ shopId });
+  const paths = await repository.listCanonicalPaths({ shopId });
+
+  // The capacity measurement is only trustworthy if it counts exactly what the sitemap emits, so
+  // this asserts the composition of the real list rather than a second copy of the predicate.
+  assert.equal(
+    counts.productPaths,
+    paths.filter((path) => path.startsWith("/shop/")).length,
+    "inactive, absent and other-shop products are excluded from both the count and the list",
+  );
+  assert.equal(
+    counts.collectionPaths,
+    paths.filter((path) => path.startsWith("/collections/")).length,
+    "draft collections are excluded from both the count and the list",
+  );
+  assert.equal(counts.productPaths + counts.collectionPaths, paths.length);
+  assert.deepEqual(counts, { productPaths: 1, collectionPaths: 1 });
+});
+
+test("W21 capacity counts validate the same shop boundary as the path list", async () => {
+  await assert.rejects(() => repository.countCanonicalPaths({ shopId: 0 }), RangeError);
+  await assert.rejects(
+    () => repository.countCanonicalPaths({ shopId: 2_147_483_648 }),
+    RangeError,
+  );
+});

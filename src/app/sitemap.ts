@@ -4,9 +4,10 @@ import { connection } from "next/server";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 import { readSearchExposure } from "@/seo/search-exposure";
-import { createSearchSitemapRepository } from "@/seo/search-sitemap-repository";
-
-const STATIC_CANONICAL_PATHS = ["/", "/shop", "/collections", "/lookbook"] as const;
+import {
+  STATIC_CANONICAL_PATHS,
+  createSearchSitemapRepository,
+} from "@/seo/search-sitemap-repository";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   await connection();
