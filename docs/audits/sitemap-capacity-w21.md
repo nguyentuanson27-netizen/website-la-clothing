@@ -234,8 +234,27 @@ gates: completed **before** explicit human approval, not measured afterwards.
 4. **Revalidate at activation time.** A historical baseline does not by itself satisfy Gate S.
    Immediately before indexing enablement, rerun `pnpm sitemap:capacity:audit` against production
    on the **exact activation head**, after the last catalog sync or state change that activation
-   will use, and record that result the same way. Gate S may proceed only when *that* run is within
-   budget.
+   will use, and record that result the same way.
+
+   **The result is pinned to data state, not just to a code SHA.** The SHA proves which predicate
+   ran; it proves nothing about whether the rows that predicate counts have since changed. The
+   activation-time result is valid only while sitemap-eligible catalog state remains unchanged.
+   Any of these after the run invalidates it and requires a fresh rerun before indexing may be
+   enabled:
+
+   - a product-mirror sync that changes `isPresent`, `isActive` or shop membership for the
+     configured shop;
+   - a collection publish, unpublish, create or delete that changes the published-collection count;
+   - any future mutation that changes the predicates or counts in §1.
+
+   Record enough provenance to identify which run authorised activation: exact SHA, `measuredAt`,
+   environment and shop, the reported figures, and the mirror-freshness line
+   `merchant-identity-m1.md` §2 already uses — `CatalogSyncState.syncedAt` / `updatedAt` for the
+   configured shop — so a later sync is visible as having happened after the audit. That reuses the
+   existing marker; no new revision or locking mechanism is introduced here.
+
+   This is the round-3 stale-baseline problem at a shorter timescale: the window is minutes rather
+   than months, but the correctness condition is still the data state, not the code head.
 5. Evaluate the **activation-time** result in this order, against the **approved** trigger values
    from step 3 — not against the hard bound alone:
 
@@ -243,7 +262,7 @@ gates: completed **before** explicit human approval, not measured afterwards.
    |---|---|---|
    | **A** | `exceedsDynamicBudget = true` | **Block Gate S.** U37b implementation required. |
    | **B** | The approved **Act (Y)** condition is true | **Block Gate S.** U37b implementation required before indexing. |
-   | **C** | The approved **Warning (X)** is true, Act is false | Open the U37b plan, and record the owner's explicit acknowledgement alongside the activation block. Non-blocking **unless** D3's approved policy makes Warning blocking — see D3. |
+   | **C** | The approved **Warning (X)** is true, Act is false | Follow the **owner-approved D3 warning behaviour**: `BLOCK` → do not enable, open or advance U37b; `ALLOW_WITH_ACK` → open the U37b plan, record the owner's explicit acknowledgement beside the activation block, then Gate S may continue if every other gate passes. This audit does **not** pick between them. |
    | **D** | Neither Warning nor Act is true | Gate S may proceed if every other Gate S requirement is satisfied. |
 
    The hard bound is a **failure boundary, not a release threshold**. Branching on
@@ -319,11 +338,22 @@ guess wearing a contract's clothing.
 **These are not advisory.** §5 Phase 1 evaluates them at activation: a true Act (Y) blocks Gate S
 outright, and the hard bound is only the last of the blocking conditions rather than the only one.
 
-Warning (X) is treated as **non-blocking but action-bearing** — open the U37b plan and record the
-owner's explicit acknowledgement beside the activation block, so enabling inside the warning band is
-a decision someone made rather than one that happened quietly. Approving D3 may instead make Warning
-hard-blocking; if so, state that with the values, and §5 row C follows it. What is deliberately not
-left to inference is whether Warning does *something* — it always does.
+**D3's approval therefore has to cover behaviour, not only numbers:**
+
+```text
+D3 must approve:
+- Warning threshold / condition  W
+- Act threshold / condition      A (Y)
+- Warning behaviour:             BLOCK | ALLOW_WITH_ACK
+- the operator action and evidence a Warning requires
+```
+
+Whether a Warning blocks is a material release-policy choice — the same measured state either
+permits or refuses enablement depending on it — so this audit does not set a default for it, any
+more than it sets *W* or *A*. W21 asks for a trigger before the hard cliff; it does not define a
+warning-band release policy, and inventing one here would be the same mistake as inventing a
+threshold. Until D3 is approved in full, Gate S stays blocked by precondition 3, so no default is
+needed to keep the gate safe in the meantime.
 
 ---
 
