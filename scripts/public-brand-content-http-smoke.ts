@@ -129,7 +129,55 @@ try {
   assert.equal(anchorHasVisibleText(brandSection, "/collections", "Bộ sưu tập"), true);
   assert.equal(anchorHasVisibleText(brandSection, "/track-order", "Tra cứu đơn"), true);
 
-  console.log("P16A public-brand HTTP smoke passed: factual brand/COD/shipping/server-verification content and internal links render in initial HTML.");
+  // U30c / W14a: an unmatched route must recover the visitor, not dead-end them. Next already
+  // answers 404 for these; what it answers with is an unbranded default page with no way back.
+  const notFound = await fetch(`${BASE_URL}/this-route-does-not-exist`, { redirect: "manual" });
+  const notFoundBody = await notFound.text();
+
+  assert.equal(notFound.status, 404, `unknown route must be an exact 404\n${serverOutput}`);
+  assert.match(
+    notFound.headers.get("content-type") ?? "",
+    /^text\/html/,
+    "unknown route must answer in HTML, not plain text",
+  );
+  assert.equal(notFound.headers.get("location"), null, "a 404 must not redirect the visitor away");
+
+  // Scope every content assertion to the 404 section itself. The site header already links to
+  // /shop, /collections and /search, so a document-wide search would be satisfied by the chrome
+  // and would keep passing with no recovery UI on the page at all.
+  const notFoundSection = sectionByAriaLabelledBy(notFoundBody, "not-found-title");
+  assert.notEqual(notFoundSection, "", "unknown route must render the branded 404 section");
+
+  const notFoundText = visibleText(notFoundSection);
+  for (const copy of ["Không tìm thấy trang", "Trang bạn tìm không tồn tại."]) {
+    assert.equal(notFoundText.includes(copy), true, `branded 404 must state what happened: ${copy}`);
+  }
+
+  // Recovery uses routes that exist, with the labels the rest of the site already uses.
+  for (const [href, label] of [
+    ["/", "Trang chủ"],
+    ["/shop", "Cửa hàng"],
+    ["/collections", "Bộ sưu tập"],
+    ["/search", "Tìm kiếm"],
+  ] as const) {
+    assert.equal(
+      anchorHasVisibleText(notFoundSection, href, label),
+      true,
+      `branded 404 must offer a way back to ${href}`,
+    );
+  }
+
+  assert.equal(
+    notFoundBody.includes('rel="canonical"'),
+    false,
+    "a 404 must not nominate itself as a canonical URL",
+  );
+
+  // A known route is unaffected by any of the above.
+  const knownRoute = await fetch(`${BASE_URL}/shop`, { redirect: "manual" });
+  assert.equal(knownRoute.status, 200, "an existing route must stay 200 alongside the branded 404");
+
+  console.log("P16A/U30c public-brand HTTP smoke passed: factual brand/COD/shipping/server-verification content and internal links render in initial HTML, and an unmatched route returns a branded, recoverable HTML 404 that neither redirects nor canonicalises itself.");
 } finally {
   await stopServer();
   await rm(nextDevDirectory, { recursive: true, force: true });
