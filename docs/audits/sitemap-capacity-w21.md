@@ -208,19 +208,39 @@ Three properties make it trustworthy as capacity authority:
 
 ### U37 is a pre-enable gate for Gate S
 
-The ordering is the substance of W21, so it is written out rather than implied. Before indexing is
-approved or enabled:
+The ordering is the substance of W21, so it is written out rather than implied:
 
-1. An authorized operator runs `pnpm sitemap:capacity:audit` against the production database on an
-   exact SHA and records the attributable block in §2.
-2. Confirm `exceedsDynamicBudget` is `false`. **If the catalog is already over the bound, do not
-   enable indexing** — open U37b and shard first. Enabling would publish a 500 at `/sitemap.xml`.
-3. Agree owner, cadence and the warning/act trigger values (D1–D3 below).
-4. Only once §8's three blockers are closed may Gate S / indexing enablement proceed.
-5. From enablement onward, the agreed cadence runs on the contract fixed in step 3.
+```text
+production baseline + capacity check + owner/cadence/trigger
+  → Gate S approval / indexing enablement
+  → recurring monitoring
+```
 
-This matches how Gate S already treats applicable #152 operational gates — completed **before**
-explicit human approval, not measured afterwards.
+Not `enable → start measuring`. This matches how Gate S already treats applicable #152 operational
+gates: completed **before** explicit human approval, not measured afterwards.
+
+**Phase 1 — pre-enable gate.** Before indexing is approved or enabled:
+
+1. An authorized operator runs, on an exact SHA, against the production database:
+
+   ```bash
+   DATABASE_URL=<production> PANCAKE_SHOP_ID=1635185058 pnpm sitemap:capacity:audit
+   ```
+
+2. Record the attributable block in §2 with, at minimum: exact git SHA, environment, timestamp,
+   `productPaths`, `collectionPaths`, `dynamicPaths`, `dynamicBudget`, `remainingDynamicHeadroom`
+   and `utilizationPercent`.
+3. Approve the owner, cadence and warning/act trigger values (D1–D3 below).
+4. Branch on the measured result:
+   - `dynamicPaths <= dynamicBudget` → Gate S may proceed, **once** step 3 is also closed;
+   - `dynamicPaths > dynamicBudget` → **do not enable indexing.** Open U37b and shard first;
+     enabling would publish an HTTP 500 at `/sitemap.xml` on the first request.
+
+   Neither branch permits shipping a partial sitemap, nor raising the per-document bound to get
+   past this gate. The bound is what one sitemap document may hold; it is not a dial.
+
+**Phase 2 — post-enable operation.** From enablement onward, the approved cadence runs on the
+contract fixed in step 3, and escalates to U37b when the agreed trigger fires.
 
 ### OWNER / OPERATIONS DECISION REQUIRED
 
@@ -300,23 +320,16 @@ unknown, and no figure for them appears in this audit.
 
 ## 8. What still blocks U37
 
-U37 stays **open**. Three items remain, and none of them is sharding:
+U37 stays **open**. Three items remain, and none of them is sharding. **All three are Gate S
+preconditions** — they gate indexing enablement rather than following it (§5):
 
-1. **No attributable production count.** The exact `productPaths` / `collectionPaths` under the
-   sitemap predicate have never been measured. The blocker is access, not tooling: an authorized
-   operator must run, against the production database,
-
-   ```bash
-   DATABASE_URL=<production> PANCAKE_SHOP_ID=1635185058 pnpm sitemap:capacity:audit
-   ```
-
-   and append the sanitized block to §2 with its SHA, environment and timestamp — the provenance
-   format `merchant-identity-m1.md` §2 already uses.
-2. **No owner (D1).**
-3. **No agreed cadence or trigger values (D2, D3).**
+| # | Gate S precondition | Closed by |
+|---|---|---|
+| 1 | **Attributable production capacity block.** The exact `productPaths` / `collectionPaths` under the sitemap predicate have never been measured. The blocker is access, not tooling. | An authorized operator runs `pnpm sitemap:capacity:audit` against the production database and appends the sanitized block to §2 with exact SHA, environment, timestamp and the six reported figures — the provenance format `merchant-identity-m1.md` §2 already uses — showing `dynamicPaths <= dynamicBudget`. |
+| 2 | **Named owner.** | D1 below. |
+| 3 | **Approved cadence and warning/act trigger values.** | D2 and D3 below. |
 
 The **runtime no-sharding action** is not blocked while indexing remains fail-closed, because the
 capacity path is not executed. The **capacity decision remains blocked** until an attributable
-production count exists and owner/cadence/trigger values are approved. U37 therefore stays open.
-
-All three are preconditions for enabling indexing, not follow-ups to it — see §5.
+production count is recorded and owner/cadence/trigger values are approved. U37 therefore stays
+open.
