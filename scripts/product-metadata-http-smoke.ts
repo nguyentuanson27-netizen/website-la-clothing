@@ -281,6 +281,27 @@ try {
   assert.match(fallbackImage.contentType ?? "", /^image\/png(?:;|$)/, "fallback social image must be PNG");
   assert.ok(fallbackImage.bytes.length > 1_000, "fallback social image must contain a rendered branded card");
 
+  // U30a / W8: the homepage declares no social metadata of its own, so what it serves is the root
+  // fallback. Proving it here rather than in a second runtime harness keeps one server boot.
+  const homePage = await requestPath("/");
+  assert.equal(homePage.status, 200, "homepage must remain browseable");
+  assertContains(homePage.body, 'property="og:site_name" content="LA Clothing"', "homepage Open Graph");
+  assertContains(homePage.body, 'property="og:title" content="LA Clothing — Modern Menswear"', "homepage Open Graph");
+  assertContains(
+    homePage.body,
+    `property="og:image" content="${PUBLIC_ORIGIN}${PRODUCT_SOCIAL_FALLBACK_PATH}"`,
+    "homepage Open Graph image",
+  );
+  assertContains(homePage.body, 'name="twitter:card" content="summary_large_image"', "homepage Twitter card");
+  assertContains(
+    homePage.body,
+    `name="twitter:image" content="${PUBLIC_ORIGIN}${PRODUCT_SOCIAL_FALLBACK_PATH}"`,
+    "homepage Twitter image",
+  );
+
+  // The PDP still overrides the fallback with its own product card rather than inheriting it.
+  assertContains(trustedPage.body, `property="og:url" content="${PUBLIC_ORIGIN}/shop/${trustedSlug}"`, "trusted PDP Open Graph URL");
+
   const unknownPage = await requestPath(`/shop/${unknownSlug}`);
   assert.equal(unknownPage.status, 404, "unknown product slug must remain exact 404");
   assertNotContains(unknownPage.body, 'rel="canonical"', "unknown product response");
@@ -297,7 +318,7 @@ try {
   assertContains(stagingPage.body, `property="og:url" content="${STAGING_ORIGIN}/shop/${fallbackSlugA}"`, "staging PDP Open Graph");
 
   console.log(
-    "P13 metadata HTTP smoke passed: published duplicate SEO and fallback heads stay slug-unique, trusted media is direct, fallback PNG resolves, unknown slug is 404, and staging withholds canonical under noindex.",
+    "P13/U30a metadata HTTP smoke passed: published duplicate SEO and fallback heads stay slug-unique, trusted media is direct, fallback PNG resolves, the homepage serves the branded root social fallback while the PDP keeps its own card, unknown slug is 404, and staging withholds canonical under noindex.",
   );
 } finally {
   await stopServer();

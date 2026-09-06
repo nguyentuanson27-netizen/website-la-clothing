@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 
-export const PRODUCT_SOCIAL_FALLBACK_PATH =
-  "/la-clothing-modern-menswear-social-card.png";
+import {
+  SITE_LOCALE,
+  SITE_NAME,
+  SOCIAL_FALLBACK_ALT,
+  SOCIAL_FALLBACK_PATH,
+} from "./social-identity.ts";
 
-const SITE_NAME = "LA Clothing";
-const SOCIAL_FALLBACK_ALT = "LA Clothing — Modern Menswear";
+/**
+ * Kept as a named export because the product metadata HTTP smoke imports it from here. The value
+ * itself now comes from the shared social identity, so the PDP card and the root fallback cannot
+ * drift apart.
+ */
+export const PRODUCT_SOCIAL_FALLBACK_PATH = SOCIAL_FALLBACK_PATH;
 
 type ProductMetadataInput = Readonly<{
   origin: string;
@@ -59,7 +67,7 @@ export function buildStorefrontProductMetadata({
     alternates: indexingEnabled ? { canonical: productUrl } : undefined,
     openGraph: {
       type: "website",
-      locale: "vi_VN",
+      locale: SITE_LOCALE,
       siteName: SITE_NAME,
       title,
       description,
