@@ -231,13 +231,34 @@ gates: completed **before** explicit human approval, not measured afterwards.
    `productPaths`, `collectionPaths`, `dynamicPaths`, `dynamicBudget`, `remainingDynamicHeadroom`
    and `utilizationPercent`.
 3. Approve the owner, cadence and warning/act trigger values (D1–D3 below).
-4. Branch on the measured result:
-   - `dynamicPaths <= dynamicBudget` → Gate S may proceed, **once** step 3 is also closed;
+4. **Revalidate at activation time.** A historical baseline does not by itself satisfy Gate S.
+   Immediately before indexing enablement, rerun `pnpm sitemap:capacity:audit` against production
+   on the **exact activation head**, after the last catalog sync or state change that activation
+   will use, and record that result the same way. Gate S may proceed only when *that* run is within
+   budget.
+5. Branch on the **activation-time** result:
+   - `exceedsDynamicBudget = false` (`dynamicPaths <= dynamicBudget`) → Gate S may proceed, **once**
+     step 3 is also closed;
    - `dynamicPaths > dynamicBudget` → **do not enable indexing.** Open U37b and shard first;
      enabling would publish an HTTP 500 at `/sitemap.xml` on the first request.
 
    Neither branch permits shipping a partial sitemap, nor raising the per-document bound to get
    past this gate. The bound is what one sitemap document may hold; it is not a dial.
+
+Step 4 exists because steps 1–3 can close long before Gate S actually fires, and recurring
+monitoring does not start until enablement (Phase 2). That leaves a window in which the catalog can
+grow unobserved:
+
+```text
+baseline taken + U37 closed
+   → days/weeks/months, catalog may change, no recurring monitoring yet
+   → Gate S enables indexing
+   → first /sitemap.xml request hits the budget guard
+```
+
+An in-budget block from that earlier moment says nothing about capacity at activation. Without the
+revalidation, a stale historical measurement could authorize an enablement that answers 500 on its
+first request — the exact failure W21 exists to prevent.
 
 **Phase 2 — post-enable operation.** From enablement onward, the approved cadence runs on the
 contract fixed in step 3, and escalates to U37b when the agreed trigger fires.
@@ -325,7 +346,7 @@ preconditions** — they gate indexing enablement rather than following it (§5)
 
 | # | Gate S precondition | Closed by |
 |---|---|---|
-| 1 | **Attributable production capacity block.** The exact `productPaths` / `collectionPaths` under the sitemap predicate have never been measured. The blocker is access, not tooling. | An authorized operator runs `pnpm sitemap:capacity:audit` against the production database and appends the sanitized block to §2 with exact SHA, environment, timestamp and the six reported figures — the provenance format `merchant-identity-m1.md` §2 already uses — showing `dynamicPaths <= dynamicBudget`. |
+| 1 | **Attributable production capacity block.** The exact `productPaths` / `collectionPaths` under the sitemap predicate have never been measured. The blocker is access, not tooling. | An authorized operator runs `pnpm sitemap:capacity:audit` against the production database and appends the sanitized block to §2 with exact SHA, environment, timestamp and the six reported figures — the provenance format `merchant-identity-m1.md` §2 already uses — showing `dynamicPaths <= dynamicBudget`. A block recorded here establishes the baseline; it does **not** on its own authorize a later enablement, which needs the activation-time rerun in §5 step 4. |
 | 2 | **Named owner.** | D1 below. |
 | 3 | **Approved cadence and warning/act trigger values.** | D2 and D3 below. |
 
