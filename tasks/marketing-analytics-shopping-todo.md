@@ -128,10 +128,59 @@ This is the PR-B tracking checkpoint. The separate growth-commerce storefront Ch
 - [x] Existing Meta Pixel+CAPI dedup remains healthy. *(Evidenced via Regression G & `meta-purchase-reporting.test.ts`)*
 
 ### T8 Exact GTM saved version + loader/CSP + destination mapping
+
+**Status: BLOCKED on owner gate O4 and GTM account access.** One slice has landed — the static audit
+that every later step is gated on (`src/tracking/gtm-container-audit.ts`, 120 cases in
+`tests/domain/gtm-container-audit.test.ts`). It is fail-closed by construction: a malformed export,
+an export format version it was not written against, a field whose type does not match the schema
+or a collection entry that is not an object, a `triggerId` or a variable `name` that is missing,
+unusable or declared twice (a reference must identify exactly one node before it can prove
+anything), a `firingTriggerId` entry that is not a non-empty string, a `usageContext` entry it
+cannot read (shape and graph identity are both established before anything is read for meaning, so
+malformed data cannot become ignored data), a container that does not prove it is a
+`web` container, a version that disagrees with its own nested container about which container it is,
+a deleted container version, a top-level
+`containerVersion` field it does not account for — matched by exact schema name, so an unknown
+field refuses whatever it holds and a future scalar flag cannot pass as harmless metadata — a
+populated `zone`, `gtagConfig`, `client` or `transformation`, a tag type it has no reviewed parser
+for, a
+`la_tracking_mode` variable that is not a single Data Layer Variable reading that exact dataLayer
+key, a delivering tag that takes part in tag sequencing, a dangling trigger reference, a tag whose
+firing paths are not *all* live-guarded, a Meta payload
+nested anywhere in the parameters or reached through a variable, a Google configuration tag that
+does not prove `send_page_view` is false, a destination id that is unapproved, unresolvable, or
+carried on a field its tag type does not deliver through, a Google Ads conversion whose
+`(id, label)` pair is not approved as a pair, an export from another container, or an empty approval
+set all refuse the container. It refuses a workspace export that names no saved version, so a
+mutable container cannot be certified.
+
+**Blocker this raised — the TikTok GTM tag needs a parser bound to that exact template.** The audit
+certifies only tag types whose vendor the type itself fixes (Google's built-ins). A Custom HTML tag
+is refused because its payload is arbitrary script. A gallery template is refused for a different
+reason, and the distinction matters: the saved version *does* carry the template — `customTemplate[]`
+holds each one's `templateData`, and a gallery template also carries a `galleryReference` naming its
+owner, repository, version and signature. What is missing is not the code but the review. The audit
+has no parser bound to any specific template, so it cannot say which of a template's parameters names
+a destination, and a live firing guard says when a tag fires but nothing about where it sends.
+TikTok's GTM tag is a gallery template, so it does not pass the gate as the audit stands.
+
+Under the locked v1 contract — plan §3.7 and spec, *TikTok Pixel runs through GTM* — the valid path
+is a parser bound to that exact TikTok template, identified from a **real saved export**: review its
+`galleryReference` and a checksum over its `templateData` first, then write the mapping for Pixel ID
+and event fields. The `cvt_*` type-to-template mapping must not be guessed from a fixture or a
+secondary source. Delivering TikTok outside GTM is **not** an option available at this level: it
+would be an architecture change requiring an explicit, separately approved spec and plan amendment,
+not a choice this checklist can open.
+
+Nothing else in T8 may proceed: with no container id, GA4/Ads/TikTok ids (O4) and no Tag Manager
+access, there is no container to configure, no immutable version to save, and no export to checksum.
+Per the interlock below, the loader and CSP origins must not land without that artifact, so
+`REVIEWED_GTM_VERSION_AVAILABLE` stays `false` and every mode still resolves to no GTM load.
+
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
 - [ ] Record GTM container ID + exact saved container version number/ID.
 - [ ] Export JSON from that exact saved version and commit it with repository identity/checksum.
-- [ ] Static assertion proves every production GA4/Ads/TikTok tag has explicit `la_tracking_mode == live` firing guard.
+- [ ] Static assertion proves every production GA4/Ads/TikTok tag has explicit `la_tracking_mode == live` firing guard. *(Audit implemented and unit-proved against fixtures; it has no real export to run against until O4 and GTM access land, so the assertion is not yet made about a production artifact.)*
 - [ ] GA4 auto/history page views disabled under app-owned page-view strategy.
 - [ ] Google Ads Purchase uses O1 value + `publicCode` + conversion-linking functionality; no Enhanced Conversions.
 - [ ] TikTok Purchase/CompletePayment uses `event_id=publicCode`.
