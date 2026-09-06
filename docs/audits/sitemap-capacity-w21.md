@@ -236,14 +236,32 @@ gates: completed **before** explicit human approval, not measured afterwards.
    on the **exact activation head**, after the last catalog sync or state change that activation
    will use, and record that result the same way. Gate S may proceed only when *that* run is within
    budget.
-5. Branch on the **activation-time** result:
-   - `exceedsDynamicBudget = false` (`dynamicPaths <= dynamicBudget`) → Gate S may proceed, **once**
-     step 3 is also closed;
-   - `dynamicPaths > dynamicBudget` → **do not enable indexing.** Open U37b and shard first;
-     enabling would publish an HTTP 500 at `/sitemap.xml` on the first request.
+5. Evaluate the **activation-time** result in this order, against the **approved** trigger values
+   from step 3 — not against the hard bound alone:
 
-   Neither branch permits shipping a partial sitemap, nor raising the per-document bound to get
-   past this gate. The bound is what one sitemap document may hold; it is not a dial.
+   | | Condition | Outcome |
+   |---|---|---|
+   | **A** | `exceedsDynamicBudget = true` | **Block Gate S.** U37b implementation required. |
+   | **B** | The approved **Act (Y)** condition is true | **Block Gate S.** U37b implementation required before indexing. |
+   | **C** | The approved **Warning (X)** is true, Act is false | Open the U37b plan, and record the owner's explicit acknowledgement alongside the activation block. Non-blocking **unless** D3's approved policy makes Warning blocking — see D3. |
+   | **D** | Neither Warning nor Act is true | Gate S may proceed if every other Gate S requirement is satisfied. |
+
+   The hard bound is a **failure boundary, not a release threshold**. Branching on
+   `exceedsDynamicBudget` alone would let Gate S enable indexing at `49,996 / 49,996` — zero
+   headroom, where one new product or published collection turns `/sitemap.xml` into a 500 — and
+   would let an approved Act trigger be true while enablement proceeded anyway, making D3
+   documentation with no effect on the decision it exists to govern.
+
+   Where Act (Y) has two limbs, apply each only when it can be evaluated: the `A` % of budget limb
+   applies as soon as it is approved; the projected-time-to-bound limb applies only once enough
+   comparable measurements exist to establish a slope. Do not invent a slope to fill it in.
+
+   No branch permits shipping a partial sitemap, nor raising the per-document bound to get past this
+   gate. The bound is what one sitemap document may hold; it is not a dial.
+
+   Note that rows B–D cannot even be evaluated until D3 is approved — and D3 is itself precondition
+   3. So until the owner has fixed the trigger values, Gate S is blocked by the missing decision
+   rather than by any count, which is what keeps the zero-headroom case above from arising.
 
 Step 4 exists because steps 1–3 can close long before Gate S actually fires, and recurring
 monitoring does not start until enablement (Phase 2). That leaves a window in which the catalog can
@@ -297,6 +315,15 @@ the owner:
 Once a cadence and at least two comparable measurements exist, *W* and *A* can be derived from the
 observed slope plus lead time instead of chosen. Until then any specific number here would be a
 guess wearing a contract's clothing.
+
+**These are not advisory.** §5 Phase 1 evaluates them at activation: a true Act (Y) blocks Gate S
+outright, and the hard bound is only the last of the blocking conditions rather than the only one.
+
+Warning (X) is treated as **non-blocking but action-bearing** — open the U37b plan and record the
+owner's explicit acknowledgement beside the activation block, so enabling inside the warning band is
+a decision someone made rather than one that happened quietly. Approving D3 may instead make Warning
+hard-blocking; if so, state that with the values, and §5 row C follows it. What is deliberately not
+left to inference is whether Warning does *something* — it always does.
 
 ---
 
