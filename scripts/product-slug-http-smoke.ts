@@ -25,6 +25,8 @@ const pancakeWarehouseId = `slug-http-warehouse-${runId}`;
 const currentSlug = `ao-so-mi-http-${runId}`;
 const historicalSlug = `ao-so-mi-cu-${runId}`;
 const unknownSlug = `khong-ton-tai-${runId}`;
+// Route-valid (no slash, so `/shop/<slug>` still matches) but shaped like an injection attempt.
+const hostileSlug = `<script>alert(${runId})</script>`;
 const productName = `Áo sơ mi HTTP ${runId}`;
 
 let server: ChildProcess | undefined;
@@ -33,6 +35,8 @@ let serverOutput = "";
 type HttpResponse = {
   status: number;
   location: string | null;
+  contentType: string | null;
+  xRobotsTag: string | null;
   xContentTypeOptions: string | null;
   xFrameOptions: string | null;
   body: string;
@@ -47,6 +51,8 @@ async function requestPath(path: string): Promise<HttpResponse> {
   return {
     status: response.status,
     location: response.headers.get("location"),
+    contentType: response.headers.get("content-type"),
+    xRobotsTag: response.headers.get("x-robots-tag"),
     xContentTypeOptions: response.headers.get("x-content-type-options"),
     xFrameOptions: response.headers.get("x-frame-options"),
     body: await response.text(),
@@ -70,6 +76,14 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
           resolveRequest({
             status: response.statusCode ?? 0,
             location: typeof response.headers.location === "string" ? response.headers.location : null,
+            contentType:
+              typeof response.headers["content-type"] === "string"
+                ? response.headers["content-type"]
+                : null,
+            xRobotsTag:
+              typeof response.headers["x-robots-tag"] === "string"
+                ? response.headers["x-robots-tag"]
+                : null,
             xContentTypeOptions:
               typeof response.headers["x-content-type-options"] === "string"
                 ? response.headers["x-content-type-options"]
@@ -85,6 +99,17 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
     );
     request.on("error", rejectRequest);
     request.end();
+  });
+}
+
+function anchorHasVisibleText(body: string, href: string, text: string): boolean {
+  const anchors = body.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
+  return anchors.some((anchor) => {
+    const hrefMatch = anchor.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
+    const anchorHref = hrefMatch?.[1] ?? hrefMatch?.[2] ?? null;
+    if (anchorHref !== href) return false;
+    const anchorText = anchor.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return anchorText.includes(text);
   });
 }
 
@@ -209,8 +234,79 @@ try {
   assert.equal(unknownResponse.status, 404, `unknown slug must return 404, received ${unknownResponse.status}`);
   assertSecurityHeaders(unknownResponse, "unknown slug 404");
 
+  // U30d / W14b. The status was already right; the response was a bare `text/plain` string with
+  // nothing to recover from. It must answer as a page of this site instead - without becoming a
+  // soft 200, a redirect, or a place to echo whatever the visitor typed.
+  assert.equal(unknownResponse.location, null, "unknown slug must not redirect the visitor away");
+  assert.match(
+    unknownResponse.contentType ?? "",
+    /^text\/html/,
+    `unknown slug must answer in HTML, received ${unknownResponse.contentType}`,
+  );
+  assert.notEqual(
+    unknownResponse.body.trim(),
+    "Not Found",
+    "unknown slug must not answer with a bare plain-text string",
+  );
+
+  // Rendered by the app through its root layout - which is what makes this response the site's
+  // own 404 page rather than a second, separately maintained one. It is also the whole of the
+  // branding claim: whatever the route-level not-found page renders, this renders too.
+  assert.equal(
+    anchorHasVisibleText(unknownResponse.body, "/shop", "Cửa hàng"),
+    true,
+    "unknown slug 404 must render through the site layout, not a synthetic proxy string",
+  );
+
+  // The PDP route must never run for a slug that resolves to nothing: it would cost a second
+  // product lookup on a path any visitor can invent, and it would put that slug in the payload.
+  assert.equal(
+    unknownResponse.body.includes(unknownSlug),
+    false,
+    "unknown slug 404 must not reflect the requested slug back into the response",
+  );
+  assert.equal(
+    unknownResponse.body.includes(productName),
+    false,
+    "unknown slug 404 must not disclose catalog contents",
+  );
+  assert.equal(
+    unknownResponse.xRobotsTag,
+    "noindex, nofollow",
+    "unknown slug 404 must keep the search exposure header the proxy already applied",
+  );
+
+  // The rewrite target is built on the request's own origin, so a forged Host must not be able
+  // to steer it anywhere - the same property the historical 301 above is guarded for.
+  const forgedHostResponse = await requestPathWithHost(`/shop/${unknownSlug}`, HOSTILE_HOST);
+  assert.equal(
+    forgedHostResponse.status,
+    404,
+    `unknown slug under a forged Host must still be 404, received ${forgedHostResponse.status}`,
+  );
+  assert.equal(forgedHostResponse.location, null, "a forged Host must not turn the 404 into a redirect");
+  assert.equal(
+    forgedHostResponse.body.includes(HOSTILE_HOST),
+    false,
+    "the forged request Host must never reach the 404 body",
+  );
+
+  const hostileResponse = await requestPath(`/shop/${encodeURIComponent(hostileSlug)}`);
+  assert.equal(
+    hostileResponse.status,
+    404,
+    `a route-valid hostile slug must be a deterministic 404, received ${hostileResponse.status}`,
+  );
+  assert.equal(hostileResponse.location, null, "a hostile slug must not redirect");
+  assert.equal(
+    hostileResponse.body.includes("<script>alert("),
+    false,
+    "a hostile slug must never be reflected unescaped into the response",
+  );
+  assertSecurityHeaders(hostileResponse, "hostile slug 404");
+
   console.log(
-    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, unknown slug is 404, and direct responses retain security headers.",
+    "Product slug HTTP smoke passed: hostile Host cannot influence the historical 301 canonical path, current slug is 200, unknown and hostile slugs are branded HTML 404s that neither redirect, reflect the slug nor disclose the catalog, and direct responses retain security headers.",
   );
 } finally {
   await stopServer();
