@@ -4,11 +4,12 @@ import { MAX_MEDIA_CANDIDATES_SCANNED } from "./product-media.ts";
 /**
  * Database-side equivalents of the operational health predicates the admin directory filters on.
  *
- * These exist because the two hardest dimensions cannot be expressed as Prisma predicates:
+ * These exist because the hardest dimensions cannot be expressed as Prisma predicates:
  * `stocked-inactive` needs the *summed* warehouse quantity per variant (several warehouses can
- * cancel out to zero or below), and `missing-image` needs the exact effective storefront media
- * resolution. Both must be evaluated against the full catalog before pagination, so they are
- * written as bounded set-based SQL instead of post-filtering the current page.
+ * cancel out to zero or below), `missing-image` needs the exact effective storefront media
+ * resolution, and the two content dimensions need `String.prototype.trim()` semantics rather than
+ * Postgres' own. All of them must be evaluated against the full catalog before pagination, so they
+ * are written as bounded set-based SQL instead of post-filtering the current page.
  */
 
 /**
@@ -18,6 +19,9 @@ import { MAX_MEDIA_CANDIDATES_SCANNED } from "./product-media.ts";
  */
 const JS_TRIM_CLASS =
   "[\\t\\n\\v\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
+
+/** The anchored form of {@link JS_TRIM_CLASS}: what `String.prototype.trim()` removes from an end. */
+const JS_TRIM_PATTERN = `^${JS_TRIM_CLASS}+|${JS_TRIM_CLASS}+$`;
 
 /** The reviewed Pancake CDN path shape, mirroring `PANCAKE_MEDIA_PATH_REGEX`. */
 const PANCAKE_MEDIA_PATH_PATTERN =
@@ -54,7 +58,7 @@ function normalizedCandidateColumns(url: Prisma.Sql): Prisma.Sql {
     FROM (
       SELECT REGEXP_REPLACE(
         ${url},
-        ${`^${JS_TRIM_CLASS}+|${JS_TRIM_CLASS}+$`},
+        ${JS_TRIM_PATTERN},
         '',
         'g'
       ) AS "trimmed"
@@ -243,4 +247,51 @@ export function directoryHealthMetricsSql(productIds: readonly string[]): Prisma
     WHERE p."id" = ANY(${[...productIds]}::text[])
     GROUP BY p."id"
   `;
+}
+
+/**
+ * `TRUE` when `column` holds no operator-written text, mirroring the `hasText` reading
+ * `src/commerce/catalog-acceptance.ts` applies to the same fields: a value counts as present only
+ * when characters survive `String.prototype.trim()`.
+ *
+ * `BTRIM` would not do. Postgres trims ASCII blanks only, while the editor's own
+ * `parseTextField` trims the full JS whitespace set before deciding whether to persist `NULL`, so
+ * a legacy NBSP-only value has to read as missing on both sides. `NULL` is missing as well, which
+ * is what makes a product with no `ProductContent` row — the directory's unedited draft — match.
+ */
+function blankTextCondition(column: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(
+    ${column} IS NULL
+    OR REGEXP_REPLACE(${column}, ${JS_TRIM_PATTERN}, '', 'g') = ''
+  )`;
+}
+
+/**
+ * `TRUE` when the product bound to `contentAlias` still needs SEO copy written.
+ *
+ * Both fields are required, and either one alone leaves the product incomplete. That is the
+ * catalog acceptance report's own `missingPublishedSeo` reading — `hasText(seoTitle) &&
+ * hasText(seoDescription)` — and the two fields are exactly what the admin editor's SEO section
+ * owns. It is deliberately *not* gated on `PUBLISHED`: acceptance measures what reaches the
+ * storefront, whereas this asks whether an operator has written the copy at all, and publication
+ * is already the directory's own composable `status` dimension.
+ */
+export function missingSeoCondition(contentAlias: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(
+    ${blankTextCondition(Prisma.sql`${contentAlias}."seoTitle"`)}
+    OR ${blankTextCondition(Prisma.sql`${contentAlias}."seoDescription"`)}
+  )`;
+}
+
+/**
+ * `TRUE` when the product bound to `contentAlias` still needs its editorial description written.
+ *
+ * The description alone decides it, matching the acceptance report's `missingPublishedEditorial`.
+ * `careInstructions` and `sizeGuide` sit in the same editor section but no source treats them as
+ * required: the PDP drops their notes section entirely when they are absent, and neither reaches
+ * structured data. Folding them in would report products as incomplete that the repository's own
+ * readiness contract calls complete.
+ */
+export function missingEditorialCondition(contentAlias: Prisma.Sql): Prisma.Sql {
+  return blankTextCondition(Prisma.sql`${contentAlias}."editorialDescription"`);
 }

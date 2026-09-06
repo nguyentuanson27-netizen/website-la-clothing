@@ -27,6 +27,8 @@ export const ADMIN_PRODUCT_HEALTH_FILTERS = [
   "stocked-inactive",
   "zero-active",
   "missing-image",
+  "missing-seo",
+  "missing-editorial",
 ] as const;
 
 
@@ -232,10 +234,13 @@ export function hasActiveAdminProductFilters(query: AdminProductDirectoryQuery):
  * The switch-to target for every health chip, and — exactly like the status/collection facets —
  * the single source both its link and its count come from.
  *
- * Two of the five approved blockers are aliases of dimensions the directory already owns, so they
- * select `collection=none` and `activity=inactive` rather than inventing a second URL spelling of
- * the same query. Every chip selects only its own dimension, retains the rest, and returns to
+ * Two of the blockers are aliases of dimensions the directory already owns, so they select
+ * `collection=none` and `activity=inactive` rather than inventing a second URL spelling of the
+ * same query. Every chip selects only its own dimension, retains the rest, and returns to
  * page 1; `buildAdminProductHealthClearTarget` is the single way back out.
+ *
+ * `health` stays one selected dimension. `missing-seo` and `missing-editorial` therefore replace
+ * each other instead of accumulating into a multi-value set the parser would have to accept.
  */
 export const ADMIN_PRODUCT_HEALTH_KEYS = [
   "stocked-inactive",
@@ -243,6 +248,8 @@ export const ADMIN_PRODUCT_HEALTH_KEYS = [
   "no-collection",
   "catalog-inactive",
   "missing-image",
+  "missing-seo",
+  "missing-editorial",
 ] as const;
 
 export type AdminProductHealthKey = (typeof ADMIN_PRODUCT_HEALTH_KEYS)[number];
@@ -262,6 +269,8 @@ export function buildAdminProductHealthTargets(
     "no-collection": { ...query, collection: null, uncategorized: true, page: 1 },
     "catalog-inactive": { ...query, activity: "inactive", page: 1 },
     "missing-image": selectHealth("missing-image"),
+    "missing-seo": selectHealth("missing-seo"),
+    "missing-editorial": selectHealth("missing-editorial"),
   };
 }
 

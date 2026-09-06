@@ -106,7 +106,11 @@ test("unsupported admin parameter values are rejected", () => {
     { health: "no-collection" },
     { health: "catalog-inactive" },
     { health: "missing image" },
+    { health: "missing seo" },
+    { health: "missing-seo,missing-editorial" },
+    { health: "missing-editorial " },
     { health: ["zero-active", "missing-image"] },
+    { health: ["missing-seo", "missing-editorial"] },
     { collection: "city--uniform" },
     { q: "x".repeat(ADMIN_PRODUCT_DIRECTORY_LIMITS.query + 1) },
     { q: ["a", "b"] },
@@ -218,4 +222,79 @@ test("clearing health keeps an activity filter that is not a health blocker", ()
   assert.equal(cleared.health, null);
   assert.equal(hasActiveAdminProductHealthFilter(cleared), false);
   assert.equal(buildAdminProductDirectoryHref(cleared), "/admin?activity=active");
+});
+
+test("the SEO and editorial health filters own their own allowlisted URL value", () => {
+  for (const health of ["missing-seo", "missing-editorial"] as const) {
+    const query = parseAdminProductDirectorySearchParams({ health });
+
+    assert.equal(query.health, health);
+    assert.equal(hasActiveAdminProductHealthFilter(query), true);
+    assert.equal(buildAdminProductDirectoryHref(query), `/admin?health=${health}`);
+    assert.deepEqual(
+      parseAdminProductDirectorySearchParams(
+        Object.fromEntries(
+          new URL(
+            buildAdminProductDirectoryHref(query),
+            "https://admin.example.com",
+          ).searchParams.entries(),
+        ),
+      ),
+      query,
+      `${health} must survive a parse → build → parse round trip`,
+    );
+  }
+
+  assert.ok(
+    ADMIN_PRODUCT_HEALTH_KEYS.includes("missing-seo"),
+    "the content-health chips belong to the existing health row",
+  );
+  assert.ok(ADMIN_PRODUCT_HEALTH_KEYS.includes("missing-editorial"));
+});
+
+test("a content-health chip keeps every unrelated dimension and returns to page 1", () => {
+  const query = parseAdminProductDirectorySearchParams({
+    q: "dress",
+    status: "PUBLISHED",
+    collection: "sale",
+    activity: "active",
+    sort: "updated-desc",
+    page: "5",
+  });
+  const targets = buildAdminProductHealthTargets(query);
+
+  for (const key of ["missing-seo", "missing-editorial"] as const) {
+    assert.equal(
+      buildAdminProductDirectoryHref(targets[key], 1),
+      `/admin?q=dress&status=PUBLISHED&collection=sale&activity=active&health=${key}&sort=updated-desc`,
+      `${key} must not drop an unrelated filter`,
+    );
+    assert.equal(targets[key].page, 1);
+    assert.equal(isAdminProductHealthKeyActive(targets[key], key), true);
+  }
+});
+
+test("clearing health leaves a content-health chip selected nowhere", () => {
+  const query = parseAdminProductDirectorySearchParams({
+    q: "dress",
+    status: "PUBLISHED",
+    health: "missing-seo",
+  });
+
+  const cleared = buildAdminProductHealthClearTarget(query);
+  assert.equal(cleared.health, null);
+  assert.equal(hasActiveAdminProductHealthFilter(cleared), false);
+  assert.equal(buildAdminProductDirectoryHref(cleared), "/admin?q=dress&status=PUBLISHED");
+});
+
+test("switching between the two content-health filters replaces rather than accumulates", () => {
+  const query = parseAdminProductDirectorySearchParams({ health: "missing-seo" });
+  const target = buildAdminProductHealthTargets(query)["missing-editorial"];
+
+  assert.equal(target.health, "missing-editorial");
+  assert.equal(
+    buildAdminProductDirectoryHref(target, 1),
+    "/admin?health=missing-editorial",
+    "health stays one selected dimension, not a multi-value set",
+  );
 });
