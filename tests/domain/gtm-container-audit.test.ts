@@ -100,9 +100,10 @@ function ga4EventTag(overrides: Record<string, unknown> = {}) {
 /**
  * TikTok delivered through its gallery template.
  *
- * Kept as a fixture precisely because the audit refuses it: the template's delivery lives in code
- * the export does not contain, so no parameter allowlist can bound where it sends. It is a refusal
- * case here, not a happy path.
+ * Kept as a fixture precisely because the audit refuses it. The saved export *does* carry the
+ * template — `customTemplate[].templateData`, plus a `galleryReference` for a gallery one — so what
+ * is missing is not the code but a reviewed parser bound to that exact template, without which no
+ * parameter allowlist can say where the tag sends. It is a refusal case here, not a happy path.
  */
 function tiktokTemplateTag(overrides: Record<string, unknown> = {}) {
   return {
@@ -1097,8 +1098,9 @@ describe("GTM container export static audit", () => {
   });
 
   it("refuses a container that defines the mode variable twice", () => {
-    // Two definitions leave the audit reading whichever it saw last, which is not the one a
-    // reviewer looked at.
+    // A reference resolves by name, so two definitions leave the audit reading whichever the index
+    // kept — not the one a reviewer read. Ambiguity is now refused structurally, before any rule
+    // gets to pick a definition and continue as though the reference had one meaning.
     const result = auditGtmContainerExport({
       source: containerExport({
         variable: [
@@ -1112,8 +1114,113 @@ describe("GTM container export static audit", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.ok(codes(result).includes(GTM_AUDIT_CODES.TRACKING_MODE_VARIABLE_NOT_APP_OWNED));
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
   });
+
+  it("refuses a duplicated destination variable, whichever definition is approved", () => {
+    // The unapproved definition comes first and the approved one last. Reading the last would
+    // certify the artifact on a reference that no longer has one meaning.
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [ga4ConfigTag({ parameter: [
+          { type: "TEMPLATE", key: "measurementId", value: "{{Prod GA4}}" },
+          { type: "BOOLEAN", key: "sendPageView", value: "false" },
+        ] })],
+        variable: [
+          trackingModeVariable(),
+          constantVariable("Prod GA4", "G-NOTAPPROVED"),
+          { ...constantVariable("Prod GA4", "G-FIXTURE001"), variableId: "101" },
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses duplicated settings variables that disagree about page views", () => {
+    const settingsVariable = (variableId: string, value: string) => ({
+      variableId,
+      name: "Config settings",
+      type: "gtcs",
+      parameter: [{
+        type: "LIST",
+        key: "configSettingsTable",
+        list: [{
+          type: "MAP",
+          map: [
+            { type: "TEMPLATE", key: "parameter", value: "send_page_view" },
+            { type: "TEMPLATE", key: "parameterValue", value },
+          ],
+        }],
+      }],
+    });
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "1",
+          name: "Google tag",
+          type: "googtag",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [
+            { type: "TEMPLATE", key: "tagId", value: "G-FIXTURE001" },
+            { type: "TEMPLATE", key: "configSettingsVariable", value: "{{Config settings}}" },
+          ],
+        }],
+        variable: [
+          trackingModeVariable(),
+          settingsVariable("101", "true"),
+          settingsVariable("102", "false"),
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  it("refuses a duplicated payload variable before the Meta scan picks one", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [{
+          tagId: "9",
+          name: "Vendor snippet",
+          type: "html",
+          firingTriggerId: [LIVE_TRIGGER_ID],
+          parameter: [{ type: "TEMPLATE", key: "html", value: "<script>{{Snippet}}</script>" }],
+        }],
+        variable: [
+          trackingModeVariable(),
+          constantVariable("Snippet", "fbq('track','Purchase')"),
+          { ...constantVariable("Snippet", "console.log('benign')"), variableId: "101" },
+        ],
+      }),
+      approved: APPROVED,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+  });
+
+  for (const [label, name] of [
+    ["a numeric name", 123],
+    ["an empty name", ""],
+    ["no name at all", undefined],
+  ] as const) {
+    it(`refuses a variable with ${label}`, () => {
+      const result = auditGtmContainerExport({
+        source: containerExport({
+          variable: [trackingModeVariable(), { ...constantVariable("x", "y"), name }],
+        }),
+        approved: APPROVED,
+      });
+
+      assert.equal(result.ok, false);
+      assert.ok(codes(result).includes(GTM_AUDIT_CODES.MALFORMED_EXPORT));
+    });
+  }
 
   it("refuses a live-guarded destination tag that another tag sequences", () => {
     // The bypass: a Conversion Linker needs no guard of its own, and a setup tag runs before its

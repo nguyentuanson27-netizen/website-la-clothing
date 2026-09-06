@@ -350,7 +350,7 @@ function parameterValue(parameters: readonly Parameter[], key: string): string |
  */
 function trackingModeVariableIsAppOwned(variables: VariableIndex): boolean {
   const variable = variables.get(TRACKING_MODE_VARIABLE);
-  if (variable === undefined || variable.duplicated) return false;
+  if (variable === undefined) return false;
   if (!isRecord(variable.source)) return false;
   if (readString(variable.source.type) !== DATA_LAYER_VARIABLE_TYPE) return false;
 
@@ -478,10 +478,7 @@ function collectMapRows(value: unknown, depth = 0): Array<ReadonlyMap<string, st
  * table, a data-layer read — cannot be evaluated statically, so it stays unresolved and any
  * destination that depends on it is refused rather than assumed approved.
  */
-type VariableIndex = ReadonlyMap<
-  string,
-  Readonly<{ literal: string | null; source: unknown; duplicated: boolean }>
->;
+type VariableIndex = ReadonlyMap<string, Readonly<{ literal: string | null; source: unknown }>>;
 
 const VARIABLE_REFERENCE = /^\{\{(.+)\}\}$/;
 const EMBEDDED_VARIABLE_REFERENCE = /\{\{([^{}]+)\}\}/g;
@@ -502,7 +499,7 @@ function embeddedVariableNames(value: string): string[] {
 }
 
 function indexVariables(variables: readonly unknown[]): VariableIndex {
-  const index = new Map<string, { literal: string | null; source: unknown; duplicated: boolean }>();
+  const index = new Map<string, { literal: string | null; source: unknown }>();
   for (const candidate of variables) {
     if (!isRecord(candidate)) continue;
     const name = readString(candidate.name);
@@ -513,9 +510,9 @@ function indexVariables(variables: readonly unknown[]): VariableIndex {
     // A constant whose value is itself a reference is not a literal this audit can stand behind.
     const literal = rawValue !== null && referencedVariableName(rawValue) === null ? rawValue : null;
 
-    // Two definitions of one name leave the audit reading whichever it saw last, which is not the
-    // one a reviewer looked at. The duplicate is remembered so it can be refused instead.
-    index.set(name, { literal, source: candidate, duplicated: index.has(name) });
+    // Uniqueness of the name is established structurally, before this index is built, so a lookup
+    // here resolves to the one definition a reviewer would have read.
+    index.set(name, { literal, source: candidate });
   }
   return index;
 }
@@ -725,6 +722,29 @@ function validateContainerVersionShape(
         malformed(`containerVersion.trigger declares triggerId "${id}" more than once`);
       }
       seen.add(id);
+    }
+  }
+
+  // Variable identity. `{{reference}}` resolves by name, so a name declared twice leaves every
+  // consumer free to read whichever definition the index happened to keep — one definition proving a
+  // destination approved while another names an unreviewed one, or one settings variable answering
+  // for another. Google's own model makes `variableId` the identity and `name` a display name; since
+  // this audit must resolve by name, the name has to identify exactly one variable before any
+  // reference to it can prove anything.
+  const variables = version.variable;
+  if (Array.isArray(variables)) {
+    const seen = new Set<string>();
+    for (const variable of variables) {
+      if (!isRecord(variable)) continue; // Reported by the element check above.
+      const name = readString(variable.name);
+      if (name === null || name.length === 0) {
+        malformed("containerVersion.variable holds an entry with no usable name");
+        continue;
+      }
+      if (seen.has(name)) {
+        malformed(`containerVersion.variable declares the name "${name}" more than once`);
+      }
+      seen.add(name);
     }
   }
 
