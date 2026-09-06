@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -11,9 +12,27 @@ import { StorefrontProductCard } from "@/components/commerce/storefront-product-
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
+import { readSearchExposure } from "@/seo/search-exposure";
+import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 const collectionRepository = createCollectionDefinitionRepository(prisma);
+
+type HomePageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+// The homepage declares no title or description of its own; both stay inherited from the root
+// metadata. This adds the self-canonical and nothing else.
+export async function generateMetadata({ searchParams }: HomePageProps): Promise<Metadata> {
+  const exposure = readSearchExposure();
+  return buildStaticPageMetadata({
+    origin: exposure.origin,
+    indexingEnabled: exposure.indexingEnabled,
+    pathname: "/",
+    searchParams: await searchParams,
+  });
+}
 
 async function loadHomepageProductEdit() {
   try {

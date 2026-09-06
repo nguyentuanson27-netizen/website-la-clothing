@@ -48,6 +48,18 @@ async function requestPath(path: string): Promise<HttpResponse> {
   };
 }
 
+async function requestPathWithHost(path: string, hostHeader: string): Promise<HttpResponse> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    redirect: "manual",
+    headers: { Host: hostHeader },
+  });
+  return {
+    status: response.status,
+    xRobotsTag: response.headers.get("x-robots-tag"),
+    body: await response.text(),
+  };
+}
+
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) {
@@ -191,6 +203,19 @@ try {
   const disabledPage = await requestPath("/lookbook");
   assert.equal(disabledPage.status, 200, "disabled public page must remain browseable");
   assertNoIndexHeader(disabledPage, "disabled public page");
+  // U30b / W10: a canonical nominates a URL to index, so the static pages withhold it under
+  // noindex exactly as the rest of the storefront already does.
+  for (const [path, page] of [
+    ["/", await requestPath("/")],
+    ["/collections", await requestPath("/collections")],
+    ["/lookbook", disabledPage],
+  ] as const) {
+    assert.equal(
+      page.body.includes('rel="canonical"'),
+      false,
+      `disabled ${path} must expose no canonical`,
+    );
+  }
   assert.ok(
     disabledPage.body.includes('name="robots"') && disabledPage.body.includes("noindex"),
     "disabled HTML metadata must include robots noindex",
@@ -243,9 +268,39 @@ try {
     "enabled HTML metadata must not emit global robots noindex",
   );
 
+  // U30b / W10: each static indexable page names itself, on the server-owned origin.
+  for (const path of ["/", "/collections", "/lookbook"] as const) {
+    const page = await requestPath(path);
+    assert.equal(page.status, 200, `enabled ${path} must remain 200`);
+    // Next serialises the root canonical as the bare origin; every other path keeps its pathname.
+    const expected = path === "/" ? PUBLIC_ORIGIN : `${PUBLIC_ORIGIN}${path}`;
+    assert.ok(
+      page.body.includes(`rel="canonical" href="${expected}"`),
+      `enabled ${path} must be its own canonical on the server-owned origin`,
+    );
+  }
+
+  // The canonical follows server configuration, never the request. A forged Host must not appear
+  // in it and must not displace the origin the server owns.
+  const forgedHostPage = await requestPathWithHost("/collections", "attacker.example.net");
+  assert.ok(
+    forgedHostPage.body.includes(`rel="canonical" href="${PUBLIC_ORIGIN}/collections"`),
+    "a forged request Host must not change the canonical authority",
+  );
+  assert.equal(
+    forgedHostPage.body.includes("attacker.example.net"),
+    false,
+    "a forged request Host must never be reflected into the page",
+  );
+
   const queryPage = await requestPath("/lookbook?utm_source=smoke");
   assert.equal(queryPage.status, 200, "query-state public page must remain browseable");
   assertNoIndexHeader(queryPage, "query-state public page");
+  assert.equal(
+    queryPage.body.includes('rel="canonical"'),
+    false,
+    "a query-state static page is noindex, so it must not also nominate a canonical",
+  );
 
   const utilityPage = await requestPath("/new-arrivals");
   assert.equal(utilityPage.status, 200, "non-launch editorial utility page must remain browseable");
@@ -325,7 +380,7 @@ try {
   );
 
   console.log(
-    "Search exposure HTTP smoke passed: staging/rollback remain crawlable-noindex, enabled robots/sitemap use server-owned canonical origin, the temporary production host stays noindex even when a deployment requests indexing, API stays crawl-blocked, and HTML utility/query surfaces remain noindex.",
+    "Search exposure/U30b HTTP smoke passed: staging/rollback remain crawlable-noindex, enabled robots/sitemap use server-owned canonical origin, the three static indexable pages self-canonicalise on that origin while a forged Host and any query state withhold it, the temporary production host stays noindex even when a deployment requests indexing, API stays crawl-blocked, and HTML utility/query surfaces remain noindex.",
   );
 } finally {
   await stopServer();
