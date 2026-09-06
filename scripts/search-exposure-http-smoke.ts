@@ -60,6 +60,16 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
   };
 }
 
+/**
+ * Every route this smoke asserts on, so readiness means what the assertions need.
+ *
+ * Probing one route was not enough: the dev server compiles each route on its first request, and
+ * `/` also reads the catalog, so a server that answers `/lookbook` can still be mid-compile on `/`.
+ * Under CI load that surfaced as a 500 on the homepage immediately after a restart - a failure of
+ * the wait, not of the behaviour under test.
+ */
+const READINESS_PATHS = ["/lookbook", "/shop", "/"] as const;
+
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) {
@@ -67,10 +77,12 @@ async function waitForServer(): Promise<void> {
     }
 
     try {
-      const response = await fetch(`${BASE_URL}/lookbook`, { redirect: "manual" });
-      if (response.status < 500) return;
+      const responses = await Promise.all(
+        READINESS_PATHS.map((path) => fetch(`${BASE_URL}${path}`, { redirect: "manual" })),
+      );
+      if (responses.every((response) => response.status < 500)) return;
     } catch {
-      // The development server may still be starting or compiling the route.
+      // The development server may still be starting or compiling a route.
     }
 
     await delay(500);
