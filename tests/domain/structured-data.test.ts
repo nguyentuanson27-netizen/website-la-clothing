@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PUBLIC_CONTACT_FACTS } from "../../src/content/public-brand-facts.ts";
+import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../../src/content/public-brand-facts.ts";
 import {
   buildProductStructuredData,
   buildSiteStructuredData,
@@ -442,17 +445,9 @@ test("U32b publishes the approved B2 contact facts on the Organization entity", 
     email: PUBLIC_CONTACT_FACTS.email,
     hoursAvailable: {
       "@type": "OpeningHoursSpecification",
-      dayOfWeek: [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ],
-      opens: PUBLIC_CONTACT_FACTS.supportHours.opens,
-      closes: PUBLIC_CONTACT_FACTS.supportHours.closes,
+      dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+      opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+      closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
     },
   });
   assert.deepEqual(organization.sameAs, [PUBLIC_CONTACT_FACTS.fanpageUrl]);
@@ -467,7 +462,9 @@ test("U32b publishes no Organization fact the owner has not approved", () => {
     // B2 approved contact facts only. It approved no logo asset, so none is published — the social
     // card is a share image, not a brand mark, and reusing it as `logo` would misstate what it is.
     "logo",
-    // B6 leaves the registered entity, tax code and founding facts unapproved for publication.
+    // `legalName`/`taxID` are not owner-blocked: B6 approves publishing the legal entity and the
+    // confirmed MST. They are outside the B2 contact contract U32b implements and belong to the
+    // About/legal surface U33 builds. `founder`/`foundingDate` do stay unapproved under B6.
     "founder",
     "foundingDate",
     "vatID",

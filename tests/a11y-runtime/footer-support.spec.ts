@@ -7,6 +7,11 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import {
+  describePublicAddress,
+  describePublicSupportHours,
+  PUBLIC_CONTACT_FACTS,
+} from "../../src/content/public-brand-facts.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3224;
@@ -80,6 +85,19 @@ test("U5 footer exposes canonical factual trust without unapproved support route
   await expect(footer).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
   await expect(footer).toContainText("Tra cứu trạng thái đơn COD bằng mã đơn và số điện thoại đã dùng khi đặt hàng.");
   await expect(footer.locator('a[href="/track-order"]')).toBeVisible();
+
+  // U32b/B2 — the contact facts the Organization JSON-LD marks up have to be facts a reader can
+  // actually see, and the footer is the site-wide surface that carries them. Asserted against the
+  // fact authority, not against literals, so the visible text and the markup cannot drift apart.
+  await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.telephone);
+  await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.email);
+  await expect(footer).toContainText(describePublicAddress());
+  await expect(footer).toContainText(describePublicSupportHours());
+  await expect(
+    footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephone}"]`),
+  ).toBeVisible();
+  await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
+  await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
 
   for (const href of ["/about", "/size-guide", "/shipping-returns", "/faq"]) {
     await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(0);

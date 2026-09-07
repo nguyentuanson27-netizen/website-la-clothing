@@ -6,7 +6,10 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { PUBLIC_CONTACT_FACTS } from "../src/content/public-brand-facts.ts";
+import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../src/content/public-brand-facts.ts";
 import { prisma } from "../src/db/prisma.ts";
 
 const HOST = "127.0.0.1";
@@ -255,17 +258,9 @@ try {
         email: PUBLIC_CONTACT_FACTS.email,
         hoursAvailable: {
           "@type": "OpeningHoursSpecification",
-          dayOfWeek: [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-          ],
-          opens: PUBLIC_CONTACT_FACTS.supportHours.opens,
-          closes: PUBLIC_CONTACT_FACTS.supportHours.closes,
+          dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+          opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+          closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
         },
       },
       sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],

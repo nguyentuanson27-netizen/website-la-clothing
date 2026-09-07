@@ -50,15 +50,21 @@ module: `PUBLIC_CONTACT_FACTS` in `src/content/public-brand-facts.ts`.
 | `email` | Owner-approved §2 support email | **A** |
 | `fanpageUrl` | Owner-approved §2 Fanpage | **A** |
 | `streetAddress`, `addressLocality` | Owner-approved §2 address string | **A** |
-| `supportHours` | Owner-approved §2 hours, carrying the stated UTC+7 offset | **A** |
+| `supportHours` | Owner-approved §2 hours — the seven days, the local open/close times and the stated UTC+7 offset, kept together so a consumer gets the whole statement | **A** |
 
 It is deliberately a separate export rather than a new field on `buildPublicBrandFacts`: that
 function's shape is what the footer and homepage render today, and U32b had no mandate to change
 either surface. **U33 must read `PUBLIC_CONTACT_FACTS`** for its Contact page rather than
 transcribing §2 again — one authority is the whole point, and the site JSON-LD already reads it.
 
-The registered entity name, tax code and founding facts stay **C/D**: B6 leaves them unapproved for
-publication, and nothing in U32b changed that. Everything else in this inventory still stands.
+`describePublicAddress` and `describePublicSupportHours` render the reader-facing forms and
+`supportHoursSchemaTime` the schema.org one, all from the same parts. The **site footer renders
+these facts**, so the Organization markup that carries them corresponds to content a reader can see.
+
+The registered entity name and tax code are **no longer owner-blocked** — B6 approves publishing the
+legal entity and the confirmed MST — but they are **outside the B2 contact contract** U32b
+implements, so U32b did not publish them; they belong to U33's About/legal surface. Founder and
+founding year do remain unapproved under B6. Everything else in this inventory still stands.
 
 ## Per-page inventory
 

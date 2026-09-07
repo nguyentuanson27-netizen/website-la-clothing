@@ -1,4 +1,7 @@
-import { PUBLIC_CONTACT_FACTS } from "../content/public-brand-facts.ts";
+import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../content/public-brand-facts.ts";
 
 const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
@@ -190,9 +193,11 @@ type ContactPointNode = {
  * W6/U32b. The entity every other node points at, now carrying the owner-approved B2 contact facts.
  *
  * Every added property is a transcription of `PUBLIC_CONTACT_FACTS`, which is the sole authority for
- * them; nothing here is derived from the catalog, the UI copy or the served locale. The properties
- * W6 also lists but that no approved source supplies — `logo` above all — stay off the type, so
- * adding one later is a deliberate edit here rather than an accident at a call site.
+ * them; nothing here is derived from the catalog, the UI copy or the served locale. The site footer
+ * renders the same values from the same constant, so every fact marked up here is one a reader can
+ * actually see on the page. The properties W6 also lists but that no approved source supplies —
+ * `logo` above all — stay off the type, so adding one later is a deliberate edit here rather than
+ * an accident at a call site.
  */
 type OrganizationNode = {
   "@type": "Organization";
@@ -229,17 +234,6 @@ export type SiteStructuredDataDocument = {
   "@context": typeof SCHEMA_CONTEXT;
   "@graph": [OrganizationNode, WebSiteNode];
 };
-
-/** "Hằng ngày" in the approved support hours: every day carries the same window. */
-const SUPPORT_DAYS = Object.freeze([
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-]);
 
 function buildSiteEntityIds(origin: string) {
   const rootUrl = new URL("/", origin).href;
@@ -560,9 +554,11 @@ export function buildSiteStructuredData({
           email: PUBLIC_CONTACT_FACTS.email,
           hoursAvailable: {
             "@type": "OpeningHoursSpecification",
-            dayOfWeek: SUPPORT_DAYS,
-            opens: PUBLIC_CONTACT_FACTS.supportHours.opens,
-            closes: PUBLIC_CONTACT_FACTS.supportHours.closes,
+            // Every part of the hours comes from the one fact authority, the seven days included:
+            // the footer renders the same statement, so neither can carry half of it.
+            dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+            opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+            closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
           },
         },
         sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
