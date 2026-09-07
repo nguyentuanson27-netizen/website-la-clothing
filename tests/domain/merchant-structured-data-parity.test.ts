@@ -974,6 +974,61 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     assert.equal(publishedIds(jsonLd).includes("pv-black-l"), false);
   });
 
+  it("publishes the promotion-aware survivor price after a family collapse", () => {
+    // The approved one-survivor contract names the *promotion-aware* price, not merely a matching
+    // one. A collapsed survivor takes a different serialization path from a ProductGroup member, so
+    // the discount has to be proved on that path rather than inferred from the family case.
+    const campaign: ApplicablePromotionCampaign = {
+      id: "campaign-flash",
+      name: "Flash Sale",
+      kind: "FLASH_SALE",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      fixedPriceVnd: null,
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      endsAt: new Date("2026-09-30T00:00:00.000Z"),
+    };
+
+    const { merchant, jsonLd } = runParity(
+      catalogProduct({
+        variants: [
+          variant({ campaigns: [campaign] }),
+          variant({
+            variantId: "cuid-black-l",
+            pancakeVariationId: "pv-black-l",
+            pancakeDisplayId: "LA-OXF-BLK-L",
+            size: "L",
+            // Excluded for unresolvable availability, collapsing the family to one survivor.
+            warehouseQuantities: [4, -1],
+          }),
+        ],
+      }),
+    );
+
+    assert.deepEqual(publishedIds(merchant), ["pv-black-m"]);
+    assert.deepEqual(publishedIds(jsonLd), ["pv-black-m"]);
+
+    const merchantSurvivor = merchant[0]!;
+    const jsonLdSurvivor = jsonLd[0]!;
+    assert.equal(merchantSurvivor.priceVnd, 712_000);
+    assert.equal(
+      jsonLdSurvivor.priceVnd,
+      712_000,
+      "the collapsed standalone survivor must publish the discounted price the page charges",
+    );
+    assert.notEqual(
+      jsonLdSurvivor.priceVnd,
+      890_000,
+      "the raw base price must never be published for a collapsed survivor",
+    );
+
+    const { productExternalId: merchantGroupId, ...merchantSharedFacts } = merchantSurvivor;
+    const { productExternalId: jsonLdGroupId, ...jsonLdSharedFacts } = jsonLdSurvivor;
+    assert.equal(merchantGroupId, "pancake-product-1");
+    assert.equal(jsonLdGroupId, null, "a standalone Product must not invent ProductGroup identity");
+    assert.deepEqual(merchantSharedFacts, jsonLdSharedFacts);
+  });
+
   it("fails closed on both sides for an unaddressable variation identity", () => {
     // Two rows claiming one external identity: U12 refuses to say which option the link names, so
     // neither consumer may publish either row as an exact standalone offer.

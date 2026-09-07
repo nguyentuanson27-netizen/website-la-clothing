@@ -637,8 +637,9 @@ test("U27a variesBy is recomputed from the variants that survive exclusion", () 
 });
 
 test("U27a the family collapses when exclusion leaves no real variant family", () => {
-  // Only one publishable variant remains, so there is no family to describe. U27's existing rules
-  // fall back to the product-level Product rather than publishing a one-member ProductGroup.
+  // Only one publishable variant remains, so there is no family to describe. Under the approved
+  // one-survivor contract that becomes a top-level exact `Product` for the survivor itself, never a
+  // one-member ProductGroup, and the excluded siblings appear nowhere in the document.
   const document = build({
     variantAvailabilityResolvedById: { "cuid-a": true, "cuid-b": false, "cuid-c": false },
   });

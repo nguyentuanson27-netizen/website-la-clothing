@@ -1,6 +1,6 @@
 # Marketing analytics & Google Shopping — task checklist
 
-Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. U27a closed the availability divergence. The Merchant↔JSON-LD one-survivor convergence contract is now approved, while its U27 implementation/parity proof remains open. O1 is resolved as merchandise-only and O2 is resolved as Vietnam / `vi` / `VND`; trusted runtime O2 configuration is still not wired, so the public Merchant route remains fail-closed. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
+Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. U27a closed the availability divergence; **PR #214 implemented the approved Merchant↔JSON-LD one-survivor convergence contract and PR #216 completed its proof set, closing the feed↔JSON-LD convergence gate as of #216**. O1 is resolved as merchandise-only and O2 is resolved as Vietnam / `vi` / `VND`; trusted runtime O2 configuration is still not wired, so the public Merchant route remains fail-closed. T8 and M5/V1 remain proposed and require human approval of `tasks/marketing-analytics-shopping-plan.md` before `/build`.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
 + PR #165 product/option facts), **T5/T6** (U18/U19, PR #186), **M2** (U12, PR #180), **T7** (U24, PR #193 canonical confirmed Purchase), and **M1** (U9, PR #175 durability + PR #194 identity/MPN/media read-only closure + exact-SHA operational closure audit). Checkpoint D is **GREEN / PASSED**. T4 evidence is in `docs/audits/wave-1-checkpoint-a.md`; integrated U12–U19 evidence is in `docs/audits/wave-2-checkpoint-b.md`; M1/Checkpoint D evidence is in `docs/audits/merchant-identity-m1.md` and MPN ownership/lifecycle is recorded in ADR 0008.
@@ -178,6 +178,20 @@ access, there is no container to configure, no immutable version to save, and no
 Per the interlock below, the loader and CSP origins must not land without that artifact, so
 `REVIEWED_GTM_VERSION_AVAILABLE` stays `false` and every mode still resolves to no GTM load.
 
+**The durable blocker is the normative gate: O4 is OPEN.** Nothing below may be satisfied with a
+guessed, fixture or dummy production ID, and only the proper account owners can close it.
+
+*Dated observation — 2026-09-07 preflight on `main@be7e5f628f86e71f8fc9769bed210501e15e03ed`.* Scoped
+to the execution context used for that preflight, and evidence of that context only, not of
+project-wide account state: no GTM container ID, GA4 Measurement ID, Google Ads conversion ID/label
+or TikTok Pixel ID was present in the repository or the environment, and that context had no Google
+Tag Manager, Tag Assistant or GA4 DebugView access. `.env.example` carries only the documented
+`GTM-XXXXXXX` placeholder, which is a placeholder and not an approved ID. `pnpm release:check` was
+executed in that context and reported `trackingMode=disabled`,
+`trackingLoadsGoogleTagManager=false`. Consequence for T8 while O4 stays open: no container version
+can be saved, no export can be checksummed, and no TikTok `customTemplate[]` / `galleryReference`
+can be identified from a real artifact.
+
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
 - [ ] Record GTM container ID + exact saved container version number/ID.
 - [ ] Export JSON from that exact saved version and commit it with repository identity/checksum.
@@ -271,7 +285,7 @@ Per the interlock below, the loader and CSP origins must not land without that a
 - [x] **U27a:** any malformed mirrored warehouse row makes a variant's availability unstatable, and both consumers omit it. U27's MPN-uniqueness domain is also aligned with the Merchant mapper's, so a variant excluded on its own facts can no longer suppress a sibling that shares its part number. The rule is per row, not on the total, so `[5, -3]`, `[3, -3]` and `[100, -1]` are unresolved as surely as `[-3]`. Carried by a server-only `variantAvailabilityResolvedById` from the catalog read to the U27 boundary, and applied to the product-level fallback offer as well as to exact variant offers, so a suppressed availability claim cannot reappear one node up. No extra DB query, no client contract widening, shopper-facing PDP stock behaviour and Merchant both unchanged.
 - [x] Missing/blank/untrimmed/duplicate MPN, unresolved price, unaddressable identity and composite candidates fail closed compatibly on both sides; neither consumer invents a fallback identifier, URL or price.
 - [x] **O2 decision is resolved** as Vietnam / `vi` / `VND`; the parity suite still passes a clearly named test-only market fixture directly to the serializer because production trusted runtime configuration is not implemented yet. Nothing in `src/` imports the test fixture, and `/feeds/google-merchant` remains fail-closed until the real trusted authority lands.
-- [ ] **Convergence launch gate** (`Before Merchant/index launch, prove feed vs JSON-LD ... consistency` in `tasks/growth-commerce-master-todo.md`) stays **OPEN pending implementation/verification, not pending a decision.** Approved contract: when exclusion leaves exactly one publishable standalone sibling, Merchant keeps the exact survivor; U27 emits a standalone `Product` representing that same exact survivor with the same U12 variant deep-link and verified variant facts; U27 does **not** emit a one-member `ProductGroup`. Dedicated RED/GREEN parity coverage must prove variation identity, URL, MPN, price and availability before this checkbox closes. Evidence/decision: `docs/audits/merchant-jsonld-parity.md` + `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`.
+- [x] **Convergence launch gate** (`Before Merchant/index launch, prove feed vs JSON-LD ... consistency` in `tasks/growth-commerce-master-todo.md`) is **implemented by PR #214** (merged as `be7e5f628f86e71f8fc9769bed210501e15e03ed`, exact head `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e`) and **CLOSED by PR #216**, which supplied the missing discriminating promotion-aware price proof required by contract clause 5. Approved contract, now implemented: when exclusion leaves exactly one publishable standalone sibling, Merchant keeps the exact survivor; U27 emits a standalone `Product` representing that same exact survivor with the same U12 variant deep-link and verified variant facts; U27 does **not** emit a one-member `ProductGroup`; and a product that started with exactly one option keeps the ordinary product-level fallback. Focused parity coverage proves variation identity, exact U12 URL, ADR 0008 MPN, promotion-aware price and resolved availability for the survivor state: `tests/domain/merchant-structured-data-family-collapse.test.ts`, `tests/domain/merchant-structured-data-family-collapse-eligibility.test.ts` and the survivor cases in `tests/domain/merchant-structured-data-parity.test.ts`. Evidence/decision: `docs/audits/merchant-jsonld-parity.md` + `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`. **This closes the parity blocker only; it activates no Merchant destination.**
 
 ## PR-F — Merchant activation + final convergence
 
