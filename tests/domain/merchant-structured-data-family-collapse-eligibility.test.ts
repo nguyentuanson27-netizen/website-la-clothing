@@ -123,7 +123,9 @@ function runCase(
 }
 
 for (const [label, siblingOverrides, expectedReason] of [
-  ["missing size", { size: null }, "SIZE_UNRESOLVED"],
+  // Missing size makes the storefront option unaddressable first. Merchant intentionally reports
+  // that primary identity failure instead of cascading a secondary SIZE_UNRESOLVED reason.
+  ["missing size", { size: null }, "OPTION_NOT_ADDRESSABLE"],
   ["zero price", { priceVnd: 0 }, "PRICE_UNRESOLVED"],
   [
     "overlong Merchant offer id",
