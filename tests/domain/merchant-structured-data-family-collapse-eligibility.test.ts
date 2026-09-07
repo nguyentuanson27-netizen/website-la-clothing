@@ -15,17 +15,25 @@ const ORIGIN = "https://shop.example.test";
 const NOW = new Date("2026-09-07T09:00:00.000Z");
 const PRODUCT_ID = "pancake-product-1";
 
-const SURVIVOR = Object.freeze({
+type VariantFixture = Readonly<{
+  variantId: string;
+  pancakeVariationId: string;
+  pancakeDisplayId: string;
+  color: string | null;
+  size: string | null;
+  stockQuantity: number;
+  priceVnd: number | null;
+}>;
+
+const SURVIVOR: VariantFixture = Object.freeze({
   variantId: "cuid-black-m",
   pancakeVariationId: "pv-black-m",
   pancakeDisplayId: "LA-OXF-BLK-M",
-  color: "Đen" as string | null,
-  size: "M" as string | null,
+  color: "Đen",
+  size: "M",
   stockQuantity: 7,
-  priceVnd: 890_000 as number | null,
+  priceVnd: 890_000,
 });
-
-type VariantFixture = typeof SURVIVOR;
 
 type CaseResult = Readonly<{
   merchantOfferIds: readonly string[];
