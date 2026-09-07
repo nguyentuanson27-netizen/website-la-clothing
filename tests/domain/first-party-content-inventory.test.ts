@@ -5,10 +5,9 @@ import { readFile } from "node:fs/promises";
 import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 
 /**
- * W13A inventories which evergreen-page facts the repository actually owns and which are blocked on
- * an owner decision. The inventory is only useful while it matches the code, so this asserts the two
- * directions: the authoritative fact source has not quietly grown a fact nobody approved, and the
- * document still describes every fact it does expose.
+ * W13A is a historical inventory of which evergreen-page facts the repository owned at that time and
+ * which still required an owner decision. The current owner decisions live in the master roadmap and
+ * owner-facts source; keep historical evidence distinct from current implementation state.
  */
 const INVENTORY = new URL("../../docs/audits/first-party-content-facts-w13a.md", import.meta.url);
 const MASTER_TODO = new URL("../../tasks/growth-commerce-master-todo.md", import.meta.url);
@@ -24,11 +23,11 @@ const AUTHORITATIVE_FACT_KEYS = [
 ] as const;
 
 /**
- * Facts an evergreen About / Returns / Shipping / Size Guide / Contact page needs that no
- * source-of-truth in this repository provides. A coding agent must never invent them, so their
- * absence here is the assertion.
+ * Facts W13A classified as owner-blocked. The owner decisions are now resolved, but U32b/U33 remain
+ * implementation work, so a docs-only reconciliation must not silently add these fields to the
+ * existing runtime fact source.
  */
-const OWNER_BLOCKED_FACT_KEYS = [
+const HISTORICALLY_OWNER_BLOCKED_FACT_KEYS = [
   "returnPolicy",
   "returnWindowDays",
   "exchangePolicy",
@@ -49,33 +48,33 @@ const policy = {
   freeShippingMinQuantity: 3,
 } as const;
 
-test("W13A the authoritative brand-fact source exposes exactly the inventoried facts", () => {
+test("W13A the authoritative brand-fact source exposes exactly the inventoried runtime facts", () => {
   const facts = buildPublicBrandFacts(policy);
 
   assert.deepEqual(Object.keys(facts).sort(), [...AUTHORITATIVE_FACT_KEYS]);
 });
 
-test("W13A no owner-blocked business fact has been invented in the fact source", () => {
+test("owner reconciliation does not implicitly implement U32b/U33 facts in the runtime fact source", () => {
   const facts = buildPublicBrandFacts(policy) as Record<string, unknown>;
 
-  for (const key of OWNER_BLOCKED_FACT_KEYS) {
+  for (const key of HISTORICALLY_OWNER_BLOCKED_FACT_KEYS) {
     assert.equal(
       key in facts,
       false,
-      `${key} requires owner-approved source content and must not appear before then`,
+      `${key} needs focused U32b/U33 implementation before it appears in the runtime fact source`,
     );
   }
 });
 
-test("W13A the inventory documents every fact the repository owns and every blocked one", async () => {
+test("W13A historical inventory still documents every fact it owned or classified as blocked", async () => {
   const inventory = await readFile(INVENTORY, "utf8");
 
-  for (const key of [...AUTHORITATIVE_FACT_KEYS, ...OWNER_BLOCKED_FACT_KEYS]) {
-    assert.ok(inventory.includes(key), `${key} must appear in the W13A inventory`);
+  for (const key of [...AUTHORITATIVE_FACT_KEYS, ...HISTORICALLY_OWNER_BLOCKED_FACT_KEYS]) {
+    assert.ok(inventory.includes(key), `${key} must remain documented in the historical W13A inventory`);
   }
 });
 
-test("W13A About has an explicit owner-decision gate everywhere U33 consumes the inventory", async () => {
+test("current roadmap preserves W13A history while recording the resolved owner decisions", async () => {
   const [inventory, masterTodo] = await Promise.all([
     readFile(INVENTORY, "utf8"),
     readFile(MASTER_TODO, "utf8"),
@@ -83,8 +82,21 @@ test("W13A About has an explicit owner-decision gate everywhere U33 consumes the
 
   assert.match(inventory, /\| \*\*B6\*\* \| About(?:\/brand\/legal)? facts .*\| U33 \(About page\) \|/);
   assert.match(inventory, /For each of About, Returns, Shipping delivery terms, Size Guide and Contact:/);
-  assert.match(masterTodo, /\*\*U33\*\*[^\n]+Blocked by B1–B4 and B6/);
-  assert.match(masterTodo, /\| \*\*B6\*\* \| About(?:\/brand\/legal)? facts .*\| U33 \(About page\) \|/);
 
-  assert.match(masterTodo, /\| \*\*B5\*\* \| Metadata uniqueness:/, "B5 metadata gate must remain unchanged");
+  assert.match(
+    masterTodo,
+    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is owner-unblocked but not implemented\.\*\*/,
+  );
+  assert.match(
+    masterTodo,
+    /\| \*\*B6\*\* \| \*\*RESOLVED FOR MINIMAL ABOUT\*\*[^\n]+\| U33 About owner-unblocked \|/,
+  );
+  assert.match(
+    masterTodo,
+    /\*\*U29\*\*[^\n]+\*\*B5 is RESOLVED — owner-unblocked, implementation open\.\*\*[^\n]+pair-level `\(seoTitle, seoDescription\)` uniqueness/,
+  );
+  assert.match(
+    masterTodo,
+    /\| \*\*B5\*\* \| \*\*RESOLVED\*\* — pair-level `\(seoTitle, seoDescription\)` uniqueness among published products; drafts may be missing\/duplicate; collision blocks publish \|/,
+  );
 });
