@@ -15,8 +15,10 @@ precedence applies only to the owner decision itself: the older owning spec/audi
 behavior, implementation order, acceptance criteria, verification, security, and independent launch gates.
 
 A reconciled unit described as **owner-unblocked** is not implemented merely because its owner fact is resolved.
-Items still marked `OPEN` in the owner source remain fail-closed. In particular, permanent-domain/Gate S approval,
-O4 real vendor IDs/GTM live approval, and the Merchant↔JSON-LD family-collapse contract remain separate open gates.
+Items still marked `OPEN` in the owner source remain fail-closed. In particular, permanent-domain/Gate S approval
+and O4 real vendor IDs/GTM live approval remain separate open gates. The Merchant↔JSON-LD family-collapse
+**decision is resolved**, but its U27 runtime implementation, parity regression evidence, and launch-gate closure
+remain separate pending work until the dedicated implementation PR is green.
 
 ## Storefront Refinement V3 execution record
 
