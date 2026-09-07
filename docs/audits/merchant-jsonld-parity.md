@@ -1,11 +1,12 @@
 # Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 
 Two public consumers describe the same standalone variant to two different audiences. This audit
-records where they publish the same truth about the facts they share, and what remains open. As of
-PR #214 the convergence launch gate is **CLOSED**; what remains open below is Merchant *activation*,
-which this audit does not grant.
+records where they publish the same truth about the facts they share, and what remains open. The
+convergence launch gate is **CLOSED as of PR #216**, which completed the proof set on the runtime
+contract PR #214 implemented; what remains open below is Merchant *activation*, which this audit does
+not grant.
 
-It has been written in three passes:
+It has been written in four passes:
 
 - **PR #199** proved the parity across identity, grouping, MPN, URL, price and the resolvable
   availability domain, and recorded one reachable divergence it deliberately did not equalize. That
@@ -14,18 +15,24 @@ It has been written in three passes:
   exact-variant and product-level paths, and aligned U27's MPN-uniqueness domain with the Merchant
   mapper's. It does change `src/`. It did **not** close the convergence launch gate, which stayed
   open on the family-collapse granularity contract.
-- **PR #214** implemented the owner-approved one-survivor contract and **closes** that last open
-  contract, and with it the convergence launch gate. Merged to `main` as
-  `be7e5f628f86e71f8fc9769bed210501e15e03ed`.
+- **PR #214** implemented the owner-approved one-survivor contract in runtime code, and proved the
+  survivor's variation identity, exact U12 URL, ADR 0008 MPN and resolved availability. Merged to
+  `main` as `be7e5f628f86e71f8fc9769bed210501e15e03ed`.
+- **PR #216** added the missing discriminating **promotion-aware price** proof for the collapsed
+  survivor and completed this reconciliation. The approved contract names an exact promotion-aware
+  price, and clause 5 closes the gate only once identity, URL, MPN, **price** and availability are
+  all proved; every collapse-state case before this pass asserted the base price only, so that clause
+  was implemented but unproved. **The gate therefore closes with #216, resting on #214's
+  implementation.**
 
-| | PR #199 | PR #200 (U27a) | PR #214 |
-| --- | --- | --- | --- |
-| Base SHA | `2d5ea84045f61fc1249076379dd0816d37499546` | `22fea2ce9e48368b7ce64fa502d45b7c03bf98d3` | `f8a0658422481412201d05a9d3519cff5a205a54` |
-| Scope | tests, docs and task reconciliation only | runtime fix plus tests and docs | runtime selection/serialization plus focused tests |
-| `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` | yes — `storefront-product-structured-data.ts`, `structured-data.ts` |
-| Head SHA | recorded in that PR's description | recorded in that PR's description | `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e` |
+| | PR #199 | PR #200 (U27a) | PR #214 | PR #216 |
+| --- | --- | --- | --- | --- |
+| Base SHA | `2d5ea84045f61fc1249076379dd0816d37499546` | `22fea2ce9e48368b7ce64fa502d45b7c03bf98d3` | `f8a0658422481412201d05a9d3519cff5a205a54` | `be7e5f628f86e71f8fc9769bed210501e15e03ed` |
+| Scope | tests, docs and task reconciliation only | runtime fix plus tests and docs | runtime selection/serialization plus focused tests | missing promotion-aware price proof plus docs reconciliation |
+| `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` | yes — `storefront-product-structured-data.ts`, `structured-data.ts` | no behaviour change (trailing newline only) |
+| Head SHA | recorded in that PR's description | recorded in that PR's description | `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e` | recorded in that PR's description |
 
-- **Pancake API used:** NO. **Production database used:** NO, in all three passes. Every case is
+- **Pancake API used:** NO. **Production database used:** NO, in all four passes. Every case is
   reproducible from repository fixtures.
 
 ## Authorities
@@ -95,7 +102,7 @@ The two formats are compared on meaning, never on literal strings.
 | I — unaddressable variation identity | COMPATIBLE FAIL-CLOSED on both sides |
 | J — composite | COMPATIBLE FAIL-CLOSED: Merchant reports `COMPOSITE_DEFERRED`, U27 publishes no `ProductGroup` |
 | Grouping | MATCH: every emitted sibling groups under `pancakeProductId`, never a slug, local id, kind key, MPN or index |
-| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, **including** the family-collapse state below (PR #214) |
+| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, **including** the family-collapse state below (implemented #214, proof completed #216) |
 
 ## Closed divergence — negative mirrored warehouse quantity (U27a)
 
@@ -209,7 +216,7 @@ unresolved price and an unresolved availability are all excluded before they can
 The rule it narrows is unchanged where it matters: when two *surviving* candidates share a part
 number, both are still dropped, because the catalog cannot say which one it names.
 
-### Closed contract — the family-collapse state (PR #214)
+### Closed contract — the family-collapse state (implemented #214, proved #216)
 
 This was the last open question, and it was a granularity question rather than a contradiction:
 when exclusion left a single publishable sibling, Merchant published an exact offer for the survivor
@@ -221,7 +228,7 @@ The owner approved a **narrower** variant of the exact-survivor direction discus
 pass. The difference matters and is deliberate: the option recorded earlier would have published an
 exact variant `Product`/`Offer` for *any* product with a single publishable variant, including one
 that only ever had one option. The approved contract applies only to a real family that collapses.
-See `docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §14 — and **PR #214 implements it**:
+See `docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §14 — and **PR #214 implements it**, with **PR #216** completing its proof set:
 
 - Merchant continues to publish that exact survivor, unchanged;
 - U27 emits a top-level standalone `Product` representing **the same** exact survivor, using the
@@ -251,7 +258,7 @@ public markup even if a future caller bypasses the selection helper.
 | Exact variation identity | `merchant-structured-data-parity.test.ts` — *publishes the family-collapse survivor as the same exact standalone variant* |
 | Exact U12 variant URL | same test + `merchant-structured-data-family-collapse.test.ts` (asserts `productNode.url === offer.link`) |
 | ADR 0008 MPN | same tests (`productNode.mpn === offer.mpn`) |
-| Promotion-aware price | `merchant-structured-data-parity.test.ts` — *publishes the promotion-aware survivor price after a family collapse* |
+| Promotion-aware price | `merchant-structured-data-parity.test.ts` — *publishes the promotion-aware survivor price after a family collapse* **(added by PR #216; the first case to discriminate this path — before it, every collapse-state case asserted the base price only)** |
 | Resolved availability | family-collapse test asserts `schema.org/InStock` against Merchant `in_stock`; excluded sibling reports `AVAILABILITY_UNRESOLVED` on both sides |
 | No one-member `ProductGroup` | family-collapse test asserts `@type === "Product"` and the absence of `hasVariant` / `productGroupID` / `variesBy` |
 | Single-option product is not a collapsed family | `storefront-structured-data-boundary.test.ts` — *U27 single or non-publishable family keeps the product-level fallback* asserts the canonical PDP `Offer.url` |
@@ -302,9 +309,9 @@ business-fact parity
   availability, resolvable stock domain    = GREEN
   availability, any negative row           = COMPATIBLE FAIL-CLOSED (U27a)
   exclusion ordering vs MPN uniqueness     = GREEN (U27a)
-  exact-variant set, family-collapse state = GREEN (PR #214)
+  exact-variant set, family-collapse state = GREEN (implemented #214, proof completed #216)
 
-feed <-> JSON-LD consistency launch gate   = CLOSED
+feed <-> JSON-LD consistency launch gate   = CLOSED (with #216)
 production feed activation                 = BLOCKED by O2 runtime authority
 ```
 
@@ -331,8 +338,9 @@ no multi-replica claim. Nothing here adds Redis, replicas, or a deployment chang
 
 ## Remaining gates
 
-- **Feed ↔ JSON-LD consistency launch gate:** **CLOSED** by PR #214 under the approved one-survivor
-  contract. This gate closing does not activate anything: it removes the parity blocker only.
+- **Feed ↔ JSON-LD consistency launch gate:** **CLOSED** with PR #216, on the one-survivor runtime
+  contract PR #214 implemented. This gate closing does not activate anything: it removes the parity
+  blocker only.
 - **O2 runtime authority:** OPEN — decision approved, trusted server-owned configuration not wired.
   **M5 / U41:** BLOCKED.
 - Next unit: `U28 / T8`, itself blocked on **O4** and Google Tag Manager account access.

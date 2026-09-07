@@ -324,9 +324,9 @@ Owner-approved technical convergence contract when filtering leaves **exactly on
 2. **U27 emits a standalone schema.org `Product` representing that same exact survivor**, using the same U12 variant deep-link and the same verified variant facts used by the exact variant path: manufacturer MPN, optional publishable SKU, color/size, image where resolved, exact promotion-aware price and exact resolved availability.
 3. **Do not emit a one-member `ProductGroup`.** A single surviving standalone product is represented as `Product`, not a fake family.
 4. If zero standalone variants remain publishable, publish no exact standalone-variant claim.
-5. The feed↔JSON-LD convergence gate closes only after a dedicated implementation PR proves exact survivor parity for variation identity, URL, MPN, price and availability. **Satisfied by PR #214**, merged as `be7e5f628f86e71f8fc9769bed210501e15e03ed`.
+5. The feed↔JSON-LD convergence gate closes only after a dedicated implementation PR proves exact survivor parity for variation identity, URL, MPN, price and availability. **PR #214** implemented the contract and proved identity, URL, MPN and availability, merging as `be7e5f628f86e71f8fc9769bed210501e15e03ed`; **PR #216** supplied the missing discriminating **promotion-aware price** proof, which no earlier collapse-state case made. The clause is satisfied only once both are counted.
 
-**Status:** `RESOLVED — IMPLEMENTED AND VERIFIED (PR #214)`
+**Status:** `RESOLVED — IMPLEMENTED BY PR #214, PROOF SET COMPLETED BY PR #216`
 
 Implementation and parity evidence: `docs/audits/merchant-jsonld-parity.md`. Closing this convergence gate removes the parity blocker only; it activates no Merchant destination, which still requires the trusted O2 runtime authority and the remaining Gate M prerequisites.
 
@@ -367,7 +367,7 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 | O1 Google Ads value | ✅ RESOLVED | Merchandise-only |
 | O2 Merchant market | ✅ RESOLVED | Vietnam / vi / VND |
 | O4 vendor IDs | ⏳ OPEN | Placeholder setup allowed; live blocked |
-| Merchant↔JSON-LD family collapse | ✅ RESOLVED — IMPLEMENTED (PR #214) | Merchant keeps exact survivor; U27 standalone `Product` represents the same exact survivor; no one-member `ProductGroup` |
+| Merchant↔JSON-LD family collapse | ✅ RESOLVED — IMPLEMENTED (#214), PROVED (#216) | Merchant keeps exact survivor; U27 standalone `Product` represents the same exact survivor; no one-member `ProductGroup` |
 
 ---
 
@@ -383,7 +383,7 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 ## Still blocked / deferred
 - U35 — permanent domain not chosen.
 - Gate T live — O4 real vendor IDs missing.
-- Merchant activation (Gate M) — trusted O2 runtime authority not wired; the feed↔JSON-LD parity gate itself is now closed by PR #214.
+- Merchant activation (Gate M) — trusted O2 runtime authority not wired; the feed↔JSON-LD parity gate itself is now closed with PR #216, on PR #214's implementation.
 - Gate S activation — separate human gate.
 - Brand story / values — optional future content.
 

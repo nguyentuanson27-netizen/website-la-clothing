@@ -59,11 +59,13 @@ This resolves the decision, **not the implementation**. The feed↔JSON-LD conve
 remained open until a dedicated U27 implementation PR landed with focused RED/GREEN parity evidence
 for exact variation identity, URL, MPN, price and availability in the one-survivor state.
 
-> **Closed later the same day.** PR #214 implemented this contract and closed the convergence gate;
-> it merged to `main` as `be7e5f628f86e71f8fc9769bed210501e15e03ed` (exact head
-> `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e`). The record above is preserved as the state at the time
-> of this reconciliation. Current implementation and parity evidence:
-> `docs/audits/merchant-jsonld-parity.md`.
+> **Closed later the same day, across two PRs.** PR #214 implemented this contract and proved the
+> survivor's identity, URL, MPN and availability; it merged to `main` as
+> `be7e5f628f86e71f8fc9769bed210501e15e03ed` (exact head
+> `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e`). PR #216 then supplied the missing discriminating
+> promotion-aware **price** proof, so the convergence gate closes with #216 on #214's implementation.
+> The record above is preserved as the state at the time of this reconciliation. Current
+> implementation and parity evidence: `docs/audits/merchant-jsonld-parity.md`.
 
 ## Items that remain open
 
@@ -108,7 +110,7 @@ The following remain blocked/deferred by independent gates:
 
 - U35 / Gate S — permanent domain and explicit indexing approval;
 - Gate T live — O4 real vendor IDs/access + exact reviewed GTM saved version/export/preview evidence;
-- ~~Merchant feed ↔ JSON-LD final parity~~ — **CLOSED by PR #214** after this reconciliation was written; see `docs/audits/merchant-jsonld-parity.md`;
+- ~~Merchant feed ↔ JSON-LD final parity~~ — **CLOSED with PR #216** (implementation in PR #214) after this reconciliation was written; see `docs/audits/merchant-jsonld-parity.md`;
 - Merchant activation / U41 — still requires trusted runtime O2 market configuration, Gate M technical/account/site/shipping/returns prerequisites and explicit human activation; O2 decision resolution alone is not activation;
 - optional brand story/values — owner has not approved them.
 
