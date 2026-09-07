@@ -453,5 +453,5 @@ Gate S remains a separate human release gate.
 
 Immediately before indexing enablement:
 - Rerun `pnpm sitemap:capacity:audit` against production on the **exact activation head**;
-- Re-verify dynamic paths are within hard budget (< 49,996) and below the approved Act trigger (< 45,000);
+- Re-verify dynamic paths are within hard budget (<= 49,996) and below the approved Act trigger (< 45,000);
 - Any subsequent product-mirror sync or collection publication change invalidates the audit and mandates a rerun before flag enablement.

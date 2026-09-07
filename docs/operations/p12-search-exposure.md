@@ -23,7 +23,7 @@ P12 is implemented as a fail-closed search-exposure boundary. P15 extends that b
     - Rerun `DATABASE_URL=<production> PANCAKE_SHOP_ID=<shop> pnpm sitemap:capacity:audit` on the **exact activation head**;
     - Record attributable evidence: exact SHA, environment, timestamp, the reported figures, and the mirror-freshness line (`CatalogSyncState.syncedAt` / `updatedAt` for the shop);
     - **The activation-time capacity result is valid only while sitemap-eligible catalog state remains unchanged.** Any product-mirror sync that changes `isPresent`, `isActive`, or shop membership, or any collection publish/unpublish/create/delete that changes the published-collection count, invalidates the audit and mandates a fresh rerun before indexing may be enabled. The git SHA pins which predicate ran, not which rows it counted;
-    - The fresh activation-time run must be within hard budget (< 49,996 URLs) **and must not satisfy the approved Act trigger** (< 45,000 URLs).
+    - The fresh activation-time run must be within hard budget (<= 49,996 URLs) **and must not satisfy the approved Act trigger** (< 45,000 URLs).
     - Evaluation order at activation:
       1. Over hard budget (> 49,996 URLs) → **Block Gate S**, open U37b and shard first;
       2. Approved **Act** trigger true ($\ge 45,000$ URLs) → **Block Gate S**, U37b must be implemented first;
