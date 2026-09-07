@@ -34,7 +34,9 @@ test("P5b create/edit parsers stay behind the Server Action admin authorization 
     const source = exportedActionSource(name);
     assert.match(
       source,
-      /const outcome = await runPromotionOperation\((?:async )?\(session\) => \{\s*const parseResult = parseCampaignFormInput\(formData\);/,
+      // The leading argument is the observability operation label. It is matched as a literal so a
+      // request-derived value here would fail this assertion rather than ride along unnoticed.
+      /const outcome = await runPromotionOperation\("[a-z-]+", (?:async )?\(session\) => \{\s*const parseResult = parseCampaignFormInput\(formData\);/,
       `${name} must parse FormData inside the authorized callback, never before it`,
     );
   }

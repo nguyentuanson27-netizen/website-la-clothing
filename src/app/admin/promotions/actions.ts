@@ -25,6 +25,11 @@ import {
   type PromotionFailureDescription,
 } from "@/commerce/promotion-admin-feedback";
 import { prisma } from "@/db/prisma";
+import {
+  describeActivationRejection,
+  emitPromotionSignal,
+  type PromotionActivationOperation,
+} from "@/operations/promotion-observability";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 
 /**
@@ -43,6 +48,7 @@ type PromotionActionOutcome =
  * is never an input — a disabled button is a courtesy, not a control.
  */
 async function runPromotionOperation(
+  signalOperation: PromotionActivationOperation,
   operation: (session: Awaited<ReturnType<typeof requireCurrentAdmin>>) => Promise<
     | Readonly<{ ok: true }>
     | Readonly<{ ok: false; failure: Parameters<typeof describePromotionFailure>[0] }>
@@ -55,6 +61,12 @@ async function runPromotionOperation(
     session = await requireCurrentAdmin();
   } catch (error) {
     if (error instanceof AuthorizationError) {
+      emitPromotionSignal(
+        describeActivationRejection({
+          operation: signalOperation,
+          failure: { reason: "FORBIDDEN" },
+        }),
+      );
       return {
         ok: false,
         failure: {
@@ -73,6 +85,9 @@ async function runPromotionOperation(
       revalidatePath("/admin/promotions");
       return { ok: true };
     }
+    emitPromotionSignal(
+      describeActivationRejection({ operation: signalOperation, failure: outcome.failure }),
+    );
     return { ok: false, failure: describePromotionFailure(outcome.failure) };
   } catch (error) {
     // Only the one violation the surface can describe better than the driver can. Anything else
@@ -80,6 +95,9 @@ async function runPromotionOperation(
     // rendered as a form message.
     const translated = translatePromotionWriteError(error);
     if (translated === null) throw error;
+    emitPromotionSignal(
+      describeActivationRejection({ operation: signalOperation, failure: translated }),
+    );
     return { ok: false, failure: describePromotionFailure(translated) };
   }
 }
@@ -101,7 +119,7 @@ function completeWith(outcome: PromotionActionOutcome): never {
 
 export async function publishPromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
+  const outcome = await runPromotionOperation("publish", (session) =>
     publishPromotionCampaign({ campaignId, now: new Date(), session }),
   );
   completeWith(outcome);
@@ -109,7 +127,7 @@ export async function publishPromotionAction(formData: FormData): Promise<void> 
 
 export async function disablePromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
+  const outcome = await runPromotionOperation("disable", (session) =>
     disablePromotionCampaign({ campaignId, now: new Date(), session }),
   );
   completeWith(outcome);
@@ -117,7 +135,7 @@ export async function disablePromotionAction(formData: FormData): Promise<void> 
 
 export async function endPromotionEarlyAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
+  const outcome = await runPromotionOperation("end-early", (session) =>
     endPromotionCampaignEarly({ campaignId, now: new Date(), session }),
   );
   completeWith(outcome);
@@ -125,14 +143,14 @@ export async function endPromotionEarlyAction(formData: FormData): Promise<void>
 
 export async function copyPromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
+  const outcome = await runPromotionOperation("copy", (session) =>
     copyPromotionCampaign({ campaignId, session }),
   );
   completeWith(outcome);
 }
 
 export async function createPromotionAction(formData: FormData): Promise<void> {
-  const outcome = await runPromotionOperation((session) => {
+  const outcome = await runPromotionOperation("create", (session) => {
     const parseResult = parseCampaignFormInput(formData);
     if (!parseResult.ok) {
       return Promise.resolve({ ok: false, failure: { reason: parseResult.reason } });
@@ -166,7 +184,7 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
 }
 
 export async function editPromotionAction(formData: FormData): Promise<void> {
-  const outcome = await runPromotionOperation(async (session) => {
+  const outcome = await runPromotionOperation("edit", async (session) => {
     const parseResult = parseCampaignFormInput(formData);
     if (!parseResult.ok) {
       return { ok: false, failure: { reason: parseResult.reason } };
