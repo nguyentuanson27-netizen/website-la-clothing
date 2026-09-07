@@ -12,7 +12,7 @@
  *
  *   catalog facts → buildStorefrontProductProjection (real promotion pricing)
  *                 ├→ mapMerchantOffers → serializeMerchantFeed → parsed RSS items
- *                 └→ buildStorefrontProductStructuredData → ProductGroup.hasVariant
+ *                 └→ buildStorefrontProductStructuredData → ProductGroup.hasVariant / exact Product
  *
  * Neither side can be tuned independently to make a case pass, and the Merchant side is read back
  * from the serialized bytes a vendor would actually fetch rather than from the mapper's in-memory
@@ -69,7 +69,8 @@ const TEST_ONLY_MERCHANT_MARKET: MerchantMarketPolicy = {
 /** The shared vocabulary the two formats are compared in. Neither consumer speaks it natively. */
 type VariantCommerceParity = Readonly<{
   variantExternalId: string;
-  productExternalId: string;
+  /** Standalone JSON-LD has no ProductGroup identity; Merchant still carries item_group_id. */
+  productExternalId: string | null;
   mpn: string;
   url: string;
   priceVnd: number;
@@ -359,6 +360,19 @@ function productGroupNode(document: unknown): JsonRecord | null {
   );
 }
 
+function exactStandaloneProductNode(document: unknown): JsonRecord | null {
+  const graph = (document as JsonRecord)["@graph"];
+  if (!Array.isArray(graph)) return null;
+  const product = graph.find(
+    (node) => (node as JsonRecord)["@type"] === "Product",
+  ) as JsonRecord | undefined;
+  if (product === undefined || typeof product.url !== "string") return null;
+
+  // An ordinary product-level fallback has the base PDP URL. Only a U12 variant deep-link proves
+  // this top-level Product represents one exact survivor rather than generic product-level facts.
+  return new URL(product.url).searchParams.has(VARIANT_QUERY_PARAM) ? product : null;
+}
+
 /**
  * The JSON-LD side's variation identity is not published as a bare field: it lives in the exact U12
  * deep link. Reading it back through the reviewed query-parameter name — rather than by slicing the
@@ -372,10 +386,13 @@ function readVariationIdFromUrl(url: string): string {
 
 function parseStructuredDataParity(document: unknown): VariantCommerceParity[] {
   const group = productGroupNode(document);
-  if (group === null) return [];
+  const standalone = group === null ? exactStandaloneProductNode(document) : null;
+  if (group === null && standalone === null) return [];
 
-  const productGroupID = group.productGroupID as string;
-  const variants = (group.hasVariant ?? []) as JsonRecord[];
+  const productExternalId = group === null ? null : String(group.productGroupID);
+  const variants = group === null
+    ? [standalone!]
+    : ((group.hasVariant ?? []) as JsonRecord[]);
 
   return variants.map((node) => {
     const offer = node.offers as JsonRecord;
@@ -391,7 +408,7 @@ function parseStructuredDataParity(document: unknown): VariantCommerceParity[] {
 
     return Object.freeze({
       variantExternalId: readVariationIdFromUrl(url),
-      productExternalId: productGroupID,
+      productExternalId,
       mpn: String(node.mpn),
       url,
       priceVnd: offer.price as number,
@@ -914,16 +931,14 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
   }
 
   /**
-   * The family-collapse state, pinned as an open contract rather than as convergence.
+   * Owner-approved family-collapse convergence.
    *
-   * Merchant publishes the survivor with its variation identity; U27 falls back to a product-level
-   * `Product`, since a one-member `ProductGroup` is not a variant family. The two agree on product,
-   * price and availability and neither is false, but the publishable exact-variant sets differ — so
-   * the launch gate stays open on it. This is the pre-existing single-variant-family rule, not
-   * something U27a introduced. `docs/audits/merchant-jsonld-parity.md` records the three ways it
-   * can be reconciled; all three are authority decisions.
+   * Merchant still carries `item_group_id`, while the collapsed JSON-LD representation is a
+   * standalone Product and therefore has no ProductGroup identity to read back. The exact survivor
+   * facts both representations actually share — variation identity, MPN, U12 URL, price and
+   * availability — must nevertheless be byte-for-value identical.
    */
-  it("leaves the family-collapse state as a granularity difference, not an availability one", () => {
+  it("publishes the family-collapse survivor as the same exact standalone variant", () => {
     const { merchant, jsonLd } = runParity(
       catalogProduct({
         variants: [
@@ -940,7 +955,20 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     );
 
     assert.deepEqual(publishedIds(merchant), ["pv-black-m"]);
-    assert.deepEqual(publishedIds(jsonLd), [], "no ProductGroup survives a single-member family");
+    assert.deepEqual(publishedIds(jsonLd), ["pv-black-m"]);
+
+    const merchantSurvivor = merchant[0]!;
+    const jsonLdSurvivor = jsonLd[0]!;
+    const { productExternalId: merchantGroupId, ...merchantSharedFacts } = merchantSurvivor;
+    const { productExternalId: jsonLdGroupId, ...jsonLdSharedFacts } = jsonLdSurvivor;
+
+    assert.equal(merchantGroupId, "pancake-product-1");
+    assert.equal(jsonLdGroupId, null, "a standalone Product must not invent ProductGroup identity");
+    assert.deepEqual(
+      merchantSharedFacts,
+      jsonLdSharedFacts,
+      "both consumers must publish the same exact survivor facts they share",
+    );
     // The excluded variant is absent from both sides — the availability convergence still holds.
     assert.equal(publishedIds(merchant).includes("pv-black-l"), false);
     assert.equal(publishedIds(jsonLd).includes("pv-black-l"), false);

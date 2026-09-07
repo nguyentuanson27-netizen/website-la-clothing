@@ -131,6 +131,10 @@ type ProductNode = {
   brand: {
     "@id": string;
   };
+  mpn?: string;
+  sku?: string;
+  color?: string;
+  size?: string;
   description?: string;
   image?: string[];
   offers?: OfferNode;
@@ -181,7 +185,8 @@ export type ProductStructuredDataDocument = {
   /**
    * Exactly one product-schema authority per page. A `ProductGroup` replaces the product-level
    * `Product` rather than joining it, so a variant family's exact per-variant offers can never sit
-   * beside a contradictory product-level offer.
+   * beside a contradictory product-level offer. A collapsed one-survivor family is represented by
+   * one exact top-level `Product`, never a one-member `ProductGroup`.
    */
   "@graph": [ProductNode | ProductGroupNode, BreadcrumbListNode];
 };
@@ -341,20 +346,40 @@ function buildVariantNode(name: string, variant: StructuredDataVariant): Product
   return node;
 }
 
+function buildStandaloneVariantNode(
+  name: string,
+  variant: StructuredDataVariant,
+  organizationId: string,
+): ProductNode {
+  const variantNode = buildVariantNode(name, variant);
+  return {
+    ...variantNode,
+    brand: {
+      "@id": organizationId,
+    },
+  };
+}
+
 export function buildProductStructuredData({
   origin,
   product,
   variantOptions,
   productGroup = null,
+  standaloneVariant = null,
 }: Readonly<{
   origin: string;
   product: StructuredDataProduct;
   variantOptions: readonly StructuredDataVariantOption[];
   /**
-   * The publishable variant family, when the caller resolved one. Absent — or too small, or without
-   * a usable external identity — the page keeps the ordinary product-level `Product` + `Offer`.
+   * The publishable variant family, when the caller resolved one. A real family requires at least
+   * two members; a one-survivor state belongs in `standaloneVariant`, never a one-member group.
    */
   productGroup?: StructuredDataProductGroup | null;
+  /**
+   * The exact surviving standalone variant after family filtering/exclusion. This is already a
+   * fully resolved U27 variant fact set, including the U12 URL and exact Offer facts.
+   */
+  standaloneVariant?: StructuredDataVariant | null;
 }>): ProductStructuredDataDocument {
   const { rootUrl, organizationId } = buildSiteEntityIds(origin);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
@@ -363,17 +388,27 @@ export function buildProductStructuredData({
 
   // The caller decides whether a family is publishable — whether these rows really are siblings,
   // and whether their identity is one this catalog holds. This module still owns the serialization
-  // boundary: a group needs a bounded product identity, members, a real varying dimension, a
-  // variant-specific factual name, and a unique reviewed manufacturer MPN on every variant before
-  // it can become public markup.
+  // boundary: a group needs a bounded product identity, a real family of at least two members, a
+  // real varying dimension, variant-specific factual names, and a unique reviewed manufacturer MPN
+  // on every variant before it can become public markup.
   const publishedGroup =
     productGroup !== null
     && isPublishableIdentifier(productGroup.productGroupID)
     && productGroup.variesBy.length > 0
-    && productGroup.variants.length > 0
+    && productGroup.variants.length > 1
     && hasUniquePublishableVariantMpns(productGroup.variants)
     && hasSpecificVariantNames(product.name, productGroup.variants)
       ? productGroup
+      : null;
+
+  // The exact standalone path is fail-closed independently at the serialization boundary. The
+  // caller already selected the survivor from the same verified U27 candidate set, but a malformed
+  // MPN must never become public merely because a future caller bypasses that selection helper.
+  const publishedStandaloneVariant =
+    publishedGroup === null
+    && standaloneVariant !== null
+    && isPublishableMpn(standaloneVariant.mpn)
+      ? standaloneVariant
       : null;
 
   const productNode: ProductNode | ProductGroupNode = publishedGroup !== null
@@ -395,23 +430,28 @@ export function buildProductStructuredData({
           (variant) => buildVariantNode(product.name, variant),
         ),
       }
-    : {
-        "@type": "Product",
-        "@id": `${productUrl}#product`,
-        name: product.name,
-        url: productUrl,
-        brand: {
-          "@id": organizationId,
-        },
-      };
+    : publishedStandaloneVariant !== null
+      ? buildStandaloneVariantNode(product.name, publishedStandaloneVariant, organizationId)
+      : {
+          "@type": "Product",
+          "@id": `${productUrl}#product`,
+          name: product.name,
+          url: productUrl,
+          brand: {
+            "@id": organizationId,
+          },
+        };
 
   if (product.editorialDescription) {
     productNode.description = product.editorialDescription;
   }
-  if (images.length > 0) {
+  // An exact survivor may publish only its resolved variant image. If none resolved, omit image
+  // rather than replacing variant-specific evidence with the generic product gallery. Ordinary
+  // product/group documents keep the pre-existing product-gallery behavior.
+  if (images.length > 0 && publishedStandaloneVariant === null) {
     productNode.image = images;
   }
-  if (productNode["@type"] === "Product") {
+  if (productNode["@type"] === "Product" && publishedStandaloneVariant === null) {
     const offer = buildOffer(productUrl, variantOptions);
     if (offer) {
       productNode.offers = offer;

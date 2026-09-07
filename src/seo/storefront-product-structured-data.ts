@@ -2,8 +2,9 @@
  * U27 — the boundary from the PDP's storefront projection to published product JSON-LD.
  *
  * It answers one question: which of this product's variants may appear as their own `Product` and
- * exact `Offer` under a `ProductGroup`, and with which facts. Everything it publishes already has
- * an owner, and it reuses that owner rather than re-deriving the answer:
+ * exact `Offer`, either under a real `ProductGroup` or as the exact standalone survivor after a
+ * family collapses, and with which facts. Everything it publishes already has an owner, and it
+ * reuses that owner rather than re-deriving the answer:
  *
  * - addressability and the variant URL — the U12 deep-link contract;
  * - price and availability — the PDP projection, priced by the same rule the page renders with;
@@ -17,6 +18,10 @@
  * map together, so publishing structured data adds no extra catalog or pricing query.
  */
 
+import {
+  classifyExternalIdentifier,
+  MERCHANT_ID_MAX_LENGTH,
+} from "../commerce/merchant-identity-audit.ts";
 import { toOptionIdentityKey } from "../commerce/storefront-product.ts";
 import {
   selectStorefrontProductLevelOptions,
@@ -76,6 +81,10 @@ type StorefrontStructuredDataProduct = Readonly<{
  * stock reasons alone. A variant whose price never resolved is not published as sold out — that
  * would answer a pricing question with a stock claim.
  *
+ * Merchant rejects zero/negative prices for ordinary apparel. U27 uses the same threshold for exact
+ * variant publication so a zero-priced sibling cannot remain in JSON-LD after Merchant filtered it
+ * out and thereby prevent the family from collapsing to Merchant's sole exact survivor.
+ *
  * U27a adds the prior question: whether the catalog can state an availability for this variant at
  * all. A malformed mirrored quantity makes the storefront's own total meaningless — `[5, -3]` sums
  * to an ordinary 2 — so the projection's sold-out-or-buyable verdict, correct as a shopper-facing
@@ -90,7 +99,7 @@ function resolvePublishableOffer(
 ): Readonly<{ price: number; availability: StructuredDataAvailability }> | null {
   if (!availabilityResolved) return null;
   const { price } = option;
-  if (price === null || !Number.isFinite(price) || price < 0) return null;
+  if (price === null || !Number.isFinite(price) || price <= 0) return null;
   if (option.purchasable) return { price, availability: "IN_STOCK" };
   if (option.unavailableReason === "OUT_OF_STOCK") return { price, availability: "OUT_OF_STOCK" };
   return null;
@@ -132,26 +141,35 @@ function resolveVariesBy(
 }
 
 /**
- * The external product identity, when it is publishable as one.
- *
- * Mirrored catalog text is untrusted, so a blank or unbounded value publishes no group at all, and
- * an untrimmed one is refused rather than repaired: trimming would publish an identity the catalog
- * does not hold, and a `productGroupID` that disagrees with the id every other consumer uses is
- * worse than none. The rule itself belongs to the module that writes the document, so this asks it
- * rather than restating it — a second copy here would be free to drift from what is serialized.
+ * The external product identity, when it is publishable as one on both sides of the convergence
+ * contract. U27's own public-identifier guard remains defense in depth, while Merchant's stricter
+ * 50-code-point/no-whitespace classifier decides whether the same `item_group_id` could actually be
+ * emitted by the feed. A value Merchant would reject cannot authorize an exact JSON-LD survivor.
  */
 function readPublishableProductGroupID(pancakeProductId: string): string | null {
-  return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
+  const merchantReady =
+    classifyExternalIdentifier(pancakeProductId, {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    }) === "PRESENT";
+  return merchantReady && isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
 /**
  * The variants this page may publish, each proved addressable and uniquely identified first.
  *
  * Every candidate's external variation identity is fed back through the U12 resolver against this
- * same projection, and only an identity that reselects *this* option survives. Separately, ADR 0008
- * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
- * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
- * variation UUID as a different identifier type.
+ * same projection, and only an identity that reselects *this* option survives. That resolver remains
+ * the authority for the storefront's option model: a size-only family is valid and must not be
+ * rejected merely because Merchant's apparel feed independently requires a color value. Separately,
+ * ADR 0008 requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed
+ * MPN fails closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the
+ * Pancake variation UUID as a different identifier type.
+ *
+ * The owner-approved family-collapse contract is a Merchant ↔ JSON-LD convergence rule, not a reason
+ * to replace U27's dimensional model with Merchant's. Shared facts that must converge here — bounded
+ * external offer identity, positive price, resolved availability and exact MPN — gate the exact
+ * variant set. Option dimensional validity continues to be decided by U12/storefront addressability.
  *
  * Uniqueness is decided last, over the candidates that survived every other check — the same order
  * the Merchant mapper uses. It has to be: a variant already excluded on its own facts is not a
@@ -170,9 +188,20 @@ function resolvePublishableVariants({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): StructuredDataVariant[] {
+  if (readPublishableProductGroupID(product.pancakeProductId) === null) return [];
+
   const candidates: Readonly<{ mpn: string; variant: StructuredDataVariant }>[] = [];
 
   for (const option of product.projection.options) {
+    if (
+      classifyExternalIdentifier(option.pancakeVariationId, {
+        maxLength: MERCHANT_ID_MAX_LENGTH,
+        allowWhitespace: false,
+      }) !== "PRESENT"
+    ) {
+      continue;
+    }
+
     const reselected = resolveDeepLinkedVariantSelection({
       projection: product.projection,
       variantQuery: option.pancakeVariationId,
@@ -226,25 +255,47 @@ function resolvePublishableVariants({
 /**
  * The publishable variant family, or `null` when this product does not have one.
  *
- * Null covers every case the page must fall back from: a composite, a product whose options are
- * not addressable or uniquely identified, one with a single surviving option, and one whose
- * external product identity is unusable.
+ * A real `ProductGroup` needs a publishable product identity, at least two surviving variants and a
+ * dimension those variants genuinely differ on. A single survivor is deliberately not a group; the
+ * approved family-collapse contract publishes it as an exact standalone `Product` instead.
  */
 function resolveProductGroup({
-  origin,
   product,
+  variants,
 }: Readonly<{
-  origin: string;
   product: StorefrontStructuredDataProduct;
+  variants: readonly StructuredDataVariant[];
 }>): StructuredDataProductGroup | null {
   const productGroupID = readPublishableProductGroupID(product.pancakeProductId);
-  if (productGroupID === null) return null;
+  if (productGroupID === null || variants.length < 2) return null;
 
-  const variants = resolvePublishableVariants({ origin, product });
   const variesBy = resolveVariesBy(variants);
   if (variesBy.length === 0) return null;
 
   return { productGroupID, variesBy, variants };
+}
+
+/**
+ * The exact standalone survivor under the approved family-collapse contract.
+ *
+ * A product that started with exactly one option is not a collapsed family and keeps U27's existing
+ * product-level fallback with the canonical PDP URL. This path is therefore available only when a
+ * standalone projection originally contained at least two options and the verified exact-variant
+ * set has subsequently narrowed to one. Composite projections remain outside the v1 exact-variant
+ * contract, and a malformed product identity cannot make JSON-LD publish an exact survivor that
+ * Merchant would refuse.
+ */
+function resolveStandaloneSurvivor({
+  product,
+  variants,
+}: Readonly<{
+  product: StorefrontStructuredDataProduct;
+  variants: readonly StructuredDataVariant[];
+}>): StructuredDataVariant | null {
+  if (product.projection.mode !== "standalone") return null;
+  if (product.projection.options.length < 2) return null;
+  if (readPublishableProductGroupID(product.pancakeProductId) === null) return null;
+  return variants.length === 1 ? variants[0]! : null;
 }
 
 /**
@@ -274,14 +325,18 @@ export function buildStorefrontProductStructuredData({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): ProductStructuredDataDocument {
+  // Resolve the verified exact-variant set once, then decide only how that same set is represented:
+  // a real family under ProductGroup, one exact standalone survivor, or neither. No consumer-specific
+  // re-filtering is allowed between those representations.
+  const publishableVariants = resolvePublishableVariants({ origin, product });
+
   return buildProductStructuredData({
     origin,
     product,
-    // The product-level fallback, for a product with no publishable variant family: a composite's
-    // parent set, or a standalone product with a single option. Resolved from the same projection
-    // the page renders so structured data cannot quote a price the page does not show, and now
-    // narrowed to the variants whose inventory can state an availability at all.
+    // This remains the ordinary product-level fallback when there is no exact standalone survivor
+    // and no publishable family. It is narrowed to variants whose inventory can state availability.
     variantOptions: selectPublishableProductLevelOptions(product),
-    productGroup: resolveProductGroup({ origin, product }),
+    productGroup: resolveProductGroup({ product, variants: publishableVariants }),
+    standaloneVariant: resolveStandaloneSurvivor({ product, variants: publishableVariants }),
   });
 }
