@@ -13,10 +13,10 @@ P12 is implemented as a fail-closed search-exposure boundary. P15 extends that b
 - **U37 / W21 capacity monitoring contract is APPROVED and CLOSED.** Baseline capacity audit and operational policy are established (see `docs/audits/sitemap-capacity-w21.md` §2.4, §5, §8). Gate S must not enable indexing until all preconditions are revalidated at activation time:
   - **Named Owner (D1):** `@nguyentuanson27-netizen` (Repository Owner & Lead Operator) is responsible for running capacity audits, logging attributable evidence, evaluating triggers, and managing sharding transitions.
   - **Monitoring Cadence (D2):** `Per release` (integrated into release preflight prior to Gate S evaluation).
-  - **Trigger Thresholds & Behaviour (D3):**
-    - **Warning Condition:** Dynamic paths reach or exceed **80% of dynamic budget** (40,000 URLs).
+  - **Trigger Thresholds & Behaviour (D3):** the approved **integer URL counts are authoritative**; percentages are descriptive only because the dynamic budget is 49,996 rather than 50,000.
+    - **Warning Condition:** Dynamic paths reach or exceed **40,000 URLs** (≈80.006% of the 49,996 dynamic budget).
     - **Warning Behaviour:** `ALLOW_WITH_ACK`. When Warning is triggered but Act is false ($40,000 \le \text{dynamicPaths} < 45,000$), operator initiates the U37b sitemap-sharding plan and records explicit written acknowledgement from owner `@nguyentuanson27-netizen` in the release audit block. Gate S may proceed only if all other launch gates pass.
-    - **Act Condition:** Dynamic paths reach or exceed **90% of dynamic budget** (45,000 URLs) OR projected time to hard bound is under one full sharding cycle.
+    - **Act Condition:** Dynamic paths reach or exceed **45,000 URLs** (≈90.007% of the 49,996 dynamic budget) OR projected time to hard bound is under one full sharding cycle.
     - **Act Behaviour:** `BLOCK`. Gate S is strictly blocked. U37b (sitemap index / sharding) must be implemented and verified before search indexing may be enabled.
   - **Hard Boundary:** Single sitemap limit is 50,000 URLs (49,996 dynamic URLs + 4 static paths). Over 49,996 dynamic paths throws `RangeError` (HTTP 500 at `/sitemap.xml`). Neither a partial sitemap nor raising the per-document bound is permitted.
   - **Activation-time Revalidation Rule:** A historical baseline establishes feasibility but does **not** authorize a later enablement — the catalog can grow in between, and recurring monitoring does not begin until indexing is enabled. Immediately before indexing enablement:
