@@ -24,7 +24,8 @@ For the owner-controlled facts/decisions listed below:
 5. Items explicitly `OPEN` in the owner source remain fail-closed and must not be inferred.
 
 This preserves historical planning evidence without forcing every old document to be rewritten as
-if the owner facts had existed when it was authored.
+if the owner facts had existed when it was authored. Living execution checklists are reconciled in
+this PR so they do not contradict the newer decisions.
 
 ## Reconciled owner gates
 
@@ -39,6 +40,24 @@ if the owner facts had existed when it was authored.
 | **U36 / W19 crawler governance** | Awaiting owner distribution/data-use policy | **RESOLVED — ALLOW ALL** crawler categories | U36 implementation/documentation is owner-unblocked; this does not enable indexing |
 | **O1 Google Ads Purchase value** | Owner decision open | **RESOLVED — merchandise-only** | T8/Ads mapping may use canonical immutable merchandise value once O4 and T8 technical gates are satisfied |
 | **O2 Merchant market** | Owner decision open | **RESOLVED — Vietnam / `vi` / `VND`** | M3/M4 may be reconciled to a trusted server-owned market authority; request/caller data still may not self-approve the market |
+
+## Resolved technical contract, implementation still pending
+
+### Merchant ↔ JSON-LD family-collapse
+
+The owner approved the convergence contract on 2026-09-07:
+
+- when filtering/exclusion leaves **exactly one publishable standalone variant**, Merchant continues
+  to publish that exact surviving variant;
+- U27 emits a standalone schema.org `Product` that represents that **same exact survivor**, using the
+  same U12 variant deep-link and the same verified variant facts used for the exact variant path;
+- U27 must **not** emit a one-member `ProductGroup`;
+- zero publishable standalone variants still produce no exact standalone-variant claim;
+- Merchant is not weakened merely to match a structured-data presentation rule.
+
+This resolves the decision, **not the implementation**. The feed↔JSON-LD convergence launch gate
+remains open until a dedicated U27 implementation PR lands with focused RED/GREEN parity evidence
+for exact variation identity, URL, MPN, price and availability in the one-survivor state.
 
 ## Items that remain open
 
@@ -69,16 +88,6 @@ Fail-closed config/schema/placeholders may be prepared, but no dummy value may b
 configuration, no actual GTM load may bypass the existing T8 export audit, and no unnecessary CSP
 origin may be opened.
 
-### Merchant ↔ JSON-LD family-collapse contract
-
-Still `OPEN — ENGINEERING PROPOSAL REQUIRED`.
-
-The current known divergence remains: when filtering leaves one publishable standalone sibling,
-Merchant can publish the exact surviving variant while U27 structured data can collapse to a
-product-level `Product` without exact variant identity. This reconciliation chooses neither
-structured-data nor Merchant behavior. A focused engineering proposal/review must settle the
-contract before the parity launch gate can close.
-
 ## Roadmap consequences
 
 The following units are now **owner-unblocked, not complete**:
@@ -93,8 +102,8 @@ The following remain blocked/deferred by independent gates:
 
 - U35 / Gate S — permanent domain and explicit indexing approval;
 - Gate T live — O4 real vendor IDs/access + exact reviewed GTM saved version/export/preview evidence;
-- Merchant feed ↔ JSON-LD final parity — family-collapse contract;
-- Merchant activation / U41 — still requires Gate M technical/account/site/shipping/returns prerequisites and explicit human activation; O2 resolution alone is not activation;
+- Merchant feed ↔ JSON-LD final parity — **decision resolved, U27 one-survivor implementation + parity verification pending**;
+- Merchant activation / U41 — still requires trusted runtime O2 market configuration, Gate M technical/account/site/shipping/returns prerequisites and explicit human activation; O2 decision resolution alone is not activation;
 - optional brand story/values — owner has not approved them.
 
 ## No runtime claim
