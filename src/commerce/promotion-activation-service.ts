@@ -46,6 +46,7 @@ import {
 import {
   buildCopyCampaignName,
   deriveCampaignLifecycle,
+  type CampaignLifecycleStatus,
 } from "./promotion-campaign-lifecycle.ts";
 import {
   resolvePromotionPricing,
@@ -64,7 +65,12 @@ export const PROMOTION_REVISION_ID = "current";
 export type ActivationFailure =
   | { reason: "ACTIVATION_DISABLED" }
   | { reason: "CAMPAIGN_NOT_FOUND" }
-  | { reason: "ILLEGAL_TRANSITION"; from: string }
+  /**
+   * The lifecycle status the operation was refused from. Typed as the derived status rather than a
+   * free string: every producer supplies one, and a caller that logs or branches on it should not
+   * have to defend against an arbitrary value reaching it.
+   */
+  | { reason: "ILLEGAL_TRANSITION"; from: CampaignLifecycleStatus }
   | { reason: "INVALID_CAMPAIGN"; errors: readonly CampaignActivationError[] }
   /** Syntactic/storage/input bounds, refused on every write including a Draft. */
   | { reason: "INVALID_DRAFT_INPUT"; errors: readonly DraftInputError[] }

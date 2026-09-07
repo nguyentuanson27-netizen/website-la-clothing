@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireCurrentAdmin } from "@/auth/current-admin";
-import { AuthorizationError } from "@/auth/authorization";
 import {
   copyPromotionCampaign,
   createDraftPromotionCampaign,
@@ -19,69 +18,45 @@ import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
 import { parseCampaignFormInput } from "@/commerce/promotion-admin-input";
-import {
-  describePromotionFailure,
-  translatePromotionWriteError,
-  type PromotionFailureDescription,
-} from "@/commerce/promotion-admin-feedback";
 import { prisma } from "@/db/prisma";
+import {
+  runPromotionAdminOperation,
+  type PromotionActionOutcome,
+  type PromotionOperationContext,
+  type PromotionOperationResult,
+} from "@/operations/promotion-admin-operation";
+import type { PromotionActivationOperation } from "@/operations/promotion-observability";
 import { readPancakeShopId } from "@/integrations/pancake/config";
-
-/**
- * Outcomes travel back as a redirect rather than a returned value, so the surface keeps working
- * with JavaScript unavailable and a reload never replays a mutation. Only the typed *reason* is put
- * in the URL; the operator-facing sentence is looked up on the server when the page re-renders, so
- * no message text — and nothing derived from a failure payload — is ever client-supplied.
- */
-type PromotionActionOutcome =
-  | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; failure: PromotionFailureDescription }>;
 
 /**
  * Every operation runs the same way: re-authorize on the server, hand the decision to the P4
  * service, and translate whatever comes back. The browser's view of what is enabled or permitted
  * is never an input — a disabled button is a courtesy, not a control.
+ *
+ * The order of those steps, and the signals they emit, live in `runPromotionAdminOperation` so they
+ * can be exercised by a test; this wrapper supplies the three things only a Server Action can: the
+ * session lookup, the cache invalidation, and the closed operation label.
+ *
+ * Outcomes travel back as a redirect rather than a returned value, so the surface keeps working
+ * with JavaScript unavailable and a reload never replays a mutation. Only the typed *reason* is put
+ * in the URL; the operator-facing sentence is looked up on the server when the page re-renders, so
+ * no message text — and nothing derived from a failure payload — is ever client-supplied.
  */
 async function runPromotionOperation(
-  operation: (session: Awaited<ReturnType<typeof requireCurrentAdmin>>) => Promise<
-    | Readonly<{ ok: true }>
-    | Readonly<{ ok: false; failure: Parameters<typeof describePromotionFailure>[0] }>
-  >,
+  signalOperation: PromotionActivationOperation,
+  operation: (
+    session: Awaited<ReturnType<typeof requireCurrentAdmin>>,
+    context: PromotionOperationContext,
+  ) => Promise<PromotionOperationResult>,
+  campaignId?: string,
 ): Promise<PromotionActionOutcome> {
-  // Authorization is re-established here rather than inherited from the page render. A Server
-  // Action is its own request, and a session can have ended since the page was drawn.
-  let session: Awaited<ReturnType<typeof requireCurrentAdmin>>;
-  try {
-    session = await requireCurrentAdmin();
-  } catch (error) {
-    if (error instanceof AuthorizationError) {
-      return {
-        ok: false,
-        failure: {
-          reason: "FORBIDDEN",
-          message: "Bạn không có quyền thực hiện thao tác này.",
-          wroteNothing: true,
-        },
-      };
-    }
-    throw error;
-  }
-
-  try {
-    const outcome = await operation(session);
-    if (outcome.ok) {
-      revalidatePath("/admin/promotions");
-      return { ok: true };
-    }
-    return { ok: false, failure: describePromotionFailure(outcome.failure) };
-  } catch (error) {
-    // Only the one violation the surface can describe better than the driver can. Anything else
-    // is re-thrown so a genuine fault reaches the error boundary and the logs instead of being
-    // rendered as a form message.
-    const translated = translatePromotionWriteError(error);
-    if (translated === null) throw error;
-    return { ok: false, failure: describePromotionFailure(translated) };
-  }
+  return runPromotionAdminOperation({
+    operation: signalOperation,
+    campaignId,
+    authorize: () => requireCurrentAdmin(),
+    run: operation,
+    onCommitted: () => revalidatePath("/admin/promotions"),
+  });
 }
 
 function campaignIdFrom(formData: FormData): string {
@@ -101,38 +76,51 @@ function completeWith(outcome: PromotionActionOutcome): never {
 
 export async function publishPromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
-    publishPromotionCampaign({ campaignId, now: new Date(), session }),
+  const outcome = await runPromotionOperation(
+    "publish",
+    (session, context) => {
+      // Publish is the gate-governed operation: `publishPromotionCampaign` refuses with
+      // ACTIVATION_DISABLED when the flag is off, so the flag's state explains this outcome.
+      context.reportActivationGate();
+      return publishPromotionCampaign({ campaignId, now: new Date(), session });
+    },
+    campaignId,
   );
   completeWith(outcome);
 }
 
 export async function disablePromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
-    disablePromotionCampaign({ campaignId, now: new Date(), session }),
+  const outcome = await runPromotionOperation(
+    "disable",
+    (session) => disablePromotionCampaign({ campaignId, now: new Date(), session }),
+    campaignId,
   );
   completeWith(outcome);
 }
 
 export async function endPromotionEarlyAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
-    endPromotionCampaignEarly({ campaignId, now: new Date(), session }),
+  const outcome = await runPromotionOperation(
+    "end-early",
+    (session) => endPromotionCampaignEarly({ campaignId, now: new Date(), session }),
+    campaignId,
   );
   completeWith(outcome);
 }
 
 export async function copyPromotionAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
-  const outcome = await runPromotionOperation((session) =>
-    copyPromotionCampaign({ campaignId, session }),
+  const outcome = await runPromotionOperation(
+    "copy",
+    (session) => copyPromotionCampaign({ campaignId, session }),
+    campaignId,
   );
   completeWith(outcome);
 }
 
 export async function createPromotionAction(formData: FormData): Promise<void> {
-  const outcome = await runPromotionOperation((session) => {
+  const outcome = await runPromotionOperation("create", (session) => {
     const parseResult = parseCampaignFormInput(formData);
     if (!parseResult.ok) {
       return Promise.resolve({ ok: false, failure: { reason: parseResult.reason } });
@@ -166,48 +154,56 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
 }
 
 export async function editPromotionAction(formData: FormData): Promise<void> {
-  const outcome = await runPromotionOperation(async (session) => {
-    const parseResult = parseCampaignFormInput(formData);
-    if (!parseResult.ok) {
-      return { ok: false, failure: { reason: parseResult.reason } };
-    }
+  const campaignIdInput = campaignIdFrom(formData);
+  const outcome = await runPromotionOperation(
+    "edit",
+    async (session, context) => {
+      const parseResult = parseCampaignFormInput(formData);
+      if (!parseResult.ok) {
+        return { ok: false, failure: { reason: parseResult.reason } };
+      }
 
-    const rawId = campaignIdFrom(formData).trim();
-    if (!isBoundedPromotionIdentifier(rawId)) {
-      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
-    }
-    const campaignId = rawId;
+      const rawId = campaignIdInput.trim();
+      if (!isBoundedPromotionIdentifier(rawId)) {
+        return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
+      }
+      const campaignId = rawId;
 
-    const existing = await prisma.promotionCampaign.findUnique({
-      where: { id: campaignId },
-      select: {
-        id: true,
-        isEnabled: true,
-        enabledAt: true,
-        disabledAt: true,
-        startsAt: true,
-        endsAt: true,
-      },
-    });
-    if (!existing) {
-      return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
-    }
+      const existing = await prisma.promotionCampaign.findUnique({
+        where: { id: campaignId },
+        select: {
+          id: true,
+          isEnabled: true,
+          enabledAt: true,
+          disabledAt: true,
+          startsAt: true,
+          endsAt: true,
+        },
+      });
+      if (!existing) {
+        return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } };
+      }
 
-    const now = new Date();
-    const lifecycle = deriveCampaignLifecycle({ ...existing, now });
+      const now = new Date();
+      const lifecycle = deriveCampaignLifecycle({ ...existing, now });
 
-    const patch: CampaignPatch = parseResult.value;
+      const patch: CampaignPatch = parseResult.value;
 
-    if (lifecycle.status === "DRAFT") {
-      return editDraftPromotionCampaign({ campaignId, now, session, patch });
-    }
+      if (lifecycle.status === "DRAFT") {
+        return editDraftPromotionCampaign({ campaignId, now, session, patch });
+      }
 
-    if (lifecycle.status === "SCHEDULED") {
-      return editScheduledPromotionCampaign({ campaignId, now, session, patch });
-    }
+      if (lifecycle.status === "SCHEDULED") {
+        // Only this branch reaches the gate. A Draft edit goes to an ungated service function, and
+        // an illegal transition never reaches one at all, so neither reports gate state.
+        context.reportActivationGate();
+        return editScheduledPromotionCampaign({ campaignId, now, session, patch });
+      }
 
-    return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } };
-  });
+      return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } };
+    },
+    campaignIdInput,
+  );
 
   completeWith(outcome);
 }
