@@ -82,6 +82,12 @@ const nextConfig = {
         port: "",
         pathname: "/*/*/*/*/*.jpg",
       },
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.png",
+      },
     ],
   },
   async headers() {
