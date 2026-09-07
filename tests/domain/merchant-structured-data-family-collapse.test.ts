@@ -220,7 +220,7 @@ test("U27 collapses to Merchant's exact survivor when a sibling lacks a required
   assert.deepEqual(merchant.offers.map((offer) => offer.id), [SURVIVOR.pancakeVariationId]);
   assert.deepEqual(
     merchant.excluded.find((candidate) => candidate.pancakeVariationId === invalidSibling.pancakeVariationId)?.reasons,
-    ["SIZE_UNRESOLVED"],
+    ["OPTION_NOT_ADDRESSABLE"],
   );
 
   const document = buildStorefrontProductStructuredData({
