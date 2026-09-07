@@ -2,6 +2,22 @@
 
 Task plans in this directory define dependencies, ownership, acceptance criteria, and verification for their workstreams.
 
+## Current owner-decision source of truth
+
+Owner-approved LA Clothing business facts and owner-controlled launch/planning decisions are recorded in
+[`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`](../docs/specs/la-clothing-owner-approved-facts-and-decisions.md).
+The current status reconciliation against older roadmap/audit blockers is recorded in
+[`docs/audits/owner-facts-reconciliation-2026-09-07.md`](../docs/audits/owner-facts-reconciliation-2026-09-07.md).
+
+For the specific owner-controlled decisions reconciled there, a historical `BLOCKED — OWNER FACT/APPROVAL REQUIRED`,
+`proposed`, or unchecked owner-gate line in an older plan/audit does not override the newer approved source. This
+precedence applies only to the owner decision itself: the older owning spec/audit/plan still governs technical
+behavior, implementation order, acceptance criteria, verification, security, and independent launch gates.
+
+A reconciled unit described as **owner-unblocked** is not implemented merely because its owner fact is resolved.
+Items still marked `OPEN` in the owner source remain fail-closed. In particular, permanent-domain/Gate S approval,
+O4 real vendor IDs/GTM live approval, and the Merchant↔JSON-LD family-collapse contract remain separate open gates.
+
 ## Storefront Refinement V3 execution record
 
 The original V3 design/plan/todo files preserve the planning-state language under which they were authored. After the reviewed implementation slices were merged, current execution/closeout truth is recorded in [Storefront Refinement V3 — U6b final verification record](../docs/verification/storefront-refinement-v3-final.md).
