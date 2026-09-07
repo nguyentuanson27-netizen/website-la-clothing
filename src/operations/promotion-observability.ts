@@ -8,15 +8,19 @@
  * failure straight to stdout would publish catalog identifiers at whatever volume a bad campaign
  * happens to produce.
  *
- * This module is the reduction that makes those failures loggable: reason codes and counts out,
- * identifiers never. It exists as a function rather than a convention because
- * `docs/decisions/0002-vps-production-infrastructure.md` states the redaction policy in prose, and
- * prose does not fail a test when a future field carries an identifier into a signal.
+ * This module is the reduction that makes those failures loggable. What it bounds is *volume and
+ * shape*, not the existence of identifiers: `docs/specs/promotions-flash-sale-v1.md` §Observability
+ * names "campaign ID, target type/ID, variant ID, bounded reason code" as useful context and
+ * forbids "customer address/phone/secrets/session handles or raw quote proof". A signal that
+ * reduced everything to a count would obey a stricter rule than the spec asks for and would leave
+ * an operator holding `OVERLAPPING_CAMPAIGN affectedCount=1` with no way to find the campaign that
+ * conflicted. So identifiers survive, capped at `MAX_REPORTED_SIGNAL_IDENTIFIERS` per signal and
+ * each individually length-bounded, with the untruncated total kept alongside so a sample is never
+ * mistaken for the whole.
  *
- * What survives is deliberately not "as little as possible" — a signal reading only
- * `INVALID_CAMPAIGN` would tell an operator nothing they can act on. Closed reason vocabularies
- * (`CampaignActivationError`, `DraftInputError`, lifecycle status) are categorical, bounded and are
- * the whole diagnostic value, so they are kept. Identifiers are the part that cannot be.
+ * It exists as a function rather than a convention because
+ * `docs/decisions/0002-vps-production-infrastructure.md` states the redaction policy in prose, and
+ * prose does not fail a test when a future field carries an unbounded value into a signal.
  *
  * Event names follow the existing `pancake_order.*` convention, and emission follows
  * `pancake-order-submit-runtime.ts`: one JSON object per line on stdout, which
@@ -24,11 +28,13 @@
  * is injectable so the shaping and the emission can both be asserted without capturing stdout.
  */
 
-import type {
-  CampaignActivationError,
-  DraftInputError,
+import {
+  isBoundedPromotionIdentifier,
+  type CampaignActivationError,
+  type DraftInputError,
 } from "../commerce/promotion-activation.ts";
 import type { PromotionAdminFailure } from "../commerce/promotion-admin-feedback.ts";
+import type { CampaignLifecycleStatus } from "../commerce/promotion-campaign-lifecycle.ts";
 
 /**
  * Bounds the reason list so one malformed submission cannot turn a diagnostic into a flood.
@@ -37,6 +43,17 @@ import type { PromotionAdminFailure } from "../commerce/promotion-admin-feedback
  * are built per request and nothing in the type stops a caller repeating a code.
  */
 export const MAX_REPORTED_ACTIVATION_ERRORS = 12;
+
+/**
+ * How many identifiers one signal may carry.
+ *
+ * A sample, not the set. Triage needs somewhere to start looking — the first conflicting campaign,
+ * the first few unpriced variants — and the admin screen still holds the complete list for the
+ * person who has to fix it. Ten keeps a log line readable and keeps a 2,000-variant campaign from
+ * writing a 2,000-identifier line; `affectedCount` reports the real total so the sample is never
+ * read as the whole.
+ */
+export const MAX_REPORTED_SIGNAL_IDENTIFIERS = 10;
 
 /**
  * Which admin operation produced the signal.
@@ -55,34 +72,68 @@ export const PROMOTION_ACTIVATION_OPERATIONS = [
 
 export type PromotionActivationOperation = (typeof PROMOTION_ACTIVATION_OPERATIONS)[number];
 
+/**
+ * The operations whose outcome the `LA_PROMOTION_ACTIVATION_ENABLED` gate can decide.
+ *
+ * Mirrors the two `isPromotionActivationEnabled` checks in `promotion-activation-service.ts`:
+ * `publishPromotionCampaign` and `editScheduledPromotionCampaign`. Disable and end-early are
+ * deliberately ungated — turning a live promotion off must never depend on the flag that turned it
+ * on — so reporting gate state alongside them would suggest a bearing it does not have.
+ *
+ * `tests/domain/promotion-admin-actions-structure.test.ts` pins this against the service source, so
+ * a gate check added to a third operation fails a test rather than silently going unreported.
+ */
+export const GATE_GOVERNED_OPERATIONS = [
+  "publish",
+  "edit",
+] as const satisfies readonly PromotionActivationOperation[];
+
+export function isGateGovernedOperation(operation: PromotionActivationOperation): boolean {
+  return (GATE_GOVERNED_OPERATIONS as readonly PromotionActivationOperation[]).includes(operation);
+}
+
 export type PromotionActivationGateSignal = Readonly<{
   name: "promotion.activation_gate";
   operation: PromotionActivationOperation;
   enabled: boolean;
 }>;
 
+/** Context common to every rejection, present only when it is known and within bounds. */
+type RejectionContext = Readonly<{ campaignId?: string }>;
+
 export type PromotionActivationRejectionSignal = Readonly<
-  { name: "promotion.activation_rejected"; operation: PromotionActivationOperation } & (
-    | {
-        reason: Exclude<
-          PromotionAdminFailure["reason"],
-          | "ILLEGAL_TRANSITION"
-          | "INVALID_CAMPAIGN"
-          | "INVALID_DRAFT_INPUT"
-          | "NO_EFFECTIVE_DISCOUNT"
-          | "UNUSABLE_BASE_PRICE"
-          | "OVERLAPPING_CAMPAIGN"
-        >;
-      }
-    | { reason: "ILLEGAL_TRANSITION"; from: string }
-    | { reason: "INVALID_CAMPAIGN"; errors: readonly CampaignActivationError[] }
-    | { reason: "INVALID_DRAFT_INPUT"; errors: readonly DraftInputError[] }
-    /** The identifier arrays reduced to how many rows are affected, and nothing else. */
-    | {
-        reason: "NO_EFFECTIVE_DISCOUNT" | "UNUSABLE_BASE_PRICE" | "OVERLAPPING_CAMPAIGN";
-        affectedCount: number;
-      }
-  )
+  {
+    name: "promotion.activation_rejected";
+    operation: PromotionActivationOperation;
+  } & RejectionContext &
+    (
+      | {
+          reason: Exclude<
+            PromotionAdminFailure["reason"],
+            | "ILLEGAL_TRANSITION"
+            | "INVALID_CAMPAIGN"
+            | "INVALID_DRAFT_INPUT"
+            | "NO_EFFECTIVE_DISCOUNT"
+            | "UNUSABLE_BASE_PRICE"
+            | "OVERLAPPING_CAMPAIGN"
+          >;
+        }
+      | { reason: "ILLEGAL_TRANSITION"; from: CampaignLifecycleStatus }
+      | { reason: "INVALID_CAMPAIGN"; errors: readonly CampaignActivationError[] }
+      | { reason: "INVALID_DRAFT_INPUT"; errors: readonly DraftInputError[] }
+      /** `affectedCount` is the untruncated total; the array is a bounded sample of it. */
+      | {
+          reason: "NO_EFFECTIVE_DISCOUNT";
+          affectedCount: number;
+          invalidVariantIds: readonly string[];
+        }
+      | { reason: "UNUSABLE_BASE_PRICE"; affectedCount: number; variantIds: readonly string[] }
+      | {
+          reason: "OVERLAPPING_CAMPAIGN";
+          affectedCount: number;
+          conflictingCampaignIds: readonly string[];
+        }
+    )
 >;
 
 export type PromotionObservabilitySignal =
@@ -104,6 +155,35 @@ function boundedReasons<Reason>(reasons: readonly Reason[]): readonly Reason[] {
 }
 
 /**
+ * A bounded sample of identifiers.
+ *
+ * Each candidate passes the same length bound the admin surface applies before any lookup, so an
+ * identifier that was never legal input cannot reach a log line by riding inside a failure payload.
+ * One that fails the bound is dropped from the sample and still counted in the total.
+ */
+function boundedIdentifiers(ids: readonly string[]): readonly string[] {
+  const sample: string[] = [];
+  for (const id of ids) {
+    if (sample.length >= MAX_REPORTED_SIGNAL_IDENTIFIERS) break;
+    if (isBoundedPromotionIdentifier(id)) sample.push(id);
+  }
+  return Object.freeze(sample);
+}
+
+/**
+ * The campaign the operation acted on, when it is known and legal.
+ *
+ * For the operations that take one, this value is raw browser input: the same string the service
+ * refuses before it opens a transaction. It is bounded here for the same reason, and omitted rather
+ * than truncated when it fails — a truncated identifier reads like a real one.
+ */
+function rejectionContext(campaignId: string | undefined): RejectionContext {
+  if (campaignId === undefined) return {};
+  const trimmed = campaignId.trim();
+  return isBoundedPromotionIdentifier(trimmed) ? { campaignId: trimmed } : {};
+}
+
+/**
  * Reduces one activation failure to a signal safe to write to stdout.
  *
  * The switch is exhaustive over `PromotionAdminFailure["reason"]`, so a reason added to that union
@@ -113,11 +193,14 @@ function boundedReasons<Reason>(reasons: readonly Reason[]): readonly Reason[] {
 export function describeActivationRejection({
   operation,
   failure,
+  campaignId,
 }: Readonly<{
   operation: PromotionActivationOperation;
   failure: PromotionAdminFailure;
+  campaignId?: string;
 }>): PromotionActivationRejectionSignal {
   const name = "promotion.activation_rejected" as const;
+  const context = rejectionContext(campaignId);
 
   switch (failure.reason) {
     case "ACTIVATION_DISABLED":
@@ -130,16 +213,23 @@ export function describeActivationRejection({
     case "INVALID_DISCOUNT_TYPE":
     case "INVALID_DATE_TIME":
     case "FORBIDDEN":
-      return Object.freeze({ name, operation, reason: failure.reason });
+      return Object.freeze({ name, operation, ...context, reason: failure.reason });
 
     case "ILLEGAL_TRANSITION":
       // The lifecycle status is a closed vocabulary, not an identifier.
-      return Object.freeze({ name, operation, reason: failure.reason, from: failure.from });
+      return Object.freeze({
+        name,
+        operation,
+        ...context,
+        reason: failure.reason,
+        from: failure.from,
+      });
 
     case "INVALID_CAMPAIGN":
       return Object.freeze({
         name,
         operation,
+        ...context,
         reason: failure.reason,
         errors: boundedReasons(failure.errors),
       });
@@ -148,6 +238,7 @@ export function describeActivationRejection({
       return Object.freeze({
         name,
         operation,
+        ...context,
         reason: failure.reason,
         errors: boundedReasons(failure.errors),
       });
@@ -156,24 +247,30 @@ export function describeActivationRejection({
       return Object.freeze({
         name,
         operation,
+        ...context,
         reason: failure.reason,
         affectedCount: failure.invalidVariantIds.length,
+        invalidVariantIds: boundedIdentifiers(failure.invalidVariantIds),
       });
 
     case "UNUSABLE_BASE_PRICE":
       return Object.freeze({
         name,
         operation,
+        ...context,
         reason: failure.reason,
         affectedCount: failure.variantIds.length,
+        variantIds: boundedIdentifiers(failure.variantIds),
       });
 
     case "OVERLAPPING_CAMPAIGN":
       return Object.freeze({
         name,
         operation,
+        ...context,
         reason: failure.reason,
         affectedCount: failure.conflictingCampaignIds.length,
+        conflictingCampaignIds: boundedIdentifiers(failure.conflictingCampaignIds),
       });
   }
 }

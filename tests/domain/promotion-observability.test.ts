@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { PromotionAdminFailure } from "../../src/commerce/promotion-admin-feedback.ts";
+import { MAX_PROMOTION_IDENTIFIER_LENGTH } from "../../src/commerce/promotion-activation.ts";
 import {
   MAX_REPORTED_ACTIVATION_ERRORS,
+  MAX_REPORTED_SIGNAL_IDENTIFIERS,
   describeActivationGate,
   describeActivationRejection,
   emitPromotionSignal,
@@ -85,24 +87,26 @@ test("the lifecycle status a transition came from is categorical and kept", () =
   );
 });
 
-test("identifier arrays are reduced to counts, never emitted", () => {
-  // This is the whole point of the module. `ActivationFailure` names the exact catalog rows an
-  // admin must fix, which is right for an admin screen and wrong for a log line: the arrays are
-  // unbounded and are internal identifiers.
+test("identifier arrays are sampled and counted, never emitted whole", () => {
+  // `docs/specs/promotions-flash-sale-v1.md` §Observability names campaign, target and variant ids
+  // as useful context, so what has to be bounded is volume, not existence: a refusal that named no
+  // campaign at all would leave an operator with nowhere to start looking. The count is the real
+  // total so the sample is never mistaken for the whole set.
   const variantIds = Array.from({ length: 250 }, (_, index) => `variant-${index}`);
+  const signal = describeActivationRejection({
+    operation: "publish",
+    campaignId: "campaign-7",
+    failure: { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: variantIds },
+  });
 
-  assert.deepEqual(
-    describeActivationRejection({
-      operation: "publish",
-      failure: { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: variantIds },
-    }),
-    {
-      name: "promotion.activation_rejected",
-      operation: "publish",
-      reason: "NO_EFFECTIVE_DISCOUNT",
-      affectedCount: 250,
-    },
-  );
+  assert.deepEqual(signal, {
+    name: "promotion.activation_rejected",
+    operation: "publish",
+    campaignId: "campaign-7",
+    reason: "NO_EFFECTIVE_DISCOUNT",
+    affectedCount: 250,
+    invalidVariantIds: variantIds.slice(0, MAX_REPORTED_SIGNAL_IDENTIFIERS),
+  });
 
   assert.deepEqual(
     describeActivationRejection({
@@ -114,47 +118,80 @@ test("identifier arrays are reduced to counts, never emitted", () => {
       operation: "publish",
       reason: "UNUSABLE_BASE_PRICE",
       affectedCount: 2,
+      variantIds: ["v-1", "v-2"],
     },
   );
 
   assert.deepEqual(
     describeActivationRejection({
       operation: "edit",
+      campaignId: "campaign-7",
       failure: { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: ["c-9"] },
     }),
     {
       name: "promotion.activation_rejected",
       operation: "edit",
+      campaignId: "campaign-7",
       reason: "OVERLAPPING_CAMPAIGN",
       affectedCount: 1,
+      conflictingCampaignIds: ["c-9"],
     },
   );
 });
 
-test("no identifier reaches the serialized signal for any failure shape", () => {
+test("an identifier that was never legal input cannot ride into a log line", () => {
+  // The bound is the same one the admin surface applies before any lookup, so a value that could
+  // not have survived the front door cannot arrive inside a failure payload either. It is dropped
+  // rather than truncated: a truncated identifier reads like a real one.
+  const oversized = "x".repeat(MAX_PROMOTION_IDENTIFIER_LENGTH + 1);
+
+  const signal = describeActivationRejection({
+    operation: "publish",
+    campaignId: oversized,
+    failure: {
+      reason: "OVERLAPPING_CAMPAIGN",
+      conflictingCampaignIds: [oversized, "c-1", "", oversized],
+    },
+  });
+
+  assert.deepEqual(signal, {
+    name: "promotion.activation_rejected",
+    operation: "publish",
+    reason: "OVERLAPPING_CAMPAIGN",
+    affectedCount: 4,
+    conflictingCampaignIds: ["c-1"],
+  });
+});
+
+test("no failure shape can write an unbounded line", () => {
   // Asserted over the serialized form rather than the object, because serialization is what a log
-  // line actually carries — a nested identifier that no assertion happens to read would still ship.
+  // line actually carries — a nested array that no assertion happens to read would still ship.
+  const many = Array.from({ length: 4000 }, (_, index) => `id-${index}`);
   const failures: readonly PromotionAdminFailure[] = [
     { reason: "ACTIVATION_DISABLED" },
     { reason: "CAMPAIGN_NOT_FOUND" },
     { reason: "ILLEGAL_TRANSITION", from: "SCHEDULED" },
-    { reason: "INVALID_CAMPAIGN", errors: ["NO_TARGETS"] },
-    { reason: "INVALID_DRAFT_INPUT", errors: ["NAME_TOO_LONG"] },
+    { reason: "INVALID_CAMPAIGN", errors: Array.from({ length: 400 }, () => "NO_TARGETS") },
+    { reason: "INVALID_DRAFT_INPUT", errors: Array.from({ length: 400 }, () => "NAME_TOO_LONG") },
     { reason: "TARGET_EXPANSION_LIMIT_EXCEEDED" },
-    { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: ["secret-variant-id"] },
-    { reason: "UNUSABLE_BASE_PRICE", variantIds: ["secret-variant-id"] },
-    { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: ["secret-campaign-id"] },
+    { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: many },
+    { reason: "UNUSABLE_BASE_PRICE", variantIds: many },
+    { reason: "OVERLAPPING_CAMPAIGN", conflictingCampaignIds: many },
     { reason: "DUPLICATE_TARGET" },
   ];
 
   for (const failure of failures) {
     const serialized = JSON.stringify(
-      describeActivationRejection({ operation: "publish", failure }),
+      describeActivationRejection({
+        operation: "publish",
+        campaignId: "campaign-7",
+        failure,
+      }),
     );
-    assert.equal(
-      serialized.includes("secret-"),
-      false,
-      `identifier leaked for ${failure.reason}: ${serialized}`,
+
+    assert.ok(
+      serialized.length < 1024,
+      `${failure.reason} produced a ${serialized.length}-byte line: ${serialized.slice(0, 200)}`,
     );
   }
 });
@@ -221,7 +258,7 @@ test("emission writes one JSON line per signal", () => {
 
   assert.deepEqual(lines, [
     '{"name":"promotion.activation_gate","operation":"publish","enabled":false}\n',
-    '{"name":"promotion.activation_rejected","operation":"edit","reason":"OVERLAPPING_CAMPAIGN","affectedCount":2}\n',
+    '{"name":"promotion.activation_rejected","operation":"edit","reason":"OVERLAPPING_CAMPAIGN","affectedCount":2,"conflictingCampaignIds":["c-1","c-2"]}\n',
   ]);
 });
 
