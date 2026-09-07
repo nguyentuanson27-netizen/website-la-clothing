@@ -91,11 +91,12 @@ command works end to end and emits the sanitized aggregate block. **Its numbers 
 that database holds no LA Clothing catalog, so it reported zeros. It is recorded here only as proof
 that the command is executable, not as a capacity measurement.
 
-### 2.2 What production evidence exists
+### 2.2 Pre-closure production evidence available before the authoritative run
 
-No production or approved staging database was reachable from this session, so **no exact
-sitemap-predicate count was taken**. Two attributable production artifacts bound the catalog's
-scale, and neither uses the sitemap's predicate:
+Before the authoritative production run in §2.4, no production or approved staging database was
+reachable from the PR #210 review session, so no exact sitemap-predicate count had been taken. Two
+attributable production artifacts were available as context at that time, and neither used the
+sitemap's predicate:
 
 | Artifact | Executed | Environment | Figure | Predicate |
 |---|---|---|---|---|
@@ -108,20 +109,21 @@ every mirrored row for the shop, including ones the sitemap excludes. They are c
 other (83 total mirrored ≥ 42 currently active; 356 raw variations ≥ 181 current), which is why
 both are recorded rather than one being preferred.
 
-**Published collections: no production evidence exists at all.** Collections are website-owned and
-created through the admin; no audit artifact records how many are published.
+At that pre-closure point, **published collections had no production evidence at all**. Collections
+are website-owned and created through the admin; no prior audit artifact recorded how many were
+published.
 
-### 2.3 What can and cannot be claimed
+### 2.3 Why the pre-closure evidence was insufficient
 
-**Capacity evidence: INSUFFICIENT FOR A NUMERICAL UTILIZATION VERDICT.** Exact `productPaths` and
-`collectionPaths` under the sitemap predicate remain unmeasured, and so therefore do `dynamicPaths`,
-`remainingDynamicHeadroom` and `utilizationPercent`.
+**At that point, capacity evidence was INSUFFICIENT FOR A NUMERICAL UTILIZATION VERDICT.** Exact
+`productPaths` and `collectionPaths` under the sitemap predicate remained unmeasured before the
+production run in §2.4, and so therefore did `dynamicPaths`, `remainingDynamicHeadroom` and
+`utilizationPercent`.
 
-The tempting move is to take the largest product figure available (83), assume published collections
-are few, and derive a utilization percentage from the sum. **That is not an upper bound, and this
-audit does not make it.** The dynamic budget is
-`active/present/current-shop products + ALL published website-owned collections`, and nothing caps
-the second term:
+The tempting move was to take the largest product figure available (83), assume published collections
+were few, and derive a utilization percentage from the sum. **That was not an upper bound, and this
+audit does not use it.** The dynamic budget is `active/present/current-shop products + ALL published
+website-owned collections`, and nothing caps the second term:
 
 - `MAX_COLLECTION_LIST = 100` in `collection-definition-repository.ts` bounds a single list query
   and a membership input array — not how many `CollectionDefinition` rows may exist;
@@ -129,13 +131,13 @@ the second term:
 - `PRODUCT_CONTENT_LIMITS.collectionCount = 8` bounds one product's memberships;
 - `createDefinition` applies no total-count guard.
 
-With one addend unmeasured and unbounded, `83 + unknown` yields no percentage, no headroom figure and
-no growth multiple. Any such number would be an assumption wearing an evidence label — the same
-mistake as reading the unrecorded `83` as the sitemap's own count.
+With one addend unmeasured and unbounded, `83 + unknown` yielded no percentage, no headroom figure
+and no growth multiple. Any such number would have been an assumption wearing an evidence label —
+the same mistake as reading the unrecorded `83` as the sitemap's own count.
 
-What the artifacts do establish is narrower and still useful: the mirrored **product** side of the
-catalog was in the tens as of early September 2026. That is context for the eventual measurement,
-not a capacity verdict.
+Those pre-closure artifacts established only that the mirrored **product** side of the catalog was
+in the tens as of early September 2026. §2.4 supersedes that limitation with the attributable
+production measurement used for the current capacity verdict.
 
 ### 2.4 Authoritative production capacity audit (2026-09-07)
 
@@ -317,7 +319,7 @@ gates: completed **before** explicit human approval, not measured afterwards.
    |---|---|---|
    | **A** | `exceedsDynamicBudget = true` | **Block Gate S.** U37b implementation required. |
    | **B** | The approved **Act (Y)** condition is true | **Block Gate S.** U37b implementation required before indexing. |
-   | **C** | The approved **Warning (X)** is true, Act is false | Follow the **owner-approved D3 warning behaviour**: `BLOCK` → do not enable, open or advance U37b; `ALLOW_WITH_ACK` → open the U37b plan, record the owner's explicit acknowledgement beside the activation block, then Gate S may continue if every other gate passes. This audit does **not** pick between them. |
+   | **C** | The approved **Warning (X)** is true, Act is false | Follow the **owner-approved D3 warning behaviour**: `BLOCK` → do not enable, open or advance U37b; `ALLOW_WITH_ACK` → open the U37b plan, record the owner's explicit acknowledgement beside the activation block, then Gate S may continue if every other gate passes. |
    | **D** | Neither Warning nor Act is true | Gate S may proceed if every other Gate S requirement is satisfied. |
 
    The hard bound is a **failure boundary, not a release threshold**. Branching on
@@ -333,9 +335,9 @@ gates: completed **before** explicit human approval, not measured afterwards.
    No branch permits shipping a partial sitemap, nor raising the per-document bound to get past this
    gate. The bound is what one sitemap document may hold; it is not a dial.
 
-   Note that rows B–D cannot even be evaluated until D3 is approved — and D3 is itself precondition
-   3. So until the owner has fixed the trigger values, Gate S is blocked by the missing decision
-   rather than by any count, which is what keeps the zero-headroom case above from arising.
+   Rows B–D require approved D3 values. That prerequisite is now satisfied by the approved
+   40,000/45,000-URL contract below; if a future change removes or supersedes that approval, Gate S
+   fails closed until a replacement D3 contract is approved.
 
 Step 4 exists because steps 1–3 can close long before Gate S actually fires, and recurring
 monitoring does not start until enablement (Phase 2). That leaves a window in which the catalog can
