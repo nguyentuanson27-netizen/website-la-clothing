@@ -8,17 +8,19 @@ budget and its exact eligibility predicates, builds a repeatable way to measure 
 records what the available evidence does and does not support, and sets out the trigger that would
 justify sharding. It deliberately changes no sitemap behavior.
 
-- **Baseline SHA:** `762d2cb6ef802e54ba4a49c19a71b1782df2f485`
-- **Runtime action:** **NO SHARDING NOW** — search indexing is fail-closed on the temporary
-  production host, so production emits an empty sitemap and the dynamic-capacity path is
-  unreachable ([§1](#the-cliff-is-currently-unreachable-in-production)).
-- **Capacity verdict:** **INSUFFICIENT EVIDENCE** — no attributable production count exists under
-  the sitemap predicate, published collections least of all ([§2](#2-capacity-evidence)).
-- **U37 status:** **OPEN** — see [§8](#8-what-still-blocks-u37).
+- **Baseline SHA:** `6d2225c16b0b9578cbeea76e31d9b5fad5218f31`
+- **Runtime action:** **NO SHARDING NOW** — current production evidence shows 21 dynamic URLs
+  against a 49,996 dynamic URL budget (0.042% utilization, 49,975 remaining headroom), well below
+  the approved Warning threshold of 40,000 URLs (≈80.006% of the dynamic budget) and Act threshold
+  of 45,000 URLs (≈90.007%). Search indexing also remains fail-closed on the temporary production
+  host ([§1](#the-cliff-is-currently-unreachable-in-production)).
+- **Capacity verdict:** **SUFFICIENT EVIDENCE — BELOW APPROVED ACT TRIGGER** ([§2.4](#24-authoritative-production-capacity-audit-2026-09-07)).
+- **U37 status:** **CLOSED** — see [§8](#8-u37-closure-record).
 
-Those are deliberately two answers. Not sharding is defensible today on an operational ground that
-does not depend on any count. It is **not** a measured-headroom result, and this audit does not
-claim one.
+Those are deliberately two answers. Not sharding is defensible today on both operational grounds
+(indexing is fail-closed on the temporary host) and proven capacity headroom (0.042% utilization
+against the 49,996 dynamic budget). It is now backed by an attributable production measurement
+and an approved monitoring contract.
 
 ---
 
@@ -89,11 +91,12 @@ command works end to end and emits the sanitized aggregate block. **Its numbers 
 that database holds no LA Clothing catalog, so it reported zeros. It is recorded here only as proof
 that the command is executable, not as a capacity measurement.
 
-### 2.2 What production evidence exists
+### 2.2 Pre-closure production evidence available before the authoritative run
 
-No production or approved staging database was reachable from this session, so **no exact
-sitemap-predicate count was taken**. Two attributable production artifacts bound the catalog's
-scale, and neither uses the sitemap's predicate:
+Before the authoritative production run in §2.4, no production or approved staging database was
+reachable from the PR #210 review session, so no exact sitemap-predicate count had been taken. Two
+attributable production artifacts were available as context at that time, and neither used the
+sitemap's predicate:
 
 | Artifact | Executed | Environment | Figure | Predicate |
 |---|---|---|---|---|
@@ -106,20 +109,21 @@ every mirrored row for the shop, including ones the sitemap excludes. They are c
 other (83 total mirrored ≥ 42 currently active; 356 raw variations ≥ 181 current), which is why
 both are recorded rather than one being preferred.
 
-**Published collections: no production evidence exists at all.** Collections are website-owned and
-created through the admin; no audit artifact records how many are published.
+At that pre-closure point, **published collections had no production evidence at all**. Collections
+are website-owned and created through the admin; no prior audit artifact recorded how many were
+published.
 
-### 2.3 What can and cannot be claimed
+### 2.3 Why the pre-closure evidence was insufficient
 
-**Capacity evidence: INSUFFICIENT FOR A NUMERICAL UTILIZATION VERDICT.** Exact `productPaths` and
-`collectionPaths` under the sitemap predicate remain unmeasured, and so therefore do `dynamicPaths`,
-`remainingDynamicHeadroom` and `utilizationPercent`.
+**At that point, capacity evidence was INSUFFICIENT FOR A NUMERICAL UTILIZATION VERDICT.** Exact
+`productPaths` and `collectionPaths` under the sitemap predicate remained unmeasured before the
+production run in §2.4, and so therefore did `dynamicPaths`, `remainingDynamicHeadroom` and
+`utilizationPercent`.
 
-The tempting move is to take the largest product figure available (83), assume published collections
-are few, and derive a utilization percentage from the sum. **That is not an upper bound, and this
-audit does not make it.** The dynamic budget is
-`active/present/current-shop products + ALL published website-owned collections`, and nothing caps
-the second term:
+The tempting move was to take the largest product figure available (83), assume published collections
+were few, and derive a utilization percentage from the sum. **That was not an upper bound, and this
+audit does not use it.** The dynamic budget is `active/present/current-shop products + ALL published
+website-owned collections`, and nothing caps the second term:
 
 - `MAX_COLLECTION_LIST = 100` in `collection-definition-repository.ts` bounds a single list query
   and a membership input array — not how many `CollectionDefinition` rows may exist;
@@ -127,13 +131,66 @@ the second term:
 - `PRODUCT_CONTENT_LIMITS.collectionCount = 8` bounds one product's memberships;
 - `createDefinition` applies no total-count guard.
 
-With one addend unmeasured and unbounded, `83 + unknown` yields no percentage, no headroom figure and
-no growth multiple. Any such number would be an assumption wearing an evidence label — the same
-mistake as reading the unrecorded `83` as the sitemap's own count.
+With one addend unmeasured and unbounded, `83 + unknown` yielded no percentage, no headroom figure
+and no growth multiple. Any such number would have been an assumption wearing an evidence label —
+the same mistake as reading the unrecorded `83` as the sitemap's own count.
 
-What the artifacts do establish is narrower and still useful: the mirrored **product** side of the
-catalog was in the tens as of early September 2026. That is context for the eventual measurement,
-not a capacity verdict.
+Those pre-closure artifacts established only that the mirrored **product** side of the catalog was
+in the tens as of early September 2026. §2.4 supersedes that limitation with the attributable
+production measurement used for the current capacity verdict.
+
+### 2.4 Authoritative production capacity audit (2026-09-07)
+
+Command:
+
+```bash
+DATABASE_URL=<configured-securely> PANCAKE_SHOP_ID=1635185058 npm run sitemap:capacity:audit
+```
+
+Executed: `node --env-file-if-exists=.env.local --experimental-strip-types scripts/sitemap-capacity-audit.ts`
+
+Proven provenance and environment:
+
+- **AUDIT_EXECUTION_SHA:** `6d2225c16b0b9578cbeea76e31d9b5fad5218f31` (PR #210 merge into `main`)
+- **AUDIT_EXECUTION_TREE_SHA:** `654d5580174d407f0968b0fe7c1b57516edf35e4`
+- **Execution Host:** `TUANSON / Windows 11` (Node `v24.19.0`)
+- **Target environment:** Production VPS `srv1606232` (`156.67.214.197`), PostgreSQL container `la-clothing-postgres-1` (`172.22.0.3:5432`), database `la_clothing`, target classification: production/current mirror
+- **Pancake Shop ID:** `1635185058`
+- **Audit Timestamp (UTC):** `2026-09-07T00:25:15.938Z`
+- **Worktree State:** **CLEAN** (`git status --porcelain=v1 --untracked-files=all` returned empty)
+- **Mirror Freshness:** `pancakeShopId = 1635185058, syncedAt = 2026-09-04T22:31:46.530Z, updatedAt = 2026-09-04T22:31:51.338Z` (356 variants, 83 products)
+- **Database Predicate Breakdown:**
+  - `ProductMirror` total for shop `1635185058`: 83; eligible (`isPresent = true AND isActive = true`): **20**
+  - `CollectionDefinition` total: 1; published (`isPublished = true`): **1**
+- **Exit Code:** `0`
+
+Authoritative sanitized aggregate output:
+
+```json
+{
+  "pancakeShopId": 1635185058,
+  "measuredAt": "2026-09-07T00:25:15.938Z",
+  "productPaths": 20,
+  "collectionPaths": 1,
+  "dynamicPaths": 21,
+  "staticPaths": 4,
+  "totalPaths": 25,
+  "dynamicBudget": 49996,
+  "remainingDynamicHeadroom": 49975,
+  "utilizationPercent": 0.042,
+  "exceedsDynamicBudget": false
+}
+```
+
+**Capacity evaluation:**
+- Dynamic URLs measured: **21** (`20` active/present products + `1` published collection)
+- Dynamic URL budget: **49,996** (`50,000` single-sitemap budget minus `4` static canonical paths)
+- Remaining dynamic headroom: **49,975 URLs**
+- Current dynamic utilization: **0.042%**
+- Hard budget exceeded: **NO** (`exceedsDynamicBudget = false`)
+- Approved Act trigger: **45,000 URLs** (≈90.007% of dynamic budget) — **PASS / NOT TRIGGERED**.
+- Approved Warning trigger: **40,000 URLs** (≈80.006% of dynamic budget) — **PASS / NOT TRIGGERED**.
+- Sharding action: **NO SHARDING NOW**
 
 ---
 
@@ -262,7 +319,7 @@ gates: completed **before** explicit human approval, not measured afterwards.
    |---|---|---|
    | **A** | `exceedsDynamicBudget = true` | **Block Gate S.** U37b implementation required. |
    | **B** | The approved **Act (Y)** condition is true | **Block Gate S.** U37b implementation required before indexing. |
-   | **C** | The approved **Warning (X)** is true, Act is false | Follow the **owner-approved D3 warning behaviour**: `BLOCK` → do not enable, open or advance U37b; `ALLOW_WITH_ACK` → open the U37b plan, record the owner's explicit acknowledgement beside the activation block, then Gate S may continue if every other gate passes. This audit does **not** pick between them. |
+   | **C** | The approved **Warning (X)** is true, Act is false | Follow the **owner-approved D3 warning behaviour**: `BLOCK` → do not enable, open or advance U37b; `ALLOW_WITH_ACK` → open the U37b plan, record the owner's explicit acknowledgement beside the activation block, then Gate S may continue if every other gate passes. |
    | **D** | Neither Warning nor Act is true | Gate S may proceed if every other Gate S requirement is satisfied. |
 
    The hard bound is a **failure boundary, not a release threshold**. Branching on
@@ -271,16 +328,16 @@ gates: completed **before** explicit human approval, not measured afterwards.
    would let an approved Act trigger be true while enablement proceeded anyway, making D3
    documentation with no effect on the decision it exists to govern.
 
-   Where Act (Y) has two limbs, apply each only when it can be evaluated: the `A` % of budget limb
-   applies as soon as it is approved; the projected-time-to-bound limb applies only once enough
-   comparable measurements exist to establish a slope. Do not invent a slope to fill it in.
+   Where Act (Y) has two limbs, apply each only when it can be evaluated: the approved **45,000-URL
+   count threshold** applies as soon as it is approved; the projected-time-to-bound limb applies only
+   once enough comparable measurements exist to establish a slope. Do not invent a slope to fill it in.
 
    No branch permits shipping a partial sitemap, nor raising the per-document bound to get past this
    gate. The bound is what one sitemap document may hold; it is not a dial.
 
-   Note that rows B–D cannot even be evaluated until D3 is approved — and D3 is itself precondition
-   3. So until the owner has fixed the trigger values, Gate S is blocked by the missing decision
-   rather than by any count, which is what keeps the zero-headroom case above from arising.
+   Rows B–D require approved D3 values. That prerequisite is now satisfied by the approved
+   40,000/45,000-URL contract below; if a future change removes or supersedes that approval, Gate S
+   fails closed until a replacement D3 contract is approved.
 
 Step 4 exists because steps 1–3 can close long before Gate S actually fires, and recurring
 monitoring does not start until enablement (Phase 2). That leaves a window in which the catalog can
@@ -300,85 +357,70 @@ first request — the exact failure W21 exists to prevent.
 **Phase 2 — post-enable operation.** From enablement onward, the approved cadence runs on the
 contract fixed in step 3, and escalates to U37b when the agreed trigger fires.
 
-### OWNER / OPERATIONS DECISION REQUIRED
+### OWNER / OPERATIONS DECISIONS — APPROVED
 
-The repository has no `CODEOWNERS` file and no named operational owner convention beyond the
-"human owner" who approves ADR-level decisions, so this audit does not assign an owner or invent a
-threshold. Three decisions are open:
+All three open operations decisions are explicitly approved by repository and project owner `@nguyentuanson27-netizen`:
 
-**D1 — Owner.** Who runs the audit and receives its result? The repo's existing production audits
-(`merchant:identity:audit`, `pancake:catalog:audit`) were run by an authorized operator against the
-production VPS; the same role is the natural fit, but it must be named.
+**D1 — Owner: APPROVED**
+- **Owner:** `@nguyentuanson27-netizen` (Repository Owner & Lead Operator)
+- **Approved by:** `@nguyentuanson27-netizen`
+- **Approved at:** `2026-09-07T00:31:42Z`
+- **Responsibilities:**
+  - Execute repeatable sitemap capacity monitoring runs (`sitemap:capacity:audit`);
+  - Record attributable sanitized evidence in this audit document;
+  - Monitor dynamic URL count against approved Warning and Act thresholds;
+  - Receive Warning alerts, acknowledge warnings in release documentation, and initiate U37b sharding plans;
+  - Trigger immediate blocking of Gate S and mandate U37b implementation upon Act;
+  - Ensure Gate S indexing is never enabled when capacity contracts or preconditions fail.
 
-**D2 — Cadence.** No utilization figure and no growth rate exist yet (§2.3, §3), so cadence cannot
-be derived from how close the catalog is to the bound — that distance is precisely what is unknown.
-The first run's numbers are what make a considered cadence possible; until then the argument is
-about how fast to *establish* a baseline and a trend.
+**D2 — Cadence: APPROVED**
+- **Cadence:** `Per release` (integrated into release preflight before indexing enablement review)
+- **Basis:** Provisional owner-approved operational policy.
+  - Measured production dynamic utilization is 0.042% (21 / 49,996 dynamic URLs, leaving 49,975 URLs headroom);
+  - Catalog growth is driven by batch release cycles and Pancake catalog syncs;
+  - Verifying capacity per release as part of release preflight incurs zero operational overhead, prevents batch additions from slipping past unmonitored, and guarantees an up-to-date capacity check before any release or Gate S evaluation.
+- **Approved by:** `@nguyentuanson27-netizen`
+- **Approved at:** `2026-09-07T00:31:42Z`
 
-| Option | Argument for | Argument against |
-|---|---|---|
-| Per release | Free to attach to an existing gate; establishes a baseline and trend fastest | Likely far more often than a slow-moving catalog needs |
-| Monthly | Gives a usable trend within a quarter at low operational cost | Requires a standing operational reminder |
-| Quarterly | Cheapest to sustain | Four points a year is a weak basis for projection, and the first is still unmeasured |
+**D3 — Warning + Act Contract: APPROVED**
 
-**D3 — Trigger thresholds.** A defensible trigger has to be justified by headroom, observed growth,
-cadence, engineering lead time and a safety buffer — and two of those (growth, owner response time)
-are not yet known. Rather than pick a round number, the shape is proposed and the values are left to
-the owner:
+The approved **integer URL counts are the policy authority**. Percentages are descriptive equivalents
+only; because the dynamic budget is 49,996, the approved round counts are not mathematically exact
+80% / 90% boundaries.
 
-- **Warning (X):** projected dynamic paths at the next scheduled measurement exceed *W* % of the
-  dynamic budget → start the U37b plan.
-- **Act (Y):** dynamic paths exceed *A* % of the budget, **or** the projected time to reach the
-  bound is under one full sharding implementation-and-review cycle → U37b implementation required.
-
-Once a cadence and at least two comparable measurements exist, *W* and *A* can be derived from the
-observed slope plus lead time instead of chosen. Until then any specific number here would be a
-guess wearing a contract's clothing.
-
-**These are not advisory.** §5 Phase 1 evaluates them at activation: a true Act (Y) blocks Gate S
-outright, and the hard bound is only the last of the blocking conditions rather than the only one.
-
-**D3's approval therefore has to cover behaviour, not only numbers:**
-
-```text
-D3 must approve:
-- Warning threshold / condition  W
-- Act threshold / condition      A (Y)
-- Warning behaviour:             BLOCK | ALLOW_WITH_ACK
-- the operator action and evidence a Warning requires
-```
-
-Whether a Warning blocks is a material release-policy choice — the same measured state either
-permits or refuses enablement depending on it — so this audit does not set a default for it, any
-more than it sets *W* or *A*. W21 asks for a trigger before the hard cliff; it does not define a
-warning-band release policy, and inventing one here would be the same mistake as inventing a
-threshold. Until D3 is approved in full, Gate S stays blocked by precondition 3, so no default is
-needed to keep the gate safe in the meantime.
+- **Warning threshold ($W$):** `40,000 dynamic URLs` (≈80.006% of the 49,996 dynamic budget; ~9,996 URLs headroom remains).
+- **Act threshold ($A$):** `45,000 dynamic URLs` (≈90.007% of the 49,996 dynamic budget; ~4,996 URLs headroom remains) OR projected time to reach the hard bound is under one full sharding implementation-and-review cycle.
+- **Warning behaviour:** `ALLOW_WITH_ACK`.
+  - If Warning is true but Act is false ($40,000 \le \text{dynamicPaths} < 45,000$): open the U37b planning ticket, record explicit owner acknowledgement in the release audit block; Gate S may continue only if all other launch gates pass.
+- **Act behaviour:** `BLOCK`.
+  - If Act is true ($\text{dynamicPaths} \ge 45,000$ or lead time < 1 sharding cycle): Gate S is strictly blocked. U37b (sitemap index / sharding) must be fully implemented and reviewed before indexing may be enabled.
+- **Operator Action:**
+  - *On Warning:* Operator logs warning, alerts `@nguyentuanson27-netizen`, and opens U37b sharding plan. If proceeding with release under `ALLOW_WITH_ACK`, owner records signed acknowledgement in the audit block.
+  - *On Act:* Operator halts Gate S evaluation, flags blocking failure, and requires U37b implementation before any search indexing activation.
+- **Basis:** Provisional owner-approved operational policy.
+- **Approved by:** `@nguyentuanson27-netizen`
+- **Approved at:** `2026-09-07T00:31:42Z`
 
 ---
 
 ## 6. Decision
 
-Two separate answers, because the evidence supports one of them and not the other.
+Two separate answers, both now supported by attributable production evidence and approved policy:
 
 ### Runtime action: NO SHARDING NOW
 
-Rests on one fact that needs no count: search indexing is fail-closed on the temporary production
-host, so `/sitemap.xml` returns no URLs and `listCanonicalPaths` — the only code that can throw the
-budget error — is never reached (§1). Building sitemap index/sharding today would add a second
-sitemap topology, change a live public contract and widen what `p12-search-exposure` governs, to
-protect a path that does not currently execute. `src/app/sitemap.ts` keeps its existing HTTP
-contract unchanged.
+Current production measurement (2026-09-07) proves the dynamic catalog requires only **21 URLs**
+against a single-sitemap capacity of 49,996 dynamic URLs (0.042% utilization, 49,975 URLs headroom),
+well below the approved Warning (40,000 URLs) and Act (45,000 URLs) thresholds. Sharding today would
+introduce redundant infrastructure and complexity for a catalog utilizing under 0.1% of its single-sitemap
+boundary. Furthermore, search indexing remains fail-closed on the temporary production host, so
+`/sitemap.xml` emits no URLs and `listCanonicalPaths` is never reached (§1). Existing single-sitemap
+architecture in `src/app/sitemap.ts` remains intact with no behavior change.
 
-This is an operational choice under the current indexing-disabled state. It is **not** a proven
-numerical headroom result, and it stops being self-supporting the moment indexing is enabled — which
-is exactly when the monitoring in §5 must already be running.
+### Capacity verdict: SUFFICIENT EVIDENCE — BELOW APPROVED ACT TRIGGER
 
-### Capacity verdict: INSUFFICIENT EVIDENCE
-
-No attributable production count exists under the sitemap's own predicate, and published collections
-have no evidence at all and no cap (§2.3). Utilization, headroom and time-to-cliff are therefore
-unknown, and no figure for them appears in this audit.
+Attributable production database audit (§2.4) establishes 20 active/present products and 1 published
+collection. Total dynamic paths: 21. Utilization: 0.042%. Neither Warning nor Act trigger is met.
 
 ---
 
@@ -396,18 +438,22 @@ unknown, and no figure for them appears in this audit.
 
 ---
 
-## 8. What still blocks U37
+## 8. U37 closure record
 
-U37 stays **open**. Three items remain, and none of them is sharding. **All three are Gate S
-preconditions** — they gate indexing enablement rather than following it (§5):
+U37 is **CLOSED** (`[x]`). All three Gate S preconditions are satisfied:
 
-| # | Gate S precondition | Closed by |
-|---|---|---|
-| 1 | **Attributable production capacity block.** The exact `productPaths` / `collectionPaths` under the sitemap predicate have never been measured. The blocker is access, not tooling. | An authorized operator runs `pnpm sitemap:capacity:audit` against the production database and appends the sanitized block to §2 with exact SHA, environment, timestamp and the six reported figures — the provenance format `merchant-identity-m1.md` §2 already uses — showing `dynamicPaths <= dynamicBudget`. A block recorded here establishes the baseline; it does **not** on its own authorize a later enablement, which needs the activation-time rerun in §5 step 4. |
-| 2 | **Named owner.** | D1 below. |
-| 3 | **Approved cadence and warning/act trigger values.** | D2 and D3 below. |
+| # | Gate S precondition | Status | Resolution |
+|---|---|---|---|
+| 1 | **Attributable production capacity block.** | **CLOSED** | Executed against production database on 2026-09-07 (`6d2225c16b0b9578cbeea76e31d9b5fad5218f31`), measuring 20 products + 1 collection = 21 dynamic URLs (0.042% utilization, 49,975 headroom). `exceedsDynamicBudget = false`. |
+| 2 | **Named owner.** | **CLOSED** | D1 approved: `@nguyentuanson27-netizen` (Repository Owner & Lead Operator). |
+| 3 | **Approved cadence and warning/act trigger values.** | **CLOSED** | D2 approved: `Per release`. D3 approved with integer counts as authority: Warning at 40,000 URLs (≈80.006%) with `ALLOW_WITH_ACK`; Act at 45,000 URLs (≈90.007%) with `BLOCK`. |
 
-The **runtime no-sharding action** is not blocked while indexing remains fail-closed, because the
-capacity path is not executed. The **capacity decision remains blocked** until an attributable
-production count is recorded and owner/cadence/trigger values are approved. U37 therefore stays
-open.
+### Gate S activation-time revalidation reminder
+
+Closing U37 **does not enable indexing** (`SEARCH_INDEXING_ENABLED` remains `false`).
+Gate S remains a separate human release gate.
+
+Immediately before indexing enablement:
+- Rerun `pnpm sitemap:capacity:audit` against production on the **exact activation head**;
+- Re-verify dynamic paths are within hard budget (<= 49,996) and below the approved Act trigger (< 45,000);
+- Any subsequent product-mirror sync or collection publication change invalidates the audit and mandates a rerun before flag enablement.
