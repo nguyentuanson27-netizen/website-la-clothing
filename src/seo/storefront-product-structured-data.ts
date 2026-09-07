@@ -18,6 +18,15 @@
  * map together, so publishing structured data adds no extra catalog or pricing query.
  */
 
+import {
+  classifyExternalIdentifier,
+  classifyMerchantText,
+  MERCHANT_ID_MAX_LENGTH,
+} from "../commerce/merchant-identity-audit.ts";
+import {
+  MERCHANT_COLOR_MAX_LENGTH,
+  MERCHANT_SIZE_MAX_LENGTH,
+} from "../commerce/merchant-offer-mapper.ts";
 import { toOptionIdentityKey } from "../commerce/storefront-product.ts";
 import {
   selectStorefrontProductLevelOptions,
@@ -77,6 +86,10 @@ type StorefrontStructuredDataProduct = Readonly<{
  * stock reasons alone. A variant whose price never resolved is not published as sold out — that
  * would answer a pricing question with a stock claim.
  *
+ * Merchant rejects zero/negative prices for ordinary apparel. U27 uses the same threshold for exact
+ * variant publication so a zero-priced sibling cannot remain in JSON-LD after Merchant filtered it
+ * out and thereby prevent the family from collapsing to Merchant's sole exact survivor.
+ *
  * U27a adds the prior question: whether the catalog can state an availability for this variant at
  * all. A malformed mirrored quantity makes the storefront's own total meaningless — `[5, -3]` sums
  * to an ordinary 2 — so the projection's sold-out-or-buyable verdict, correct as a shopper-facing
@@ -91,7 +104,7 @@ function resolvePublishableOffer(
 ): Readonly<{ price: number; availability: StructuredDataAvailability }> | null {
   if (!availabilityResolved) return null;
   const { price } = option;
-  if (price === null || !Number.isFinite(price) || price < 0) return null;
+  if (price === null || !Number.isFinite(price) || price <= 0) return null;
   if (option.purchasable) return { price, availability: "IN_STOCK" };
   if (option.unavailableReason === "OUT_OF_STOCK") return { price, availability: "OUT_OF_STOCK" };
   return null;
@@ -105,6 +118,18 @@ function resolveVariantImageUrl(
   // An index that addresses no resolved image — missing, out of range, or not a position at all —
   // simply does not select one, so there is nothing further to guard.
   return typeof index === "number" ? product.media.gallery[index]?.url ?? null : null;
+}
+
+/**
+ * Merchant requires color/size for the apparel-only v1 feed. The exact-survivor convergence contract
+ * is about the same variant surviving on both sides, so U27 asks Merchant's own text classifier and
+ * exported bounds rather than maintaining a second notion of a valid apparel dimension. This does
+ * not make color/size mandatory for generic product-level JSON-LD; it only gates exact variants.
+ */
+function isMerchantPublishableDimension(value: string | null, maxLength: number): value is string {
+  if (value === null || value.length === 0 || value !== value.trim()) return false;
+  if (Array.from(value).length > maxLength) return false;
+  return classifyMerchantText(value) === "READY";
 }
 
 /**
@@ -133,16 +158,18 @@ function resolveVariesBy(
 }
 
 /**
- * The external product identity, when it is publishable as one.
- *
- * Mirrored catalog text is untrusted, so a blank or unbounded value publishes no group at all, and
- * an untrimmed one is refused rather than repaired: trimming would publish an identity the catalog
- * does not hold, and a `productGroupID` that disagrees with the id every other consumer uses is
- * worse than none. The rule itself belongs to the module that writes the document, so this asks it
- * rather than restating it — a second copy here would be free to drift from what is serialized.
+ * The external product identity, when it is publishable as one on both sides of the convergence
+ * contract. U27's own public-identifier guard remains defense in depth, while Merchant's stricter
+ * 50-code-point/no-whitespace classifier decides whether the same `item_group_id` could actually be
+ * emitted by the feed. A value Merchant would reject cannot authorize an exact JSON-LD survivor.
  */
 function readPublishableProductGroupID(pancakeProductId: string): string | null {
-  return isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
+  const merchantReady =
+    classifyExternalIdentifier(pancakeProductId, {
+      maxLength: MERCHANT_ID_MAX_LENGTH,
+      allowWhitespace: false,
+    }) === "PRESENT";
+  return merchantReady && isPublishableIdentifier(pancakeProductId) ? pancakeProductId : null;
 }
 
 /**
@@ -153,6 +180,12 @@ function readPublishableProductGroupID(pancakeProductId: string): string | null 
  * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
  * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
  * variation UUID as a different identifier type.
+ *
+ * The owner-approved family-collapse contract is a Merchant ↔ JSON-LD convergence rule, not merely a
+ * schema rendering preference. Therefore the shared per-variant facts that Merchant itself requires
+ * — offer id, positive price and bounded color/size — gate this exact-variant set too. Without that
+ * guard Merchant can have one survivor while JSON-LD still sees two candidates and emits a two-member
+ * ProductGroup, which violates the "same exact survivor" requirement.
  *
  * Uniqueness is decided last, over the candidates that survived every other check — the same order
  * the Merchant mapper uses. It has to be: a variant already excluded on its own facts is not a
@@ -171,9 +204,22 @@ function resolvePublishableVariants({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): StructuredDataVariant[] {
+  if (readPublishableProductGroupID(product.pancakeProductId) === null) return [];
+
   const candidates: Readonly<{ mpn: string; variant: StructuredDataVariant }>[] = [];
 
   for (const option of product.projection.options) {
+    if (
+      classifyExternalIdentifier(option.pancakeVariationId, {
+        maxLength: MERCHANT_ID_MAX_LENGTH,
+        allowWhitespace: false,
+      }) !== "PRESENT"
+    ) {
+      continue;
+    }
+    if (!isMerchantPublishableDimension(option.color, MERCHANT_COLOR_MAX_LENGTH)) continue;
+    if (!isMerchantPublishableDimension(option.size, MERCHANT_SIZE_MAX_LENGTH)) continue;
+
     const reselected = resolveDeepLinkedVariantSelection({
       projection: product.projection,
       variantQuery: option.pancakeVariationId,
