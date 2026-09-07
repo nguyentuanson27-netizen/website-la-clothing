@@ -11,8 +11,9 @@ justify sharding. It deliberately changes no sitemap behavior.
 - **Baseline SHA:** `6d2225c16b0b9578cbeea76e31d9b5fad5218f31`
 - **Runtime action:** **NO SHARDING NOW** — current production evidence shows 21 dynamic URLs
   against a 49,996 dynamic URL budget (0.042% utilization, 49,975 remaining headroom), well below
-  the approved 80% Warning (40,000 URLs) and 90% Act (45,000 URLs) triggers. Search indexing also
-  remains fail-closed on the temporary production host ([§1](#the-cliff-is-currently-unreachable-in-production)).
+  the approved Warning threshold of 40,000 URLs (≈80.006% of the dynamic budget) and Act threshold
+  of 45,000 URLs (≈90.007%). Search indexing also remains fail-closed on the temporary production
+  host ([§1](#the-cliff-is-currently-unreachable-in-production)).
 - **Capacity verdict:** **SUFFICIENT EVIDENCE — BELOW APPROVED ACT TRIGGER** ([§2.4](#24-authoritative-production-capacity-audit-2026-09-07)).
 - **U37 status:** **CLOSED** — see [§8](#8-u37-closure-record).
 
@@ -185,8 +186,8 @@ Authoritative sanitized aggregate output:
 - Remaining dynamic headroom: **49,975 URLs**
 - Current dynamic utilization: **0.042%**
 - Hard budget exceeded: **NO** (`exceedsDynamicBudget = false`)
-- Approved Act trigger (90% / 45,000 URLs): **PASS / NOT TRIGGERED** (0.042% ≪ 90%)
-- Approved Warning trigger (80% / 40,000 URLs): **PASS / NOT TRIGGERED** (0.042% ≪ 80%)
+- Approved Act trigger: **45,000 URLs** (≈90.007% of dynamic budget) — **PASS / NOT TRIGGERED**.
+- Approved Warning trigger: **40,000 URLs** (≈80.006% of dynamic budget) — **PASS / NOT TRIGGERED**.
 - Sharding action: **NO SHARDING NOW**
 
 ---
@@ -325,9 +326,9 @@ gates: completed **before** explicit human approval, not measured afterwards.
    would let an approved Act trigger be true while enablement proceeded anyway, making D3
    documentation with no effect on the decision it exists to govern.
 
-   Where Act (Y) has two limbs, apply each only when it can be evaluated: the `A` % of budget limb
-   applies as soon as it is approved; the projected-time-to-bound limb applies only once enough
-   comparable measurements exist to establish a slope. Do not invent a slope to fill it in.
+   Where Act (Y) has two limbs, apply each only when it can be evaluated: the approved **45,000-URL
+   count threshold** applies as soon as it is approved; the projected-time-to-bound limb applies only
+   once enough comparable measurements exist to establish a slope. Do not invent a slope to fill it in.
 
    No branch permits shipping a partial sitemap, nor raising the per-document bound to get past this
    gate. The bound is what one sitemap document may hold; it is not a dial.
@@ -380,8 +381,13 @@ All three open operations decisions are explicitly approved by repository and pr
 - **Approved at:** `2026-09-07T00:31:42Z`
 
 **D3 — Warning + Act Contract: APPROVED**
-- **Warning threshold ($W$):** `80% of dynamic budget` (40,000 dynamic URLs, leaving ~10,000 URLs headroom).
-- **Act threshold ($A$):** `90% of dynamic budget` (45,000 dynamic URLs, leaving ~5,000 URLs headroom) OR projected time to reach the hard bound is under one full sharding implementation-and-review cycle.
+
+The approved **integer URL counts are the policy authority**. Percentages are descriptive equivalents
+only; because the dynamic budget is 49,996, the approved round counts are not mathematically exact
+80% / 90% boundaries.
+
+- **Warning threshold ($W$):** `40,000 dynamic URLs` (≈80.006% of the 49,996 dynamic budget; ~9,996 URLs headroom remains).
+- **Act threshold ($A$):** `45,000 dynamic URLs` (≈90.007% of the 49,996 dynamic budget; ~4,996 URLs headroom remains) OR projected time to reach the hard bound is under one full sharding implementation-and-review cycle.
 - **Warning behaviour:** `ALLOW_WITH_ACK`.
   - If Warning is true but Act is false ($40,000 \le \text{dynamicPaths} < 45,000$): open the U37b planning ticket, record explicit owner acknowledgement in the release audit block; Gate S may continue only if all other launch gates pass.
 - **Act behaviour:** `BLOCK`.
@@ -438,7 +444,7 @@ U37 is **CLOSED** (`[x]`). All three Gate S preconditions are satisfied:
 |---|---|---|---|
 | 1 | **Attributable production capacity block.** | **CLOSED** | Executed against production database on 2026-09-07 (`6d2225c16b0b9578cbeea76e31d9b5fad5218f31`), measuring 20 products + 1 collection = 21 dynamic URLs (0.042% utilization, 49,975 headroom). `exceedsDynamicBudget = false`. |
 | 2 | **Named owner.** | **CLOSED** | D1 approved: `@nguyentuanson27-netizen` (Repository Owner & Lead Operator). |
-| 3 | **Approved cadence and warning/act trigger values.** | **CLOSED** | D2 approved: `Per release`. D3 approved: Warning at 80% (40,000 URLs) with `ALLOW_WITH_ACK`, Act at 90% (45,000 URLs) with `BLOCK`. |
+| 3 | **Approved cadence and warning/act trigger values.** | **CLOSED** | D2 approved: `Per release`. D3 approved with integer counts as authority: Warning at 40,000 URLs (≈80.006%) with `ALLOW_WITH_ACK`; Act at 45,000 URLs (≈90.007%) with `BLOCK`. |
 
 ### Gate S activation-time revalidation reminder
 
