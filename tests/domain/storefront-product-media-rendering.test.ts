@@ -85,19 +85,27 @@ test("resolveStorefrontProductMedia gracefully provides empty media for missing 
 test("P3 parseTrustedProductImageUrl and P4 images.remotePatterns maintain identical trust contracts", async () => {
   const { parseTrustedProductImageUrl } = await import("../../src/commerce/product-media.ts");
   const nextConfig = await loadNextConfig();
-  const pattern = nextConfig.images?.remotePatterns?.find(
+  const pancakePatterns = nextConfig.images?.remotePatterns?.filter(
     (p) => p.hostname === "content.pancake.vn",
-  );
-  assert.ok(pattern);
+  ) ?? [];
+  assert.equal(pancakePatterns.length, 2);
 
-  // Lowercase .jpg is accepted by P3 and matches P4 remotePattern
-  const validUrl = "https://content.pancake.vn/images/1/2/3/photo.jpg";
-  assert.notEqual(parseTrustedProductImageUrl(validUrl), null);
-  assert.equal(pattern.pathname, "/*/*/*/*/*.jpg");
+  const jpgPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.jpg");
+  const pngPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.png");
+  assert.ok(jpgPattern);
+  assert.ok(pngPattern);
 
-  // Uppercase .JPG is rejected by both P3 and P4 case-sensitive pattern
-  const uppercaseUrl = "https://content.pancake.vn/images/1/2/3/photo.JPG";
-  assert.equal(parseTrustedProductImageUrl(uppercaseUrl), null);
+  // Lowercase .jpg and .png are accepted by P3 and match P4 remotePatterns
+  const validJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.jpg";
+  const validPngUrl = "https://content.pancake.vn/images/1/2/3/photo.png";
+  assert.notEqual(parseTrustedProductImageUrl(validJpgUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validPngUrl), null);
+
+  // Uppercase .JPG and .PNG are rejected by both P3 and P4 case-sensitive pattern
+  const uppercaseJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.JPG";
+  const uppercasePngUrl = "https://content.pancake.vn/images/1/2/3/photo.PNG";
+  assert.equal(parseTrustedProductImageUrl(uppercaseJpgUrl), null);
+  assert.equal(parseTrustedProductImageUrl(uppercasePngUrl), null);
 
   // Custom ports and unreviewed paths are rejected by both P3 and P4
   assert.equal(parseTrustedProductImageUrl("https://content.pancake.vn:8443/images/1/2/3/photo.jpg"), null);

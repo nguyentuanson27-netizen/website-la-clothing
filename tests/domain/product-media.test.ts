@@ -8,11 +8,14 @@ import {
   type TrustedProductImage,
 } from "../../src/commerce/product-media.ts";
 
-test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs", () => {
+test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.jpg and .png)", () => {
   const validUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpg",
     "https://content.pancake.vn/web_media/12/34/56/shirt.jpg",
     "https://content.pancake.vn/images/999/888/777/product-photo_123.jpg",
+    "https://content.pancake.vn/images/1/2/3/shirt.png",
+    "https://content.pancake.vn/web_media/12/34/56/shirt.png",
+    "https://content.pancake.vn/2-2609/2026/9/7/60939f058e4a6add1a156b7d13d6cf1bf2226fbd.png",
   ];
 
   for (const url of validUrls) {
@@ -21,13 +24,14 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs", 
   }
 });
 
-test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .png, .webp, .svg, uppercase .JPG, etc.)", () => {
+test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .webp, .svg, uppercase .JPG/.PNG, etc.)", () => {
   const unreviewedExtensionUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpeg",
-    "https://content.pancake.vn/images/1/2/3/shirt.png",
     "https://content.pancake.vn/images/1/2/3/shirt.webp",
     "https://content.pancake.vn/images/1/2/3/shirt.JPG",
     "https://content.pancake.vn/images/1/2/3/SHIRT.JPG",
+    "https://content.pancake.vn/images/1/2/3/shirt.PNG",
+    "https://content.pancake.vn/images/1/2/3/SHIRT.PNG",
     "https://content.pancake.vn/images/1/2/3/vector.svg",
     "https://content.pancake.vn/images/1/2/3/script.js",
     "https://content.pancake.vn/images/1/2/3/doc.html",
