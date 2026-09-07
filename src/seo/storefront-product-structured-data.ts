@@ -20,13 +20,8 @@
 
 import {
   classifyExternalIdentifier,
-  classifyMerchantText,
   MERCHANT_ID_MAX_LENGTH,
 } from "../commerce/merchant-identity-audit.ts";
-import {
-  MERCHANT_COLOR_MAX_LENGTH,
-  MERCHANT_SIZE_MAX_LENGTH,
-} from "../commerce/merchant-offer-mapper.ts";
 import { toOptionIdentityKey } from "../commerce/storefront-product.ts";
 import {
   selectStorefrontProductLevelOptions,
@@ -121,18 +116,6 @@ function resolveVariantImageUrl(
 }
 
 /**
- * Merchant requires color/size for the apparel-only v1 feed. The exact-survivor convergence contract
- * is about the same variant surviving on both sides, so U27 asks Merchant's own text classifier and
- * exported bounds rather than maintaining a second notion of a valid apparel dimension. This does
- * not make color/size mandatory for generic product-level JSON-LD; it only gates exact variants.
- */
-function isMerchantPublishableDimension(value: string | null, maxLength: number): value is string {
-  if (value === null || value.length === 0 || value !== value.trim()) return false;
-  if (Array.from(value).length > maxLength) return false;
-  return classifyMerchantText(value) === "READY";
-}
-
-/**
  * The dimensions these variants genuinely differ on.
  *
  * Compared through the option model's own identity rule rather than by raw string, because that is
@@ -176,16 +159,17 @@ function readPublishableProductGroupID(pancakeProductId: string): string | null 
  * The variants this page may publish, each proved addressable and uniquely identified first.
  *
  * Every candidate's external variation identity is fed back through the U12 resolver against this
- * same projection, and only an identity that reselects *this* option survives. Separately, ADR 0008
- * requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed MPN fails
- * closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the Pancake
- * variation UUID as a different identifier type.
+ * same projection, and only an identity that reselects *this* option survives. That resolver remains
+ * the authority for the storefront's option model: a size-only family is valid and must not be
+ * rejected merely because Merchant's apparel feed independently requires a color value. Separately,
+ * ADR 0008 requires a current, bounded and unique manufacturer MPN. A duplicate/missing/malformed
+ * MPN fails closed instead of silently substituting `VariantMirror.sku`, barcode, local CUID, or the
+ * Pancake variation UUID as a different identifier type.
  *
- * The owner-approved family-collapse contract is a Merchant ↔ JSON-LD convergence rule, not merely a
- * schema rendering preference. Therefore the shared per-variant facts that Merchant itself requires
- * — offer id, positive price and bounded color/size — gate this exact-variant set too. Without that
- * guard Merchant can have one survivor while JSON-LD still sees two candidates and emits a two-member
- * ProductGroup, which violates the "same exact survivor" requirement.
+ * The owner-approved family-collapse contract is a Merchant ↔ JSON-LD convergence rule, not a reason
+ * to replace U27's dimensional model with Merchant's. Shared facts that must converge here — bounded
+ * external offer identity, positive price, resolved availability and exact MPN — gate the exact
+ * variant set. Option dimensional validity continues to be decided by U12/storefront addressability.
  *
  * Uniqueness is decided last, over the candidates that survived every other check — the same order
  * the Merchant mapper uses. It has to be: a variant already excluded on its own facts is not a
@@ -217,8 +201,6 @@ function resolvePublishableVariants({
     ) {
       continue;
     }
-    if (!isMerchantPublishableDimension(option.color, MERCHANT_COLOR_MAX_LENGTH)) continue;
-    if (!isMerchantPublishableDimension(option.size, MERCHANT_SIZE_MAX_LENGTH)) continue;
 
     const reselected = resolveDeepLinkedVariantSelection({
       projection: product.projection,
@@ -296,11 +278,12 @@ function resolveProductGroup({
 /**
  * The exact standalone survivor under the approved family-collapse contract.
  *
- * This path is intentionally narrower than "one publishable variant": it is available only for a
- * standalone product whose external product identity is also publishable, matching the identity
- * boundary that lets Merchant publish the survivor. Composite projections remain outside the v1
- * exact-variant contract, and a malformed product identity cannot make JSON-LD publish an exact
- * survivor that Merchant would refuse.
+ * A product that started with exactly one option is not a collapsed family and keeps U27's existing
+ * product-level fallback with the canonical PDP URL. This path is therefore available only when a
+ * standalone projection originally contained at least two options and the verified exact-variant
+ * set has subsequently narrowed to one. Composite projections remain outside the v1 exact-variant
+ * contract, and a malformed product identity cannot make JSON-LD publish an exact survivor that
+ * Merchant would refuse.
  */
 function resolveStandaloneSurvivor({
   product,
@@ -310,6 +293,7 @@ function resolveStandaloneSurvivor({
   variants: readonly StructuredDataVariant[];
 }>): StructuredDataVariant | null {
   if (product.projection.mode !== "standalone") return null;
+  if (product.projection.options.length < 2) return null;
   if (readPublishableProductGroupID(product.pancakeProductId) === null) return null;
   return variants.length === 1 ? variants[0]! : null;
 }
