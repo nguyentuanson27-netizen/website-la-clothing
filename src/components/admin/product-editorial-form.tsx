@@ -29,12 +29,15 @@ type ProductEditorialFormProps = {
   action: (formData: FormData) => void | Promise<void>;
   content: ProductEditorContent | null;
   collectionChoices: ProductEditorCollectionChoice[];
+  /** Published products already holding this product's `(seoTitle, seoDescription)` pair. */
+  seoPairConflictSlugs?: readonly string[];
 };
 
 export function ProductEditorialForm({
   action,
   content,
   collectionChoices,
+  seoPairConflictSlugs = [],
 }: ProductEditorialFormProps) {
   return (
     <form action={action} className="mt-8 grid gap-12 lg:grid-cols-[1.35fr_0.65fr]">
@@ -184,6 +187,21 @@ export function ProductEditorialForm({
               recommendedLength={SEO_LENGTH_GUIDANCE.seoDescription}
               rows={5}
             />
+
+            {/*
+              B5: a collision is a warning here, never a block. A draft is allowed to hold copy a
+              published product already owns; only the move to PUBLISHED is refused, and that is
+              enforced server-side. This is rendered from persisted state on every load rather than
+              announced live, so it does not interrupt typing.
+            */}
+            {seoPairConflictSlugs.length > 0 ? (
+              <p className="border-l-2 border-black pl-4 text-sm leading-6" data-seo-pair-warning>
+                <span className="font-semibold">Cảnh báo trùng SEO.</span> Cặp SEO title +
+                description hiện tại đã thuộc về sản phẩm đã publish:{" "}
+                {seoPairConflictSlugs.map((slug) => `/${slug}`).join(", ")}. Vẫn lưu được bản nháp,
+                nhưng không thể chuyển sang PUBLISHED cho đến khi sửa một trong hai trường.
+              </p>
+            ) : null}
           </div>
         </section>
 

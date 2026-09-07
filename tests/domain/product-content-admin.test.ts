@@ -156,7 +156,7 @@ test("product editorial updates preserve old form submissions with no collection
     },
     async saveContent(content) {
       writes.push(content);
-      return content;
+      return { ok: true, content };
     },
   });
 
@@ -187,7 +187,7 @@ test("legacy product editorial submissions without publication status default fa
     },
     async saveContent(content) {
       writes.push(content);
-      return content;
+      return { ok: true, content };
     },
   });
 
@@ -212,7 +212,7 @@ test("product editorial updates persist canonical membership and explicit public
     },
     async saveContent(content) {
       writes.push(content);
-      return content;
+      return { ok: true, content };
     },
   });
 

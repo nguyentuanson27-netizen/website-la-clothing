@@ -1,4 +1,8 @@
 import { requireAdminSession } from "../auth/authorization.ts";
+import {
+  readPublishMetadataReadiness,
+  type PublishMetadataRequirement,
+} from "../seo/product-metadata-uniqueness.ts";
 
 export const PRODUCT_CONTENT_LIMITS = {
   productId: 128,
@@ -48,9 +52,30 @@ export type BulkProductContentStatusUpdate = {
   status: ProductContentStatus;
 };
 
+/**
+ * B5: why a `PUBLISHED` write was refused.
+ *
+ * `SEO_PAIR_CONFLICT` carries the slugs already holding the pair so the editor can open the other
+ * product instead of guessing which one it collided with. The two requirement reasons carry an
+ * empty list: nothing else owns the copy, the product's own fields are simply incomplete.
+ */
+export type ProductContentPublishBlock = {
+  reason: PublishMetadataRequirement | "SEO_PAIR_CONFLICT";
+  conflictingSlugs: readonly string[];
+};
+
+export type SaveProductContentOutcome =
+  | { ok: true; content: ProductContentSnapshot }
+  | { ok: false; block: ProductContentPublishBlock };
+
 export type BulkProductContentStatusResult =
   | { ok: true; updatedCount: number }
-  | { ok: false; reason: "PRODUCT_NOT_FOUND" };
+  | { ok: false; reason: "PRODUCT_NOT_FOUND" }
+  | {
+      ok: false;
+      reason: "SEO_INCOMPLETE" | "SEO_PAIR_CONFLICT";
+      blockedSlugs: readonly string[];
+    };
 
 export type BulkProductCollectionUpdate = {
   productIds: string[];
@@ -65,7 +90,7 @@ export type BulkProductCollectionResult =
 type ProductContentAdminDependencies = {
   productExists(productId: string): Promise<boolean>;
   resolveCollectionSlugs(collectionSlugs: string[]): Promise<string[] | null>;
-  saveContent(content: ProductContentSnapshot): Promise<ProductContentSnapshot>;
+  saveContent(content: ProductContentSnapshot): Promise<SaveProductContentOutcome>;
 };
 
 type ProductContentBulkStatusAdminDependencies = {
@@ -289,6 +314,16 @@ export function createProductContentAdminService({
       return { ok: false, reason: "PRODUCT_NOT_FOUND" } as const;
     }
 
+    // B5: a product's own SEO copy has to be complete before it can be published, and that is
+    // answerable from this one row, so it is refused here rather than after a round trip. The
+    // cross-product pair collision needs the published catalog and is settled inside the write.
+    if (content.status === "PUBLISHED") {
+      const readiness = readPublishMetadataReadiness(content);
+      if (!readiness.ok) {
+        return { ok: false, reason: readiness.reason, conflictingSlugs: [] } as const;
+      }
+    }
+
     const resolvedCollectionSlugs =
       content.collectionSlugs.length === 0
         ? []
@@ -297,13 +332,19 @@ export function createProductContentAdminService({
       return { ok: false, reason: "COLLECTION_NOT_FOUND" } as const;
     }
 
-    return {
-      ok: true,
-      content: await saveContent({
-        ...content,
-        collectionSlugs: resolvedCollectionSlugs,
-      }),
-    } as const;
+    const saved = await saveContent({
+      ...content,
+      collectionSlugs: resolvedCollectionSlugs,
+    });
+    if (!saved.ok) {
+      return {
+        ok: false,
+        reason: saved.block.reason,
+        conflictingSlugs: saved.block.conflictingSlugs,
+      } as const;
+    }
+
+    return { ok: true, content: saved.content } as const;
   }
 
   return { update };

@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { createProductContentRepository } from "../../src/commerce/product-content-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { SEO_LENGTH_GUIDANCE } from "../../src/commerce/seo-length-guidance.ts";
+import type { ProductContentSnapshot } from "../../src/commerce/product-content-admin.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -32,6 +33,15 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
+/** Unwraps the B5 publish outcome: these cases assert on persisted content, never on a block. */
+function expectSaved(
+  outcome: Awaited<ReturnType<typeof repository.saveContent>>,
+): ProductContentSnapshot {
+  assert.equal(outcome.ok, true, "the write must not have been blocked");
+  if (!outcome.ok) throw new Error("unreachable");
+  return outcome.content;
+}
+
 test("product content repository reads source context and upserts editorial publication state independently", async () => {
   const product = await prisma.productMirror.create({
     data: {
@@ -47,26 +57,30 @@ test("product content repository reads source context and upserts editorial publ
   assert.equal(await repository.productExists(product.id), true);
   assert.equal(await repository.productExists("missing-product"), false);
 
-  const initial = await repository.saveContent({
+  const initial = expectSaved(
+    await repository.saveContent({
     productId: product.id,
     status: "DRAFT",
     editorialDescription: "First editorial copy.",
     careInstructions: "Cold wash.",
     sizeGuide: null,
     seoTitle: "First title",
-    seoDescription: null,
-    collectionSlugs: ["city-uniform"],
-  });
-  const updated = await repository.saveContent({
+      seoDescription: null,
+      collectionSlugs: ["city-uniform"],
+    }),
+  );
+  const updated = expectSaved(
+    await repository.saveContent({
     productId: product.id,
     status: "PUBLISHED",
     editorialDescription: "Updated editorial copy.",
     careInstructions: null,
     sizeGuide: "Relaxed fit.",
     seoTitle: "Updated title",
-    seoDescription: "Updated description.",
-    collectionSlugs: ["city-uniform", "essentials"],
-  });
+      seoDescription: "Updated description.",
+      collectionSlugs: ["city-uniform", "essentials"],
+    }),
+  );
 
   assert.equal(initial.productId, product.id);
   assert.equal(initial.status, "DRAFT");
@@ -274,16 +288,18 @@ test("U34a persists SEO copy past the advisory length untouched", async () => {
   const overLongTitle = "T".repeat(SEO_LENGTH_GUIDANCE.seoTitle + 1);
   const overLongDescription = "D".repeat(SEO_LENGTH_GUIDANCE.seoDescription + 1);
 
-  const saved = await repository.saveContent({
-    productId: product.id,
-    status: "DRAFT",
-    editorialDescription: null,
-    careInstructions: null,
-    sizeGuide: null,
-    seoTitle: overLongTitle,
-    seoDescription: overLongDescription,
-    collectionSlugs: [],
-  });
+  const saved = expectSaved(
+    await repository.saveContent({
+      productId: product.id,
+      status: "DRAFT",
+      editorialDescription: null,
+      careInstructions: null,
+      sizeGuide: null,
+      seoTitle: overLongTitle,
+      seoDescription: overLongDescription,
+      collectionSlugs: [],
+    }),
+  );
 
   assert.equal(saved.seoTitle, overLongTitle, "an over-advisory title must save unchanged");
   assert.equal(

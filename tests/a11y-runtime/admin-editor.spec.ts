@@ -27,6 +27,10 @@ const productName = `Admin A11y Product ${runId}`;
 const parentExternalId = `admin-a11y-parent-${runId}`;
 const parentSlug = `admin-a11y-parent-${runId}`;
 const parentName = `Admin Composite Parent ${runId}`;
+const pairHolderExternalId = `admin-a11y-pair-holder-${runId}`;
+const pairRivalExternalId = `admin-a11y-pair-rival-${runId}`;
+const pairSeoTitle = `Áo Oxford Relaxed ${runId}`;
+const pairSeoDescription = `Áo Oxford Relaxed của LA Clothing — ${runId}.`;
 const sourceDescription = "Read-only Pancake source context for editorial decisions.";
 
 let server: ChildProcess | undefined;
@@ -93,7 +97,11 @@ async function stopServer() {
 async function cleanupDatabase() {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
   await prisma.productMirror.deleteMany({
-    where: { pancakeProductId: { in: [productExternalId, parentExternalId] } },
+    where: {
+      pancakeProductId: {
+        in: [productExternalId, parentExternalId, pairHolderExternalId, pairRivalExternalId],
+      },
+    },
   });
 }
 
@@ -462,4 +470,134 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
     `browser console errors; failed responses: ${JSON.stringify(failedResponses)}`,
   ).toEqual([]);
   expect(failedResponses).toEqual([]);
+});
+
+/**
+ * B5 / U29 in the real admin flow.
+ *
+ * The two halves of the contract have to be true of the actual form, not only of the domain: a
+ * draft may hold copy a published product already owns and must say so, and the move to
+ * `PUBLISHED` must be refused by the server even when the operator ignores that warning — which is
+ * exactly what a submit does, since nothing in the browser prevents it.
+ */
+test("B5 a colliding SEO pair warns on a draft and is refused on publish through the real form", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
+
+  const syncedAt = new Date();
+  const holder = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: pairHolderExternalId,
+      slug: pairHolderExternalId,
+      name: `Pair Holder ${runId}`,
+      isPresent: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "PUBLISHED",
+          seoTitle: pairSeoTitle,
+          seoDescription: pairSeoDescription,
+        },
+      },
+    },
+  });
+  const rival = await prisma.productMirror.create({
+    data: {
+      pancakeProductId: pairRivalExternalId,
+      slug: pairRivalExternalId,
+      name: `Pair Rival ${runId}`,
+      isPresent: true,
+      syncedAt,
+    },
+  });
+
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(rival.id)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  // Nothing has been typed yet, so there is no pair and nothing to warn about.
+  await expect(page.getByText("Cảnh báo trùng SEO.")).toHaveCount(0);
+
+  // The draft keeps the colliding copy: B5 lets a draft duplicate, and the save must succeed.
+  await page.getByLabel("Trạng thái xuất bản").selectOption("DRAFT");
+  await page.getByLabel("SEO title").fill(pairSeoTitle);
+  await page.getByLabel("SEO description").fill(pairSeoDescription);
+  await page.getByRole("button", { name: "Lưu nội dung" }).click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("saved") === "1",
+  );
+  await expect(page.getByRole("status")).toContainText("Đã lưu nội dung biên tập.");
+  expect(
+    await prisma.productContent.findUnique({
+      where: { productId: rival.id },
+      select: { status: true, seoTitle: true },
+    }),
+  ).toEqual({ status: "DRAFT", seoTitle: pairSeoTitle });
+
+  // The warning is now visible, names the product holding the pair, and gates nothing.
+  const warning = page.getByText("Cảnh báo trùng SEO.");
+  await expect(warning).toBeVisible();
+  await expect(page.getByText(`/${holder.slug}`, { exact: false })).toBeVisible();
+  const publishButton = page.getByRole("button", { name: "Lưu nội dung" });
+  await expect(publishButton).toBeEnabled();
+
+  // The warning is advice, so it is not announced as an alert and does not take focus.
+  await expect(page.getByRole("alert").filter({ hasText: "Cảnh báo trùng SEO." })).toHaveCount(0);
+  await expect(warning).not.toBeFocused();
+  await page.getByLabel("SEO title").focus();
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("name"))).toBe(
+    "seoDescription",
+  );
+
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .include("main")
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  // Ignoring the warning and submitting `PUBLISHED` is refused server-side, and nothing is written.
+  await page.getByLabel("Trạng thái xuất bản").selectOption("PUBLISHED");
+  await publishButton.click();
+  await page.waitForURL(
+    (url) => url.pathname === editorPath && url.searchParams.get("error") === "seo-pair",
+  );
+  // Next renders its own empty route announcer with role="alert", so filter to the real message.
+  const blocked = page
+    .getByRole("alert")
+    .filter({ hasText: "đã thuộc về một sản phẩm đã publish" });
+  await expect(blocked).toContainText("đã thuộc về một sản phẩm đã publish");
+  await expect(blocked).toBeFocused();
+  expect(
+    await prisma.productContent.findUnique({
+      where: { productId: rival.id },
+      select: { status: true },
+    }),
+  ).toEqual({ status: "DRAFT" });
+
+  // One field changed is enough: the pair is the unit, so the publish now goes through.
+  await page.getByLabel("SEO description").fill(`${pairSeoDescription} Bản khác.`);
+  await page.getByLabel("Trạng thái xuất bản").selectOption("PUBLISHED");
+  await page.getByRole("button", { name: "Lưu nội dung" }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await prisma.productContent.findUnique({
+            where: { productId: rival.id },
+            select: { status: true },
+          })
+        )?.status,
+      { message: "a distinct pair must publish" },
+    )
+    .toBe("PUBLISHED");
+  await expect(page.getByText("Cảnh báo trùng SEO.")).toHaveCount(0);
+
+  expect(browserErrors).toEqual([]);
 });
