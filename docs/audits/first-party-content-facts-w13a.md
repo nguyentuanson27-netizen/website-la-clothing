@@ -36,7 +36,29 @@ pinned by `tests/domain/public-brand-content.test.ts`.
 | `orderTracking` | Constant describing the `/track-order` capability that exists | **A** |
 | `serverVerification` | Constant describing behaviour the checkout actually implements | **A** |
 
-Everything an evergreen page needs beyond this list is B, C or D.
+Everything an evergreen page needs beyond this list is B, C or D **as of when this inventory was
+written**. One class-D block has since been resolved and implemented — see below.
+
+### Update: the approved B2 contact facts (U32b)
+
+The owner resolved **B2**, and U32b landed those facts as a second frozen constant in the same
+module: `PUBLIC_CONTACT_FACTS` in `src/content/public-brand-facts.ts`.
+
+| Fact key | Value source | Class |
+|---|---|---|
+| `telephone` | Owner-approved §2 hotline/Zalo number | **A** |
+| `email` | Owner-approved §2 support email | **A** |
+| `fanpageUrl` | Owner-approved §2 Fanpage | **A** |
+| `streetAddress`, `addressLocality` | Owner-approved §2 address string | **A** |
+| `supportHours` | Owner-approved §2 hours, carrying the stated UTC+7 offset | **A** |
+
+It is deliberately a separate export rather than a new field on `buildPublicBrandFacts`: that
+function's shape is what the footer and homepage render today, and U32b had no mandate to change
+either surface. **U33 must read `PUBLIC_CONTACT_FACTS`** for its Contact page rather than
+transcribing §2 again — one authority is the whole point, and the site JSON-LD already reads it.
+
+The registered entity name, tax code and founding facts stay **C/D**: B6 leaves them unapproved for
+publication, and nothing in U32b changed that. Everything else in this inventory still stands.
 
 ## Per-page inventory
 

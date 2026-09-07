@@ -1,3 +1,5 @@
+import { PUBLIC_CONTACT_FACTS } from "../content/public-brand-facts.ts";
+
 const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
@@ -163,11 +165,43 @@ type BreadcrumbListNode = {
   ];
 };
 
+type PostalAddressNode = {
+  "@type": "PostalAddress";
+  streetAddress: string;
+  addressLocality: string;
+};
+
+type OpeningHoursSpecificationNode = {
+  "@type": "OpeningHoursSpecification";
+  dayOfWeek: readonly string[];
+  opens: string;
+  closes: string;
+};
+
+type ContactPointNode = {
+  "@type": "ContactPoint";
+  contactType: string;
+  telephone: string;
+  email: string;
+  hoursAvailable: OpeningHoursSpecificationNode;
+};
+
+/**
+ * W6/U32b. The entity every other node points at, now carrying the owner-approved B2 contact facts.
+ *
+ * Every added property is a transcription of `PUBLIC_CONTACT_FACTS`, which is the sole authority for
+ * them; nothing here is derived from the catalog, the UI copy or the served locale. The properties
+ * W6 also lists but that no approved source supplies — `logo` above all — stay off the type, so
+ * adding one later is a deliberate edit here rather than an accident at a call site.
+ */
 type OrganizationNode = {
   "@type": "Organization";
   "@id": string;
   name: typeof SITE_NAME;
   url: string;
+  address: PostalAddressNode;
+  contactPoint: ContactPointNode;
+  sameAs: readonly string[];
 };
 
 type WebSiteNode = {
@@ -195,6 +229,17 @@ export type SiteStructuredDataDocument = {
   "@context": typeof SCHEMA_CONTEXT;
   "@graph": [OrganizationNode, WebSiteNode];
 };
+
+/** "Hằng ngày" in the approved support hours: every day carries the same window. */
+const SUPPORT_DAYS = Object.freeze([
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+]);
 
 function buildSiteEntityIds(origin: string) {
   const rootUrl = new URL("/", origin).href;
@@ -501,6 +546,26 @@ export function buildSiteStructuredData({
         "@id": organizationId,
         name: SITE_NAME,
         url: rootUrl,
+        address: {
+          "@type": "PostalAddress",
+          streetAddress: PUBLIC_CONTACT_FACTS.streetAddress,
+          addressLocality: PUBLIC_CONTACT_FACTS.addressLocality,
+        },
+        contactPoint: {
+          "@type": "ContactPoint",
+          // The approved facts describe one support channel — a hotline that is also the Zalo
+          // number, an email, and one set of hours covering both.
+          contactType: "customer support",
+          telephone: PUBLIC_CONTACT_FACTS.telephone,
+          email: PUBLIC_CONTACT_FACTS.email,
+          hoursAvailable: {
+            "@type": "OpeningHoursSpecification",
+            dayOfWeek: SUPPORT_DAYS,
+            opens: PUBLIC_CONTACT_FACTS.supportHours.opens,
+            closes: PUBLIC_CONTACT_FACTS.supportHours.closes,
+          },
+        },
+        sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
       },
       {
         "@type": "WebSite",
