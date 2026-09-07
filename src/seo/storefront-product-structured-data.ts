@@ -2,8 +2,9 @@
  * U27 — the boundary from the PDP's storefront projection to published product JSON-LD.
  *
  * It answers one question: which of this product's variants may appear as their own `Product` and
- * exact `Offer` under a `ProductGroup`, and with which facts. Everything it publishes already has
- * an owner, and it reuses that owner rather than re-deriving the answer:
+ * exact `Offer`, either under a real `ProductGroup` or as the exact standalone survivor after a
+ * family collapses, and with which facts. Everything it publishes already has an owner, and it
+ * reuses that owner rather than re-deriving the answer:
  *
  * - addressability and the variant URL — the U12 deep-link contract;
  * - price and availability — the PDP projection, priced by the same rule the page renders with;
@@ -226,25 +227,45 @@ function resolvePublishableVariants({
 /**
  * The publishable variant family, or `null` when this product does not have one.
  *
- * Null covers every case the page must fall back from: a composite, a product whose options are
- * not addressable or uniquely identified, one with a single surviving option, and one whose
- * external product identity is unusable.
+ * A real `ProductGroup` needs a publishable product identity, at least two surviving variants and a
+ * dimension those variants genuinely differ on. A single survivor is deliberately not a group; the
+ * approved family-collapse contract publishes it as an exact standalone `Product` instead.
  */
 function resolveProductGroup({
-  origin,
   product,
+  variants,
 }: Readonly<{
-  origin: string;
   product: StorefrontStructuredDataProduct;
+  variants: readonly StructuredDataVariant[];
 }>): StructuredDataProductGroup | null {
   const productGroupID = readPublishableProductGroupID(product.pancakeProductId);
-  if (productGroupID === null) return null;
+  if (productGroupID === null || variants.length < 2) return null;
 
-  const variants = resolvePublishableVariants({ origin, product });
   const variesBy = resolveVariesBy(variants);
   if (variesBy.length === 0) return null;
 
   return { productGroupID, variesBy, variants };
+}
+
+/**
+ * The exact standalone survivor under the approved family-collapse contract.
+ *
+ * This path is intentionally narrower than "one publishable variant": it is available only for a
+ * standalone product whose external product identity is also publishable, matching the identity
+ * boundary that lets Merchant publish the survivor. Composite projections remain outside the v1
+ * exact-variant contract, and a malformed product identity cannot make JSON-LD publish an exact
+ * survivor that Merchant would refuse.
+ */
+function resolveStandaloneSurvivor({
+  product,
+  variants,
+}: Readonly<{
+  product: StorefrontStructuredDataProduct;
+  variants: readonly StructuredDataVariant[];
+}>): StructuredDataVariant | null {
+  if (product.projection.mode !== "standalone") return null;
+  if (readPublishableProductGroupID(product.pancakeProductId) === null) return null;
+  return variants.length === 1 ? variants[0]! : null;
 }
 
 /**
@@ -274,14 +295,18 @@ export function buildStorefrontProductStructuredData({
   origin: string;
   product: StorefrontStructuredDataProduct;
 }>): ProductStructuredDataDocument {
+  // Resolve the verified exact-variant set once, then decide only how that same set is represented:
+  // a real family under ProductGroup, one exact standalone survivor, or neither. No consumer-specific
+  // re-filtering is allowed between those representations.
+  const publishableVariants = resolvePublishableVariants({ origin, product });
+
   return buildProductStructuredData({
     origin,
     product,
-    // The product-level fallback, for a product with no publishable variant family: a composite's
-    // parent set, or a standalone product with a single option. Resolved from the same projection
-    // the page renders so structured data cannot quote a price the page does not show, and now
-    // narrowed to the variants whose inventory can state an availability at all.
+    // This remains the ordinary product-level fallback when there is no exact standalone survivor
+    // and no publishable family. It is narrowed to variants whose inventory can state availability.
     variantOptions: selectPublishableProductLevelOptions(product),
-    productGroup: resolveProductGroup({ origin, product }),
+    productGroup: resolveProductGroup({ product, variants: publishableVariants }),
+    standaloneVariant: resolveStandaloneSurvivor({ product, variants: publishableVariants }),
   });
 }
