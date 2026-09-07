@@ -22,6 +22,7 @@ import { prisma } from "@/db/prisma";
 import {
   runPromotionAdminOperation,
   type PromotionActionOutcome,
+  type PromotionOperationContext,
   type PromotionOperationResult,
 } from "@/operations/promotion-admin-operation";
 import type { PromotionActivationOperation } from "@/operations/promotion-observability";
@@ -45,6 +46,7 @@ async function runPromotionOperation(
   signalOperation: PromotionActivationOperation,
   operation: (
     session: Awaited<ReturnType<typeof requireCurrentAdmin>>,
+    context: PromotionOperationContext,
   ) => Promise<PromotionOperationResult>,
   campaignId?: string,
 ): Promise<PromotionActionOutcome> {
@@ -76,7 +78,12 @@ export async function publishPromotionAction(formData: FormData): Promise<void> 
   const campaignId = campaignIdFrom(formData);
   const outcome = await runPromotionOperation(
     "publish",
-    (session) => publishPromotionCampaign({ campaignId, now: new Date(), session }),
+    (session, context) => {
+      // Publish is the gate-governed operation: `publishPromotionCampaign` refuses with
+      // ACTIVATION_DISABLED when the flag is off, so the flag's state explains this outcome.
+      context.reportActivationGate();
+      return publishPromotionCampaign({ campaignId, now: new Date(), session });
+    },
     campaignId,
   );
   completeWith(outcome);
@@ -150,7 +157,7 @@ export async function editPromotionAction(formData: FormData): Promise<void> {
   const campaignIdInput = campaignIdFrom(formData);
   const outcome = await runPromotionOperation(
     "edit",
-    async (session) => {
+    async (session, context) => {
       const parseResult = parseCampaignFormInput(formData);
       if (!parseResult.ok) {
         return { ok: false, failure: { reason: parseResult.reason } };
@@ -187,6 +194,9 @@ export async function editPromotionAction(formData: FormData): Promise<void> {
       }
 
       if (lifecycle.status === "SCHEDULED") {
+        // Only this branch reaches the gate. A Draft edit goes to an ungated service function, and
+        // an illegal transition never reaches one at all, so neither reports gate state.
+        context.reportActivationGate();
         return editScheduledPromotionCampaign({ campaignId, now, session, patch });
       }
 

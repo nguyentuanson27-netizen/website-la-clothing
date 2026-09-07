@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import {
-  GATE_GOVERNED_OPERATIONS,
-  PROMOTION_ACTIVATION_OPERATIONS,
-} from "../../src/operations/promotion-observability.ts";
+import { PROMOTION_ACTIVATION_OPERATIONS } from "../../src/operations/promotion-observability.ts";
 
 function sourceOf(relativePath: string): string {
   return readFileSync(new URL(relativePath, import.meta.url), "utf8");
@@ -27,7 +24,7 @@ test("P5b create/edit parsers stay behind the Server Action admin authorization 
   // The order lives in the funnel now, so the property is asserted where it is executed rather
   // than where it used to be written.
   const authorizeAt = funnelSource.indexOf("session = await authorize();");
-  const runAt = funnelSource.indexOf("const outcome = await run(session);");
+  const runAt = funnelSource.indexOf("const outcome = await run(session, context);");
   assert.ok(authorizeAt >= 0, "the shared mutation funnel must authorize before anything else");
   assert.ok(
     runAt > authorizeAt,
@@ -44,7 +41,7 @@ test("P5b create/edit parsers stay behind the Server Action admin authorization 
       source,
       // The leading argument is the observability operation label. It is matched as a literal so a
       // request-derived value here would fail this assertion rather than ride along unnoticed.
-      /runPromotionOperation\(\s*"[a-z-]+",\s*(?:async )?\(session\) => \{\s*const parseResult = parseCampaignFormInput\(formData\);/,
+      /runPromotionOperation\(\s*"[a-z-]+",\s*(?:async )?\(session(?:, context)?\) => \{\s*const parseResult = parseCampaignFormInput\(formData\);/,
       `${name} must parse FormData inside the authorized callback, never before it`,
     );
   }
@@ -91,35 +88,74 @@ test("every promotion action reports under its own operation label", () => {
 });
 
 /**
- * The service functions whose outcome `LA_PROMOTION_ACTIVATION_ENABLED` can decide, and the
- * operation each one is reached through.
+ * The gate signal is reported by the branch that is about to enter a gate-governed code path, not
+ * inferred from the action label, because `edit` reaches `editScheduledPromotionCampaign` only for
+ * a Scheduled campaign — a Draft edit, a malformed input or a missing campaign never consults the
+ * gate. That placement is a property of the action file, which a test cannot import, so it is
+ * pinned here: every call to a service function that reads the gate must be preceded by a report,
+ * and there must be no report that is not guarding one.
  */
-const GATE_OPERATION_BY_SERVICE_FUNCTION = {
-  publishPromotionCampaign: "publish",
-  editScheduledPromotionCampaign: "edit",
-} as const;
+function gateReadingServiceFunctions(): ReadonlySet<string> {
+  const reading = new Set<string>();
 
-test("the gate-governed operations match the service functions that read the gate", () => {
-  const gateChecking = new Set<string>();
-  const exported = /export async function (\w+)\(/g;
-
-  for (const match of serviceSource.matchAll(exported)) {
-    const name = match[1];
+  for (const match of serviceSource.matchAll(/export async function (\w+)\(/g)) {
     const start = match.index ?? 0;
     const next = serviceSource.indexOf("\nexport async function ", start + 1);
     const body = serviceSource.slice(start, next === -1 ? serviceSource.length : next);
-    if (body.includes("isPromotionActivationEnabled(env)")) gateChecking.add(name);
+    if (body.includes("isPromotionActivationEnabled(env)")) reading.add(match[1]);
   }
 
+  return reading;
+}
+
+test("the activation gate is reported by exactly the branches that reach it", () => {
+  const gateReading = gateReadingServiceFunctions();
+
   assert.deepEqual(
-    gateChecking,
-    new Set(Object.keys(GATE_OPERATION_BY_SERVICE_FUNCTION)),
-    "a service function that reads the activation gate must be represented in GATE_GOVERNED_OPERATIONS",
+    gateReading,
+    new Set(["publishPromotionCampaign", "editScheduledPromotionCampaign"]),
+    "a service function that newly reads the gate needs a report at its call site",
   );
-  assert.deepEqual(
-    new Set(Object.values(GATE_OPERATION_BY_SERVICE_FUNCTION)),
-    new Set(GATE_GOVERNED_OPERATIONS),
+
+  let guardedCallSites = 0;
+
+  for (const name of gateReading) {
+    const callSites = [...actionsSource.matchAll(new RegExp(`${name}\\(`, "g"))];
+    assert.ok(callSites.length > 0, `${name} must be called from an action`);
+
+    for (const callSite of callSites) {
+      const before = actionsSource.slice(0, callSite.index ?? 0);
+      const reportedAt = before.lastIndexOf("context.reportActivationGate();");
+      const previousCall = before.lastIndexOf(`${name}(`);
+      assert.ok(
+        reportedAt > previousCall,
+        `${name} must be reached only after context.reportActivationGate()`,
+      );
+      guardedCallSites += 1;
+    }
+  }
+
+  // The other direction: no branch reports gate state without entering a gate-governed path.
+  assert.equal(
+    [...actionsSource.matchAll(/context\.reportActivationGate\(\);/g)].length,
+    guardedCallSites,
+    "every gate report must guard a call into a gate-reading service function",
   );
+});
+
+// Ungated operations must not claim the gate had a bearing on them.
+test("the ungated promotion operations never report gate state", () => {
+  for (const action of [
+    "disablePromotionAction",
+    "endPromotionEarlyAction",
+    "copyPromotionAction",
+    "createPromotionAction",
+  ] as const) {
+    assert.ok(
+      !exportedActionSource(action).includes("reportActivationGate"),
+      `${action} does not consult the activation gate and must not report it`,
+    );
+  }
 });
 
 test("P5b promotion target search is pinned to the configured Pancake shop", () => {

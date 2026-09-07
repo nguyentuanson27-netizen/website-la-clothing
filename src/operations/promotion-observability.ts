@@ -73,25 +73,12 @@ export const PROMOTION_ACTIVATION_OPERATIONS = [
 export type PromotionActivationOperation = (typeof PROMOTION_ACTIVATION_OPERATIONS)[number];
 
 /**
- * The operations whose outcome the `LA_PROMOTION_ACTIVATION_ENABLED` gate can decide.
+ * The state of `LA_PROMOTION_ACTIVATION_ENABLED` in the process serving one gate-governed request.
  *
- * Mirrors the two `isPromotionActivationEnabled` checks in `promotion-activation-service.ts`:
- * `publishPromotionCampaign` and `editScheduledPromotionCampaign`. Disable and end-early are
- * deliberately ungated — turning a live promotion off must never depend on the flag that turned it
- * on — so reporting gate state alongside them would suggest a bearing it does not have.
- *
- * `tests/domain/promotion-admin-actions-structure.test.ts` pins this against the service source, so
- * a gate check added to a third operation fails a test rather than silently going unreported.
+ * Emitted by the operation itself — see `reportActivationGate` in `promotion-admin-operation.ts` —
+ * because whether the gate has any bearing is a runtime-branch fact, not a property of the action
+ * label: `edit` reaches the gated service function only for a Scheduled campaign.
  */
-export const GATE_GOVERNED_OPERATIONS = [
-  "publish",
-  "edit",
-] as const satisfies readonly PromotionActivationOperation[];
-
-export function isGateGovernedOperation(operation: PromotionActivationOperation): boolean {
-  return (GATE_GOVERNED_OPERATIONS as readonly PromotionActivationOperation[]).includes(operation);
-}
-
 export type PromotionActivationGateSignal = Readonly<{
   name: "promotion.activation_gate";
   operation: PromotionActivationOperation;
