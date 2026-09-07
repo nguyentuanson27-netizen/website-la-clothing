@@ -1,7 +1,7 @@
 const TRUSTED_IMAGE_HOSTNAME = "content.pancake.vn";
 const MAX_IMAGE_URL_LENGTH = 4096;
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg"]);
+const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png"]);
 
 export type TrustedProductImage = {
   url: string;
@@ -23,7 +23,7 @@ export type StorefrontProductMedia = {
  * - Port must be default HTTPS port (no custom ports)
  * - Authority must not contain user credentials
  * - Path must not contain path traversal (`..`)
- * - Path must match exact reviewed P0 shape `/:segment/:id/:id/:id/:file.jpg`
+ * - Path must match exact reviewed shape `/:segment/:id/:id/:id/:file.(jpg|png)`
  * - Length must be bounded (<= 4096 chars)
  */
 export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
@@ -71,7 +71,7 @@ export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
     return null;
   }
 
-  // Enforce reviewed Pancake CDN path shape: /:segment/:id/:id/:id/:file.jpg
+  // Enforce reviewed Pancake CDN path shape: /:segment/:id/:id/:id/:file.(jpg|png)
   const pathname = parsed.pathname;
   if (!isValidReviewedMediaPath(pathname)) {
     return null;
@@ -81,7 +81,7 @@ export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.jpg$/;
+  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png)$/;
 
 function isValidReviewedMediaPath(pathname: string): boolean {
   if (!PANCAKE_MEDIA_PATH_REGEX.test(pathname) || pathname.includes("..")) {

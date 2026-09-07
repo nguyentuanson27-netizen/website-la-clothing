@@ -50,6 +50,12 @@ const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
         port: "",
         pathname: "/*/*/*/*/*.jpg",
       },
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.png",
+      },
     ],`;
 
 type RouteExists = (pathname: string) => Promise<boolean>;
