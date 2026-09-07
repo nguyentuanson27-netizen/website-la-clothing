@@ -318,17 +318,15 @@ Decision:
 
 # 14. Merchant ↔ JSON-LD family-collapse decision
 
-Current roadmap còn một authority decision kỹ thuật khi family chỉ còn **1 publishable variant**.
+Owner-approved technical convergence contract when filtering leaves **exactly one publishable standalone variant**:
 
-Known divergence:
-- Merchant có thể publish exact surviving variant.
-- JSON-LD hiện có thể collapse family thành product-level `Product`.
+1. **Merchant continues to publish the exact surviving variant.** Do not weaken a correct feed merely to match a structured-data presentation rule.
+2. **U27 emits a standalone schema.org `Product` representing that same exact survivor**, using the same U12 variant deep-link and the same verified variant facts used by the exact variant path: manufacturer MPN, optional publishable SKU, color/size, image where resolved, exact promotion-aware price and exact resolved availability.
+3. **Do not emit a one-member `ProductGroup`.** A single surviving standalone product is represented as `Product`, not a fake family.
+4. If zero standalone variants remain publishable, publish no exact standalone-variant claim.
+5. The feed↔JSON-LD convergence gate closes only after a dedicated implementation PR proves exact survivor parity for variation identity, URL, MPN, price and availability.
 
-Engineering phải đưa proposal riêng với trade-off tối thiểu giữa:
-1. Giữ exact surviving variant trong structured data; hoặc
-2. Omit survivor khỏi Merchant để giữ exact set parity.
-
-**Status:** `OPEN — ENGINEERING PROPOSAL REQUIRED`
+**Status:** `RESOLVED — IMPLEMENTATION / PARITY VERIFICATION PENDING`
 
 ---
 
@@ -367,7 +365,7 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 | O1 Google Ads value | ✅ RESOLVED | Merchandise-only |
 | O2 Merchant market | ✅ RESOLVED | Vietnam / vi / VND |
 | O4 vendor IDs | ⏳ OPEN | Placeholder setup allowed; live blocked |
-| Merchant↔JSON-LD family collapse | ⏳ OPEN | Needs engineering proposal + owner/architecture decision |
+| Merchant↔JSON-LD family collapse | ✅ RESOLVED — IMPLEMENTATION PENDING | Merchant keeps exact survivor; U27 standalone `Product` represents the same exact survivor; no one-member `ProductGroup` |
 
 ---
 
@@ -379,11 +377,12 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 - U33 / W13
 - U36 / W19
 - O1/O2-dependent Ads/Merchant planning
+- Merchant↔JSON-LD one-survivor U27 implementation + parity verification
 
 ## Still blocked / deferred
 - U35 — permanent domain not chosen.
 - Gate T live — O4 real vendor IDs missing.
-- Merchant↔JSON-LD family-collapse final parity — decision pending.
+- Merchant↔JSON-LD final parity **gate** — decision is resolved, implementation + RED/GREEN parity evidence still pending.
 - Gate S activation — separate human gate.
 - Brand story / values — optional future content.
 
@@ -396,4 +395,4 @@ Owner confirms the facts/decisions in this document as current business truth fo
 **Approved by:** `@nguyentuanson27-netizen`  
 **Approval date:** `2026-09-07`
 
-Any future change to return window, fees, shipping terms, delivery estimates, carriers, size measurements/tolerance, contact/legal facts, crawler policy, Ads value semantics, Merchant target market, or SEO publish uniqueness policy should update this source-of-truth before implementation/publication changes rely on the new value.
+Any future change to return window, fees, shipping terms, delivery estimates, carriers, size measurements/tolerance, contact/legal facts, crawler policy, Ads value semantics, Merchant target market, SEO publish uniqueness policy, or the Merchant↔JSON-LD one-survivor convergence contract should update this source-of-truth before implementation/publication changes rely on the new value.
