@@ -445,10 +445,10 @@ export function buildProductStructuredData({
   if (product.editorialDescription) {
     productNode.description = product.editorialDescription;
   }
-  // Preserve the exact variant image when the one-survivor path resolved one. The product gallery
-  // remains the fallback for a survivor without a variant image and for ordinary product/group
-  // documents.
-  if (images.length > 0 && (!productNode.image || productNode.image.length === 0)) {
+  // An exact survivor may publish only its resolved variant image. If none resolved, omit image
+  // rather than replacing variant-specific evidence with the generic product gallery. Ordinary
+  // product/group documents keep the pre-existing product-gallery behavior.
+  if (images.length > 0 && publishedStandaloneVariant === null) {
     productNode.image = images;
   }
   if (productNode["@type"] === "Product" && publishedStandaloneVariant === null) {
