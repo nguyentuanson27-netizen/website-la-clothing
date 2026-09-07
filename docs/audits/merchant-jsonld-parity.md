@@ -1,24 +1,29 @@
 # Merchant feed ↔ U27 variant JSON-LD parity (Wave 5 convergence gate)
 
 Two public consumers describe the same standalone variant to two different audiences. This audit
-records where they publish the same truth about the facts they share, and what remains open.
+records where they publish the same truth about the facts they share, and what remains open. As of
+PR #214 the convergence launch gate is **CLOSED**; what remains open below is Merchant *activation*,
+which this audit does not grant.
 
-It has been written in two passes:
+It has been written in three passes:
 
 - **PR #199** proved the parity across identity, grouping, MPN, URL, price and the resolvable
   availability domain, and recorded one reachable divergence it deliberately did not equalize. That
   pass changed no `src/` file.
 - **PR #200 (U27a)** closed that **availability** divergence in runtime code, in both the
   exact-variant and product-level paths, and aligned U27's MPN-uniqueness domain with the Merchant
-  mapper's. It does change `src/`. It did **not** close the convergence launch gate, which stays
-  open on the family-collapse granularity contract described below.
+  mapper's. It does change `src/`. It did **not** close the convergence launch gate, which stayed
+  open on the family-collapse granularity contract.
+- **PR #214** implemented the owner-approved one-survivor contract and **closes** that last open
+  contract, and with it the convergence launch gate. Merged to `main` as
+  `be7e5f628f86e71f8fc9769bed210501e15e03ed`.
 
-| | PR #199 | PR #200 (U27a) |
-| --- | --- | --- |
-| Base SHA | `2d5ea84045f61fc1249076379dd0816d37499546` | `22fea2ce9e48368b7ce64fa502d45b7c03bf98d3` |
-| Scope | tests, docs and task reconciliation only | runtime fix plus tests and docs |
-| `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` |
-| Head SHA | recorded in that PR's description | recorded in that PR's description |
+| | PR #199 | PR #200 (U27a) | PR #214 |
+| --- | --- | --- | --- |
+| Base SHA | `2d5ea84045f61fc1249076379dd0816d37499546` | `22fea2ce9e48368b7ce64fa502d45b7c03bf98d3` | `f8a0658422481412201d05a9d3519cff5a205a54` |
+| Scope | tests, docs and task reconciliation only | runtime fix plus tests and docs | runtime selection/serialization plus focused tests |
+| `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` | yes — `storefront-product-structured-data.ts`, `structured-data.ts` |
+| Head SHA | recorded in that PR's description | recorded in that PR's description | `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e` |
 
 - **Pancake API used:** NO. **Production database used:** NO, in either pass. Every case is
   reproducible from repository fixtures.
@@ -90,7 +95,7 @@ The two formats are compared on meaning, never on literal strings.
 | I — unaddressable variation identity | COMPATIBLE FAIL-CLOSED on both sides |
 | J — composite | COMPATIBLE FAIL-CLOSED: Merchant reports `COMPOSITE_DEFERRED`, U27 publishes no `ProductGroup` |
 | Grouping | MATCH: every emitted sibling groups under `pancakeProductId`, never a slug, local id, kind key, MPN or index |
-| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, except the family-collapse state below |
+| Publishable set | MATCH across a mixed fixture of eligible and ineligible variants, **including** the family-collapse state below (PR #214) |
 
 ## Closed divergence — negative mirrored warehouse quantity (U27a)
 
@@ -171,9 +176,10 @@ PDP detail repository → U27 serialization boundary
 
 An excluded variant leaves nothing behind: no `hasVariant` entry, no `offers`, no MPN, no dangling
 URL. `variesBy` is recomputed from the survivors, so dropping the only other colour leaves a
-size-only family rather than a claimed colour axis. When exclusion leaves no real family, U27's
-existing rules collapse the group to the product-level `Product` rather than publishing a one-member
-`ProductGroup`.
+size-only family rather than a claimed colour axis. When exclusion leaves no real family, U27 never
+publishes a one-member `ProductGroup`: since PR #214 a single surviving sibling is published as the
+exact standalone survivor described below, and a product that only ever had one option keeps the
+ordinary product-level fallback.
 
 ### Also closed — exclusion ordering around MPN uniqueness
 
@@ -203,37 +209,53 @@ unresolved price and an unresolved availability are all excluded before they can
 The rule it narrows is unchanged where it matters: when two *surviving* candidates share a part
 number, both are still dropped, because the catalog cannot say which one it names.
 
-### Open contract — the family-collapse state
+### Closed contract — the family-collapse state (PR #214)
 
-U27a closed the availability divergence in both the exact-variant and product-level paths, and the
-exclusion-ordering mismatch above. One question remains **of those found so far**, and it is a
-granularity question rather than a contradiction. Two review passes each surfaced a further
-reachable mismatch, so this is stated as the remaining known gap rather than a proof of exhaustion.
+This was the last open question, and it was a granularity question rather than a contradiction:
+when exclusion left a single publishable sibling, Merchant published an exact offer for the survivor
+while U27 fell back to a product-level `Product` carrying no exact *variant* identity. The two
+statements agreed on product, price and availability, but the publishable exact-variant sets were
+not equal, so the gate could not close on that evidence.
 
-When exclusion leaves a single publishable sibling, U27's existing rules collapse the family to a
-product-level `Product`, because a one-member `ProductGroup` is not a variant family. In that state:
+The owner resolved it as option 1 of the three recorded in the previous pass — see
+`docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §14 — and **PR #214 implements it**:
 
-- Merchant publishes an exact offer for the surviving variant, carrying its variation identity;
-- U27 publishes a product-level `Product` with the same price and the same availability, now derived
-  only from resolved inventory, but no exact *variant* identity for it.
+- Merchant continues to publish that exact survivor, unchanged;
+- U27 emits a top-level standalone `Product` representing **the same** exact survivor, using the
+  same U12 `?variant=` deep-link and the same verified variant facts (MPN, optional publishable SKU,
+  colour/size, resolved variant image, promotion-aware price, resolved availability);
+- U27 does **not** emit a one-member `ProductGroup`;
+- the standalone `Product` does not invent a `productGroupID`; Merchant may still carry
+  `item_group_id`, and that field is excluded from the shared-fact comparison because it is the one
+  fact the two formats legitimately do not share;
+- a product that started with exactly **one** option is not a collapsed family and keeps the ordinary
+  product-level fallback with the canonical PDP URL;
+- zero publishable exact variants still produce no exact standalone-variant claim.
 
-Neither statement is false and they agree on product, price and availability — but the publishable
-exact-variant sets are not equal, so the launch gate does not close on this evidence.
+Convergence is gated on the facts both consumers must agree on — bounded external offer identity,
+positive price, resolved availability and exact ADR 0008 MPN — so a variant Merchant would reject
+cannot authorize an exact JSON-LD survivor. Option *dimensional* validity remains U12/storefront
+addressability's decision, so a valid size-only family is not rejected merely because Merchant's
+apparel feed independently requires a colour.
 
-This is the pre-existing single-variant-family rule, not something U27a introduced: it applies to any
-product with one variant, and PR #199 already recorded it as a format-specific eligibility
-difference. Reconciling it means one of:
+Both sides fail closed independently at the serialization boundary: a malformed MPN cannot become
+public markup even if a future caller bypasses the selection helper.
 
-1. **Change U27 ProductGroup eligibility** so a single publishable variant still publishes an exact
-   variant `Product`/`Offer` — a change to U27's own design, and arguably wrong against schema.org,
-   where a `ProductGroup` describes a family.
-2. **Omit the survivor from Merchant** under the same condition — which weakens a feed that is
-   currently correct, to match a presentation rule of the other consumer.
-3. **Accept the granularity difference** and say so normatively in the gate's wording: a
-   product-level statement that agrees on product, price and availability satisfies "consistency"
-   even without variant-level identity.
+#### Evidence
 
-Each is an authority decision about what the gate means, not a defect to fix inside this unit.
+| Property | Coverage |
+| --- | --- |
+| Exact variation identity | `merchant-structured-data-parity.test.ts` — *publishes the family-collapse survivor as the same exact standalone variant* |
+| Exact U12 variant URL | same test + `merchant-structured-data-family-collapse.test.ts` (asserts `productNode.url === offer.link`) |
+| ADR 0008 MPN | same tests (`productNode.mpn === offer.mpn`) |
+| Promotion-aware price | `merchant-structured-data-parity.test.ts` — *publishes the promotion-aware survivor price after a family collapse* |
+| Resolved availability | family-collapse test asserts `schema.org/InStock` against Merchant `in_stock`; excluded sibling reports `AVAILABILITY_UNRESOLVED` on both sides |
+| No one-member `ProductGroup` | family-collapse test asserts `@type === "Product"` and the absence of `hasVariant` / `productGroupID` / `variesBy` |
+| Single-option product is not a collapsed family | `storefront-structured-data-boundary.test.ts` — *U27 single or non-publishable family keeps the product-level fallback* asserts the canonical PDP `Offer.url` |
+| Merchant-eligibility precedence | `merchant-structured-data-family-collapse-eligibility.test.ts` — missing size, zero price and overlong offer id; plus a rejected product identity emitting no exact survivor |
+
+The parity suite reads the Merchant side back from **serialized RSS bytes**, not the mapper's
+in-memory result, so the comparison is against what a vendor would actually fetch.
 
 ### Non-finite quantities
 
@@ -277,17 +299,19 @@ business-fact parity
   availability, resolvable stock domain    = GREEN
   availability, any negative row           = COMPATIBLE FAIL-CLOSED (U27a)
   exclusion ordering vs MPN uniqueness     = GREEN (U27a)
-  exact-variant set, family-collapse state = OPEN CONTRACT (authority decision)
+  exact-variant set, family-collapse state = GREEN (PR #214)
 
-feed <-> JSON-LD consistency launch gate   = OPEN
-production feed activation                 = BLOCKED by O2
+feed <-> JSON-LD consistency launch gate   = CLOSED
+production feed activation                 = BLOCKED by O2 runtime authority
 ```
 
 ## O2 status
 
-**O2 remains unresolved.** `APPROVED_MERCHANT_MARKET` is still `null`, `resolveMerchantMarket()`
-still reports `MERCHANT_MARKET_UNRESOLVED`, and the production route still fails closed with a
-bounded `503`. That is expected behaviour, not a parity failure.
+**The O2 owner decision is RESOLVED as Vietnam / `vi` / `VND`; its trusted runtime authority is
+still unimplemented.** `APPROVED_MERCHANT_MARKET` is still `null`, `resolveMerchantMarket()` still
+reports `MERCHANT_MARKET_UNRESOLVED`, and the production route still fails closed with a bounded
+`503`. That is an implementation/configuration gap, not an unresolved owner decision and not a
+parity failure.
 
 The parity suite needs a currency token to render `<g:price>`, so it passes a clearly named
 `TEST_ONLY_MERCHANT_MARKET` straight to the serializer. It is scoped to that one test file, nothing
@@ -304,6 +328,8 @@ no multi-replica claim. Nothing here adds Redis, replicas, or a deployment chang
 
 ## Remaining gates
 
-- **Feed ↔ JSON-LD consistency launch gate:** OPEN, on the family-collapse contract below.
-- **O2:** OPEN. **M5 / U41:** BLOCKED.
-- Next unit: `U28 / T8`.
+- **Feed ↔ JSON-LD consistency launch gate:** **CLOSED** by PR #214 under the approved one-survivor
+  contract. This gate closing does not activate anything: it removes the parity blocker only.
+- **O2 runtime authority:** OPEN — decision approved, trusted server-owned configuration not wired.
+  **M5 / U41:** BLOCKED.
+- Next unit: `U28 / T8`, itself blocked on **O4** and Google Tag Manager account access.

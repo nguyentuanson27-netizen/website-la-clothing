@@ -60,8 +60,15 @@ The group carries no `offers`, `AggregateOffer`, `lowPrice`, `highPrice`, or `of
 so the page has one product-schema authority.
 
 If a truthful variant family cannot be established, U27 falls back to the existing product-level
-`Product` shape. Composite products are never remodelled as normal sibling variants; their fallback
-offer continues to be derived only from parent-set options.
+`Product` shape — with one exception added by PR #214 under the approved one-survivor contract: when
+a standalone product that originally had at least two options is narrowed by exclusion to exactly one
+verified survivor, U27 publishes that survivor as a top-level exact `Product` carrying its own U12
+`?variant=` URL and exact `Offer`, rather than a one-member `ProductGroup` or a generic product-level
+statement. A product that only ever had one option is not a collapsed family and keeps the ordinary
+product-level fallback with the canonical PDP URL. See `docs/audits/merchant-jsonld-parity.md`.
+
+Composite products are never remodelled as normal sibling variants; their fallback offer continues to
+be derived only from parent-set options.
 
 ## Identifier fail-closed boundary
 

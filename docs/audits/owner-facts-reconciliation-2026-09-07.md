@@ -41,7 +41,7 @@ this PR so they do not contradict the newer decisions.
 | **O1 Google Ads Purchase value** | Owner decision open | **RESOLVED — merchandise-only** | T8/Ads mapping may use canonical immutable merchandise value once O4 and T8 technical gates are satisfied |
 | **O2 Merchant market** | Owner decision open | **RESOLVED — Vietnam / `vi` / `VND`** | M3/M4 may be reconciled to a trusted server-owned market authority; request/caller data still may not self-approve the market |
 
-## Resolved technical contract, implementation still pending
+## Resolved technical contract, implementation still pending at the time of writing
 
 ### Merchant ↔ JSON-LD family-collapse
 
@@ -56,8 +56,14 @@ The owner approved the convergence contract on 2026-09-07:
 - Merchant is not weakened merely to match a structured-data presentation rule.
 
 This resolves the decision, **not the implementation**. The feed↔JSON-LD convergence launch gate
-remains open until a dedicated U27 implementation PR lands with focused RED/GREEN parity evidence
+remained open until a dedicated U27 implementation PR landed with focused RED/GREEN parity evidence
 for exact variation identity, URL, MPN, price and availability in the one-survivor state.
+
+> **Closed later the same day.** PR #214 implemented this contract and closed the convergence gate;
+> it merged to `main` as `be7e5f628f86e71f8fc9769bed210501e15e03ed` (exact head
+> `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e`). The record above is preserved as the state at the time
+> of this reconciliation. Current implementation and parity evidence:
+> `docs/audits/merchant-jsonld-parity.md`.
 
 ## Items that remain open
 
@@ -102,7 +108,7 @@ The following remain blocked/deferred by independent gates:
 
 - U35 / Gate S — permanent domain and explicit indexing approval;
 - Gate T live — O4 real vendor IDs/access + exact reviewed GTM saved version/export/preview evidence;
-- Merchant feed ↔ JSON-LD final parity — **decision resolved, U27 one-survivor implementation + parity verification pending**;
+- ~~Merchant feed ↔ JSON-LD final parity~~ — **CLOSED by PR #214** after this reconciliation was written; see `docs/audits/merchant-jsonld-parity.md`;
 - Merchant activation / U41 — still requires trusted runtime O2 market configuration, Gate M technical/account/site/shipping/returns prerequisites and explicit human activation; O2 decision resolution alone is not activation;
 - optional brand story/values — owner has not approved them.
 
