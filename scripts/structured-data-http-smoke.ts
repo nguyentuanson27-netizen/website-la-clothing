@@ -254,7 +254,7 @@ try {
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "customer support",
-        telephone: PUBLIC_CONTACT_FACTS.telephone,
+        telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
         email: PUBLIC_CONTACT_FACTS.email,
         hoursAvailable: {
           "@type": "OpeningHoursSpecification",

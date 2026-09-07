@@ -46,7 +46,8 @@ module: `PUBLIC_CONTACT_FACTS` in `src/content/public-brand-facts.ts`.
 
 | Fact key | Value source | Class |
 |---|---|---|
-| `telephone` | Owner-approved §2 hotline/Zalo number | **A** |
+| `telephone` | Owner-approved §2 hotline/Zalo number, as the owner wrote it | **A** |
+| `telephoneInternational` | The same number with the country code from **O2** (Việt Nam, `+84`); no subscriber digit differs, and a test pins it against the reviewed `normalizeVietnamesePhone` | **A** |
 | `email` | Owner-approved §2 support email | **A** |
 | `fanpageUrl` | Owner-approved §2 Fanpage | **A** |
 | `streetAddress`, `addressLocality` | Owner-approved §2 address string | **A** |

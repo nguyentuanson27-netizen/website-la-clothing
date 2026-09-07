@@ -264,7 +264,8 @@ test("P14 builds factual Organization and WebSite entities from the validated st
         contactPoint: {
           "@type": "ContactPoint",
           contactType: "customer support",
-          telephone: "0923159666",
+          // U32b: the country-code form Google asks for; same approved number as the footer shows.
+          telephone: "+84923159666",
           email: "laclothing2025@gmail.com",
           hoursAvailable: {
             "@type": "OpeningHoursSpecification",
@@ -441,7 +442,7 @@ test("U32b publishes the approved B2 contact facts on the Organization entity", 
   assert.deepEqual(organization.contactPoint, {
     "@type": "ContactPoint",
     contactType: "customer support",
-    telephone: PUBLIC_CONTACT_FACTS.telephone,
+    telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
     email: PUBLIC_CONTACT_FACTS.email,
     hoursAvailable: {
       "@type": "OpeningHoursSpecification",

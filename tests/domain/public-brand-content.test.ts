@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { describeGuestShippingPromotion } from "../../src/commerce/guest-shipping-policy.ts";
+import { normalizeVietnamesePhone } from "../../src/integrations/meta/conversions-api.ts";
 import {
   buildPublicBrandFacts,
   describePublicAddress,
@@ -49,6 +50,7 @@ test("P16A public brand facts expose only approved identity and commerce facts",
 test("U32b public contact facts transcribe the approved B2 source exactly", () => {
   assert.deepEqual(PUBLIC_CONTACT_FACTS, {
     telephone: "0923159666",
+    telephoneInternational: "+84923159666",
     email: "laclothing2025@gmail.com",
     fanpageUrl: "https://www.facebook.com/LAclothing.vn",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
@@ -97,6 +99,30 @@ test("U32b the two views of the approved facts are derived from the same parts",
   for (const part of [PUBLIC_CONTACT_FACTS.streetAddress, PUBLIC_CONTACT_FACTS.addressLocality]) {
     assert.equal(describePublicAddress().includes(part), true, part);
   }
+});
+
+/**
+ * The two spellings of the approved number are one fact. Google's Organization guidance wants the
+ * country code on `contactPoint.telephone`, and the calling code comes from O2 — the owner decision
+ * that the country/market is Việt Nam — not from the address.
+ *
+ * This checks the international form against the repository's existing reviewed Vietnamese phone
+ * normalization rather than restating it, so a typo in either spelling fails here instead of
+ * publishing a number nobody can reach. That function is imported by the test only: it exists to
+ * collapse free-text buyer input for hashing, which is a different contract from rendering a
+ * canonical published identifier, and the two must not become one authority by accident.
+ */
+test("U32b the international telephone is the approved number with the approved country code", () => {
+  assert.equal(
+    PUBLIC_CONTACT_FACTS.telephoneInternational,
+    `+${normalizeVietnamesePhone(PUBLIC_CONTACT_FACTS.telephone)}`,
+  );
+
+  // Same subscriber digits either way: the trunk zero is replaced, nothing is invented.
+  assert.equal(
+    PUBLIC_CONTACT_FACTS.telephoneInternational.replace("+84", ""),
+    PUBLIC_CONTACT_FACTS.telephone.replace(/^0/, ""),
+  );
 });
 
 test("U32b carries no fact outside the B2 contact contract", () => {

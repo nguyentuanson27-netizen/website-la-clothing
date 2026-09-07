@@ -57,12 +57,21 @@ const PUBLIC_SUPPORT_DAYS = Object.freeze([
  *   structured postal address, and deriving a country from a city name is an inference.
  * - **No Zalo URL.** The approved fact is one number reachable by phone and Zalo; a profile URL for
  *   it does not exist in any source.
+ *
+ * `telephone` and `telephoneInternational` are the **same approved number**, written two ways. The
+ * owner approved `0923159666`, a Vietnamese national form with the trunk zero; Google's Organization
+ * guidance asks `contactPoint.telephone` to carry the country code. The calling code is not inferred
+ * from the address — it comes from **O2**, the owner decision that the country/market is Việt Nam
+ * (`+84`). No subscriber digit is added or changed: the trunk zero is replaced by the approved
+ * country's calling code, and a test pins that against the repository's existing reviewed
+ * `normalizeVietnamesePhone`, so the two spellings cannot drift apart or hide a typo.
  * - **No `legalName` or `taxID`.** B6 *does* approve publishing the legal entity and the confirmed
  *   MST — this is not an owner block. They are simply **outside the B2 contact contract** this
  *   constant owns; they belong to the About/legal surface U33 builds.
  */
 export const PUBLIC_CONTACT_FACTS = Object.freeze({
   telephone: "0923159666",
+  telephoneInternational: "+84923159666",
   email: "laclothing2025@gmail.com",
   fanpageUrl: "https://www.facebook.com/LAclothing.vn",
   streetAddress: "212 Nguyễn Trãi, Đại Mỗ",

@@ -44,7 +44,15 @@ export function SiteFooter() {
           <div>
             <dt className="font-semibold uppercase tracking-[0.12em]">Liên hệ</dt>
             <dd className="mt-1 text-black/70">
-              <a className="underline underline-offset-4" href={`tel:${PUBLIC_CONTACT_FACTS.telephone}`}>
+              {/*
+                The visible text is the number exactly as the owner wrote it; the dial target uses
+                the same number's international spelling, which is also what the Organization
+                markup carries. One fact, two spellings, both from the authority.
+              */}
+              <a
+                className="underline underline-offset-4"
+                href={`tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}`}
+              >
                 {PUBLIC_CONTACT_FACTS.telephone}
               </a>{" "}
               (hotline &amp; Zalo) ·{" "}

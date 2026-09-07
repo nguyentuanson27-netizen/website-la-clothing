@@ -550,7 +550,10 @@ export function buildSiteStructuredData({
           // The approved facts describe one support channel — a hotline that is also the Zalo
           // number, an email, and one set of hours covering both.
           contactType: "customer support",
-          telephone: PUBLIC_CONTACT_FACTS.telephone,
+          // Google's Organization guidance wants the country code here. The value is the approved
+          // number in its international spelling, taken from the fact authority rather than
+          // normalized in this module — nothing about an owner fact is derived at the markup site.
+          telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
           email: PUBLIC_CONTACT_FACTS.email,
           hoursAvailable: {
             "@type": "OpeningHoursSpecification",

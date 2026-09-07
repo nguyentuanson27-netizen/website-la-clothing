@@ -93,8 +93,10 @@ test("U5 footer exposes canonical factual trust without unapproved support route
   await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.email);
   await expect(footer).toContainText(describePublicAddress());
   await expect(footer).toContainText(describePublicSupportHours());
+  // Visible text is the owner's spelling; the dial target and the Organization markup both carry
+  // the international one. Both come from the authority, so they cannot describe two numbers.
   await expect(
-    footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephone}"]`),
+    footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}"]`),
   ).toBeVisible();
   await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
   await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
