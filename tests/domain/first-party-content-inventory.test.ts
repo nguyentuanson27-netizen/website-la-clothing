@@ -93,11 +93,17 @@ test("current roadmap preserves W13A history while recording the resolved owner 
   );
   // U29 implemented B5's publish enforcement, so the old "implementation open" wording no longer
   // holds. What must not regress is the record itself: the owner decision stays resolved and
-  // pair-level, and the part that is genuinely still open — the slug/path cleanup, which needs
-  // real-catalog evidence — stays marked open rather than being closed by the enforcement landing.
+  // pair-level, and the parts that are genuinely still open stay marked open rather than being
+  // closed by the enforcement landing. W2a's exit path asks for enforcement "in the database and
+  // in the admin publish path" — U29 met only the second, and the record has to say which, or a
+  // later reader takes a cooperative application-level protocol for a database-owned invariant.
   assert.match(
     masterTodo,
-    /\*\*U29\*\*[^\n]+\*\*B5 enforcement is IMPLEMENTED; the slug\/path metadata cleanup itself remains OPEN pending real-catalog evidence\.\*\*/,
+    /\*\*U29\*\*[^\n]+\*\*B5 enforcement is IMPLEMENTED at the admin publish path; the W2a database-level enforcement condition and the slug\/path metadata cleanup itself remain OPEN\.\*\*/,
+  );
+  assert.match(
+    masterTodo,
+    /\*\*U29\*\*[^\n]+The application owns this invariant, not the database/,
   );
   assert.match(
     masterTodo,

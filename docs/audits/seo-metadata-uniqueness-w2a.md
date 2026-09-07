@@ -3,10 +3,12 @@
 Owning source: `docs/audits/seo-geo-audit.md` finding **W2**, planning step **P1/W2a**.
 Master-plan unit: **U4**. Consumer: **U29 / W2b**.
 
-Status: **PARTIALLY CLOSED.** The owner decision (B5) and the publish-time enforcement it calls for
-both exist; the slug/path discriminator still cannot be removed. See
-[U29 closure](#u29-closure-what-the-enforcement-actually-does) for what changed and
-[Verdict](#verdict) for the original, now-superseded blocker wording.
+Status: **STILL BLOCKED for the slug/path removal; one component of exit path 1 has landed.**
+The owner decision (B5) exists, and U29 implemented its **application-level** enforcement in the
+admin publish path. Exit path 1's **database-level** enforcement and its separate fallback-copy
+proof are **not** met, so the slug/path discriminator stays. See
+[U29 closure](#u29-closure-what-the-enforcement-actually-does) for exactly what changed and what
+did not, and [Verdict](#verdict) for the original wording.
 
 ## What the current contract does
 
@@ -89,10 +91,26 @@ written; where they disagree with this section, this section is authoritative.
 the move to `PUBLISHED` requires both fields and refuses a pair another published product holds.
 That decision predates this work — U29 implements it, it does not make it.
 
-**Exit path 1 is now taken, with one part still outstanding.** The audit named two conditions for
-removing the slug: a uniqueness constraint *enforced in the admin publish path*, and separately
-proving the fallback copy collision-free over the real catalog. The first is implemented and tested;
-the second is not, so the slug stays.
+### Exit path 1 scorecard — two of four components met
+
+Exit path 1 above is not a single condition. Read literally, it requires published
+`seoTitle`/`seoDescription` to become unique across products **"enforced in the database and in the
+admin publish path"**, *and* the fallback copy for products without published copy to be
+**separately proven collision-free** — plus the owner decision about what happens on collision.
+
+| Component of exit path 1 | State after U29 |
+|---|---|
+| Owner decision on publish-time collision behaviour | **MET** — B5, resolved before this work |
+| Enforced in the **admin publish path** | **MET** — see below; tested at the domain, database and real-browser levels |
+| Enforced in the **database** | **NOT MET** — no constraint or index owns the invariant; see [Where the invariant actually lives](#where-the-invariant-actually-lives) |
+| Fallback copy separately proven collision-free | **NOT MET** — untouched by U29; the name-derived fallback class is outside the published-pair domain entirely |
+
+Two of the four are outstanding, so **exit path 1 is not taken** and the slug stays. Nothing in U29
+changes the acceptance condition; narrowing it to the admin-publish-path half would be inventing a
+reconciliation this repository's owning sources never made. Closing the database component needs
+either a constraint that owns the invariant, or an explicit owner/source-contract decision that
+application-level enforcement is accepted in its place. **Neither exists**, and U29 does not assert
+one.
 
 ### The equality rule
 
@@ -129,7 +147,10 @@ At the persistence boundary, not in the browser and not only in the service:
 The published set is the only collision domain: a draft holding the same pair never blocks a
 publish, and a product never collides with itself on re-save.
 
-### Concurrency
+### Where the invariant actually lives
+
+**The application owns it. The database does not.** This is the distinction exit path 1 draws, and
+it is worth stating plainly rather than leaving to be inferred from the diff.
 
 The invariant is a read-then-write, and the race was **reproduced** before anything was built for
 it: two transactions under Read Committed both saw a conflict-free catalog and both wrote. Every
@@ -137,11 +158,29 @@ transaction that leaves a row `PUBLISHED` therefore takes one fixed `pg_advisory
 its check. `tests/database/product-content-publish-uniqueness.test.ts` holds that lock from a second
 client and proves the challenger cannot commit; removing the lock turns that test red.
 
-A unique index was considered and rejected as the larger mechanism: it needs a migration the live
-catalog is not guaranteed to survive, because nothing has ever constrained these columns and a
-legacy pair of duplicate published rows would fail it — and rewriting that copy is an owner
-decision nobody has made. The advisory lock costs one fixed key and serializes an action that is
-human-paced by nature.
+That is a **cooperative protocol**, and its guarantee extends exactly as far as its participants.
+Every write path this repository ships takes the lock, so no admin action — single or bulk,
+concurrent or not — can produce a duplicate published pair. But the schema still carries no
+constraint or index on the normalized published pair, so any writer that does not join the
+protocol — a manual `psql` session, a future code path that forgets, a data migration, a restore —
+can still create one. `tests/database/product-metadata-uniqueness.test.ts` continues to demonstrate
+exactly that, and it is deliberately left passing rather than rewritten: the deployed schema really
+does still permit duplicate published copy.
+
+A unique index would move ownership to the database and close that component. It was **not** added
+here, and the reason is a real one rather than a preference: it needs a migration the live catalog
+is not guaranteed to survive, because nothing has ever constrained these columns and a legacy pair
+of duplicate published rows would fail it on deploy — and rewriting or deleting that copy is an
+owner decision nobody has made. Forcing that migration inside U29 would risk a failed production
+deploy to close a documentation line.
+
+So the component stays open, and closing it needs one of two things, neither of which U29 may
+decide on its own:
+
+1. a database constraint that owns the invariant, together with whatever owner decision covers
+   legacy rows that would violate it; or
+2. an explicit owner/source-contract decision that application-level enforcement is accepted in
+   place of the database constraint W2a asks for.
 
 ### What the admin sees
 
@@ -165,11 +204,15 @@ change may also hold duplicate or incomplete copy that no gate has ever seen.
 **Real-catalog verification is PENDING.** No production database or Pancake credential was available
 in the execution context that implemented U29, and the repository has no approved read-only
 collision audit script — `evaluateProductMetadataUniqueness` is currently reachable only from tests.
-No result was invented in place of one. Removing the discriminator stays gated on:
+No result was invented in place of one. Removing the discriminator stays gated on all of:
 
-1. running `evaluateProductMetadataUniqueness` over the real catalog through an approved read-only
+1. the **database-level** component of exit path 1 — a constraint that owns the invariant, or an
+   owner/source-contract decision accepting application-level enforcement in its place
+   (see [Where the invariant actually lives](#where-the-invariant-actually-lives));
+2. the **fallback copy** proven collision-free separately, which U29 did not touch;
+3. running `evaluateProductMetadataUniqueness` over the real catalog through an approved read-only
    path and getting `safeToRemoveSlugDiscriminator: true`;
-2. the owning source-of-truth approving the cleanup on that evidence.
+4. the owning source-of-truth approving the cleanup on that evidence.
 
 ## Discriminators considered and rejected
 
@@ -187,11 +230,12 @@ plausible-looking guess — exactly what the audit warns against.
 
 ## Verdict
 
-> **Superseded in part.** This verdict records the state when the audit was written. The owner
-> decision it asks for now exists (B5, pair-level), and exit path 1's enforcement half is
-> implemented — see [U29 closure](#u29-closure-what-the-enforcement-actually-does). Its conclusion
-> still holds for the part that matters: the slug/path copy stays until the real catalog is
-> verified.
+> **Partly overtaken by events, but its conclusion stands.** This verdict records the state when the
+> audit was written. The owner decision it asks for now exists (B5, pair-level), and U29 implemented
+> the admin-publish-path component of exit path 1 — see
+> [U29 closure](#u29-closure-what-the-enforcement-actually-does). Exit path 1's database-enforcement
+> component and its separate fallback-copy proof are **not** met, so this verdict is **not**
+> discharged: the slug/path copy stays.
 
 **BLOCKED — U29 / W2b must not remove the slug/path copy on the current schema and data.**
 

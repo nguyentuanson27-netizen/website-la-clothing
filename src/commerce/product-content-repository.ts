@@ -42,6 +42,14 @@ const MAX_ADMIN_PRODUCTS = 100;
  * publishing is a rare, human-paced admin action, not a request-path write. The key itself is
  * arbitrary and only has to be identical in every such transaction.
  *
+ * Know what this does and does not buy. It is a **cooperative protocol**: the application owns the
+ * invariant, the database does not. Every write path here joins it, so no admin action can produce
+ * a duplicate published pair — but the schema carries no constraint on the normalized pair, so
+ * manual SQL, a data migration or a restore still can. W2a asks for enforcement "in the database
+ * and in the admin publish path"; this is the second half only, and
+ * `docs/audits/seo-metadata-uniqueness-w2a.md` records the first as still open. Any new path that
+ * writes a `PUBLISHED` row must take this lock and run the same check, or the guarantee lapses.
+ *
  * Exported so the concurrency regression can hold the real lock rather than simulate contention:
  * a race test that cannot lose is not a test.
  */
