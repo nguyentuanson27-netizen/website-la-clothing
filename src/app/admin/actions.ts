@@ -91,6 +91,37 @@ const expiredSessionError =
   "Phiên quản trị không còn hợp lệ. Tải lại trang và đăng nhập lại.";
 const staleSelectionError = "Có sản phẩm không còn tồn tại. Tải lại danh sách rồi thử lại.";
 
+/** At most this many slugs are named before the message falls back to a count. */
+const MAX_NAMED_BLOCKED_SLUGS = 5;
+
+function describeBlockedSlugs(blockedSlugs: readonly string[]): string {
+  return blockedSlugs.length > MAX_NAMED_BLOCKED_SLUGS
+    ? `${blockedSlugs.length} sản phẩm`
+    : blockedSlugs.map((slug) => `/${slug}`).join(", ");
+}
+
+/**
+ * B5: a batch refused for a publish precondition is not an invalid selection, and saying so would
+ * send the operator to re-pick products that are fine. The whole batch is left untouched, so the
+ * message names what has to change before it can be retried.
+ */
+function bulkStatusErrorMessage(
+  result: Exclude<Awaited<ReturnType<typeof bulkStatusAdminService.update>>, { ok: true }>,
+): string {
+  switch (result.reason) {
+    case "PRODUCT_NOT_FOUND":
+      return staleSelectionError;
+    case "UNAVAILABLE":
+      return genericBulkStatusError;
+    case "SEO_INCOMPLETE":
+      return `Chưa publish được: ${describeBlockedSlugs(result.blockedSlugs)} còn thiếu SEO title hoặc SEO description. Không sản phẩm nào được đổi trạng thái.`;
+    case "SEO_PAIR_CONFLICT":
+      return `Chưa publish được: cặp SEO title + description của ${describeBlockedSlugs(result.blockedSlugs)} trùng với sản phẩm đã publish khác. Không sản phẩm nào được đổi trạng thái.`;
+    default:
+      return "Lựa chọn hoặc trạng thái không hợp lệ. Kiểm tra lại rồi thử lại.";
+  }
+}
+
 type AdminSession = Awaited<ReturnType<typeof requireCurrentAdmin>>;
 
 /**
@@ -144,15 +175,7 @@ export async function bulkUpdateProductStatusAction(
   }
 
   if (!result.ok) {
-    return {
-      kind: "error",
-      message:
-        result.reason === "PRODUCT_NOT_FOUND"
-          ? staleSelectionError
-          : result.reason === "UNAVAILABLE"
-            ? genericBulkStatusError
-            : "Lựa chọn hoặc trạng thái không hợp lệ. Kiểm tra lại rồi thử lại.",
-    };
+    return { kind: "error", message: bulkStatusErrorMessage(result) };
   }
 
   const status = formData.get("status");

@@ -30,6 +30,14 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
+/**
+ * The subject here is the write itself: one website-owned field patched, a minimal row created for
+ * a product that had none, and nothing else touched. `REVIEWED` is the status under test because
+ * B5 gives `PUBLISHED` a precondition of its own — a product with no content row has no SEO copy
+ * and is refused — and that gate is covered in `product-content-publish-uniqueness.test.ts`. Using
+ * `PUBLISHED` here would make this test fail for a reason that has nothing to do with what it
+ * asserts.
+ */
 test("bulk status repository updates only status and creates minimal missing content", async () => {
   const syncedAt = new Date("2026-08-26T00:00:00.000Z");
   const existing = await prisma.productMirror.create({
@@ -67,7 +75,7 @@ test("bulk status repository updates only status and creates minimal missing con
   assert.deepEqual(
     await repository.updateStatusesAtomically({
       productIds: [existing.id, missingContent.id],
-      status: "PUBLISHED",
+      status: "REVIEWED",
     }),
     { ok: true, updatedCount: 2 },
   );
@@ -79,7 +87,7 @@ test("bulk status repository updates only status and creates minimal missing con
   const existingRow = rows.find((row) => row.productId === existing.id);
   const newRow = rows.find((row) => row.productId === missingContent.id);
 
-  assert.equal(existingRow?.status, "PUBLISHED");
+  assert.equal(existingRow?.status, "REVIEWED");
   assert.equal(existingRow?.editorialDescription, "Keep description");
   assert.equal(existingRow?.careInstructions, "Keep care");
   assert.equal(existingRow?.sizeGuide, "Keep size guide");
@@ -87,7 +95,7 @@ test("bulk status repository updates only status and creates minimal missing con
   assert.equal(existingRow?.seoDescription, "Keep SEO description");
   assert.deepEqual(existingRow?.collectionSlugs, ["keep-collection"]);
 
-  assert.equal(newRow?.status, "PUBLISHED");
+  assert.equal(newRow?.status, "REVIEWED");
   assert.equal(newRow?.editorialDescription, null);
   assert.equal(newRow?.careInstructions, null);
   assert.equal(newRow?.sizeGuide, null);
@@ -95,12 +103,19 @@ test("bulk status repository updates only status and creates minimal missing con
   assert.equal(newRow?.seoDescription, null);
   assert.deepEqual(newRow?.collectionSlugs, []);
 
+  // Re-applying the same status is a no-op update, not a second create.
   assert.deepEqual(
     await repository.updateStatusesAtomically({
       productIds: [existing.id, missingContent.id],
-      status: "PUBLISHED",
+      status: "REVIEWED",
     }),
     { ok: true, updatedCount: 2 },
+  );
+  assert.equal(
+    await prisma.productContent.count({
+      where: { productId: { in: [existing.id, missingContent.id] } },
+    }),
+    2,
   );
 });
 

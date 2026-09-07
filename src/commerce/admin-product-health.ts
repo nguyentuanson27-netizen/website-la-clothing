@@ -262,8 +262,19 @@ export function directoryHealthMetricsSql(productIds: readonly string[]): Prisma
 function blankTextCondition(column: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`(
     ${column} IS NULL
-    OR REGEXP_REPLACE(${column}, ${JS_TRIM_PATTERN}, '', 'g') = ''
+    OR ${jsTrimmedSql(column)} = ''
   )`;
+}
+
+/**
+ * `column` with exactly the whitespace `String.prototype.trim()` strips removed from both ends.
+ *
+ * Exported because the B5 published-metadata pair comparison has to trim the same set on the same
+ * columns: one trim authority, so a value cannot read as blank to the health filters and as text to
+ * the publish gate.
+ */
+export function jsTrimmedSql(column: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`REGEXP_REPLACE(${column}, ${JS_TRIM_PATTERN}, '', 'g')`;
 }
 
 /**

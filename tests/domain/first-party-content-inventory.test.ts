@@ -91,10 +91,25 @@ test("current roadmap preserves W13A history while recording the resolved owner 
     masterTodo,
     /\| \*\*B6\*\* \| \*\*RESOLVED FOR MINIMAL ABOUT\*\*[^\n]+\| U33 About owner-unblocked \|/,
   );
+  // U29 implemented B5's publish enforcement, so the old "implementation open" wording no longer
+  // holds. What must not regress is the record itself: the owner decision stays resolved and
+  // pair-level, and the parts that are genuinely still open stay marked open rather than being
+  // closed by the enforcement landing. W2a's exit path asks for enforcement "in the database and
+  // in the admin publish path" — U29 met only the second, and the record has to say which, or a
+  // later reader takes a cooperative application-level protocol for a database-owned invariant.
   assert.match(
     masterTodo,
-    /\*\*U29\*\*[^\n]+\*\*B5 is RESOLVED — owner-unblocked, implementation open\.\*\*[^\n]+pair-level `\(seoTitle, seoDescription\)` uniqueness/,
+    /\*\*U29\*\*[^\n]+\*\*B5 enforcement is IMPLEMENTED at the admin publish path; the W2a database-level enforcement condition and the slug\/path metadata cleanup itself remain OPEN\.\*\*/,
   );
+  assert.match(
+    masterTodo,
+    /\*\*U29\*\*[^\n]+The application owns this invariant, not the database/,
+  );
+  assert.match(
+    masterTodo,
+    /\*\*U29\*\*[^\n]+pair-level[^\n]*`\(seoTitle, seoDescription\)`/,
+  );
+  assert.match(masterTodo, /\*\*U29\*\*[^\n]+Real-catalog verification of slug-free copy is PENDING/);
   assert.match(
     masterTodo,
     /\| \*\*B5\*\* \| \*\*RESOLVED\*\* — pair-level `\(seoTitle, seoDescription\)` uniqueness among published products; drafts may be missing\/duplicate; collision blocks publish \|/,

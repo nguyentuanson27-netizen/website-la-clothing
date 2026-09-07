@@ -58,6 +58,28 @@ function queryValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
 }
 
+/**
+ * B5: a refused publish gets its own query code so the editor is told which precondition failed.
+ * A single "không thể lưu" would send an operator hunting through a form that is in fact valid —
+ * the copy is complete and within bounds, it just may not be published.
+ */
+const PRODUCT_CONTENT_ERROR_CODES = {
+  SEO_TITLE_REQUIRED: "seo-title",
+  SEO_DESCRIPTION_REQUIRED: "seo-description",
+  SEO_PAIR_CONFLICT: "seo-pair",
+  INVALID_INPUT: "invalid",
+  COLLECTION_NOT_FOUND: "invalid",
+} as const;
+
+const PRODUCT_CONTENT_ERROR_MESSAGES: Record<string, string> = {
+  "seo-title": "Cần có SEO title trước khi chuyển sang PUBLISHED. Nội dung chưa được lưu.",
+  "seo-description":
+    "Cần có SEO description trước khi chuyển sang PUBLISHED. Nội dung chưa được lưu.",
+  "seo-pair":
+    "Cặp SEO title + description này đã thuộc về một sản phẩm đã publish. Sửa một trong hai trường rồi thử lại. Nội dung chưa được lưu.",
+  invalid: "Không thể lưu. Kiểm tra độ dài và định dạng các trường rồi thử lại.",
+};
+
 function productCommerceError(message: string): ProductCommerceActionState {
   return { kind: "error", message };
 }
@@ -118,7 +140,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       if (result.reason === "PRODUCT_NOT_FOUND") {
         redirect("/admin");
       }
-      redirect(`${editorPath}?error=invalid`);
+      redirect(`${editorPath}?error=${PRODUCT_CONTENT_ERROR_CODES[result.reason]}`);
     }
 
     revalidatePath(editorPath);
@@ -330,10 +352,23 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
     (variant) => variant.compositeParents.length > 0,
   );
 
+  // B5: a draft may hold copy a published product already owns, and the editor has to see that
+  // while it is still a draft rather than at publish time. This is the read-only half of the same
+  // contract the publish path enforces, so a warning and a block can never disagree.
+  const seoPairConflictSlugs = await repository.findPublishedPairConflicts({
+    productId: persistedProductId,
+    seoTitle: product.content?.seoTitle ?? null,
+    seoDescription: product.content?.seoDescription ?? null,
+  });
+
   const query = await searchParams;
   const saved = queryValue(query.saved) === "1";
-  const invalid = queryValue(query.error) === "invalid";
-  const formStatus = invalid ? "error" : saved ? "success" : null;
+  const rawContentError = queryValue(query.error);
+  const contentError =
+    rawContentError !== undefined && rawContentError in PRODUCT_CONTENT_ERROR_MESSAGES
+      ? rawContentError
+      : undefined;
+  const formStatus = contentError ? "error" : saved ? "success" : null;
   const slugSaved = queryValue(query.slugSaved) === "1";
   const rawSlugError = queryValue(query.slugError);
   const slugError =
@@ -401,7 +436,14 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         <p className="mt-4 text-sm text-black/60">/{product.slug}</p>
       </div>
 
-      <AdminFormStatus kind={formStatus} />
+      <AdminFormStatus
+        kind={formStatus}
+        errorMessage={
+          contentError
+            ? PRODUCT_CONTENT_ERROR_MESSAGES[contentError]
+            : PRODUCT_CONTENT_ERROR_MESSAGES.invalid
+        }
+      />
       <AdminFormStatus
         kind={variantStatus}
         successMessage="Đã cập nhật trạng thái biến thể website."
@@ -458,6 +500,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         action={saveProductContent}
         collectionChoices={collectionChoices}
         content={product.content}
+        seoPairConflictSlugs={seoPairConflictSlugs}
       />
 
       <ProductMerchantFactsEditor

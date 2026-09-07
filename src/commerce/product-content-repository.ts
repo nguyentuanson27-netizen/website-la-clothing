@@ -3,22 +3,126 @@ import type { AdminProductDirectoryQuery } from "./admin-product-directory.ts";
 import { ADMIN_PRODUCT_DIRECTORY_LIMITS } from "./admin-product-directory.ts";
 import {
   directoryHealthMetricsSql,
+  jsTrimmedSql,
   missingEditorialCondition,
   missingImageCondition,
   missingSeoCondition,
   stockedInactiveCondition,
   zeroActiveCondition,
 } from "./admin-product-health.ts";
+import {
+  metadataPairKey,
+  readPublishMetadataReadiness,
+  type PublishedMetadataPair,
+} from "../seo/product-metadata-uniqueness.ts";
 import type {
   BulkProductCollectionResult,
   BulkProductCollectionUpdate,
   BulkProductContentStatusResult,
   BulkProductContentStatusUpdate,
   ProductContentSnapshot,
+  SaveProductContentOutcome,
 } from "./product-content-admin.ts";
 import { PRODUCT_CONTENT_LIMITS } from "./product-content-admin.ts";
 
 const MAX_ADMIN_PRODUCTS = 100;
+
+/**
+ * B5: the transaction-level advisory lock every write that leaves a row `PUBLISHED` takes before it
+ * reads the published catalog.
+ *
+ * The pair invariant is a read-then-write, and under Read Committed two concurrent publishes of the
+ * same copy both see a conflict-free catalog and both commit. A unique index would be the other
+ * mechanism, but it needs a migration the existing catalog is not guaranteed to survive: nothing has
+ * ever constrained these columns, so a legacy pair of duplicate published rows would fail the
+ * migration on a live database and there is no owner decision about rewriting that copy.
+ *
+ * One fixed key serializes all publishes rather than only same-pair ones. That is the smaller
+ * mechanism — no key derivation, no lock ordering, no deadlock class — and it costs nothing here:
+ * publishing is a rare, human-paced admin action, not a request-path write. The key itself is
+ * arbitrary and only has to be identical in every such transaction.
+ *
+ * Know what this does and does not buy. It is a **cooperative protocol**: the application owns the
+ * invariant, the database does not. Every write path here joins it, so no admin action can produce
+ * a duplicate published pair — but the schema carries no constraint on the normalized pair, so
+ * manual SQL, a data migration or a restore still can. W2a asks for enforcement "in the database
+ * and in the admin publish path"; this is the second half only, and
+ * `docs/audits/seo-metadata-uniqueness-w2a.md` records the first as still open. Any new path that
+ * writes a `PUBLISHED` row must take this lock and run the same check, or the guarantee lapses.
+ *
+ * Exported so the concurrency regression can hold the real lock rather than simulate contention:
+ * a race test that cannot lose is not a test.
+ */
+export const PUBLISHED_SEO_PAIR_LOCK_KEY = 529_029_001;
+
+/** The website-owned fields a save reads back; the Pancake mirror is never among them. */
+const productContentSelect = {
+  productId: true,
+  status: true,
+  editorialDescription: true,
+  careInstructions: true,
+  sizeGuide: true,
+  seoTitle: true,
+  seoDescription: true,
+  collectionSlugs: true,
+} as const;
+
+type PublishedPairRow = { slug: string; seoTitle: string; seoDescription: string };
+type PublishCandidateRow = {
+  id: string;
+  slug: string;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
+/**
+ * The database mirror of `normalizeMetadataText`: Unicode canonical composition, then exactly the
+ * whitespace `String.prototype.trim()` strips. Same order, same result, so a pair that the domain
+ * calls equal is the pair this query matches.
+ */
+function normalizedMetadataTextSql(column: Prisma.Sql): Prisma.Sql {
+  return jsTrimmedSql(Prisma.sql`NORMALIZE(${column}, NFC)`);
+}
+
+const publishedStatusCondition = Prisma.sql`pc."status" = CAST('PUBLISHED' AS "ProductContentStatus")`;
+
+/**
+ * The published products already holding any of `pairs`, one row per colliding pair.
+ *
+ * `DISTINCT ON` bounds the result by the number of pairs asked about rather than by how many rows
+ * happen to share one — a legacy catalog may hold several — while still naming a real slug for each,
+ * so the operator gets a product to open rather than a count. The normalized pair travels back with
+ * the slug so a bulk caller can map a collision to the member it blocks without re-deriving it.
+ *
+ * `excludedProductIds` is what keeps a product from colliding with itself on re-save.
+ */
+function publishedPairConflictSql(
+  pairs: readonly PublishedMetadataPair[],
+  excludedProductIds: readonly string[],
+): Prisma.Sql {
+  const normalizedTitle = normalizedMetadataTextSql(Prisma.sql`pc."seoTitle"`);
+  const normalizedDescription = normalizedMetadataTextSql(Prisma.sql`pc."seoDescription"`);
+  const candidatePairs = Prisma.join(
+    pairs.map((pair) => Prisma.sql`(${pair.seoTitle}::text, ${pair.seoDescription}::text)`),
+    ", ",
+  );
+
+  return Prisma.sql`
+    SELECT DISTINCT ON ("seoTitle", "seoDescription") "slug", "seoTitle", "seoDescription"
+    FROM (
+      SELECT
+        p."slug" AS "slug",
+        ${normalizedTitle} AS "seoTitle",
+        ${normalizedDescription} AS "seoDescription"
+      FROM "ProductContent" pc
+      JOIN "ProductMirror" p ON p."id" = pc."productId"
+      WHERE ${publishedStatusCondition}
+        AND pc."productId" <> ALL(${[...excludedProductIds]}::text[])
+        AND (${normalizedTitle}, ${normalizedDescription}) IN (VALUES ${candidatePairs})
+    ) AS matches
+    ORDER BY "seoTitle", "seoDescription", "slug"
+  `;
+}
 
 /** Rolls the membership batch back when a target is already at the editable collection limit. */
 class CollectionMembershipLimitError extends Error {
@@ -200,23 +304,126 @@ export function createProductContentRepository(client: PrismaClient) {
     );
   }
 
-  async function saveContent(content: ProductContentSnapshot): Promise<ProductContentSnapshot> {
+  /** The write itself, identical whether or not it had to run inside the publish transaction. */
+  function upsertContent(
+    tx: Prisma.TransactionClient,
+    content: ProductContentSnapshot,
+  ): Promise<ProductContentSnapshot> {
     const { productId, ...fields } = content;
-    return client.productContent.upsert({
+    return tx.productContent.upsert({
       where: { productId },
       create: { productId, ...fields },
       update: fields,
-      select: {
-        productId: true,
-        status: true,
-        editorialDescription: true,
-        careInstructions: true,
-        sizeGuide: true,
-        seoTitle: true,
-        seoDescription: true,
-        collectionSlugs: true,
-      },
+      select: productContentSelect,
     });
+  }
+
+  /**
+   * B5's publish invariant, enforced where the row is actually written.
+   *
+   * The service refuses an incomplete publish before it ever gets here, and this repeats the check
+   * rather than trusting it: this function is the last thing between admin input and a `PUBLISHED`
+   * row, and an invariant the storefront depends on should not rest on a caller remembering to ask.
+   *
+   * A write that does not leave the row published skips all of it — unpublishing can only shrink the
+   * published set, so it cannot break uniqueness.
+   */
+  async function saveContent(content: ProductContentSnapshot): Promise<SaveProductContentOutcome> {
+    if (content.status !== "PUBLISHED") {
+      return { ok: true, content: await upsertContent(client, content) };
+    }
+
+    const readiness = readPublishMetadataReadiness(content);
+    if (!readiness.ok) {
+      return { ok: false, block: { reason: readiness.reason, conflictingSlugs: [] } };
+    }
+
+    return client.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(${PUBLISHED_SEO_PAIR_LOCK_KEY})`);
+
+      const conflicts = await tx.$queryRaw<PublishedPairRow[]>(
+        publishedPairConflictSql([readiness.pair], [content.productId]),
+      );
+      if (conflicts.length > 0) {
+        return {
+          ok: false,
+          block: {
+            reason: "SEO_PAIR_CONFLICT",
+            conflictingSlugs: conflicts.map((row) => row.slug),
+          },
+        } as const;
+      }
+
+      return { ok: true, content: await upsertContent(tx, content) } as const;
+    });
+  }
+
+  /**
+   * The same invariant for a whole batch: every member must carry complete copy, no two members may
+   * claim the same pair, and no member may claim a pair a product outside the batch already holds.
+   *
+   * Blocking aborts the entire batch, matching how this operation already treats a stale selection
+   * or a membership limit. Publishing the members that happen to pass would leave the operator with
+   * a partially applied action whose result they never asked for.
+   */
+  async function readBulkPublishBlock(
+    tx: Prisma.TransactionClient,
+    productIds: readonly string[],
+  ): Promise<BulkProductContentStatusResult | null> {
+    const candidates = await tx.$queryRaw<PublishCandidateRow[]>(Prisma.sql`
+      SELECT p."id" AS "id", p."slug" AS "slug", pc."seoTitle", pc."seoDescription"
+      FROM "ProductMirror" p
+      LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+      WHERE p."id" = ANY(${[...productIds]}::text[])
+      ORDER BY p."slug"
+    `);
+
+    const incompleteSlugs: string[] = [];
+    const pairByKey = new Map<string, { pair: PublishedMetadataPair; slugs: string[] }>();
+    for (const candidate of candidates) {
+      const readiness = readPublishMetadataReadiness(candidate);
+      if (!readiness.ok) {
+        incompleteSlugs.push(candidate.slug);
+        continue;
+      }
+      const key = metadataPairKey(readiness.pair.seoTitle, readiness.pair.seoDescription);
+      const group = pairByKey.get(key);
+      if (group) group.slugs.push(candidate.slug);
+      else pairByKey.set(key, { pair: readiness.pair, slugs: [candidate.slug] });
+    }
+
+    if (incompleteSlugs.length > 0) {
+      return { ok: false, reason: "SEO_INCOMPLETE", blockedSlugs: incompleteSlugs };
+    }
+
+    const duplicatedInsideBatch = [...pairByKey.values()]
+      .filter((group) => group.slugs.length > 1)
+      .flatMap((group) => group.slugs);
+    if (duplicatedInsideBatch.length > 0) {
+      return {
+        ok: false,
+        reason: "SEO_PAIR_CONFLICT",
+        blockedSlugs: [...duplicatedInsideBatch].sort(),
+      };
+    }
+    if (pairByKey.size === 0) return null;
+
+    const conflicts = await tx.$queryRaw<PublishedPairRow[]>(
+      publishedPairConflictSql(
+        [...pairByKey.values()].map((group) => group.pair),
+        productIds,
+      ),
+    );
+    if (conflicts.length === 0) return null;
+
+    const takenKeys = new Set(
+      conflicts.map((row) => metadataPairKey(row.seoTitle, row.seoDescription)),
+    );
+    const blockedSlugs = [...pairByKey]
+      .filter(([key]) => takenKeys.has(key))
+      .flatMap(([, group]) => group.slugs);
+
+    return { ok: false, reason: "SEO_PAIR_CONFLICT", blockedSlugs: blockedSlugs.sort() };
   }
 
   async function updateStatusesAtomically(
@@ -230,6 +437,14 @@ export function createProductContentRepository(client: PrismaClient) {
       });
       if (productCount !== productIds.length) {
         return { ok: false, reason: "PRODUCT_NOT_FOUND" } as const;
+      }
+
+      // B5: publishing is the only status that has a precondition, and it is checked under the same
+      // lock and in the same transaction as the write it guards.
+      if (status === "PUBLISHED") {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(${PUBLISHED_SEO_PAIR_LOCK_KEY})`);
+        const blocked = await readBulkPublishBlock(tx, productIds);
+        if (blocked) return blocked;
       }
 
       // Create content rows only for products that do not have one yet, then patch the single
@@ -596,9 +811,34 @@ export function createProductContentRepository(client: PrismaClient) {
     return new Map(rows.map(({ slug, count }) => [slug, membershipCountToNumber(count)]));
   }
 
+  /**
+   * The read-only half of the same contract: which published products already hold this product's
+   * current pair. It powers the admin's draft warning, so an editor sees the collision while the
+   * copy is still a draft instead of discovering it at publish time.
+   *
+   * A product with incomplete copy has no pair to collide with and reports nothing — B5 lets a draft
+   * be incomplete, and the editor's SEO health already surfaces that separately.
+   */
+  async function findPublishedPairConflicts(
+    content: Readonly<{
+      productId: string;
+      seoTitle: string | null;
+      seoDescription: string | null;
+    }>,
+  ): Promise<readonly string[]> {
+    const readiness = readPublishMetadataReadiness(content);
+    if (!readiness.ok) return [];
+
+    const conflicts = await client.$queryRaw<PublishedPairRow[]>(
+      publishedPairConflictSql([readiness.pair], [content.productId]),
+    );
+    return conflicts.map((row) => row.slug);
+  }
+
   return {
     productExists,
     saveContent,
+    findPublishedPairConflicts,
     updateStatusesAtomically,
     updateCollectionMembershipAtomically,
     findForEditor,

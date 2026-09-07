@@ -16,6 +16,72 @@
  * uniqueness contract with a plausible-looking guess.
  */
 
+/**
+ * B5: the canonical text form every metadata comparison in this repository runs on.
+ *
+ * Two rules, and deliberately no third:
+ *
+ * - **Unicode canonical composition.** Vietnamese copy reaches the editor in both precomposed and
+ *   combining form depending on the operator's input method, and `"\u00c1o"` and `"A\u0301o"` are the
+ *   *same text* by Unicode's own definition. Comparing them as different strings would let two
+ *   byte-different but reader-identical PDPs publish.
+ * - **`String.prototype.trim()`.** The editor's `parseTextField` already trims before it persists,
+ *   and `hasText` in `catalog-acceptance.ts` reads presence the same way, so a value counts as
+ *   present here exactly when it counts as present there. That is the JS whitespace set, not
+ *   Postgres' ASCII-only `BTRIM`: a legacy NBSP-only row is absent on both sides.
+ *
+ * Case folding, internal whitespace collapsing and any similarity scoring are **out**. The owner
+ * decision (B5) approves uniqueness of the pair, and a looser rule would refuse copy the owner
+ * never banned. Widening this is an owner decision, not an implementation one.
+ */
+export function normalizeMetadataText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.normalize("NFC").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+/**
+ * The single grouping key for the `(seoTitle, seoDescription)` pair.
+ *
+ * `JSON.stringify` of the two normalized fields, so no separator character a human could type into
+ * one field can forge or break a pair boundary: `("ab", "c")` and `("a", "bc")` stay distinct.
+ */
+export function metadataPairKey(title: string, description: string): string {
+  return JSON.stringify([normalizeMetadataText(title), normalizeMetadataText(description)]);
+}
+
+/** The normalized pair a publish is allowed to claim. Both fields are present by construction. */
+export type PublishedMetadataPair = Readonly<{
+  seoTitle: string;
+  seoDescription: string;
+}>;
+
+export type PublishMetadataRequirement = "SEO_TITLE_REQUIRED" | "SEO_DESCRIPTION_REQUIRED";
+
+export type PublishMetadataReadiness =
+  | Readonly<{ ok: true; pair: PublishedMetadataPair }>
+  | Readonly<{ ok: false; reason: PublishMetadataRequirement }>;
+
+/**
+ * B5's publish precondition on one product's own copy: `PUBLISHED` requires both SEO fields to
+ * carry text. It answers only what a single row can answer — the cross-product pair collision is a
+ * catalog question and is checked against the published set at the persistence boundary.
+ *
+ * The title is reported first when both are missing: an editor fixes fields top to bottom, and one
+ * concrete next step beats a list.
+ */
+export function readPublishMetadataReadiness(
+  content: Readonly<{ seoTitle: string | null; seoDescription: string | null }>,
+): PublishMetadataReadiness {
+  const seoTitle = normalizeMetadataText(content.seoTitle);
+  if (seoTitle === null) return { ok: false, reason: "SEO_TITLE_REQUIRED" };
+
+  const seoDescription = normalizeMetadataText(content.seoDescription);
+  if (seoDescription === null) return { ok: false, reason: "SEO_DESCRIPTION_REQUIRED" };
+
+  return { ok: true, pair: { seoTitle, seoDescription } };
+}
+
 export type ProductMetadataUniquenessCandidate = Readonly<{
   slug: string;
   name: string;
@@ -68,7 +134,7 @@ export function findProductMetadataCollisions(
 
   for (const product of products) {
     const copy = buildSlugFreeProductCopy(product);
-    const key = JSON.stringify([copy.title, copy.description]);
+    const key = metadataPairKey(copy.title, copy.description);
     const group = groups.get(key);
     if (group === undefined) groups.set(key, { copy, slugs: [product.slug] });
     else group.slugs.push(product.slug);
