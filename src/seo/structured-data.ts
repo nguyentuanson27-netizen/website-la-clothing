@@ -1,3 +1,8 @@
+import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../content/public-brand-facts.ts";
+
 const SITE_NAME = "LA Clothing";
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
@@ -163,11 +168,45 @@ type BreadcrumbListNode = {
   ];
 };
 
+type PostalAddressNode = {
+  "@type": "PostalAddress";
+  streetAddress: string;
+  addressLocality: string;
+};
+
+type OpeningHoursSpecificationNode = {
+  "@type": "OpeningHoursSpecification";
+  dayOfWeek: readonly string[];
+  opens: string;
+  closes: string;
+};
+
+type ContactPointNode = {
+  "@type": "ContactPoint";
+  contactType: string;
+  telephone: string;
+  email: string;
+  hoursAvailable: OpeningHoursSpecificationNode;
+};
+
+/**
+ * W6/U32b. The entity every other node points at, now carrying the owner-approved B2 contact facts.
+ *
+ * Every added property is a transcription of `PUBLIC_CONTACT_FACTS`, which is the sole authority for
+ * them; nothing here is derived from the catalog, the UI copy or the served locale. The site footer
+ * renders the same values from the same constant, so every fact marked up here is one a reader can
+ * actually see on the page. The properties W6 also lists but that no approved source supplies —
+ * `logo` above all — stay off the type, so adding one later is a deliberate edit here rather than
+ * an accident at a call site.
+ */
 type OrganizationNode = {
   "@type": "Organization";
   "@id": string;
   name: typeof SITE_NAME;
   url: string;
+  address: PostalAddressNode;
+  contactPoint: ContactPointNode;
+  sameAs: readonly string[];
 };
 
 type WebSiteNode = {
@@ -501,6 +540,31 @@ export function buildSiteStructuredData({
         "@id": organizationId,
         name: SITE_NAME,
         url: rootUrl,
+        address: {
+          "@type": "PostalAddress",
+          streetAddress: PUBLIC_CONTACT_FACTS.streetAddress,
+          addressLocality: PUBLIC_CONTACT_FACTS.addressLocality,
+        },
+        contactPoint: {
+          "@type": "ContactPoint",
+          // The approved facts describe one support channel — a hotline that is also the Zalo
+          // number, an email, and one set of hours covering both.
+          contactType: "customer support",
+          // Google's Organization guidance wants the country code here. The value is the approved
+          // number in its international spelling, taken from the fact authority rather than
+          // normalized in this module — nothing about an owner fact is derived at the markup site.
+          telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
+          email: PUBLIC_CONTACT_FACTS.email,
+          hoursAvailable: {
+            "@type": "OpeningHoursSpecification",
+            // Every part of the hours comes from the one fact authority, the seven days included:
+            // the footer renders the same statement, so neither can carry half of it.
+            dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+            opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+            closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
+          },
+        },
+        sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
       },
       {
         "@type": "WebSite",

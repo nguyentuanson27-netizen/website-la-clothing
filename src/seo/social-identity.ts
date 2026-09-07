@@ -8,7 +8,10 @@
  * them.
  *
  * Everything here is an existing, owner-approved site fact. No social handle, contact channel or
- * business claim belongs in this file; those are owner decisions that have not been made.
+ * business claim belongs in this file. The owner has since approved some of those (B2), but they
+ * live in `PUBLIC_CONTACT_FACTS` and are published on the `Organization` entity — a share card is
+ * not a brand mark, a contact channel or a business identity, and merging them would blur three
+ * different contracts into one file.
  */
 
 export const SITE_NAME = "LA Clothing";

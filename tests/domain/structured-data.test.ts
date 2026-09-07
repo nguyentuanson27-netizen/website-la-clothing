@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../../src/content/public-brand-facts.ts";
+import {
   buildProductStructuredData,
   buildSiteStructuredData,
   serializeJsonLd,
@@ -240,7 +244,7 @@ test("P14 omits invented product and merchant-policy facts", () => {
   }
 });
 
-test("P14 builds minimal factual Organization and WebSite entities from the validated storefront origin", () => {
+test("P14 builds factual Organization and WebSite entities from the validated storefront origin", () => {
   assert.deepEqual(buildSiteStructuredData({ origin: "https://shop.example.com" }), {
     "@context": "https://schema.org",
     "@graph": [
@@ -249,6 +253,36 @@ test("P14 builds minimal factual Organization and WebSite entities from the vali
         "@id": "https://shop.example.com/#organization",
         name: "LA Clothing",
         url: "https://shop.example.com/",
+        // U32b: the approved B2 facts. Written out literally here — this case exists to show the
+        // whole emitted document at a glance; the U32b guard below is what ties each value back to
+        // `PUBLIC_CONTACT_FACTS` so the two cannot drift.
+        address: {
+          "@type": "PostalAddress",
+          streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
+          addressLocality: "Hà Nội",
+        },
+        contactPoint: {
+          "@type": "ContactPoint",
+          contactType: "customer support",
+          // U32b: the country-code form Google asks for; same approved number as the footer shows.
+          telephone: "+84923159666",
+          email: "laclothing2025@gmail.com",
+          hoursAvailable: {
+            "@type": "OpeningHoursSpecification",
+            dayOfWeek: [
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+              "Sunday",
+            ],
+            opens: "08:00:00+07:00",
+            closes: "22:00:00+07:00",
+          },
+        },
+        sameAs: ["https://www.facebook.com/LAclothing.vn"],
       },
       {
         "@type": "WebSite",
@@ -383,38 +417,89 @@ test("U32a publishes no GTIN property anywhere, whatever the catalog holds", () 
 
 
 /**
- * U32b guard. Organization enrichment - logo, sameAs, contactPoint, address - is blocked by B2
- * because no owner-approved first-party contact fact exists. This asserts the Organization entity
- * stays exactly as narrow as it is, so a later product-schema slice cannot quietly widen it.
+ * U32b. B2 is resolved, so the Organization entity now publishes the approved contact facts — and
+ * only those. The guard did not go away when the block lifted; it moved. It pins the exact key set,
+ * checks every published value against the one fact authority rather than a literal repeated here,
+ * and keeps asserting the absence of everything no owner source states.
  */
-test("U32b publishes no unapproved Organization fact", () => {
+test("U32b publishes the approved B2 contact facts on the Organization entity", () => {
   const site = buildSiteStructuredData({ origin: "https://shop.example.com" });
   const organization = site["@graph"][0];
 
   assert.equal(organization["@type"], "Organization");
   assert.deepEqual(
     Object.keys(organization).sort(),
-    ["@id", "@type", "name", "url"],
-    "the Organization entity must carry no fact beyond its identity and canonical URL",
+    ["@id", "@type", "address", "contactPoint", "name", "sameAs", "url"],
+    "the Organization entity must carry exactly its identity plus the approved B2 facts",
   );
 
-  const serialized = serializeJsonLd(site);
+  // Values are compared to the fact source, not to copies: a literal here would let the two drift.
+  assert.deepEqual(organization.address, {
+    "@type": "PostalAddress",
+    streetAddress: PUBLIC_CONTACT_FACTS.streetAddress,
+    addressLocality: PUBLIC_CONTACT_FACTS.addressLocality,
+  });
+  assert.deepEqual(organization.contactPoint, {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
+    email: PUBLIC_CONTACT_FACTS.email,
+    hoursAvailable: {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+      opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+      closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
+    },
+  });
+  assert.deepEqual(organization.sameAs, [PUBLIC_CONTACT_FACTS.fanpageUrl]);
+});
+
+test("U32b publishes no Organization fact the owner has not approved", () => {
+  const serialized = serializeJsonLd(
+    buildSiteStructuredData({ origin: "https://shop.example.com" }),
+  );
+
   for (const blocked of [
-    "address",
-    "contactPoint",
-    "sameAs",
+    // B2 approved contact facts only. It approved no logo asset, so none is published — the social
+    // card is a share image, not a brand mark, and reusing it as `logo` would misstate what it is.
     "logo",
-    "telephone",
-    "email",
+    // `legalName`/`taxID` are not owner-blocked: B6 approves publishing the legal entity and the
+    // confirmed MST. They are outside the B2 contact contract U32b implements and belong to the
+    // About/legal surface U33 builds. `founder`/`foundingDate` do stay unapproved under B6.
     "founder",
     "foundingDate",
     "vatID",
     "taxID",
+    "legalName",
+    // The owner approved an address string, not a structured postal address. `addressCountry` and
+    // `postalCode` are not in it, and deriving them from the city name would be an inference about
+    // a legal address rather than a transcription of one.
+    "addressCountry",
+    "postalCode",
+    // Support answering in a given language is a business capability, not something the site's own
+    // served locale establishes.
+    "availableLanguage",
   ]) {
     assert.equal(
       new RegExp(`"${blocked}"\\s*:`).test(serialized),
       false,
-      `${blocked} is owner-blocked by B2 and must not be published`,
+      `${blocked} is not an owner-approved Organization fact and must not be published`,
     );
   }
+});
+
+/**
+ * The whole point of W6 is entity consistency: one Organization, referenced by everything else.
+ * Enriching it must not spawn a second copy of the brand carrying the same facts again.
+ */
+test("U32b keeps one Organization entity that every other node references by id", () => {
+  const site = buildSiteStructuredData({ origin: "https://shop.example.com" });
+  const organizationId = site["@graph"][0]["@id"];
+
+  assert.equal(site["@graph"][1].publisher["@id"], organizationId);
+  assert.equal(
+    serializeJsonLd(site).match(/"@type":"Organization"/g)?.length,
+    1,
+    "exactly one Organization node may exist",
+  );
 });

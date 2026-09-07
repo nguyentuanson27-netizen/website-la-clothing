@@ -6,6 +6,10 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  PUBLIC_CONTACT_FACTS,
+  supportHoursSchemaTime,
+} from "../src/content/public-brand-facts.ts";
 import { prisma } from "../src/db/prisma.ts";
 
 const HOST = "127.0.0.1";
@@ -232,6 +236,9 @@ try {
   const documents = extractJsonLd(page.body);
   assert.ok(documents.length >= 2, "PDP initial HTML must contain site and product JSON-LD documents");
 
+  // U32b — the enriched Organization has to survive the real render, not just the builder: these
+  // are contact facts a buyer can act on, so a value mangled by serialization would be published
+  // wrong. Compared against the fact authority, so the smoke cannot drift from the source either.
   const siteDocument = findDocumentWithType(documents, "Organization");
   assert.deepEqual(graphNodes(siteDocument), [
     {
@@ -239,6 +246,24 @@ try {
       "@id": `${PUBLIC_ORIGIN}/#organization`,
       name: "LA Clothing",
       url: `${PUBLIC_ORIGIN}/`,
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: PUBLIC_CONTACT_FACTS.streetAddress,
+        addressLocality: PUBLIC_CONTACT_FACTS.addressLocality,
+      },
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "customer support",
+        telephone: PUBLIC_CONTACT_FACTS.telephoneInternational,
+        email: PUBLIC_CONTACT_FACTS.email,
+        hoursAvailable: {
+          "@type": "OpeningHoursSpecification",
+          dayOfWeek: PUBLIC_CONTACT_FACTS.supportHours.days,
+          opens: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.opens),
+          closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
+        },
+      },
+      sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
     },
     {
       "@type": "WebSite",
@@ -433,7 +458,7 @@ try {
   );
 
   console.log(
-    "P14/P16/U27 structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization used by WebSite publisher and ProductGroup brand, one ProductGroup carrying factual variant-specific names, unique manufacturer MPNs and exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
+    "P14/P16/U27/U32b structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization carrying the owner-approved B2 address, support contact point and Fanpage and used by WebSite publisher and ProductGroup brand, one ProductGroup carrying factual variant-specific names, unique manufacturer MPNs and exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
   );
 } finally {
   await stopServer();
