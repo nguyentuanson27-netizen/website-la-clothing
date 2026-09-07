@@ -169,3 +169,96 @@ test("U27 family collapse keeps Merchant exact survivor and emits the same survi
   assert.equal(productOffer.price, offer.priceVnd);
   assert.equal(productOffer.availability, "https://schema.org/InStock");
 });
+
+test("U27 collapses to Merchant's exact survivor when a sibling lacks a required apparel dimension", () => {
+  const invalidSibling = {
+    ...EXCLUDED,
+    size: null,
+  } as const;
+  const parentVariants: StorefrontVariantFacts[] = [SURVIVOR, invalidSibling].map((row) => ({
+    id: row.variantId,
+    pancakeVariationId: row.pancakeVariationId,
+    color: row.color,
+    size: row.size,
+    sellableStock: row.sellableStock,
+    retailPrice: row.priceVnd,
+    retailPriceAfterDiscount: null,
+  }));
+  const projection = buildStorefrontProductProjection({
+    parentVariants,
+    componentGroups: [],
+    hasCompositeGraph: false,
+    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId: new Map(), now: NOW }),
+  });
+  const gallery = [
+    { url: "https://cdn.example.test/oxford-black-m.jpg", alt: "Áo Oxford Relaxed M" },
+    { url: "https://cdn.example.test/oxford-black-l.jpg", alt: "Áo Oxford Relaxed sibling" },
+  ] as const;
+
+  const merchantProduct: MerchantCandidateProduct = {
+    pancakeProductId: "pancake-product-1",
+    slug: "ao-oxford-relaxed",
+    name: "Áo Oxford Relaxed",
+    publishedDescription: "Áo sơ mi cotton dáng suông.",
+    media: { primary: gallery[0], gallery } as MerchantCandidateProduct["media"],
+    galleryIndexByVariantId: new Map([
+      [SURVIVOR.variantId, 0],
+      [invalidSibling.variantId, 1],
+    ]),
+    projection,
+    apparelOverrides: { gender: "male", ageGroup: "adult", condition: "new" },
+    variations: [SURVIVOR, invalidSibling].map((row) => ({
+      variantId: row.variantId,
+      pancakeVariationId: row.pancakeVariationId,
+      pancakeDisplayId: row.pancakeDisplayId,
+      isComposite: false,
+      stockQuantity: row.sellableStock,
+    })),
+  };
+  const merchant = mapMerchantOffers({ products: [merchantProduct], origin: ORIGIN });
+
+  assert.deepEqual(merchant.offers.map((offer) => offer.id), [SURVIVOR.pancakeVariationId]);
+  assert.deepEqual(
+    merchant.excluded.find((candidate) => candidate.pancakeVariationId === invalidSibling.pancakeVariationId)?.reasons,
+    ["SIZE_UNRESOLVED"],
+  );
+
+  const document = buildStorefrontProductStructuredData({
+    origin: ORIGIN,
+    product: {
+      pancakeProductId: "pancake-product-1",
+      slug: "ao-oxford-relaxed",
+      name: "Áo Oxford Relaxed",
+      editorialDescription: "Áo sơ mi cotton dáng suông.",
+      media: { gallery },
+      galleryIndexByVariantId: {
+        [SURVIVOR.variantId]: 0,
+        [invalidSibling.variantId]: 1,
+      },
+      variantMpnById: {
+        [SURVIVOR.variantId]: SURVIVOR.pancakeDisplayId,
+        [invalidSibling.variantId]: invalidSibling.pancakeDisplayId,
+      },
+      variantSkuById: {},
+      variantAvailabilityResolvedById: {
+        [SURVIVOR.variantId]: true,
+        [invalidSibling.variantId]: true,
+      },
+      projection,
+    },
+  });
+
+  const productNode = document["@graph"][0] as Record<string, unknown>;
+  const merchantSurvivor = merchant.offers[0]!;
+  assert.equal(productNode["@type"], "Product");
+  assert.equal("hasVariant" in productNode, false, "a Merchant one-survivor family must not stay grouped");
+  assert.equal(productNode.url, merchantSurvivor.link);
+  assert.equal(productNode.mpn, merchantSurvivor.mpn);
+  assert.equal(productNode.color, merchantSurvivor.color);
+  assert.equal(productNode.size, merchantSurvivor.size);
+
+  const productOffer = productNode.offers as Record<string, unknown>;
+  assert.equal(productOffer.url, merchantSurvivor.link);
+  assert.equal(productOffer.price, merchantSurvivor.priceVnd);
+  assert.equal(productOffer.availability, "https://schema.org/InStock");
+});
