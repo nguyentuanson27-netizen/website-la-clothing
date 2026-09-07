@@ -178,15 +178,19 @@ access, there is no container to configure, no immutable version to save, and no
 Per the interlock below, the loader and CSP origins must not land without that artifact, so
 `REVIEWED_GTM_VERSION_AVAILABLE` stays `false` and every mode still resolves to no GTM load.
 
-**O4 / access preflight re-confirmed 2026-09-07** on `main@be7e5f628f86e71f8fc9769bed210501e15e03ed`:
-no GTM container ID, GA4 Measurement ID, Google Ads conversion ID/label or TikTok Pixel ID is present
-in the repository, the environment or any connected account/tool context, and no Google Tag Manager
-account, Tag Assistant or GA4 DebugView access is available. `.env.example` carries only the
-documented `GTM-XXXXXXX` placeholder, which is a placeholder and not an approved ID. Therefore no
-container version can be saved, no export can be checksummed, and no TikTok `customTemplate[]` /
-`galleryReference` can be identified from a real artifact. `readTrackingConfig`/`release:check`
-observed `trackingMode=disabled`, `trackingLoadsGoogleTagManager=false`. Every box below stays open;
-none may be satisfied with a guessed, fixture or dummy production ID.
+**The durable blocker is the normative gate: O4 is OPEN.** Nothing below may be satisfied with a
+guessed, fixture or dummy production ID, and only the proper account owners can close it.
+
+*Dated observation — 2026-09-07 preflight on `main@be7e5f628f86e71f8fc9769bed210501e15e03ed`.* Scoped
+to the execution context used for that preflight, and evidence of that context only, not of
+project-wide account state: no GTM container ID, GA4 Measurement ID, Google Ads conversion ID/label
+or TikTok Pixel ID was present in the repository or the environment, and that context had no Google
+Tag Manager, Tag Assistant or GA4 DebugView access. `.env.example` carries only the documented
+`GTM-XXXXXXX` placeholder, which is a placeholder and not an approved ID. `pnpm release:check` was
+executed in that context and reported `trackingMode=disabled`,
+`trackingLoadsGoogleTagManager=false`. Consequence for T8 while O4 stays open: no container version
+can be saved, no export can be checksummed, and no TikTok `customTemplate[]` / `galleryReference`
+can be identified from a real artifact.
 
 - [ ] Configure GTM workspace, then **create/save immutable container version before final review**.
 - [ ] Record GTM container ID + exact saved container version number/ID.

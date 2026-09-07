@@ -25,7 +25,7 @@ It has been written in three passes:
 | `src/` changed | no | yes — `storefront-product.ts`, `storefront-catalog.ts`, `storefront-product-structured-data.ts` | yes — `storefront-product-structured-data.ts`, `structured-data.ts` |
 | Head SHA | recorded in that PR's description | recorded in that PR's description | `5fcb7a4cda5e1def6028b30abd3bb459cdd51f5e` |
 
-- **Pancake API used:** NO. **Production database used:** NO, in either pass. Every case is
+- **Pancake API used:** NO. **Production database used:** NO, in all three passes. Every case is
   reproducible from repository fixtures.
 
 ## Authorities
@@ -217,8 +217,11 @@ while U27 fell back to a product-level `Product` carrying no exact *variant* ide
 statements agreed on product, price and availability, but the publishable exact-variant sets were
 not equal, so the gate could not close on that evidence.
 
-The owner resolved it as option 1 of the three recorded in the previous pass — see
-`docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §14 — and **PR #214 implements it**:
+The owner approved a **narrower** variant of the exact-survivor direction discussed in the previous
+pass. The difference matters and is deliberate: the option recorded earlier would have published an
+exact variant `Product`/`Offer` for *any* product with a single publishable variant, including one
+that only ever had one option. The approved contract applies only to a real family that collapses.
+See `docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §14 — and **PR #214 implements it**:
 
 - Merchant continues to publish that exact survivor, unchanged;
 - U27 emits a top-level standalone `Product` representing **the same** exact survivor, using the
