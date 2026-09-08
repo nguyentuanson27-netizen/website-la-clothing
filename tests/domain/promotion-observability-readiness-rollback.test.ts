@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 
 import {
   assessCampaignRuntimeHealth,
+  evaluateCampaignRuntimeHealth,
   type VariantPricingOutcome,
 } from "../../src/commerce/promotion-runtime-health.ts";
+import { publishPromotionCampaign } from "../../src/commerce/promotion-activation-service.ts";
 import {
   createGuestCheckoutSubmitService,
   type GuestCheckoutSubmitDependencies,
@@ -273,6 +275,197 @@ describe("U40 / G2: Observability, Readiness & Rollback Invariants", () => {
         assert.equal(health.status, "FULLY_INVALID");
         assert.equal(health.affectedVariants, 1);
       });
+    });
+
+    it("exercises production publishPromotionCampaign runtime path, emitting promotion.runtime_health signal", async () => {
+      const emittedLines: string[] = [];
+      const writer = (line: string) => emittedLines.push(line);
+
+      const mockCampaign = {
+        id: "camp-prod-01",
+        name: "Winter Sale",
+        kind: "PROMOTION" as const,
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 20,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-10-01T00:00:00Z"),
+        endsAt: new Date("2026-10-15T00:00:00Z"),
+        isEnabled: false,
+        enabledAt: null,
+        disabledAt: null,
+        targets: [{ productId: "prod-1", variantId: null }],
+      };
+
+      const mockVariants = [
+        { id: "var-1", productId: "prod-1", pancakeRetailPrice: 100_000 },
+        { id: "var-2", productId: "prod-1", pancakeRetailPrice: 200_000 },
+      ];
+
+      const mockTx = {
+        $queryRaw: async () => [{ revision: BigInt(1) }],
+        $queryRawUnsafe: async () => [],
+        $executeRaw: async () => 1,
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+          findMany: async () => [],
+          update: async () => mockCampaign,
+        },
+        productMirror: {
+          findMany: async () => [{ id: "prod-1" }],
+        },
+        variantMirror: {
+          findMany: async () => mockVariants,
+        },
+      };
+
+      const mockClient = {
+        $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx),
+      };
+
+      const result = await publishPromotionCampaign({
+        campaignId: "camp-prod-01",
+        now: new Date("2026-09-08T00:00:00Z"),
+        session: { user: { id: "admin-1", role: "ADMIN" }, session: { id: "sess-1" } },
+        client: mockClient as unknown as Parameters<typeof publishPromotionCampaign>[0]["client"],
+        env: { LA_PROMOTION_ACTIVATION_ENABLED: "true" },
+        writer,
+      });
+
+      // Business result succeeds and advances revision
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.campaignId, "camp-prod-01");
+        assert.equal(result.revision, BigInt(2));
+      }
+
+      // Proves assessor was invoked and emitted promotion.runtime_health on the production runtime path
+      assert.equal(emittedLines.length, 1);
+      const parsed = JSON.parse(emittedLines[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.campaignId, "camp-prod-01");
+      assert.equal(parsed.status, "HEALTHY");
+      assert.equal(parsed.coveredVariants, 2);
+      assert.equal(parsed.discountedVariants, 2);
+      assert.equal(parsed.affectedVariants, 0);
+      assert.deepEqual(parsed.affectedSample, []);
+    });
+
+    it("isolates telemetry failure in publishPromotionCampaign: preserves business result when writer throws", async () => {
+      const throwingWriter = () => {
+        throw new Error("Telemetry socket / logger broken");
+      };
+
+      const mockCampaign = {
+        id: "camp-prod-02",
+        name: "Flash Sale",
+        kind: "FLASH_SALE" as const,
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 30,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-10-01T00:00:00Z"),
+        endsAt: new Date("2026-10-05T00:00:00Z"),
+        isEnabled: false,
+        enabledAt: null,
+        disabledAt: null,
+        targets: [{ productId: "prod-2", variantId: null }],
+      };
+
+      const mockTx = {
+        $queryRaw: async () => [{ revision: BigInt(5) }],
+        $queryRawUnsafe: async () => [],
+        $executeRaw: async () => 1,
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+          findMany: async () => [],
+          update: async () => mockCampaign,
+        },
+        productMirror: {
+          findMany: async () => [{ id: "prod-2" }],
+        },
+        variantMirror: {
+          findMany: async () => [{ id: "var-20", productId: "prod-2", pancakeRetailPrice: 300_000 }],
+        },
+      };
+
+      const mockClient = {
+        $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx),
+      };
+
+      // Telemetry failure MUST NOT throw out to the caller
+      const result = await publishPromotionCampaign({
+        campaignId: "camp-prod-02",
+        now: new Date("2026-09-08T00:00:00Z"),
+        session: { user: { id: "admin-1", role: "ADMIN" }, session: { id: "sess-1" } },
+        client: mockClient as unknown as Parameters<typeof publishPromotionCampaign>[0]["client"],
+        env: { LA_PROMOTION_ACTIVATION_ENABLED: "true" },
+        writer: throwingWriter,
+      });
+
+      // Business result is completely preserved
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.campaignId, "camp-prod-02");
+        assert.equal(result.revision, BigInt(6));
+      }
+    });
+
+    it("exercises production evaluateCampaignRuntimeHealth on-demand path with telemetry isolation", async () => {
+      const emittedLines: string[] = [];
+      const writer = (line: string) => emittedLines.push(line);
+
+      const mockCampaign = {
+        id: "camp-active-01",
+        kind: "PROMOTION" as const,
+        name: "Spring Sale",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 15,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: null, variantId: "var-active-1" }],
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+        },
+        variantMirror: {
+          findMany: async () => [{ id: "var-active-1", pancakeRetailPrice: 150_000 }],
+        },
+      };
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-active-01",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-10T00:00:00Z"),
+        writer,
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "HEALTHY");
+      assert.equal(health.coveredVariants, 1);
+      assert.equal(health.discountedVariants, 1);
+      assert.equal(health.affectedVariants, 0);
+
+      // Event emitted matching schema
+      assert.equal(emittedLines.length, 1);
+      const parsed = JSON.parse(emittedLines[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.campaignId, "camp-active-01");
+      assert.equal(parsed.status, "HEALTHY");
+
+      // Telemetry error swallowed
+      const throwingWriter = () => {
+        throw new Error("Log pipe closed");
+      };
+      const healthWithThrow = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-active-01",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-10T00:00:00Z"),
+        writer: throwingWriter,
+      });
+      assert.ok(healthWithThrow);
+      assert.equal(healthWithThrow.status, "HEALTHY");
     });
   });
 
