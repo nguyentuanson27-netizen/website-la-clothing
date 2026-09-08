@@ -3,8 +3,7 @@
 Owning source: `docs/audits/seo-geo-audit.md` findings **W13A** / **W13**, planning step **P5**.
 Master-plan unit: **U6**. Consumer: **U33 / W13**.
 
-Status: **CURRENT — B1–B4 and B6 are RESOLVED in the owner-approved facts source; U33a and U33b are
-implemented; U33c (Size Guide) is implementation-ready from the approved B3 facts.** The only
+Status: **CURRENT — B1–B4 and B6 are RESOLVED in the owner-approved facts source; U33 is fully implemented (U33a About/Contact, U33b Returns/Shipping, U33c Size Guide).** The only
 evergreen surfaces still blocked on an owner decision are the §15 policy pages — general terms,
 pricing, privacy, complaint handling, rights and obligations — which have **no approved facts at
 all**.
@@ -26,7 +25,7 @@ missing.
 | Contact | BLOCKED on B2 | **Built (U33a)** — `/contact`, from `PUBLIC_CONTACT_FACTS` (§2). |
 | Returns | BLOCKED on B1 | **Built (U33b)** — `/returns`, from `PUBLIC_RETURNS_POLICY` (§4). |
 | Shipping / Payment | BLOCKED on B4 | **Built (U33b)** — `/shipping`, from `PUBLIC_DELIVERY_FACTS` (§5), `buildPublicBrandFacts`, and the server-owned `readGuestShippingPolicy` for price. |
-| Size Guide | BLOCKED on B3 | **Owner-unblocked, not yet built.** B3 is RESOLVED — two approved charts, centimetres, circumference semantics, ±3 cm tolerance. What remains is **U33c implementation work, not an owner gate.** |
+| Size Guide | BLOCKED on B3 | **Built (U33c)** — `/size-guide`, from `PUBLIC_SIZE_GUIDE` (§6). |
 | `Organization` structured data | BLOCKED on B2 | **Enriched (U32b)** — address, contact point and social profile are emitted from `PUBLIC_CONTACT_FACTS`, and the footer renders the same facts, so the markup corresponds to visible content. |
 | §15 policy surfaces — general terms, pricing, privacy, complaint handling, rights and obligations | not inventoried | **Still blocked — no approved facts exist.** They stay unbuilt and unlinked rather than authored. |
 
@@ -62,6 +61,7 @@ fact group, each with a single consumer contract:
 | `PUBLIC_LEGAL_FACTS` | §1 legal entity name + confirmed MST, approved for a minimal About by B6/§7. **Not the address** — that stays with `PUBLIC_CONTACT_FACTS`, and `/about` renders it through `describePublicAddress()` | U33a |
 | `PUBLIC_RETURNS_POLICY` | §4 returns/exchange/refund clauses, §3 refund channel | U33b |
 | `PUBLIC_DELIVERY_FACTS` | §5 coverage, carriers, estimates, tracking and verification notes | U33b |
+| `PUBLIC_SIZE_GUIDE` | §6 size charts A and B, units (cm), circumference semantics, ±3 cm tolerance, height/weight guidance | U33c |
 
 The **shipping price stays outside all of them**, with the server-owned `readGuestShippingPolicy`:
 B4 keeps it as the pricing authority, and a fee copied into a content constant would let a page
@@ -136,7 +136,15 @@ which B4 keeps as the pricing authority because production may override it, so a
 into the content module — a domain test asserts no price key leaked in. Delivery windows are printed
 as estimates because §5 says they are not an SLA, and a test fails on commitment wording.
 
-Still unbuilt: the Size Guide has approved facts and is U33c work; the remaining §15 policy surfaces — general terms, pricing,
+**U33c** then built the Size Guide:
+
+| Page | Facts it publishes | Source |
+|---|---|---|
+| `/size-guide` | Chart A, Chart B, cm unit, circumference semantics, ±3 cm tolerance, reference height/weight | `PUBLIC_SIZE_GUIDE` (§6) |
+
+The page renders directly from `PUBLIC_SIZE_GUIDE`. No size calculator or recommendation engine is added, and height/weight values are explicitly published as guidance rather than fit guarantees.
+
+With U33c complete, all five named evergreen pages are built. The remaining §15 policy surfaces — general terms, pricing,
 privacy, complaint handling, rights and obligations — have **no approved facts at all** and stay
 unbuilt and unlinked rather than authored.
 

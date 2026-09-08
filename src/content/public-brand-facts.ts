@@ -252,3 +252,94 @@ export function describePublicRefundWindow(): string {
   const { minimum, maximum } = PUBLIC_RETURNS_POLICY.refundWorkingDays;
   return `${minimum}–${maximum} ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
 }
+
+/**
+ * B3/§6 — the size guide facts the owner approved.
+ *
+ * The semantics travel with the numbers:
+ * - All measurements are in centimetres (cm).
+ * - Chest, waist and hip widths are circumferences around the garment, not flat measurements.
+ * - Manufacturing tolerance is ±3 cm.
+ * - Height and weight are guidance for size selection only, not a fit guarantee.
+ *
+ * No size recommendation, size calculator, fit vocabulary or per-product measurement mapping
+ * outside these approved tables may be authored or inferred.
+ */
+export const PUBLIC_SIZE_GUIDE = Object.freeze({
+  unit: "cm",
+  toleranceCm: 3,
+  circumferenceSemanticsNote:
+    "Rộng ngực, Rộng eo, Rộng mông là số đo vòng quanh sản phẩm, không phải chiều ngang khi trải phẳng.",
+  toleranceNote: "Dung sai sai số may mặc: ±3 cm.",
+  guidanceNote:
+    "Thông số chiều cao và cân nặng mang tính chất tham khảo chọn size, không bảo đảm vừa vặn tuyệt đối cho mọi vóc dáng.",
+  sizes: Object.freeze(["M", "L", "XL", "2XL"] as const),
+  chartA: Object.freeze({
+    title: "Sản phẩm dáng rộng / quần lưng chun",
+    rows: Object.freeze([
+      Object.freeze({
+        parameter: "Rộng ngực (vòng, cm)",
+        values: Object.freeze({ M: "106", L: "110", XL: "114", "2XL": "118" }),
+      }),
+      Object.freeze({
+        parameter: "Dài tay (cm)",
+        values: Object.freeze({ M: "55", L: "56", XL: "57", "2XL": "58" }),
+      }),
+      Object.freeze({
+        parameter: "Dài áo (cm)",
+        values: Object.freeze({ M: "63.5", L: "65.5", XL: "67.5", "2XL": "69.5" }),
+      }),
+      Object.freeze({
+        parameter: "Dài quần (cm)",
+        values: Object.freeze({ M: "105", L: "106", XL: "107", "2XL": "108" }),
+      }),
+      Object.freeze({
+        parameter: "Rộng eo — chun (vòng, cm)",
+        values: Object.freeze({ M: "70–80", L: "74–84", XL: "78–88", "2XL": "82–92" }),
+      }),
+      Object.freeze({
+        parameter: "Rộng mông (vòng, cm)",
+        values: Object.freeze({ M: "108", L: "112", XL: "116", "2XL": "120" }),
+      }),
+      Object.freeze({
+        parameter: "Chiều cao tham khảo",
+        values: Object.freeze({ M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" }),
+      }),
+      Object.freeze({
+        parameter: "Cân nặng tham khảo (kg)",
+        values: Object.freeze({ M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" }),
+      }),
+    ]),
+  }),
+  chartB: Object.freeze({
+    title: "Áo ngắn tay",
+    rows: Object.freeze([
+      Object.freeze({
+        parameter: "Rộng ngực (vòng, cm)",
+        values: Object.freeze({ M: "120", L: "124", XL: "128", "2XL": "132" }),
+      }),
+      Object.freeze({
+        parameter: "Dài áo (cm)",
+        values: Object.freeze({ M: "63", L: "65", XL: "67", "2XL": "69" }),
+      }),
+      Object.freeze({
+        parameter: "Dài tay (cm)",
+        values: Object.freeze({ M: "27", L: "28", XL: "29", "2XL": "30" }),
+      }),
+      Object.freeze({
+        parameter: "Chiều cao tham khảo",
+        values: Object.freeze({ M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" }),
+      }),
+      Object.freeze({
+        parameter: "Cân nặng tham khảo (kg)",
+        values: Object.freeze({ M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" }),
+      }),
+    ]),
+  }),
+});
+
+/** The approved apparel manufacturing tolerance, formatted for a reader. */
+export function describePublicSizeTolerance(): string {
+  return `±${PUBLIC_SIZE_GUIDE.toleranceCm} cm`;
+}
+

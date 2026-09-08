@@ -233,7 +233,9 @@ try {
     ["/", await requestPath("/")],
     ["/collections", await requestPath("/collections")],
     ["/lookbook", disabledPage],
+    ["/size-guide", await requestPath("/size-guide")],
   ] as const) {
+    assertNoIndexHeader(page, `disabled ${path}`);
     assert.equal(
       page.body.includes('rel="canonical"'),
       false,
@@ -292,12 +294,22 @@ try {
     "enabled HTML metadata must not emit global robots noindex",
   );
 
-  // U30b / W10, extended by U33a: each static indexable page names itself, on the server-owned
+  // U30b / W10, extended by U33a/b/c: each static indexable page names itself, on the server-owned
   // origin. The evergreen pages join the list because they joined the canonical set — a path that
   // is self-canonical in the builder but never checked over HTTP is a contract nothing enforces.
-  for (const path of ["/", "/collections", "/lookbook", "/about", "/contact", "/returns", "/shipping"] as const) {
+  for (const path of ["/", "/collections", "/lookbook", "/about", "/contact", "/returns", "/shipping", "/size-guide"] as const) {
     const page = await requestPath(path);
     assert.equal(page.status, 200, `enabled ${path} must remain 200`);
+    assert.equal(
+      page.xRobotsTag,
+      null,
+      `enabled ${path} must not emit X-Robots-Tag noindex`,
+    );
+    assert.equal(
+      page.body.includes('name="robots"') && page.body.includes("noindex"),
+      false,
+      `enabled ${path} HTML metadata must not emit global robots noindex`,
+    );
     // Next serialises the root canonical as the bare origin; every other path keeps its pathname.
     const expected = path === "/" ? PUBLIC_ORIGIN : `${PUBLIC_ORIGIN}${path}`;
     assert.ok(
@@ -326,6 +338,15 @@ try {
     queryPage.body.includes('rel="canonical"'),
     false,
     "a query-state static page is noindex, so it must not also nominate a canonical",
+  );
+
+  const sizeGuideQueryPage = await requestPath("/size-guide?utm_source=smoke");
+  assert.equal(sizeGuideQueryPage.status, 200, "query-state size guide page must remain browseable");
+  assertNoIndexHeader(sizeGuideQueryPage, "query-state size guide page");
+  assert.equal(
+    sizeGuideQueryPage.body.includes('rel="canonical"'),
+    false,
+    "a query-state size guide page is noindex, so it must not also nominate a canonical",
   );
 
   const utilityPage = await requestPath("/new-arrivals");

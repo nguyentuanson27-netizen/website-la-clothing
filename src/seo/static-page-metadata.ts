@@ -28,6 +28,8 @@ const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   // U33b policy pages, same shape.
   "/returns",
   "/shipping",
+  // U33c size guide page.
+  "/size-guide",
 ]);
 
 /**

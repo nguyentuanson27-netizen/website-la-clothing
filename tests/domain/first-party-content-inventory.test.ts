@@ -93,13 +93,13 @@ test("W13A states the current truth and marks the U6-time snapshot as historical
     "the top-level status must state the current truth, not the U6-time verdict",
   );
   assert.match(status, /Status: \*\*CURRENT — B1–B4 and B6 are RESOLVED/);
-  assert.match(status, /U33a and U33b are\nimplemented/);
+  assert.match(status, /U33 is fully implemented/);
 
   // B3 is resolved, so the Size Guide is implementation work. An agent that reads "owner-blocked"
   // here stops U33c for a decision that has already been made.
   assert.match(
     status,
-    /\| Size Guide \| BLOCKED on B3 \| \*\*Owner-unblocked, not yet built\.\*\*[^\n]*U33c implementation work, not an owner gate/,
+    /\| Size Guide \| BLOCKED on B3 \| \*\*Built \(U33c\)\*\* — `\/size-guide`, from `PUBLIC_SIZE_GUIDE` \(§6\)\./,
   );
   // U32b is implemented; the audit used to call the same enrichment blocked.
   assert.match(status, /\| `Organization` structured data \|[^\n]*\*\*Enriched \(U32b\)\*\*/);
@@ -146,6 +146,7 @@ test("W13A describes the current authority set and the real reason each Organiza
     "PUBLIC_LEGAL_FACTS",
     "PUBLIC_RETURNS_POLICY",
     "PUBLIC_DELIVERY_FACTS",
+    "PUBLIC_SIZE_GUIDE",
   ]) {
     assert.ok(
       inventory.includes(`| \`${authority}\` |`),
@@ -209,14 +210,14 @@ test("current roadmap preserves W13A history while recording the resolved owner 
   // than being closed by the first slice landing.
   assert.match(
     masterTodo,
-    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented[^\n]*\.\*\*/,
+    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is fully implemented[^\n]*\.\*\*/,
   );
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+About \+ Contact/);
   assert.match(masterTodo, /- \[x\] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
   // B4 keeps the server-owned policy as the pricing authority; the record has to keep saying so, or
   // a later slice copies a fee into the content module and the pages start contradicting checkout.
   assert.match(masterTodo, /\*\*U33b\*\*[^\n]+shipping price is deliberately not in the content module/);
-  assert.match(masterTodo, /- \[ \] \*\*U33c\*\*[^\n]+Size Guide/);
+  assert.match(masterTodo, /- \[x\] \*\*U33c\*\*[^\n]+Size Guide/);
   // The §15 surfaces with no approved facts must stay recorded as unbuilt, not quietly dropped.
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+no approved facts yet\*\*; they stay unbuilt and unlinked/);
   assert.match(

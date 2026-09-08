@@ -37,11 +37,26 @@ test("U6a collection BreadcrumbList mirrors the visible breadcrumb from the serv
 });
 
 test("U6a keeps every unapproved support candidate outside enabled search exposure", () => {
-  for (const pathname of ["/about", "/size-guide", "/shipping-returns", "/faq"]) {
+  for (const pathname of ["/shipping-returns", "/faq"]) {
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "" }),
       true,
       `${pathname} must remain noindex without route-level content approval`,
+    );
+    assert.equal(
+      shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?ref=test" }),
+      true,
+      `${pathname} query states must remain noindex`,
+    );
+  }
+});
+
+test("U33 approved evergreen routes are eligible for enabled search exposure without query state", () => {
+  for (const pathname of ["/about", "/contact", "/returns", "/shipping", "/size-guide"]) {
+    assert.equal(
+      shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "" }),
+      false,
+      `${pathname} must be eligible when search indexing is enabled`,
     );
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?ref=test" }),
