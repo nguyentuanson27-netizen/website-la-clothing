@@ -69,6 +69,8 @@ function userAgentSection(body: string, userAgent: string): string[] {
   return section;
 }
 
+import { ALL_APPROVED_NAMED_CRAWLERS } from "../src/seo/robots-policy.ts";
+
 try {
   serverOutput = "";
   server = spawn(
@@ -90,15 +92,23 @@ try {
 
   const response = await fetch(`${BASE_URL}/robots.txt`, { redirect: "manual" });
   const body = await response.text();
-  assert.equal(response.status, 200, `P16C robots.txt must return 200\n${serverOutput}`);
+  assert.equal(response.status, 200, `P16C / U36 robots.txt must return 200\n${serverOutput}`);
 
-  const oaiRules = userAgentSection(body, "OAI-SearchBot");
-  assert.equal(oaiRules.includes("Allow: /"), true, "OAI-SearchBot must be allowed on public HTML");
-  assert.equal(oaiRules.includes("Disallow: /api"), true, "OAI-SearchBot must remain blocked from /api");
-  assert.equal(oaiRules.includes("Disallow: /"), false, "OAI-SearchBot must not be globally blocked");
+  const wildcardRules = userAgentSection(body, "*");
+  assert.equal(wildcardRules.includes("Allow: /"), true, "* must be allowed on public HTML");
+  assert.equal(wildcardRules.includes("Disallow: /api"), true, "* must remain blocked from /api");
+  assert.equal(wildcardRules.includes("Disallow: /"), false, "* must not be globally blocked");
+
+  for (const crawler of ALL_APPROVED_NAMED_CRAWLERS) {
+    const crawlerRules = userAgentSection(body, crawler);
+    assert.equal(crawlerRules.includes("Allow: /"), true, `${crawler} must be allowed on public HTML`);
+    assert.equal(crawlerRules.includes("Disallow: /api"), true, `${crawler} must remain blocked from /api`);
+    assert.equal(crawlerRules.includes("Disallow: /"), false, `${crawler} must not be globally blocked`);
+  }
+
   assert.equal(body.includes("Sitemap: https://shop.example.com/sitemap.xml"), true);
 
-  console.log("P16C robots HTTP smoke passed: OAI-SearchBot can crawl public HTML, /api remains blocked, and the canonical sitemap is advertised when indexing is enabled.");
+  console.log(`U36 / P16C robots HTTP smoke passed: wildcard and all ${ALL_APPROVED_NAMED_CRAWLERS.length} approved crawlers can crawl public HTML, /api remains blocked, and canonical sitemap is advertised when indexing is enabled.`);
 } finally {
   await stopServer();
   await rm(nextDevDirectory, { recursive: true, force: true });
