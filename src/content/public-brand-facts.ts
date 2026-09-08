@@ -104,3 +104,26 @@ export function describePublicSupportHours(): string {
   const cadence = days.length === 7 ? "hằng ngày" : days.join(", ");
   return `${opens} - ${closes} ${cadence} (${utcOffsetLabel})`;
 }
+
+/**
+ * B6/§7 — the brand positioning the owner approved for publication, as one sentence.
+ *
+ * The owner withheld the founding year, the founder and any brand story or values beyond this
+ * sentence. It is a constant rather than page prose for exactly that reason: an About page written
+ * freehand is how an invented history reaches the storefront, and a test pins this against §7 word
+ * for word.
+ */
+export const PUBLIC_BRAND_POSITIONING =
+  "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.";
+
+/**
+ * B6/§11 — the legal identity the owner confirmed and approved for publication.
+ *
+ * U32b left these out because they are not B2 contact facts and the `Organization` entity it built
+ * implements the B2 contract. The About/legal surface is where they belong, and this is where a
+ * later `legalName`/`taxID` mapping would read them from.
+ */
+export const PUBLIC_LEGAL_FACTS = Object.freeze({
+  legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
+  taxCode: "0111242251",
+});

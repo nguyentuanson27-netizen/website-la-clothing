@@ -62,10 +62,30 @@ transcribing §2 again — one authority is the whole point, and the site JSON-L
 `supportHoursSchemaTime` the schema.org one, all from the same parts. The **site footer renders
 these facts**, so the Organization markup that carries them corresponds to content a reader can see.
 
+### Update: About and Contact are built (U33a)
+
+The two pages this inventory classified as fully blocked on owner facts now exist, built only from
+approved facts:
+
+| Page | Facts it publishes | Source |
+|---|---|---|
+| `/contact` | Hotline/Zalo, email, address, support hours, Fanpage | `PUBLIC_CONTACT_FACTS` (§2) |
+| `/about` | Brand positioning sentence; legal entity, MST, address | `PUBLIC_BRAND_POSITIONING` (§7), `PUBLIC_LEGAL_FACTS` (§11) |
+
+Neither page transcribes a fact a second time — they render the same constants the footer renders
+and the `Organization` structured data marks up. What each page **omits** is asserted, not just
+intended: browser tests fail if an origin story, founding year, founder, mission or values reaches
+About, or if a contact form or a response-time promise reaches Contact.
+
+Still unbuilt and still requiring owner content: Returns, Shipping/Payment and Size Guide have
+approved facts and are U33b/U33c work; the remaining §15 policy surfaces — general terms, pricing,
+privacy, complaint handling, rights and obligations — have **no approved facts at all** and stay
+unbuilt and unlinked rather than authored.
+
 The registered entity name and tax code are **no longer owner-blocked** — B6 approves publishing the
 legal entity and the confirmed MST — but they are **outside the B2 contact contract** U32b
-implements, so U32b did not publish them; they belong to U33's About/legal surface. Founder and
-founding year do remain unapproved under B6. Everything else in this inventory still stands.
+implements, so U32b did not publish them; **U33a's About page publishes them**. Founder and founding
+year do remain unapproved under B6. Everything else in this inventory still stands.
 
 ## Per-page inventory
 

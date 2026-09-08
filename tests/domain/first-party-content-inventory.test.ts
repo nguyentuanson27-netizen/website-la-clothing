@@ -83,10 +83,19 @@ test("current roadmap preserves W13A history while recording the resolved owner 
   assert.match(inventory, /\| \*\*B6\*\* \| About(?:\/brand\/legal)? facts .*\| U33 \(About page\) \|/);
   assert.match(inventory, /For each of About, Returns, Shipping delivery terms, Size Guide and Contact:/);
 
+  // U33a built About and Contact, so "not implemented" no longer holds for the unit as a whole.
+  // What must not regress is the distinction the record draws: the owner decisions stay resolved,
+  // the pages that are built say so, and the pages whose facts do not exist stay marked open rather
+  // than being closed by the first slice landing.
   assert.match(
     masterTodo,
-    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is owner-unblocked but not implemented\.\*\*/,
+    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented\.\*\*/,
   );
+  assert.match(masterTodo, /\*\*U33a\*\*[^\n]+About \+ Contact/);
+  assert.match(masterTodo, /- \[ \] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
+  assert.match(masterTodo, /- \[ \] \*\*U33c\*\*[^\n]+Size Guide/);
+  // The §15 surfaces with no approved facts must stay recorded as unbuilt, not quietly dropped.
+  assert.match(masterTodo, /\*\*U33a\*\*[^\n]+no approved facts yet\*\*; they stay unbuilt and unlinked/);
   assert.match(
     masterTodo,
     /\| \*\*B6\*\* \| \*\*RESOLVED FOR MINIMAL ABOUT\*\*[^\n]+\| U33 About owner-unblocked \|/,

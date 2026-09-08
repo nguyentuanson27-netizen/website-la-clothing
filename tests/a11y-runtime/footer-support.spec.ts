@@ -101,7 +101,13 @@ test("U5 footer exposes canonical factual trust without unapproved support route
   await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
   await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
 
-  for (const href of ["/about", "/size-guide", "/shipping-returns", "/faq"]) {
+  // U33a built `/about` and `/contact` from owner-approved facts, so they are now linked. The rest
+  // of the list stays absent: those routes have no approved facts behind them yet, and linking a
+  // page this repository has not built is how a 404 reaches a buyer looking for a policy.
+  for (const href of ["/about", "/contact"]) {
+    await expect(footer.locator(`a[href="${href}"]`)).toBeVisible();
+  }
+  for (const href of ["/size-guide", "/shipping-returns", "/faq"]) {
     await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(0);
   }
 

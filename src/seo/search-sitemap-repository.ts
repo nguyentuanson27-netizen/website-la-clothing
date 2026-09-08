@@ -12,10 +12,19 @@ const MAX_SITEMAP_URLS = 50_000;
  * module is what lets the W21 capacity audit derive its arithmetic instead of restating numbers
  * that would go stale the first time a static path is added.
  */
-export const STATIC_CANONICAL_PATHS = ["/", "/shop", "/collections", "/lookbook"] as const;
+export const STATIC_CANONICAL_PATHS = [
+  "/",
+  "/shop",
+  "/collections",
+  "/lookbook",
+  // U33a. The evergreen pages are permanent, self-canonical and indexable on the same terms as the
+  // rest of this list, so they belong in the document rather than being reachable only by crawl.
+  "/about",
+  "/contact",
+] as const;
 
 /**
- * What is left of the per-document limit once the static paths have taken their share — 49,996.
+ * What is left of the per-document limit once the static paths have taken their share — 49,994.
  *
  * Derived rather than written down: adding a fifth static path must shrink the dynamic bound, and
  * a hand-maintained constant is exactly where that would silently fail to happen.

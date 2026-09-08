@@ -292,8 +292,10 @@ try {
     "enabled HTML metadata must not emit global robots noindex",
   );
 
-  // U30b / W10: each static indexable page names itself, on the server-owned origin.
-  for (const path of ["/", "/collections", "/lookbook"] as const) {
+  // U30b / W10, extended by U33a: each static indexable page names itself, on the server-owned
+  // origin. The evergreen pages join the list because they joined the canonical set — a path that
+  // is self-canonical in the builder but never checked over HTTP is a contract nothing enforces.
+  for (const path of ["/", "/collections", "/lookbook", "/about", "/contact"] as const) {
     const page = await requestPath(path);
     assert.equal(page.status, 200, `enabled ${path} must remain 200`);
     // Next serialises the root canonical as the bare origin; every other path keeps its pathname.
