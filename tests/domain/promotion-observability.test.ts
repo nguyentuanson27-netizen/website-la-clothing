@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { PromotionAdminFailure } from "../../src/commerce/promotion-admin-feedback.ts";
+import type { RenderedQuoteProofRejection } from "../../src/commerce/checkout-quote-proof.ts";
 import { MAX_PROMOTION_IDENTIFIER_LENGTH } from "../../src/commerce/promotion-activation.ts";
 import {
   MAX_REPORTED_ACTIVATION_ERRORS,
   MAX_REPORTED_SIGNAL_IDENTIFIERS,
+  MAX_REPORTED_HEALTH_SAMPLE,
   describeActivationGate,
   describeActivationRejection,
+  describeCampaignRuntimeHealth,
+  describeRenderedQuoteProofRejection,
   emitPromotionSignal,
 } from "../../src/operations/promotion-observability.ts";
 
@@ -269,4 +273,92 @@ test("a failing writer never propagates out of emission", () => {
       throw new Error("stdout is gone");
     }),
   );
+});
+
+test("describeCampaignRuntimeHealth maps status and bounds affected variant samples", () => {
+  const health = {
+    campaignId: "campaign-sale-1",
+    status: "PARTIALLY_INVALID" as const,
+    coveredVariants: 50,
+    discountedVariants: 35,
+    affectedVariants: 15,
+    affected: Array.from({ length: 15 }, (_, i) => ({
+      variantId: `var-${i}`,
+      reason: "PROMOTION_INVALID" as const,
+      conflictingCampaignIds: [`conf-${i}`],
+    })),
+    affectedTruncated: false,
+  };
+
+  const signal = describeCampaignRuntimeHealth(health);
+  assert.equal(signal.name, "promotion.runtime_health");
+  assert.equal(signal.campaignId, "campaign-sale-1");
+  assert.equal(signal.status, "PARTIALLY_INVALID");
+  assert.equal(signal.coveredVariants, 50);
+  assert.equal(signal.discountedVariants, 35);
+  assert.equal(signal.affectedVariants, 15);
+  assert.equal(signal.affectedTruncated, true);
+  assert.equal(signal.affectedSample.length, MAX_REPORTED_HEALTH_SAMPLE);
+  assert.equal(signal.affectedSample[0]?.variantId, "var-0");
+  assert.equal(signal.affectedSample[0]?.reason, "PROMOTION_INVALID");
+  assert.deepEqual(signal.affectedSample[0]?.conflictingCampaignIds, ["conf-0"]);
+
+  // Serialized signal is compact and contains no price money fields or PII
+  const serialized = JSON.stringify(signal);
+  assert.ok(serialized.length < 1024, "signal must stay below 1KB");
+  assert.equal(serialized.includes("price"), false, "never log prices");
+  assert.equal(serialized.includes("vnd"), false, "never log money");
+});
+
+test("describeCampaignRuntimeHealth handles healthy and zero-coverage states cleanly", () => {
+  const healthy = describeCampaignRuntimeHealth({
+    campaignId: "healthy-1",
+    status: "HEALTHY",
+    coveredVariants: 20,
+    discountedVariants: 20,
+    affectedVariants: 0,
+    affected: [],
+    affectedTruncated: false,
+  });
+  assert.equal(healthy.status, "HEALTHY");
+  assert.equal(healthy.affectedVariants, 0);
+  assert.equal(healthy.affectedSample.length, 0);
+  assert.equal(healthy.affectedTruncated, false);
+
+  const noCoverage = describeCampaignRuntimeHealth({
+    campaignId: "empty-1",
+    status: "NO_COVERAGE",
+    coveredVariants: 0,
+    discountedVariants: 0,
+    affectedVariants: 0,
+    affected: [],
+    affectedTruncated: false,
+  });
+  assert.equal(noCoverage.status, "NO_COVERAGE");
+  assert.equal(noCoverage.coveredVariants, 0);
+});
+
+test("describeRenderedQuoteProofRejection records exact reason and phase with zero secrets or tokens", () => {
+  const reasons: readonly RenderedQuoteProofRejection[] = [
+    "PROOF_MISSING",
+    "PROOF_OVERSIZED",
+    "PROOF_MALFORMED",
+    "PROOF_UNVERIFIED",
+    "PRICE_CHANGED",
+  ];
+
+  for (const reason of reasons) {
+    const signal = describeRenderedQuoteProofRejection({ reason });
+    assert.deepEqual(signal, {
+      name: "checkout.quote_proof_rejected",
+      phase: "rendered_quote_verification",
+      reason,
+    });
+
+    const serialized = JSON.stringify(signal);
+    assert.ok(serialized.length < 200);
+    assert.equal(serialized.includes("cart_id"), false);
+    assert.equal(serialized.includes("token"), false);
+    assert.equal(serialized.includes("secret"), false);
+  }
 });

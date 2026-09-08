@@ -35,6 +35,11 @@ import {
 } from "../commerce/promotion-activation.ts";
 import type { PromotionAdminFailure } from "../commerce/promotion-admin-feedback.ts";
 import type { CampaignLifecycleStatus } from "../commerce/promotion-campaign-lifecycle.ts";
+import type {
+  CampaignRuntimeHealth,
+  CampaignRuntimeStatus,
+} from "../commerce/promotion-runtime-health.ts";
+import type { RenderedQuoteProofRejection } from "../commerce/checkout-quote-proof.ts";
 
 /**
  * Bounds the reason list so one malformed submission cannot turn a diagnostic into a flood.
@@ -54,6 +59,14 @@ export const MAX_REPORTED_ACTIVATION_ERRORS = 12;
  * read as the whole.
  */
 export const MAX_REPORTED_SIGNAL_IDENTIFIERS = 10;
+
+/**
+ * How many affected variant detail items one runtime health signal may carry.
+ *
+ * Each item contains a variant ID, pricing failure reason, and conflicting campaign IDs.
+ * Five items provides immediate triage context while keeping the JSON line well below 1 KB.
+ */
+export const MAX_REPORTED_HEALTH_SAMPLE = 5;
 
 /**
  * Which admin operation produced the signal.
@@ -123,9 +136,34 @@ export type PromotionActivationRejectionSignal = Readonly<
     )
 >;
 
+export type PromotionRuntimeHealthSampleItem = Readonly<{
+  variantId: string;
+  reason: string | null;
+  conflictingCampaignIds: readonly string[];
+}>;
+
+export type PromotionRuntimeHealthSignal = Readonly<{
+  name: "promotion.runtime_health";
+  campaignId: string;
+  status: CampaignRuntimeStatus;
+  coveredVariants: number;
+  discountedVariants: number;
+  affectedVariants: number;
+  affectedTruncated: boolean;
+  affectedSample: readonly PromotionRuntimeHealthSampleItem[];
+}>;
+
+export type RenderedQuoteProofRejectionSignal = Readonly<{
+  name: "checkout.quote_proof_rejected";
+  phase: "rendered_quote_verification";
+  reason: RenderedQuoteProofRejection;
+}>;
+
 export type PromotionObservabilitySignal =
   | PromotionActivationGateSignal
-  | PromotionActivationRejectionSignal;
+  | PromotionActivationRejectionSignal
+  | PromotionRuntimeHealthSignal
+  | RenderedQuoteProofRejectionSignal;
 
 export function describeActivationGate({
   operation,
@@ -260,6 +298,66 @@ export function describeActivationRejection({
         conflictingCampaignIds: boundedIdentifiers(failure.conflictingCampaignIds),
       });
   }
+}
+
+/**
+ * Reduces runtime campaign health to a bounded signal safe to emit to stdout.
+ *
+ * Health diagnostics report why variants fail or recover at runtime (e.g. PARTIALLY_INVALID,
+ * FULLY_INVALID). Affected variants are sampled up to MAX_REPORTED_SIGNAL_IDENTIFIERS (10)
+ * with individual identifiers bounded. Prices and customer data are never carried.
+ */
+export function describeCampaignRuntimeHealth(
+  health: CampaignRuntimeHealth,
+): PromotionRuntimeHealthSignal {
+  const boundedSample: PromotionRuntimeHealthSampleItem[] = [];
+  for (const item of health.affected) {
+    if (boundedSample.length >= MAX_REPORTED_HEALTH_SAMPLE) break;
+    if (isBoundedPromotionIdentifier(item.variantId)) {
+      boundedSample.push(
+        Object.freeze({
+          variantId: item.variantId,
+          reason: item.reason,
+          conflictingCampaignIds: boundedIdentifiers(item.conflictingCampaignIds),
+        }),
+      );
+    }
+  }
+
+  const campaignId = isBoundedPromotionIdentifier(health.campaignId.trim())
+    ? health.campaignId.trim()
+    : "";
+
+  return Object.freeze({
+    name: "promotion.runtime_health",
+    campaignId,
+    status: health.status,
+    coveredVariants: health.coveredVariants,
+    discountedVariants: health.discountedVariants,
+    affectedVariants: health.affectedVariants,
+    affectedTruncated:
+      health.affectedTruncated || health.affected.length > boundedSample.length,
+    affectedSample: Object.freeze(boundedSample),
+  });
+}
+
+/**
+ * Describes a rendered quote proof rejection during the checkout snapshot phase (P9a).
+ *
+ * Distinguishes the checkout snapshot phase ("rendered_quote_verification") from the downstream
+ * catalog re-verification phase ("catalog_submission" via pancake_order.quote_repriced).
+ * Zero proof tokens, MAC signatures, cart UUIDs or customer PII are logged.
+ */
+export function describeRenderedQuoteProofRejection({
+  reason,
+}: Readonly<{
+  reason: RenderedQuoteProofRejection;
+}>): RenderedQuoteProofRejectionSignal {
+  return Object.freeze({
+    name: "checkout.quote_proof_rejected",
+    phase: "rendered_quote_verification",
+    reason,
+  });
 }
 
 /** Where a signal is written. Injectable so tests assert real emission rather than a spy on stdout. */

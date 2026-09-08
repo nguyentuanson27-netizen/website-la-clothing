@@ -399,16 +399,16 @@ Activation rule:
 - [ ] Future GTM/Merchant activation must re-check promotion-aware monetary behavior if promotions are active.
 
 ## G2 — observability/readiness/rollback
-- [ ] Bounded/redacted activation rejection telemetry.
-- [ ] Invalid/recovery/PARTIALLY_INVALID telemetry.
-- [ ] Conflict telemetry with bounded identifiers.
-- [ ] `PRICE_CHANGED` phase and rendered-quote-proof rejection reason observable without logging proof/PII.
-- [ ] Merchant durable-revision mismatch/rebuild observable when Merchant enabled.
-- [ ] Pancake semantic acceptance evidence handled securely.
-- [ ] No PII/secrets/raw external payloads/raw quote proofs/cart UUIDs/session handles in logs.
-- [ ] Rollback runbook: gate off + explicit Disable; Disable works >2000 variants and advances durable pricing revision transactionally.
-- [ ] Merchant-enabled rollback relies on later cache decisions observing new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation dependency.
-- [ ] Mirrored-money audit accepted.
+- [x] Bounded/redacted activation rejection telemetry.
+- [x] Invalid/recovery/PARTIALLY_INVALID telemetry.
+- [x] Conflict telemetry with bounded identifiers.
+- [x] `PRICE_CHANGED` phase and rendered-quote-proof rejection reason observable without logging proof/PII.
+- [x] Merchant durable-revision mismatch/rebuild observable when Merchant enabled.
+- [x] Pancake semantic acceptance evidence handled securely.
+- [x] No PII/secrets/raw external payloads/raw quote proofs/cart UUIDs/session handles in logs.
+- [x] Rollback runbook: gate off + explicit Disable; Disable works >2000 variants and advances durable pricing revision transactionally.
+- [x] Merchant-enabled rollback relies on later cache decisions observing new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation dependency.
+- [x] Mirrored-money audit accepted.
 
 ## G3 — Definition of Done
 - [ ] Focused new/regression tests.
@@ -442,10 +442,10 @@ Activation rule:
 - [x] E2 P9a stateless rendered quote proof/reconfirmation. *(U21, PR #190 merged)*
 - [x] E3 P9b fresh-Pancake reconfirmation. *(U22, PR #191 merged)*
 - [x] F P10 final Pancake price. *(U23, PR pending)*
-- [ ] #153 T7 Purchase consumer.
-- [ ] G1 focused consumer PRs only for consumers intended/enabled at that rollout stage.
-- [ ] G2 readiness.
-- [ ] G3 integrated verification.
+- [x] #153 T7 Purchase consumer. *(U24, PR #193 merged)*
+- [ ] G1 focused consumer PRs only for consumers intended/enabled at that rollout stage. *(U39, PR #223)*
+- [x] G2 readiness. *(U40)*
+- [ ] G3 integrated verification. *(U43)*
 
 ## Separate launch gates
 Promotion:

@@ -13,6 +13,7 @@ import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
   verifyRenderedQuoteProof,
   type RenderedQuoteProofFacts,
+  type RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
 import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
 import {
@@ -23,6 +24,10 @@ import {
   createGuestCheckoutSubmitService,
   type GuestCheckoutSubmitDependencies,
 } from "./guest-checkout-submit.ts";
+import {
+  describeRenderedQuoteProofRejection,
+  emitPromotionSignal,
+} from "../operations/promotion-observability.ts";
 import { createPancakeOrderSubmissionRuntime } from "./pancake-order-submit-runtime.ts";
 
 type SnapshotAuthority = Readonly<{
@@ -47,6 +52,7 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   ) => GuestCheckoutSubmitDependencies["orderSubmission"];
   recoverStranded: (input: { cartId: string; now: Date }) => Promise<void>;
   generatePublicCode: () => string;
+  onQuoteProofRejection: (reason: RenderedQuoteProofRejection) => void;
   /**
    * The server-only key material for the rendered-quote proof. Injected as a reader rather than
    * read at module load so a test can supply its own secret without touching process env, and so a
@@ -94,6 +100,11 @@ export function createGuestCheckoutSubmitRuntime(
   const readQuoteProofSecret =
     options.readQuoteProofSecret ?? (() => readAuthServerConfig().secret);
   const clock = options.clock ?? (() => new Date());
+  const onQuoteProofRejection =
+    options.onQuoteProofRejection ??
+    ((reason) => {
+      emitPromotionSignal(describeRenderedQuoteProofRejection({ reason }));
+    });
 
   async function submit({
     cartId,
@@ -141,6 +152,7 @@ export function createGuestCheckoutSubmitRuntime(
       }),
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
+      onQuoteProofRejection,
     });
 
     return service.submit({
