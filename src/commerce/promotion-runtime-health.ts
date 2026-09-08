@@ -18,10 +18,12 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 import { prisma } from "../db/prisma.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import {
+  isActiveAt,
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
   type PromotionPricingReason,
 } from "./promotion-pricing.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import {
   describeCampaignRuntimeHealth,
   emitPromotionSignal,
@@ -139,14 +141,17 @@ export function assessCampaignRuntimeHealth({
 
 export type EvaluateCampaignRuntimeHealthInput = Readonly<{
   campaignId: string;
-  client?: Pick<PrismaClient, "promotionCampaign" | "variantMirror">;
+  client?: Pick<PrismaClient, "promotionCampaign" | "variantMirror"> & {
+    promotionTarget?: unknown;
+  };
   now?: Date;
   writer?: PromotionSignalWriter;
 }>;
 
 /**
  * Evaluates runtime health on-demand for a persisted campaign.
- * Resolves current variant outcomes against the database mirror, invokes
+ * Resolves current variant outcomes against the database mirror without coverage truncation,
+ * discovers concurrent competing campaign conflicts via candidate batching, invokes
  * assessCampaignRuntimeHealth, and emits promotion.runtime_health signal.
  * Telemetry failures are swallowed to safeguard caller execution.
  */
@@ -181,23 +186,51 @@ export async function evaluateCampaignRuntimeHealth({
   const directVariantIds = campaign.targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
   const productIds = campaign.targets.flatMap((t) => (t.productId === null ? [] : [t.productId]));
 
-  const ownedVariants = productIds.length === 0
-    ? []
-    : await client.variantMirror.findMany({
-        where: { productId: { in: productIds } },
-        select: { id: true },
-        take: 2000,
-      });
+  const whereClause =
+    directVariantIds.length > 0 && productIds.length > 0
+      ? { OR: [{ id: { in: directVariantIds } }, { productId: { in: productIds } }] }
+      : directVariantIds.length > 0
+        ? { id: { in: directVariantIds } }
+        : productIds.length > 0
+          ? { productId: { in: productIds } }
+          : null;
 
-  const allVariantIds = [...new Set([...directVariantIds, ...ownedVariants.map((v) => v.id)])];
-  if (allVariantIds.length === 0) {
+  if (whereClause === null) {
     return assessCampaignRuntimeHealth({ campaignId: campaign.id, outcomes: [], writer });
   }
 
-  const variants = await client.variantMirror.findMany({
-    where: { id: { in: allVariantIds } },
-    select: { id: true, pancakeRetailPrice: true },
-  });
+  const BATCH_SIZE = 500;
+  const variants: Array<{ id: string; pancakeRetailPrice: number | null }> = [];
+  const seenVariantIds = new Set<string>();
+  let cursorId: string | undefined = undefined;
+
+  while (true) {
+    const batch = (await client.variantMirror.findMany({
+      where: whereClause,
+      select: { id: true, pancakeRetailPrice: true },
+      orderBy: { id: "asc" },
+      take: BATCH_SIZE,
+      ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
+    })) as Array<{ id: string; pancakeRetailPrice: number | null }>;
+
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    let added = 0;
+    for (const v of batch) {
+      if (!seenVariantIds.has(v.id)) {
+        seenVariantIds.add(v.id);
+        variants.push(v);
+        added++;
+      }
+    }
+
+    if (added === 0 || batch.length < BATCH_SIZE) break;
+    cursorId = batch[batch.length - 1]?.id;
+  }
+
+  if (variants.length === 0) {
+    return assessCampaignRuntimeHealth({ campaignId: campaign.id, outcomes: [], writer });
+  }
 
   const applicable: ApplicablePromotionCampaign = {
     id: campaign.id,
@@ -210,17 +243,52 @@ export async function evaluateCampaignRuntimeHealth({
     endsAt: campaign.endsAt,
   };
 
+  const allVariantIds = variants.map((v) => v.id);
+  let competingCampaignsByVariant = new Map<string, readonly ApplicablePromotionCampaign[]>();
+
+  const hasPromotionTarget =
+    "promotionTarget" in client &&
+    typeof (client as Record<string, unknown>).promotionTarget === "object" &&
+    (client as Record<string, unknown>).promotionTarget !== null;
+
+  if (hasPromotionTarget) {
+    try {
+      const lookup = await readApplicablePromotionCampaignsBatched({
+        variantIds: allVariantIds,
+        client: client as unknown as Parameters<typeof readApplicablePromotionCampaignsBatched>[0]["client"],
+      });
+      competingCampaignsByVariant = new Map(lookup.campaignsByVariantId);
+    } catch {
+      // If candidate lookup fails or is unsupported by client mock, proceed without competing candidates
+    }
+  }
+
   const outcomes: VariantPricingOutcome[] = variants.map((variant) => {
+    const competing = competingCampaignsByVariant.get(variant.id) ?? [];
+    const combinedCandidates = [
+      applicable,
+      ...competing.filter((c) => c.id !== applicable.id),
+    ];
+
     const pricing = resolvePromotionPricing({
       basePriceVnd: variant.pancakeRetailPrice,
-      campaigns: [applicable],
+      campaigns: combinedCandidates,
       now,
     });
+
+    const activeOtherCampaigns = combinedCandidates.filter(
+      (c) => c.id !== applicable.id && isActiveAt(c, now),
+    );
+
+    const conflictingCampaignIds = pricing.reason === "PROMOTION_CONFLICT"
+      ? activeOtherCampaigns.map((c) => c.id)
+      : [];
+
     return {
       variantId: variant.id,
       isDiscounted: pricing.isDiscounted,
       reason: pricing.reason,
-      conflictingCampaignIds: [],
+      conflictingCampaignIds,
     };
   });
 

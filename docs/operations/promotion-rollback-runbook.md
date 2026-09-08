@@ -112,7 +112,7 @@ All promotion and checkout signals are emitted as single-line JSON to stdout:
 - **`promotion.activation_gate`**: Emitted when an admin operation enters a gate-governed branch. Reports boolean `enabled`.
 - **`promotion.activation_rejected`**: Emitted when campaign creation, editing, publishing, or copying is refused. Includes bounded identifier samples (max 10).
 - **`promotion.runtime_health`**: Emitted on-demand at request-time whenever campaign runtime health is assessed. Diagnoses `HEALTHY`, `PARTIALLY_INVALID`, or `FULLY_INVALID` with sampled variant reasons (max 5, no prices, no PII, NDJSON <1 KB).
-- **`checkout.quote_proof_rejected`**: Emitted during checkout snapshot creation (P9a) when rendered quote proof fails verification (`PRICE_CHANGED`, `PROOF_MISSING`, `PROOF_OVERSIZED`, `PROOF_MALFORMED`, `PROOF_UNVERIFIED`, `WRONG_CART`).
+- **`checkout.quote_proof_rejected`**: Emitted during checkout snapshot creation (P9a) when rendered quote proof fails verification (`PRICE_CHANGED`, `PROOF_MISSING`, `PROOF_OVERSIZED`, `PROOF_MALFORMED`, `PROOF_UNVERIFIED`).
 - **`pancake_order.quote_repriced`**: Emitted during Pancake order submission (P9b) when fresh catalog price disagrees with DRAFT quote.
 - **`[merchant-feed] pricing_revision_changed`**: Emitted when Merchant feed coordinator detects that durable promotion pricing revision advanced during in-flight generation.
 
