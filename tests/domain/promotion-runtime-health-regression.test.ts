@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { evaluateCampaignRuntimeHealth } from "../../src/commerce/promotion-runtime-health.ts";
@@ -137,5 +138,14 @@ describe("promotion runtime-health regression guards", () => {
 
     assert.equal(health, null, "unknown candidate truth must not masquerade as HEALTHY");
     assert.equal(emittedLines.length, 0, "no runtime-health signal is emitted for incomplete source truth");
+  });
+
+  it("documents an emergency rollback session shape accepted by the activation service", () => {
+    const runbook = readFileSync(
+      new URL("../../docs/operations/promotion-rollback-runbook.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(runbook, /session:\s*\{\s*id:\s*"emergency-ops"\s*\}/);
   });
 });
