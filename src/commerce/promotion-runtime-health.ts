@@ -15,6 +15,12 @@
  */
 
 import type { PromotionPricingReason } from "./promotion-pricing.ts";
+import {
+  describeCampaignRuntimeHealth,
+  emitPromotionSignal,
+  type PromotionRuntimeHealthSignal,
+  type PromotionSignalWriter,
+} from "../operations/promotion-observability.ts";
 
 /** Bounded so one broken catalog import cannot turn a diagnostic into an unbounded payload. */
 export const MAX_REPORTED_AFFECTED_VARIANTS = 50;
@@ -53,13 +59,19 @@ export type CampaignRuntimeHealth = Readonly<{
   affectedTruncated: boolean;
 }>;
 
+export type AssessCampaignRuntimeHealthInput = Readonly<{
+  campaignId: string;
+  outcomes: readonly VariantPricingOutcome[];
+  emit?: (signal: PromotionRuntimeHealthSignal) => void;
+  writer?: PromotionSignalWriter;
+}>;
+
 export function assessCampaignRuntimeHealth({
   campaignId,
   outcomes,
-}: Readonly<{
-  campaignId: string;
-  outcomes: readonly VariantPricingOutcome[];
-}>): CampaignRuntimeHealth {
+  emit,
+  writer,
+}: AssessCampaignRuntimeHealthInput): CampaignRuntimeHealth {
   const affected: AffectedVariant[] = [];
   let discountedVariants = 0;
   let affectedVariants = 0;
@@ -92,7 +104,7 @@ export function assessCampaignRuntimeHealth({
         ? "FULLY_INVALID"
         : "PARTIALLY_INVALID";
 
-  return Object.freeze({
+  const health = Object.freeze({
     campaignId,
     status,
     coveredVariants,
@@ -101,4 +113,19 @@ export function assessCampaignRuntimeHealth({
     affected: Object.freeze(affected),
     affectedTruncated: affectedVariants > affected.length,
   });
+
+  try {
+    const signal = describeCampaignRuntimeHealth(health);
+    if (emit) {
+      emit(signal);
+    } else if (writer) {
+      emitPromotionSignal(signal, writer);
+    } else {
+      emitPromotionSignal(signal);
+    }
+  } catch {
+    // Observability emission failures are swallowed to protect caller execution.
+  }
+
+  return health;
 }
