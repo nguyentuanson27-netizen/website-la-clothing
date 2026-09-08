@@ -6,9 +6,10 @@ import {
   readGuestShippingPolicy,
 } from "@/commerce/guest-shipping-policy";
 import {
+  buildPublicBrandFacts,
   describePublicDeliveryEstimate,
   PUBLIC_DELIVERY_FACTS,
-  PUBLIC_PAYMENT_FACTS,
+  PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
@@ -33,11 +34,19 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
 /**
  * W13/U33b — the Shipping & Payment page.
  *
- * Two authorities, deliberately kept apart. The **delivery** facts — coverage, carriers, estimates,
- * tracking and the verification call — come from `PUBLIC_DELIVERY_FACTS`, the transcription of §5.
- * The **shipping price** comes from `readGuestShippingPolicy`, which B4 keeps as the pricing
- * authority because production may legitimately override it: a fee copied into the content module
- * would let this page contradict what checkout actually charges.
+ * One source per fact, and three of them, each owning something the others do not:
+ *
+ * - **`readGuestShippingPolicy`** owns the shipping price. B4 keeps it as the pricing authority
+ *   because production may legitimately override it, so a fee copied into the content module would
+ *   let this page contradict what checkout actually charges.
+ * - **`buildPublicBrandFacts`** already owned the payment method, the no-account fact and the
+ *   server re-verification sentence before this page existed, and the footer renders them. The page
+ *   reuses it rather than restating those facts, so there is no second representation to drift.
+ * - **`PUBLIC_DELIVERY_FACTS`** owns only what is genuinely new here: §5 coverage, carriers,
+ *   estimates, the estimate caveat, the no-tracking statement and the verification-call wording.
+ *
+ * The refund channel lives with the refund policy in `PUBLIC_RETURNS_POLICY`: a way to receive money
+ * back is not a way to pay for an order, and both pages read that one string.
  *
  * The delivery windows are printed as estimates because §5 says they are estimates and not a
  * guaranteed SLA. The page also states plainly that no carrier tracking is provided by default,
@@ -46,7 +55,15 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
 export default function ShippingPage() {
   const policy = readGuestShippingPolicy();
   const promotion = describeGuestShippingPromotion(policy);
-  const { coverage, carriers, estimateDays, phoneConfirmationWording } = PUBLIC_DELIVERY_FACTS;
+  const brandFacts = buildPublicBrandFacts(policy);
+  const {
+    coverage,
+    carriers,
+    estimateDays,
+    estimateCaveat,
+    carrierTrackingNote,
+    phoneConfirmationWording,
+  } = PUBLIC_DELIVERY_FACTS;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -81,9 +98,7 @@ export default function ShippingPage() {
               </dd>
             </div>
           </dl>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.
-          </p>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">{estimateCaveat}</p>
         </section>
 
         <section aria-labelledby="fee-heading">
@@ -101,8 +116,7 @@ export default function ShippingPage() {
             Theo dõi đơn hàng
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc
-            định. Bạn có thể{" "}
+            {carrierTrackingNote} Bạn có thể{" "}
             <Link
               className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
               href="/track-order"
@@ -117,17 +131,12 @@ export default function ShippingPage() {
           <h2 id="payment-heading" className="font-serif text-3xl tracking-[-0.03em]">
             Thanh toán
           </h2>
-          <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
-            {PUBLIC_PAYMENT_FACTS.acceptedMethods.map((method) => (
-              <li key={method}>{method}</li>
-            ))}
-          </ul>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            Khách hàng không bắt buộc đăng ký tài khoản để đặt hàng.{" "}
-            {PUBLIC_PAYMENT_FACTS.serverVerificationNote}
+          <p className="mt-6 max-w-2xl text-base leading-7">{brandFacts.paymentMethod}</p>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
+            {brandFacts.checkoutAccount} {brandFacts.serverVerification}
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {PUBLIC_PAYMENT_FACTS.refundNote} Điều kiện và thời gian hoàn tiền được nêu trong{" "}
+            {PUBLIC_RETURNS_POLICY.refundChannelNote} Điều kiện và thời gian hoàn tiền được nêu trong{" "}
             <Link
               className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
               href="/returns"

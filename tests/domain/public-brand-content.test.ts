@@ -10,7 +10,6 @@ import {
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
-  PUBLIC_PAYMENT_FACTS,
   PUBLIC_RETURNS_POLICY,
   describePublicAddress,
   describePublicSupportHours,
@@ -227,9 +226,15 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
       "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
     ],
     customerInitiatedExchangeFeeVnd: 50_000,
+    // Who bears the shipping in each case is a normative B1 commitment. Held here rather than in
+    // page prose, so the constant matching §4 and the page saying the same thing are one fact.
+    customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
+    shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
     // §4 states there is no separate excluded-category list. Empty is the decision, not a gap.
     nonReturnableCategories: [],
     refundWorkingDays: { minimum: 7, maximum: 10 },
+    refundChannelNote:
+      "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
   });
 
   // Intl's vi-VN currency form puts a non-breaking space before the symbol; pinned explicitly so
@@ -245,8 +250,11 @@ test("U33b the delivery facts transcribe §5 and hold no shipping price", () => 
       innerCity: { minimum: 1, maximum: 3 },
       otherProvince: { minimum: 3, maximum: 15 },
     },
-    providesCarrierTracking: false,
-    requiresPhoneConfirmation: false,
+    estimateCaveat: "Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.",
+    // Stored as the sentence the page renders, not as a boolean beside hard-coded copy: a flag no
+    // rendering reads is how a fact changes here while the page keeps saying the old thing.
+    carrierTrackingNote:
+      "LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
     phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
   });
 
@@ -269,16 +277,23 @@ test("U33b the delivery facts transcribe §5 and hold no shipping price", () => 
   );
 });
 
-test("U33b payment publishes only the method the storefront actually supports", () => {
-  // §3 forbids publishing transfer, card or wallet as a checkout method while checkout does not
-  // support them. Exactly one accepted method, and the refund channel is not one of them.
-  assert.deepEqual(PUBLIC_PAYMENT_FACTS.acceptedMethods, ["Thanh toán khi nhận hàng (COD)"]);
-  assert.equal(PUBLIC_PAYMENT_FACTS.accountRequired, false);
+test("U33b payment facts stay with the builder that already owned them", () => {
+  // `buildPublicBrandFacts` owned the payment method, the no-account fact and the server
+  // re-verification sentence before /shipping existed, and the footer renders them. U33b reuses it
+  // rather than adding a second representation of the same public facts.
+  const facts = buildPublicBrandFacts({
+    feeVnd: 25_000,
+    freeShippingSubtotalVnd: 750_000,
+    freeShippingMinQuantity: 4,
+  }) as Record<string, unknown>;
+  assert.equal(facts.paymentMethod, "Thanh toán khi nhận hàng (COD).");
+  assert.equal(facts.checkoutAccount, "Không cần tài khoản để thanh toán.");
 
-  for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i, /paypal/i]) {
-    assert.equal(unsupported.test(PUBLIC_PAYMENT_FACTS.acceptedMethods.join(" ")), false);
+  // §3 forbids publishing transfer, card or wallet as a checkout method while checkout does not
+  // support them. Bank transfer may be named as a refund channel, never as a way to pay.
+  const paymentMethod = String(facts.paymentMethod);
+  for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i, /chuyển khoản/i]) {
+    assert.equal(unsupported.test(paymentMethod), false, unsupported.source);
   }
-  // Bank transfer may be named as a refund channel, never as a way to pay for an order.
-  assert.equal(/chuyển khoản/i.test(PUBLIC_PAYMENT_FACTS.acceptedMethods.join(" ")), false);
-  assert.equal(/chuyển khoản/i.test(PUBLIC_PAYMENT_FACTS.refundNote), true);
+  assert.equal(/chuyển khoản/i.test(PUBLIC_RETURNS_POLICY.refundChannelNote), true);
 });

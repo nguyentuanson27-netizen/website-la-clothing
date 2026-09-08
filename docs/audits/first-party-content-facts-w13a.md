@@ -82,7 +82,9 @@ About, or if a contact form or a response-time promise reaches Contact.
 | Page | Facts it publishes | Source |
 |---|---|---|
 | `/returns` | 15-day window, the full condition and supported-case lists, exchange fee, shop-fault shipping, refund window | `PUBLIC_RETURNS_POLICY` (§4) |
-| `/shipping` | Coverage, carriers, delivery estimates, no default carrier tracking, verification-call wording; COD and the refund channel | `PUBLIC_DELIVERY_FACTS` (§5), `PUBLIC_PAYMENT_FACTS` (§3) |
+| `/shipping` | Coverage, carriers, delivery estimates, estimate caveat, no default carrier tracking, verification-call wording | `PUBLIC_DELIVERY_FACTS` (§5) |
+| `/shipping` | Payment method, no-account fact, server re-verification | `buildPublicBrandFacts` — the builder that already owned them, reused rather than duplicated |
+| `/shipping`, `/returns` | Refund channel (§3) | `PUBLIC_RETURNS_POLICY.refundChannelNote` — it belongs with the refund policy, not with payment |
 
 Two authorities stay apart there on purpose: the **shipping price** remains `readGuestShippingPolicy`,
 which B4 keeps as the pricing authority because production may override it, so a fee is never copied

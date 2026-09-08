@@ -33,8 +33,15 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  * following the support team's instructions.
  */
 export default function ReturnsPage() {
-  const { windowDays, productConditions, supportedCases, refundWorkingDays } =
-    PUBLIC_RETURNS_POLICY;
+  const {
+    windowDays,
+    productConditions,
+    supportedCases,
+    customerInitiatedShippingNote,
+    shopFaultShippingNote,
+    refundWorkingDays,
+    refundChannelNote,
+  } = PUBLIC_RETURNS_POLICY;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -87,7 +94,7 @@ export default function ReturnsPage() {
                 Khách hàng chủ động đổi mẫu / size / màu
               </dt>
               <dd className="mt-2 text-black/70">
-                Phí đổi {describePublicExchangeFee()}. Khách hàng chịu phí vận chuyển hai chiều.
+                Phí đổi {describePublicExchangeFee()}. {customerInitiatedShippingNote}
               </dd>
             </div>
             <div>
@@ -95,7 +102,7 @@ export default function ReturnsPage() {
                 Lỗi thuộc shop hoặc nhà sản xuất
               </dt>
               <dd className="mt-2 text-black/70">
-                LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.
+                {shopFaultShippingNote}
               </dd>
             </div>
           </dl>
@@ -108,7 +115,7 @@ export default function ReturnsPage() {
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
             Thời gian hoàn tiền dự kiến {refundWorkingDays.minimum}–{refundWorkingDays.maximum} ngày
             làm việc, tính từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện
-            hoàn tiền.
+            hoàn tiền. {refundChannelNote}
           </p>
         </section>
       </div>

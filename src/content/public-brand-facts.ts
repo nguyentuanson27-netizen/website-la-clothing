@@ -166,8 +166,19 @@ export const PUBLIC_RETURNS_POLICY = Object.freeze({
     "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
   ]),
   customerInitiatedExchangeFeeVnd: 50_000,
+  // Who bears the shipping in each case is a normative B1 commitment, not presentation copy. Left
+  // as page prose it could drift from §4 while a test still called the constant faithful.
+  customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
+  shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
   nonReturnableCategories: Object.freeze([]),
   refundWorkingDays: Object.freeze({ minimum: 7, maximum: 10 }),
+  /**
+   * §3 states the refund channel for a COD order. It lives with the refund policy rather than in a
+   * payment constant: a way to receive money back is not a way to pay for an order, and both the
+   * Returns and the Shipping page read this one string.
+   */
+  refundChannelNote:
+    "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
 });
 
 /**
@@ -186,28 +197,18 @@ export const PUBLIC_DELIVERY_FACTS = Object.freeze({
     innerCity: Object.freeze({ minimum: 1, maximum: 3 }),
     otherProvince: Object.freeze({ minimum: 3, maximum: 15 }),
   }),
-  /** §5: no carrier tracking number or link is provided to the customer by default. */
-  providesCarrierTracking: false,
-  /** §5: a verification call is possible but is not a required step. */
-  requiresPhoneConfirmation: false,
+  estimateCaveat: "Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.",
+  /**
+   * §5: no carrier tracking number or link is provided by default, and a verification call is
+   * possible but not required.
+   *
+   * Both are stored as the sentence the page renders rather than as a boolean beside hard-coded
+   * copy. A flag that no rendering reads is how a fact changes here while the page keeps saying the
+   * old thing.
+   */
+  carrierTrackingNote:
+    "LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
   phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
-});
-
-/**
- * §3 — the checkout and payment facts approved for publication.
- *
- * `acceptedMethods` holds exactly one entry on purpose. §3 forbids publishing bank transfer, card or
- * wallet as a checkout method while the website does not actually support them, so the page lists
- * what the storefront really does and nothing a buyer could try and fail to use. The refund note is
- * separate because a refund channel is not a checkout method.
- */
-export const PUBLIC_PAYMENT_FACTS = Object.freeze({
-  acceptedMethods: Object.freeze(["Thanh toán khi nhận hàng (COD)"]),
-  accountRequired: false,
-  serverVerificationNote:
-    "Giá, tồn kho và phí vận chuyển có thể được máy chủ kiểm tra lại tại thời điểm đặt hàng.",
-  refundNote:
-    "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
 });
 
 /** The approved customer-initiated exchange fee, formatted for a reader. */

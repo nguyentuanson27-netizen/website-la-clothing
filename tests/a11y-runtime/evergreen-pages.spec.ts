@@ -7,6 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 import {
   describePublicAddress,
   describePublicSupportHours,
@@ -16,7 +17,6 @@ import {
   PUBLIC_CONTACT_FACTS,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
-  PUBLIC_PAYMENT_FACTS,
   PUBLIC_RETURNS_POLICY,
 } from "../../src/content/public-brand-facts.ts";
 
@@ -219,16 +219,21 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
 
   // §5: an estimate presented as a promise is a policy the owner did not make, and the absence of
   // carrier tracking is stated rather than left for a buyer to assume.
-  await expect(main).toContainText("dự kiến");
-  await expect(main).toContainText(/không cung cấp mã vận đơn/i);
+  await expect(main).toContainText(PUBLIC_DELIVERY_FACTS.estimateCaveat);
+  await expect(main).toContainText(PUBLIC_DELIVERY_FACTS.carrierTrackingNote);
   for (const overclaim of [/cam kết giao trong/i, /đảm bảo giao/i, /theo dõi đơn hàng GHN/i]) {
     await expect(main).not.toContainText(overclaim);
   }
 
-  // Exactly the method checkout supports. Transfer may be named as a refund channel only.
-  for (const method of PUBLIC_PAYMENT_FACTS.acceptedMethods) {
-    await expect(main).toContainText(method);
-  }
+  // Exactly the method checkout supports, from the builder that already owned that fact — the same
+  // one the footer renders, so the page and the footer cannot describe different payment terms.
+  const brandFacts = buildPublicBrandFacts({
+    feeVnd: 25_000,
+    freeShippingSubtotalVnd: 750_000,
+    freeShippingMinQuantity: 4,
+  });
+  await expect(main).toContainText(brandFacts.paymentMethod);
+  await expect(main).toContainText(brandFacts.checkoutAccount);
   for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i]) {
     await expect(main).not.toContainText(unsupported);
   }
