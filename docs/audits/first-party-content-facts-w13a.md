@@ -77,8 +77,19 @@ and the `Organization` structured data marks up. What each page **omits** is ass
 intended: browser tests fail if an origin story, founding year, founder, mission or values reaches
 About, or if a contact form or a response-time promise reaches Contact.
 
-Still unbuilt and still requiring owner content: Returns, Shipping/Payment and Size Guide have
-approved facts and are U33b/U33c work; the remaining §15 policy surfaces — general terms, pricing,
+**U33b** then built Returns and Shipping/Payment the same way:
+
+| Page | Facts it publishes | Source |
+|---|---|---|
+| `/returns` | 15-day window, the full condition and supported-case lists, exchange fee, shop-fault shipping, refund window | `PUBLIC_RETURNS_POLICY` (§4) |
+| `/shipping` | Coverage, carriers, delivery estimates, no default carrier tracking, verification-call wording; COD and the refund channel | `PUBLIC_DELIVERY_FACTS` (§5), `PUBLIC_PAYMENT_FACTS` (§3) |
+
+Two authorities stay apart there on purpose: the **shipping price** remains `readGuestShippingPolicy`,
+which B4 keeps as the pricing authority because production may override it, so a fee is never copied
+into the content module — a domain test asserts no price key leaked in. Delivery windows are printed
+as estimates because §5 says they are not an SLA, and a test fails on commitment wording.
+
+Still unbuilt: the Size Guide has approved facts and is U33c work; the remaining §15 policy surfaces — general terms, pricing,
 privacy, complaint handling, rights and obligations — have **no approved facts at all** and stay
 unbuilt and unlinked rather than authored.
 

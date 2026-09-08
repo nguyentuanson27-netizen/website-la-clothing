@@ -127,3 +127,97 @@ export const PUBLIC_LEGAL_FACTS = Object.freeze({
   legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
   taxCode: "0111242251",
 });
+
+const vnd = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+  maximumFractionDigits: 0,
+});
+
+/**
+ * B1/§4 — the returns, exchange and refund policy the owner approved, transcribed.
+ *
+ * Policy is the one kind of content a coding agent must never author, so every clause a page shows
+ * is a member of this constant. A page that renders `productConditions` cannot quietly grow a
+ * condition the owner never wrote, and a reviewer comparing this file to §4 is comparing like with
+ * like rather than reading prose for omissions.
+ *
+ * `nonReturnableCategories` is deliberately an empty array rather than an absent key: §4 states
+ * there is **no** separate excluded-category list, which is a decision, not a gap.
+ */
+export const PUBLIC_RETURNS_POLICY = Object.freeze({
+  windowDays: 15,
+  productConditions: Object.freeze([
+    "còn mới",
+    "chưa qua sử dụng",
+    "còn đầy đủ tem/mác",
+    "không rách, bẩn, hư hỏng",
+    "không có mùi lạ",
+    "không có dấu hiệu đã qua sử dụng",
+    "đúng sản phẩm được mua từ LA Clothing",
+    "gửi lại theo hướng dẫn của bộ phận hỗ trợ",
+  ]),
+  supportedCases: Object.freeze([
+    "Sản phẩm lỗi hoặc có vết bẩn từ phía sản xuất.",
+    "LA Clothing giao sai mẫu.",
+    "Giao sai màu.",
+    "Giao sai size.",
+    "Khách hàng chủ động đổi sang mẫu khác.",
+    "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
+  ]),
+  customerInitiatedExchangeFeeVnd: 50_000,
+  nonReturnableCategories: Object.freeze([]),
+  refundWorkingDays: Object.freeze({ minimum: 7, maximum: 10 }),
+});
+
+/**
+ * B4/§5 — the delivery facts the owner approved. **Not** the shipping price: that stays with
+ * `readGuestShippingPolicy`, which B4 keeps as the pricing authority because production may
+ * legitimately override it. Duplicating a fee here is how a page starts contradicting checkout.
+ *
+ * The estimates are estimates. §5 says so outright — "không phải guaranteed SLA tuyệt đối" — and the
+ * page has to read that way, because a delivery window presented as a promise is a policy the owner
+ * did not make.
+ */
+export const PUBLIC_DELIVERY_FACTS = Object.freeze({
+  coverage: "Giao hàng toàn quốc",
+  carriers: Object.freeze(["GHN", "GHTK"]),
+  estimateDays: Object.freeze({
+    innerCity: Object.freeze({ minimum: 1, maximum: 3 }),
+    otherProvince: Object.freeze({ minimum: 3, maximum: 15 }),
+  }),
+  /** §5: no carrier tracking number or link is provided to the customer by default. */
+  providesCarrierTracking: false,
+  /** §5: a verification call is possible but is not a required step. */
+  requiresPhoneConfirmation: false,
+  phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
+});
+
+/**
+ * §3 — the checkout and payment facts approved for publication.
+ *
+ * `acceptedMethods` holds exactly one entry on purpose. §3 forbids publishing bank transfer, card or
+ * wallet as a checkout method while the website does not actually support them, so the page lists
+ * what the storefront really does and nothing a buyer could try and fail to use. The refund note is
+ * separate because a refund channel is not a checkout method.
+ */
+export const PUBLIC_PAYMENT_FACTS = Object.freeze({
+  acceptedMethods: Object.freeze(["Thanh toán khi nhận hàng (COD)"]),
+  accountRequired: false,
+  serverVerificationNote:
+    "Giá, tồn kho và phí vận chuyển có thể được máy chủ kiểm tra lại tại thời điểm đặt hàng.",
+  refundNote:
+    "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
+});
+
+/** The approved customer-initiated exchange fee, formatted for a reader. */
+export function describePublicExchangeFee(): string {
+  return `${vnd.format(PUBLIC_RETURNS_POLICY.customerInitiatedExchangeFeeVnd)} / sản phẩm`;
+}
+
+/** An approved delivery estimate as a range of days; always an estimate, never an SLA. */
+export function describePublicDeliveryEstimate(
+  estimate: Readonly<{ minimum: number; maximum: number }>,
+): string {
+  return `${estimate.minimum}–${estimate.maximum} ngày`;
+}

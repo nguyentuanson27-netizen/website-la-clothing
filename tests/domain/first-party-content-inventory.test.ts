@@ -89,10 +89,13 @@ test("current roadmap preserves W13A history while recording the resolved owner 
   // than being closed by the first slice landing.
   assert.match(
     masterTodo,
-    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented\.\*\*/,
+    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented[^\n]*\.\*\*/,
   );
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+About \+ Contact/);
-  assert.match(masterTodo, /- \[ \] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
+  assert.match(masterTodo, /- \[x\] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
+  // B4 keeps the server-owned policy as the pricing authority; the record has to keep saying so, or
+  // a later slice copies a fee into the content module and the pages start contradicting checkout.
+  assert.match(masterTodo, /\*\*U33b\*\*[^\n]+shipping price is deliberately not in the content module/);
   assert.match(masterTodo, /- \[ \] \*\*U33c\*\*[^\n]+Size Guide/);
   // The §15 surfaces with no approved facts must stay recorded as unbuilt, not quietly dropped.
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+no approved facts yet\*\*; they stay unbuilt and unlinked/);

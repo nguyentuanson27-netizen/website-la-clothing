@@ -82,6 +82,8 @@ export function SiteFooter() {
         <Link href="/lookbook">Lookbook</Link>
         <Link href="/track-order">Tra cứu đơn</Link>
         <Link href="/about">Về LA Clothing</Link>
+        <Link href="/shipping">Vận chuyển</Link>
+        <Link href="/returns">Đổi trả</Link>
         <Link href="/contact">Liên hệ</Link>
         <Link href="/account">Tài khoản</Link>
       </nav>
