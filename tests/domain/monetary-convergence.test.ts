@@ -43,6 +43,10 @@ import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quo
 import { calculateGuestShippingFeeVnd } from "../../src/commerce/guest-shipping-policy.ts";
 import { createMerchantFeedGetHandler } from "../../src/commerce/merchant-feed-http.ts";
 import { resolveMerchantMarket } from "../../src/commerce/merchant-offer-mapper.ts";
+import {
+  buildMetaAddToCartPixelParameters,
+  buildMetaPurchasePixelParameters,
+} from "../../src/commerce/meta-pixel-parameters.ts";
 import { readMetaPurchaseSnapshot } from "../../src/commerce/meta-purchase-snapshot.ts";
 import {
   resolvePromotionPricing,
@@ -690,20 +694,18 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.equal(wireItem.price, 400_000);
     assert.equal(JSON.stringify(wireItem).includes("var-cuid-1"), false);
 
-    // Direct Meta AddToCart emission payload as built in product-purchase-panel.tsx
-    const directMetaPayload = {
-      content_ids: ["ao-thun-cotton"],
-      content_name: "Áo Thun Cotton",
-      content_type: "product",
-      currency: "VND",
-      ...(resolved.snapshot.unitPriceVnd === null || resolved.snapshot.unitPriceVnd === undefined
-        ? {}
-        : { value: resolved.snapshot.unitPriceVnd }),
-    };
+    // Direct Meta AddToCart emission payload as built by production builder (used in product-purchase-panel.tsx)
+    const directMetaPayload = buildMetaAddToCartPixelParameters({
+      slug: "ao-thun-cotton",
+      productName: "Áo Thun Cotton",
+      committedUnitPriceVnd: resolved.snapshot.unitPriceVnd,
+    });
 
     assert.equal(directMetaPayload.value, 400_000, "Meta AddToCart must emit promotional effective money");
     assert.equal(directMetaPayload.currency, "VND");
     assert.deepEqual(directMetaPayload.content_ids, ["ao-thun-cotton"]);
+    assert.equal(directMetaPayload.content_name, "Áo Thun Cotton");
+    assert.equal(directMetaPayload.content_type, "product");
     assert.equal(JSON.stringify(directMetaPayload).includes("var-cuid-1"), false, "Meta AddToCart must never leak internal CUID");
   });
 
@@ -736,6 +738,13 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.equal(conflictResolved.available, true);
     assert.ok(conflictResolved.snapshot);
     assert.equal(conflictResolved.snapshot.unitPriceVnd, 500_000, "Conflict must fall back to base price");
+    const conflictPayload = buildMetaAddToCartPixelParameters({
+      slug: "ao-thun-cotton",
+      productName: "Áo Thun Cotton",
+      committedUnitPriceVnd: conflictResolved.snapshot.unitPriceVnd,
+    });
+    assert.equal(conflictPayload.value, 500_000, "Meta AddToCart must emit base price on conflict fallback");
+    assert.equal(conflictPayload.currency, "VND");
 
     // Case 2: Unusable price
     const unusableTx = createMockCartAuthorityTx({ productPrice: -50_000, campaigns: [] });
@@ -744,16 +753,14 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.ok(unusableResolved.snapshot);
     assert.equal(unusableResolved.snapshot.unitPriceVnd, null);
 
-    const unusablePayload = {
-      content_ids: ["ao-thun-cotton"],
-      content_name: "Áo Thun Cotton",
-      content_type: "product",
-      currency: "VND",
-      ...(unusableResolved.snapshot.unitPriceVnd === null || unusableResolved.snapshot.unitPriceVnd === undefined
-        ? {}
-        : { value: unusableResolved.snapshot.unitPriceVnd }),
-    };
+    const unusablePayload = buildMetaAddToCartPixelParameters({
+      slug: "ao-thun-cotton",
+      productName: "Áo Thun Cotton",
+      committedUnitPriceVnd: unusableResolved.snapshot.unitPriceVnd,
+    });
     assert.equal("value" in unusablePayload, false, "Corrupted/unusable price must omit value from Meta event");
+    assert.equal(unusablePayload.currency, "VND");
+    assert.deepEqual(unusablePayload.content_ids, ["ao-thun-cotton"]);
   });
 
   it("Purchase: emits immutable snapshot money to browser pixel and CAPI twins without leaking CUID", async () => {
@@ -801,19 +808,16 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.equal(JSON.stringify(snapshot).includes("local-cuid-1"), false, "Snapshot must not leak local CUID");
 
     // 1. Browser Pixel <FacebookPixelEvent name="Purchase"> parameters from checkout/success/page.tsx
-    const browserPixelParams = {
-      content_ids: snapshot.contents.map((content) => content.id),
-      content_type: "product",
-      contents: snapshot.contents.map((content) => ({
-        id: content.id,
-        quantity: content.quantity,
-        item_price: content.itemPrice,
-      })),
-      currency: "VND",
-      value: snapshot.valueVnd,
-    };
+    const browserPixelParams = buildMetaPurchasePixelParameters(snapshot);
     assert.equal(browserPixelParams.value, 730_000);
+    assert.equal(browserPixelParams.currency, "VND");
+    assert.deepEqual(browserPixelParams.content_ids, ["ao-thun-cotton"]);
+    assert.equal(browserPixelParams.content_type, "product");
+    assert.ok(browserPixelParams.contents);
+    assert.equal(browserPixelParams.contents.length, 1);
+    assert.equal(browserPixelParams.contents[0]!.id, "ao-thun-cotton");
     assert.equal(browserPixelParams.contents[0]!.item_price, 350_000);
+    assert.equal(browserPixelParams.contents[0]!.quantity, 2);
     assert.equal(JSON.stringify(browserPixelParams).includes("local-cuid-1"), false);
 
     // 2. Server-side Conversions API twin from meta-purchase-reporting.ts via buildMetaPurchaseEvent
@@ -845,6 +849,13 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.equal(customData.contents[0]!.item_price, 350_000);
     assert.equal(customData.contents[0]!.id, "ao-thun-cotton");
     assert.equal(JSON.stringify(capiEvent).includes("local-cuid-1"), false, "CAPI event must not leak local CUID");
+
+    // Parity verification between browser pixel parameters and CAPI custom_data
+    assert.equal(browserPixelParams.value, customData.value);
+    assert.equal(browserPixelParams.currency, customData.currency);
+    assert.equal(browserPixelParams.contents[0]!.item_price, customData.contents[0]!.item_price);
+    assert.equal(browserPixelParams.contents[0]!.id, customData.contents[0]!.id);
+    assert.equal(browserPixelParams.contents[0]!.quantity, customData.contents[0]!.quantity);
   });
 
   it("Purchase: falls back to pancakeVariationId when product mirror unlinked, never leaks CUID", async () => {
@@ -871,6 +882,14 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.ok(snapshot);
     assert.equal(snapshot.contents[0]!.id, "pan-var-orphan-999", "Must fall back to pancakeVariationId");
     assert.equal(JSON.stringify(snapshot).includes("local-cuid-orphan"), false, "Must never leak CUID");
+
+    const unlinkedBrowserParams = buildMetaPurchasePixelParameters(snapshot);
+    assert.equal(unlinkedBrowserParams.value, 500_000);
+    assert.equal(unlinkedBrowserParams.currency, "VND");
+    assert.equal(unlinkedBrowserParams.contents![0]!.id, "pan-var-orphan-999");
+    assert.equal(unlinkedBrowserParams.contents![0]!.item_price, 500_000);
+    assert.equal(unlinkedBrowserParams.contents![0]!.quantity, 1);
+    assert.equal(JSON.stringify(unlinkedBrowserParams).includes("local-cuid-orphan"), false);
   });
 
   it("Purchase: suppresses both browser pixel and CAPI for all pre-confirmation states", async () => {
