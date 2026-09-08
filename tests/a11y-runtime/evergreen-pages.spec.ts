@@ -15,11 +15,13 @@ import {
   describePublicExchangeFee,
   describePublicRefundWindow,
   describePublicReturnWindow,
+  describePublicSizeTolerance,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_CONTACT_FACTS,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
   PUBLIC_RETURNS_POLICY,
+  PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
 
 const HOST = "127.0.0.1";
@@ -253,3 +255,47 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
 });
+
+test("U33c the Size Guide page renders both approved charts with circumference and tolerance semantics", async ({
+  page,
+}) => {
+  const response = await page.goto(`${BASE_URL}/size-guide`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+
+  const main = page.locator("main");
+  await expect(page.getByRole("heading", { level: 1, name: "Hướng dẫn chọn size" })).toBeVisible();
+
+  // Unit cm, circumference semantics, tolerance and guidance visible
+  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.unit);
+  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
+  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.toleranceNote);
+  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.guidanceNote);
+  await expect(main).toContainText(describePublicSizeTolerance());
+
+  // Chart A: heading and all rows/cells
+  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartA.title })).toBeVisible();
+  for (const row of PUBLIC_SIZE_GUIDE.chartA.rows) {
+    await expect(main).toContainText(row.parameter);
+    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
+      await expect(main).toContainText(row.values[size]);
+    }
+  }
+
+  // Chart B: heading and all rows/cells
+  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartB.title })).toBeVisible();
+  for (const row of PUBLIC_SIZE_GUIDE.chartB.rows) {
+    await expect(main).toContainText(row.parameter);
+    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
+      await expect(main).toContainText(row.values[size]);
+    }
+  }
+
+  // Negative assertions: no fit guarantees, no invented claims
+  for (const overclaim of [/đảm bảo vừa/i, /chắc chắn vừa/i, /fit guaranteed/i, /cam kết vừa/i]) {
+    await expect(main).not.toContainText(overclaim);
+  }
+
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
