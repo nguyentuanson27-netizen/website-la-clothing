@@ -18,6 +18,10 @@ import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
 import { parseCampaignFormInput } from "@/commerce/promotion-admin-input";
+import {
+  evaluateCampaignRuntimeHealth,
+  type CampaignRuntimeHealth,
+} from "@/commerce/promotion-runtime-health";
 import { prisma } from "@/db/prisma";
 import {
   runPromotionAdminOperation,
@@ -254,4 +258,15 @@ export async function searchPromotionTargetsAction(
       variantId: v.id,
     };
   });
+}
+
+export async function checkPromotionRuntimeHealthAction(
+  campaignId: string,
+): Promise<CampaignRuntimeHealth | null> {
+  try {
+    await requireCurrentAdmin();
+  } catch {
+    return null;
+  }
+  return evaluateCampaignRuntimeHealth({ campaignId, now: new Date() });
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -111,6 +112,34 @@ describe("U40 / G2: Observability, Readiness & Rollback Invariants", () => {
       // They operate in distinct phases and carry distinct event names
       assert.notEqual(p9aSignal.name, p9bEvent.name);
       assert.notEqual(p9aSignal.phase, p9bEvent.state);
+    });
+
+    it("asserts promotion rollback runbook documents the 5 canonical quote proof rejection reasons without WRONG_CART", () => {
+      const runbookSource = readFileSync(
+        new URL("../../docs/operations/promotion-rollback-runbook.md", import.meta.url),
+        "utf8",
+      );
+
+      const CANONICAL_REASONS: RenderedQuoteProofRejection[] = [
+        "PRICE_CHANGED",
+        "PROOF_MISSING",
+        "PROOF_OVERSIZED",
+        "PROOF_MALFORMED",
+        "PROOF_UNVERIFIED",
+      ];
+
+      for (const reason of CANONICAL_REASONS) {
+        assert.ok(
+          runbookSource.includes(`\`${reason}\``),
+          `Runbook must document canonical rejection reason ${reason}`,
+        );
+      }
+
+      assert.equal(
+        runbookSource.includes("WRONG_CART"),
+        false,
+        "Runbook must NOT include non-existent WRONG_CART reason (cross-cart falls under PROOF_UNVERIFIED)",
+      );
     });
   });
 
@@ -466,6 +495,239 @@ describe("U40 / G2: Observability, Readiness & Rollback Invariants", () => {
       });
       assert.ok(healthWithThrow);
       assert.equal(healthWithThrow.status, "HEALTHY");
+    });
+
+    it("evaluates complete campaign coverage across >2,000 variants without silent truncation", async () => {
+      const TOTAL_VARIANTS = 2050;
+      const allMockVariants = Array.from({ length: TOTAL_VARIANTS }, (_, i) => ({
+        id: `var-cov-${i.toString().padStart(4, "0")}`,
+        productId: "prod-huge",
+        pancakeRetailPrice: 100_000,
+      }));
+
+      const mockCampaign = {
+        id: "camp-huge-01",
+        kind: "PROMOTION" as const,
+        name: "Huge Catalog Promo",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 10,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: "prod-huge", variantId: null }],
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+        },
+        variantMirror: {
+          findMany: async (args: {
+            take?: number;
+            cursor?: { id: string };
+            skip?: number;
+            where?: unknown;
+          }) => {
+            const take = args.take ?? 500;
+            let startIndex = 0;
+            if (args.cursor) {
+              const idx = allMockVariants.findIndex((v) => v.id === args.cursor?.id);
+              startIndex = idx >= 0 ? idx + (args.skip ?? 0) : 0;
+            }
+            return allMockVariants.slice(startIndex, startIndex + take);
+          },
+        },
+      };
+
+      const emittedLines: string[] = [];
+      const writer = (line: string) => emittedLines.push(line);
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-huge-01",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-15T00:00:00Z"),
+        writer,
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "HEALTHY");
+      assert.equal(health.coveredVariants, 2050);
+      assert.equal(health.discountedVariants, 2050);
+      assert.equal(health.affectedVariants, 0);
+
+      assert.equal(emittedLines.length, 1);
+      const parsed = JSON.parse(emittedLines[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.status, "HEALTHY");
+      assert.equal(parsed.coveredVariants, 2050);
+    });
+
+    it("detects variant defect beyond the 2,000 variant boundary (PARTIALLY_INVALID)", async () => {
+      const TOTAL_VARIANTS = 2050;
+      const allMockVariants = Array.from({ length: TOTAL_VARIANTS }, (_, i) => ({
+        id: `var-cov-${i.toString().padStart(4, "0")}`,
+        productId: "prod-huge-defect",
+        pancakeRetailPrice: i === 2001 ? null : 100_000,
+      }));
+
+      const mockCampaign = {
+        id: "camp-huge-02",
+        kind: "PROMOTION" as const,
+        name: "Huge Catalog Defect Promo",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 10,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: "prod-huge-defect", variantId: null }],
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+        },
+        variantMirror: {
+          findMany: async (args: {
+            take?: number;
+            cursor?: { id: string };
+            skip?: number;
+            where?: unknown;
+          }) => {
+            const take = args.take ?? 500;
+            let startIndex = 0;
+            if (args.cursor) {
+              const idx = allMockVariants.findIndex((v) => v.id === args.cursor?.id);
+              startIndex = idx >= 0 ? idx + (args.skip ?? 0) : 0;
+            }
+            return allMockVariants.slice(startIndex, startIndex + take);
+          },
+        },
+      };
+
+      const emittedLines: string[] = [];
+      const writer = (line: string) => emittedLines.push(line);
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-huge-02",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-15T00:00:00Z"),
+        writer,
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "PARTIALLY_INVALID");
+      assert.equal(health.coveredVariants, 2050);
+      assert.equal(health.discountedVariants, 2049);
+      assert.equal(health.affectedVariants, 1);
+      assert.equal(health.affected[0]?.variantId, "var-cov-2001");
+      assert.equal(health.affected[0]?.reason, "BASE_PRICE_UNAVAILABLE");
+
+      assert.equal(emittedLines.length, 1);
+      const parsed = JSON.parse(emittedLines[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.status, "PARTIALLY_INVALID");
+      assert.equal(parsed.coveredVariants, 2050);
+      assert.equal(parsed.affectedVariants, 1);
+      assert.equal(parsed.affectedSample[0]?.variantId, "var-cov-2001");
+    });
+
+    it("discovers concurrent competing campaign conflicts and populates conflictingCampaignIds", async () => {
+      const emittedLines: string[] = [];
+      const writer = (line: string) => emittedLines.push(line);
+
+      const mockCampaignA = {
+        id: "camp-alpha",
+        kind: "PROMOTION" as const,
+        name: "Alpha Promo",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 20,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: null, variantId: "var-shared-1" }],
+      };
+
+      const competingCampaignB = {
+        id: "camp-beta",
+        name: "Beta Promo",
+        kind: "PROMOTION" as const,
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 25,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaignA,
+        },
+        variantMirror: {
+          findMany: async () => {
+            return [{ id: "var-shared-1", productId: "prod-1", pancakeRetailPrice: 200_000 }];
+          },
+        },
+        promotionTarget: {
+          findMany: async () => {
+            return [
+              {
+                productId: null,
+                variantId: "var-shared-1",
+                campaign: competingCampaignB,
+              },
+            ];
+          },
+        },
+      };
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-alpha",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-10T00:00:00Z"),
+        writer,
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "FULLY_INVALID");
+      assert.equal(health.coveredVariants, 1);
+      assert.equal(health.discountedVariants, 0);
+      assert.equal(health.affectedVariants, 1);
+      assert.equal(health.affected[0]?.variantId, "var-shared-1");
+      assert.equal(health.affected[0]?.reason, "PROMOTION_CONFLICT");
+      assert.deepEqual(health.affected[0]?.conflictingCampaignIds, ["camp-beta"]);
+
+      assert.equal(emittedLines.length, 1);
+      const parsed = JSON.parse(emittedLines[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.campaignId, "camp-alpha");
+      assert.equal(parsed.status, "FULLY_INVALID");
+      assert.equal(parsed.affectedSample.length, 1);
+      assert.equal(parsed.affectedSample[0]?.variantId, "var-shared-1");
+      assert.equal(parsed.affectedSample[0]?.reason, "PROMOTION_CONFLICT");
+      assert.deepEqual(parsed.affectedSample[0]?.conflictingCampaignIds, ["camp-beta"]);
+    });
+
+    it("verifies operational admin caller integration and fail-open telemetry in actions and page", () => {
+      const pageSource = readFileSync(new URL("../../src/app/admin/promotions/page.tsx", import.meta.url), "utf8");
+      const actionsSource = readFileSync(new URL("../../src/app/admin/promotions/actions.ts", import.meta.url), "utf8");
+
+      assert.ok(
+        pageSource.includes("evaluateCampaignRuntimeHealth"),
+        "page.tsx must invoke evaluateCampaignRuntimeHealth for campaignToEdit",
+      );
+      assert.ok(
+        pageSource.includes("Sức khỏe vận hành"),
+        "page.tsx must render Sức khỏe vận hành in edit section",
+      );
+
+      assert.ok(
+        actionsSource.includes("export async function checkPromotionRuntimeHealthAction"),
+        "actions.ts must export checkPromotionRuntimeHealthAction",
+      );
+      assert.ok(
+        actionsSource.includes("requireCurrentAdmin"),
+        "checkPromotionRuntimeHealthAction must enforce admin authorization",
+      );
     });
   });
 
