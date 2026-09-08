@@ -121,6 +121,59 @@ test("W13A states the current truth and marks the U6-time snapshot as historical
   assert.equal(supersededNotes.length, retainedVerdicts.length);
 });
 
+/**
+ * Two sentences in the audit describe how authority is arranged. Both were true at U6 and are not
+ * true now, and both mislead in a way that costs work: one tells a reader there is a single fact
+ * module to extend, the other tells them an approved fact is owner-blocked.
+ */
+test("W13A describes the current authority set and the real reason each Organization property is omitted", async () => {
+  const inventory = await readFile(INVENTORY, "utf8");
+
+  // U32b and U33 added constants beside buildPublicBrandFacts, so "the only reviewed source" is
+  // U6-time history. A reader who takes it as current extends the builder and changes what the
+  // footer and homepage render.
+  assert.doesNotMatch(
+    inventory,
+    /`buildPublicBrandFacts\(policy\)` is the only reviewed/,
+    "the single-source claim is U6-time and must be labelled or rewritten, not stated as current",
+  );
+  assert.match(inventory, /\*\*At U6 there was exactly one:\*\*/);
+  assert.match(inventory, /\*\*Current authority set\.\*\*/);
+  for (const authority of [
+    "buildPublicBrandFacts(policy)",
+    "PUBLIC_CONTACT_FACTS",
+    "PUBLIC_BRAND_POSITIONING",
+    "PUBLIC_LEGAL_FACTS",
+    "PUBLIC_RETURNS_POLICY",
+    "PUBLIC_DELIVERY_FACTS",
+  ]) {
+    assert.ok(
+      inventory.includes(`| \`${authority}\` |`),
+      `${authority} must appear in the current authority set`,
+    );
+  }
+  // B4's pricing authority is the one that must stay outside the content module entirely.
+  assert.match(inventory, /shipping price stays outside all of them\*\*, with the server-owned\s+`readGuestShippingPolicy`/);
+
+  // B6 approves the legal entity and the MST — /about publishes them. They are missing from the
+  // Organization node because they are outside the B2 contact contract, which is a scope boundary,
+  // not an owner block. Grouping them with founder/foundingDate reads as "still unapproved" and
+  // would stop a later unit from mapping them.
+  assert.match(
+    inventory,
+    /\| `legalName`, `taxID` \| \*\*Approved but out of contract\.\*\*[^\n]*B6 \*does\* approve[^\n]*outside the \*\*B2\*\* contact contract/,
+  );
+  assert.match(
+    inventory,
+    /\| `founder`, `foundingDate` \| \*\*Owner-unapproved\.\*\*/,
+  );
+  assert.doesNotMatch(
+    inventory,
+    /Facts the owner did\nnot approve — logo, legal name/,
+    "legalName must not be listed among facts the owner did not approve",
+  );
+});
+
 test("current roadmap preserves W13A history while recording the resolved owner decisions", async () => {
   const [inventory, masterTodo] = await Promise.all([
     readFile(INVENTORY, "utf8"),

@@ -43,11 +43,31 @@ section below, which predates B3 and would stop the unit incorrectly.
 | **C — missing** | The fact does not exist anywhere in the repository. |
 | **D — owner approval required** | A business, legal or contactability decision. A coding agent must not author it regardless of what code or copy suggests. |
 
-## The one authoritative source
+## The authoritative sources
 
-`src/content/public-brand-facts.ts` → `buildPublicBrandFacts(policy)` is the only reviewed
-first-party fact source. It is rendered by the site footer and the homepage, and its exact shape is
-pinned by `tests/domain/public-brand-content.test.ts`.
+**At U6 there was exactly one:** `src/content/public-brand-facts.ts` → `buildPublicBrandFacts(policy)`
+was the only reviewed first-party fact source. It is rendered by the site footer and the homepage,
+and its exact shape is pinned by `tests/domain/public-brand-content.test.ts`. That shape is
+deliberately unchanged — U32b and U33 added constants beside it rather than fields inside it, because
+changing it would change what the footer and homepage render.
+
+**Current authority set.** The same module now holds several reviewed constants, one per approved
+fact group, each with a single consumer contract:
+
+| Authority | Owns | Landed in |
+|---|---|---|
+| `buildPublicBrandFacts(policy)` | brand name/summary, payment method, no-account checkout, server re-verification, order tracking, and shipping derived from the server-owned policy | U6 (pre-existing) |
+| `PUBLIC_CONTACT_FACTS` | §2 contact channels, address, support hours | U32b |
+| `PUBLIC_BRAND_POSITIONING` | §7 positioning sentence | U33a |
+| `PUBLIC_LEGAL_FACTS` | §11 legal entity, MST, address | U33a |
+| `PUBLIC_RETURNS_POLICY` | §4 returns/exchange/refund clauses, §3 refund channel | U33b |
+| `PUBLIC_DELIVERY_FACTS` | §5 coverage, carriers, estimates, tracking and verification notes | U33b |
+
+The **shipping price stays outside all of them**, with the server-owned `readGuestShippingPolicy`:
+B4 keeps it as the pricing authority, and a fee copied into a content constant would let a page
+contradict checkout.
+
+The U6-time table below is the `buildPublicBrandFacts` shape, which still holds:
 
 | Fact key | Value source | Class |
 |---|---|---|
@@ -241,9 +261,15 @@ as U33, not by anything technical.
 **Current:** B2 resolved that decision and **U32b is implemented.** `Organization` now carries
 `address`, `contactPoint` (with the country-coded telephone, email and support hours) and `sameAs`,
 all read from `PUBLIC_CONTACT_FACTS`. There is exactly one `Organization` node, and the site footer
-renders the same facts, so the markup corresponds to content a reader can see. Facts the owner did
-not approve — logo, legal name in the markup, `availableLanguage`, founder, founding date — stay
-omitted rather than inferred.
+renders the same facts, so the markup corresponds to content a reader can see.
+
+Two different reasons keep other properties off that node, and they must not be conflated:
+
+| Omitted | Why |
+|---|---|
+| `legalName`, `taxID` | **Approved but out of contract.** B6 *does* approve publishing the legal entity and the confirmed MST — this is not an owner block, and `/about` publishes them. They are outside the **B2** contact contract U32b implements, so U32b did not map them onto `Organization`. |
+| `logo`, `availableLanguage`, `addressCountry`, `postalCode` | **No approved fact.** Nothing owner-approved supplies them, and inferring them from the market or the site would be inventing. |
+| `founder`, `foundingDate` | **Owner-unapproved.** B6 explicitly leaves founder and founding year unapproved. |
 
 ## Registered decision gates
 
