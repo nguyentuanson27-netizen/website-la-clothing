@@ -358,16 +358,16 @@ with the row still `VALIDATING`, which the recovery sweep would have turned into
 
 ## G1 — enabled-consumer convergence
 Analytics/Meta:
-- [ ] Current-state/cart events use authoritative effective price.
-- [ ] Product price range never masquerades as selected exact price.
-- [ ] Purchase uses immutable final snapshot money.
-- [ ] GTM only maps/routes; no promotion formula.
-- [ ] Existing direct Meta remains direct; if it emits monetary value, value source is promotion-aware.
+- [x] Current-state/cart events use authoritative effective price. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] Product price range never masquerades as selected exact price. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] Purchase uses immutable final snapshot money. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] GTM only maps/routes; no promotion formula. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] Existing direct Meta remains direct; if it emits monetary value, value source is promotion-aware. *(U39, tests/domain/monetary-convergence.test.ts)*
 
 Merchant:
-- [ ] #153 M2 owns standalone deep-link contract.
-- [ ] M3 consumes storefront effective price; no Merchant promotion formula.
-- [ ] Composite Merchant remains deferred.
+- [x] #153 M2 owns standalone deep-link contract.
+- [x] M3 consumes storefront effective price; no Merchant promotion formula.
+- [x] Composite Merchant remains deferred.
 - [ ] #153 300s success TTL is maximum normal TTL; effective expiry is `min(300s, nearest relevant known promotion transition)` or equivalent tested invalidation.
 - [ ] Success-cache entry stores the durable promotion-pricing revision it was built under.
 - [ ] Each cache-hit decision linearizes at one bounded cheap current-revision read. Read after promotion commit => prior-revision bytes invalid; read completed before concurrent commit => request is ordered before mutation even if response completes later.
@@ -388,14 +388,14 @@ Merchant:
 - [ ] Tests: negative failure sentinel remains isolated from valid success generation.
 
 SEO/GEO:
-- [ ] Structured Offer uses effective price only where #152 W4/#153 M2 can truthfully represent variant.
-- [ ] No `AggregateOffer` shortcut for variants.
-- [ ] Inventory W15 coverage before adding smoke jobs.
-- [ ] Promotion/Tracking/Merchant does not enable organic indexing.
+- [x] Structured Offer uses effective price only where #152 W4/#153 M2 can truthfully represent variant. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] No `AggregateOffer` shortcut for variants. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [x] Inventory W15 coverage before adding smoke jobs.
+- [x] Promotion/Tracking/Merchant does not enable organic indexing. *(U39, tests/domain/monetary-convergence.test.ts)*
 
 Activation rule:
-- [ ] All currently enabled price-bearing consumers converge before promotions are activated.
-- [ ] GTM/Merchant that are mechanically disabled/fail-closed may stay off and do not block promotion activation.
+- [x] All currently enabled price-bearing consumers converge before promotions are activated. *(U39)*
+- [x] GTM/Merchant that are mechanically disabled/fail-closed may stay off and do not block promotion activation. *(U39)*
 - [ ] Future GTM/Merchant activation must re-check promotion-aware monetary behavior if promotions are active.
 
 ## G2 — observability/readiness/rollback
@@ -441,10 +441,10 @@ Activation rule:
 - [x] E1 P8 DRAFT. *(U20, PR #189 merged)*
 - [x] E2 P9a stateless rendered quote proof/reconfirmation. *(U21, PR #190 merged)*
 - [x] E3 P9b fresh-Pancake reconfirmation. *(U22, PR #191 merged)*
-- [x] F P10 final Pancake price. *(U23, PR pending)*
-- [x] #153 T7 Purchase consumer. *(U24, PR #193 merged)*
-- [ ] G1 focused consumer PRs only for consumers intended/enabled at that rollout stage. *(U39, PR #223)*
-- [x] G2 readiness. *(U40)*
+- [x] F P10 final Pancake price. *(U23, PR #192 merged)*
+- [x] #153 T7 Purchase consumer. *(U24, PR #193 merged; verified U39)*
+- [x] G1 enabled-consumer monetary convergence. *(U39, PR #223)*
+- [x] G2 readiness. *(U40, PR #224)*
 - [ ] G3 integrated verification. *(U43)*
 
 ## Separate launch gates
