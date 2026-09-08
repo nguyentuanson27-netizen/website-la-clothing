@@ -13,6 +13,8 @@ import {
   describePublicSupportHours,
   describePublicDeliveryEstimate,
   describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_CONTACT_FACTS,
   PUBLIC_DELIVERY_FACTS,
@@ -183,11 +185,15 @@ test("U33b the Returns page renders every approved clause and adds none", async 
   for (const supportedCase of PUBLIC_RETURNS_POLICY.supportedCases) {
     await expect(main).toContainText(supportedCase);
   }
-  await expect(main).toContainText(`${PUBLIC_RETURNS_POLICY.windowDays} ngày`);
+  // The windows with their semantics, and the no-exclusion state, all from the authority: a value
+  // that changed there while the page kept the old wording fails here.
+  await expect(main).toContainText(describePublicReturnWindow());
   await expect(main).toContainText(describePublicExchangeFee());
-  await expect(main).toContainText(
-    `${PUBLIC_RETURNS_POLICY.refundWorkingDays.minimum}–${PUBLIC_RETURNS_POLICY.refundWorkingDays.maximum} ngày làm việc`,
-  );
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.customerInitiatedShippingNote);
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.shopFaultShippingNote);
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.nonReturnableCategoriesNote);
+  await expect(main).toContainText(describePublicRefundWindow());
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.refundChannelNote);
 
   // And no clause the owner did not write. A restocking fee or a category exclusion would be an
   // invented policy, and §4 states outright that there is no excluded-category list.
@@ -234,6 +240,8 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   });
   await expect(main).toContainText(brandFacts.paymentMethod);
   await expect(main).toContainText(brandFacts.checkoutAccount);
+  // The tracking capability sentence is the builder's, not a second telling on this page.
+  await expect(main).toContainText(brandFacts.orderTracking.detail);
   for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i]) {
     await expect(main).not.toContainText(unsupported);
   }

@@ -171,6 +171,13 @@ export const PUBLIC_RETURNS_POLICY = Object.freeze({
   customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
   shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
   nonReturnableCategories: Object.freeze([]),
+  /**
+   * What an empty `nonReturnableCategories` *means*, so the page can render the state rather than
+   * assert it. §4 says there is no separate excluded-category list and only the stated rejection
+   * conditions apply — a claim strong enough that it must not live in page prose.
+   */
+  nonReturnableCategoriesNote:
+    "Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
   refundWorkingDays: Object.freeze({ minimum: 7, maximum: 10 }),
   /**
    * §3 states the refund channel for a COD order. It lives with the refund policy rather than in a
@@ -221,4 +228,23 @@ export function describePublicDeliveryEstimate(
   estimate: Readonly<{ minimum: number; maximum: number }>,
 ): string {
   return `${estimate.minimum}–${estimate.maximum} ngày`;
+}
+
+/**
+ * The return window with its start point. §4 does not say "15 days"; it says fifteen days **from the
+ * day the customer receives the order**, and the start point is the half a buyer argues about. The
+ * number stays single-sourced in `windowDays` and the semantics live here rather than in page prose.
+ */
+export function describePublicReturnWindow(): string {
+  return `${PUBLIC_RETURNS_POLICY.windowDays} ngày kể từ ngày khách hàng nhận hàng`;
+}
+
+/**
+ * The refund window with the event its clock starts from. As with the return window, the range is
+ * the easy half: §4 starts counting only once LA Clothing has the product back, has inspected it and
+ * has confirmed eligibility, and omitting that would promise a faster refund than the owner approved.
+ */
+export function describePublicRefundWindow(): string {
+  const { minimum, maximum } = PUBLIC_RETURNS_POLICY.refundWorkingDays;
+  return `${minimum}–${maximum} ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
 }

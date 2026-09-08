@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { describePublicExchangeFee, PUBLIC_RETURNS_POLICY } from "@/content/public-brand-facts";
+import {
+  describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
+  PUBLIC_RETURNS_POLICY,
+} from "@/content/public-brand-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -17,7 +22,7 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
     pathname: "/returns",
     searchParams: await searchParams,
     title: "Chính sách đổi trả và hoàn tiền",
-    description: `Đổi trả trong ${PUBLIC_RETURNS_POLICY.windowDays} ngày kể từ khi nhận hàng, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của LA Clothing.`,
+    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của LA Clothing.`,
   });
 }
 
@@ -34,12 +39,12 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  */
 export default function ReturnsPage() {
   const {
-    windowDays,
     productConditions,
     supportedCases,
     customerInitiatedShippingNote,
     shopFaultShippingNote,
-    refundWorkingDays,
+    nonReturnableCategories,
+    nonReturnableCategoriesNote,
     refundChannelNote,
   } = PUBLIC_RETURNS_POLICY;
 
@@ -50,8 +55,7 @@ export default function ReturnsPage() {
         Đổi trả &amp; hoàn tiền
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">
-        LA Clothing hỗ trợ đổi/trả trong vòng <strong>{windowDays} ngày</strong> kể từ ngày khách
-        hàng nhận hàng.
+        LA Clothing hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
       </p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
@@ -78,10 +82,22 @@ export default function ReturnsPage() {
               <li key={supportedCase}>{supportedCase}</li>
             ))}
           </ul>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối
-            đã nêu trong chính sách này.
-          </p>
+          {/*
+            Rendered from the state, not asserted: the approved list of excluded categories is empty,
+            and this sentence is what that emptiness means. Should the owner ever add a category, the
+            page stops making the claim instead of continuing to make it falsely.
+          */}
+          {nonReturnableCategories.length === 0 ? (
+            <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
+              {nonReturnableCategoriesNote}
+            </p>
+          ) : (
+            <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
+              {nonReturnableCategories.map((category) => (
+                <li key={category}>{category}</li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section aria-labelledby="fees-heading">
@@ -113,9 +129,7 @@ export default function ReturnsPage() {
             Hoàn tiền
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            Thời gian hoàn tiền dự kiến {refundWorkingDays.minimum}–{refundWorkingDays.maximum} ngày
-            làm việc, tính từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện
-            hoàn tiền. {refundChannelNote}
+            Thời gian hoàn tiền dự kiến {describePublicRefundWindow()}. {refundChannelNote}
           </p>
         </section>
       </div>

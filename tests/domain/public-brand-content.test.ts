@@ -7,6 +7,8 @@ import {
   buildPublicBrandFacts,
   describePublicDeliveryEstimate,
   describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
@@ -230,8 +232,11 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
     // page prose, so the constant matching §4 and the page saying the same thing are one fact.
     customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
     shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
-    // §4 states there is no separate excluded-category list. Empty is the decision, not a gap.
+    // §4 states there is no separate excluded-category list. Empty is the decision, not a gap, and
+    // the note is what that emptiness means — the page renders the state rather than asserting it.
     nonReturnableCategories: [],
+    nonReturnableCategoriesNote:
+      "Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
     refundWorkingDays: { minimum: 7, maximum: 10 },
     refundChannelNote:
       "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
@@ -240,6 +245,15 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
   // Intl's vi-VN currency form puts a non-breaking space before the symbol; pinned explicitly so
   // the expectation cannot drift into an ordinary space that only looks the same.
   assert.equal(describePublicExchangeFee(), "50.000\u00a0₫ / sản phẩm");
+
+  // Both windows carry the semantics a buyer argues about, not just the number: when the return
+  // window starts, and which event starts the refund clock. Left in page prose those could drift
+  // from §4 while the numeric fields still matched it.
+  assert.equal(describePublicReturnWindow(), "15 ngày kể từ ngày khách hàng nhận hàng");
+  assert.equal(
+    describePublicRefundWindow(),
+    "7–10 ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền",
+  );
 });
 
 test("U33b the delivery facts transcribe §5 and hold no shipping price", () => {

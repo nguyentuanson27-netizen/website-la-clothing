@@ -116,14 +116,18 @@ export default function ShippingPage() {
             Theo dõi đơn hàng
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {carrierTrackingNote} Bạn có thể{" "}
+            {/*
+              The tracking capability sentence is `buildPublicBrandFacts`'s — the reviewed A-class
+              authority the footer already renders — rather than a second telling of it here.
+            */}
+            {carrierTrackingNote} {brandFacts.orderTracking.detail}{" "}
             <Link
               className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
               href="/track-order"
             >
-              tra cứu trạng thái đơn hàng
-            </Link>{" "}
-            bằng mã đơn và số điện thoại đã dùng khi đặt. {phoneConfirmationWording}
+              {brandFacts.orderTracking.title}
+            </Link>
+            . {phoneConfirmationWording}
           </p>
         </section>
 
