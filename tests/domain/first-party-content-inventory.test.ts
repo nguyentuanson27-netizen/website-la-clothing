@@ -74,6 +74,126 @@ test("W13A historical inventory still documents every fact it owned or classifie
   }
 });
 
+/**
+ * The audit is what a later agent reads before starting the next U33 slice. If its top-level status
+ * or its per-page snapshot still reads as owner-blocked, that agent stops work the owner has already
+ * unblocked. So the record has to do two things at once: state the present truth up front, and keep
+ * the U6-time evidence clearly marked as history rather than deleting it.
+ */
+test("W13A states the current truth and marks the U6-time snapshot as historical", async () => {
+  const inventory = await readFile(INVENTORY, "utf8");
+
+  const [status] = inventory.split("## Classification");
+  assert.ok(status, "the audit must open with a status block");
+
+  // The stale top-level verdict must not survive: it contradicted every update section below it.
+  assert.doesNotMatch(
+    status,
+    /Status: \*\*BLOCKED/,
+    "the top-level status must state the current truth, not the U6-time verdict",
+  );
+  assert.match(status, /Status: \*\*CURRENT — B1–B4 and B6 are RESOLVED/);
+  assert.match(status, /U33a and U33b are\nimplemented/);
+
+  // B3 is resolved, so the Size Guide is implementation work. An agent that reads "owner-blocked"
+  // here stops U33c for a decision that has already been made.
+  assert.match(
+    status,
+    /\| Size Guide \| BLOCKED on B3 \| \*\*Owner-unblocked, not yet built\.\*\*[^\n]*U33c implementation work, not an owner gate/,
+  );
+  // U32b is implemented; the audit used to call the same enrichment blocked.
+  assert.match(status, /\| `Organization` structured data \|[^\n]*\*\*Enriched \(U32b\)\*\*/);
+  // The surfaces that genuinely have no approved facts must stay recorded as blocked, or a later
+  // reconciliation reads "everything is resolved" and authors a privacy policy from nothing.
+  assert.match(status, /§15 policy surfaces[^\n]*\*\*Still blocked — no approved facts exist\.\*\*/);
+
+  // Keeping the evidence is the point; presenting it as current status is the bug.
+  assert.match(inventory, /## Per-page inventory — the U6-time snapshot \(historical\)/);
+  assert.match(inventory, /## Consequence for structured data — resolved by U32b/);
+
+  // Every retained U6-time verdict must carry both its historical label and a superseded note, so
+  // no page section can be read as a live blocker.
+  const retainedVerdicts = inventory.match(/`BLOCKED — OWNER FACT\/APPROVAL REQUIRED`/g) ?? [];
+  const historicalLabels = inventory.match(/\*\(U6-time verdict\)\*/g) ?? [];
+  const supersededNotes = inventory.match(/\*\*Superseded/g) ?? [];
+  assert.equal(retainedVerdicts.length, 5, "the five U6-time page verdicts are the historical record");
+  assert.equal(historicalLabels.length, retainedVerdicts.length);
+  assert.equal(supersededNotes.length, retainedVerdicts.length);
+});
+
+/**
+ * Two sentences in the audit describe how authority is arranged. Both were true at U6 and are not
+ * true now, and both mislead in a way that costs work: one tells a reader there is a single fact
+ * module to extend, the other tells them an approved fact is owner-blocked.
+ */
+test("W13A describes the current authority set and the real reason each Organization property is omitted", async () => {
+  const inventory = await readFile(INVENTORY, "utf8");
+
+  // U32b and U33 added constants beside buildPublicBrandFacts, so "the only reviewed source" is
+  // U6-time history. A reader who takes it as current extends the builder and changes what the
+  // footer and homepage render.
+  assert.doesNotMatch(
+    inventory,
+    /`buildPublicBrandFacts\(policy\)` is the only reviewed/,
+    "the single-source claim is U6-time and must be labelled or rewritten, not stated as current",
+  );
+  assert.match(inventory, /\*\*At U6 there was exactly one:\*\*/);
+  assert.match(inventory, /\*\*Current authority set\.\*\*/);
+  for (const authority of [
+    "buildPublicBrandFacts(policy)",
+    "PUBLIC_CONTACT_FACTS",
+    "PUBLIC_BRAND_POSITIONING",
+    "PUBLIC_LEGAL_FACTS",
+    "PUBLIC_RETURNS_POLICY",
+    "PUBLIC_DELIVERY_FACTS",
+  ]) {
+    assert.ok(
+      inventory.includes(`| \`${authority}\` |`),
+      `${authority} must appear in the current authority set`,
+    );
+  }
+
+  // Naming an authority is not enough: the row has to say what it owns, and say it correctly. The
+  // legal-facts row is the one that has gone wrong twice, in both directions at once.
+  const legalRow = inventory
+    .split("\n")
+    .find((line) => line.startsWith("| `PUBLIC_LEGAL_FACTS` |"));
+  assert.ok(legalRow, "the current authority set must carry a PUBLIC_LEGAL_FACTS row");
+  // §1 holds the legal identity; §7/B6 is the decision to publish it on a minimal About. §11 is the
+  // Google Ads Purchase value, and citing it sends a reader to the wrong owner decision entirely.
+  assert.match(legalRow, /§1 legal entity name \+ confirmed MST/);
+  assert.match(legalRow, /B6\/§7/);
+  assert.doesNotMatch(legalRow, /§11/, "§11 is Google Ads Purchase value, not the legal identity");
+  // The constant holds no address. Claiming it owns one gives `address` two authorities, which is
+  // the exact contract this slice exists to keep.
+  assert.doesNotMatch(
+    legalRow,
+    /(?<!Not the )address/,
+    "the address belongs to PUBLIC_CONTACT_FACTS; PUBLIC_LEGAL_FACTS must not claim it",
+  );
+  assert.match(legalRow, /\*\*Not the address\*\*[^|]*`PUBLIC_CONTACT_FACTS`/);
+  // B4's pricing authority is the one that must stay outside the content module entirely.
+  assert.match(inventory, /shipping price stays outside all of them\*\*, with the server-owned\s+`readGuestShippingPolicy`/);
+
+  // B6 approves the legal entity and the MST — /about publishes them. They are missing from the
+  // Organization node because they are outside the B2 contact contract, which is a scope boundary,
+  // not an owner block. Grouping them with founder/foundingDate reads as "still unapproved" and
+  // would stop a later unit from mapping them.
+  assert.match(
+    inventory,
+    /\| `legalName`, `taxID` \| \*\*Approved but out of contract\.\*\*[^\n]*B6 \*does\* approve[^\n]*outside the \*\*B2\*\* contact contract/,
+  );
+  assert.match(
+    inventory,
+    /\| `founder`, `foundingDate` \| \*\*Owner-unapproved\.\*\*/,
+  );
+  assert.doesNotMatch(
+    inventory,
+    /Facts the owner did\nnot approve — logo, legal name/,
+    "legalName must not be listed among facts the owner did not approve",
+  );
+});
+
 test("current roadmap preserves W13A history while recording the resolved owner decisions", async () => {
   const [inventory, masterTodo] = await Promise.all([
     readFile(INVENTORY, "utf8"),
@@ -89,10 +209,13 @@ test("current roadmap preserves W13A history while recording the resolved owner 
   // than being closed by the first slice landing.
   assert.match(
     masterTodo,
-    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented\.\*\*/,
+    /\*\*U33\*\*[^\n]+\*\*B1–B4 and B6 are RESOLVED; U33 is partly implemented[^\n]*\.\*\*/,
   );
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+About \+ Contact/);
-  assert.match(masterTodo, /- \[ \] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
+  assert.match(masterTodo, /- \[x\] \*\*U33b\*\*[^\n]+Returns \+ Shipping\/Payment/);
+  // B4 keeps the server-owned policy as the pricing authority; the record has to keep saying so, or
+  // a later slice copies a fee into the content module and the pages start contradicting checkout.
+  assert.match(masterTodo, /\*\*U33b\*\*[^\n]+shipping price is deliberately not in the content module/);
   assert.match(masterTodo, /- \[ \] \*\*U33c\*\*[^\n]+Size Guide/);
   // The §15 surfaces with no approved facts must stay recorded as unbuilt, not quietly dropped.
   assert.match(masterTodo, /\*\*U33a\*\*[^\n]+no approved facts yet\*\*; they stay unbuilt and unlinked/);

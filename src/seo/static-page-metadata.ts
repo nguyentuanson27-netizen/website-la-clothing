@@ -25,6 +25,9 @@ const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   // each, no paginated form, and nothing a query string could legitimately vary.
   "/about",
   "/contact",
+  // U33b policy pages, same shape.
+  "/returns",
+  "/shipping",
 ]);
 
 /**

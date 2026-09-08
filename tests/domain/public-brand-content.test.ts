@@ -5,8 +5,14 @@ import { describeGuestShippingPromotion } from "../../src/commerce/guest-shippin
 import { normalizeVietnamesePhone } from "../../src/integrations/meta/conversions-api.ts";
 import {
   buildPublicBrandFacts,
+  describePublicDeliveryEstimate,
+  describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
   PUBLIC_BRAND_POSITIONING,
+  PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
+  PUBLIC_RETURNS_POLICY,
   describePublicAddress,
   describePublicSupportHours,
   PUBLIC_CONTACT_FACTS,
@@ -148,13 +154,13 @@ test("U32b carries no fact outside the B2 contact contract", () => {
 });
 
 /**
- * U33a / B6. The About page publishes exactly what §7 and §11 approve and nothing more.
+ * U33a / B6. The About page publishes exactly what §1 and §7 approve and nothing more.
  *
  * B6 is the decision most likely to be widened by accident: the owner approved a positioning
  * sentence, the legal entity and the confirmed MST, and explicitly withheld the founding year, the
  * founder and any brand story. A page written from prose rather than from this constant is how an
  * invented history reaches the storefront, so the facts are transcribed here once and asserted
- * against §7/§11 word for word.
+ * against §1/§7 word for word.
  */
 test("U33a the approved brand positioning is the owner's sentence, not a paraphrase", () => {
   assert.equal(
@@ -163,7 +169,7 @@ test("U33a the approved brand positioning is the owner's sentence, not a paraphr
   );
 });
 
-test("U33a the approved legal facts transcribe §11 exactly", () => {
+test("U33a the approved legal facts transcribe §1 exactly, and own no address", () => {
   assert.deepEqual(PUBLIC_LEGAL_FACTS, {
     legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxCode: "0111242251",
@@ -192,4 +198,116 @@ test("U33a carries no About fact B6 withheld", () => {
 
   // The positioning sentence is the whole approved claim; nothing may be appended to it.
   assert.equal(/thành lập|founder|sứ mệnh|giá trị cốt lõi/i.test(PUBLIC_BRAND_POSITIONING), false);
+});
+
+/**
+ * U33b / B1. Policy is the one kind of content a coding agent must never author, so every clause the
+ * Returns page can show is asserted against §4 here — the whole condition list and the whole
+ * supported-case list, not a sample. A page rendering these arrays cannot grow a clause the owner
+ * never wrote without this test going red.
+ */
+test("U33b the returns policy transcribes §4 clause for clause", () => {
+  assert.deepEqual(PUBLIC_RETURNS_POLICY, {
+    windowDays: 15,
+    productConditions: [
+      "còn mới",
+      "chưa qua sử dụng",
+      "còn đầy đủ tem/mác",
+      "không rách, bẩn, hư hỏng",
+      "không có mùi lạ",
+      "không có dấu hiệu đã qua sử dụng",
+      "đúng sản phẩm được mua từ LA Clothing",
+      "gửi lại theo hướng dẫn của bộ phận hỗ trợ",
+    ],
+    supportedCases: [
+      "Sản phẩm lỗi hoặc có vết bẩn từ phía sản xuất.",
+      "LA Clothing giao sai mẫu.",
+      "Giao sai màu.",
+      "Giao sai size.",
+      "Khách hàng chủ động đổi sang mẫu khác.",
+      "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
+    ],
+    customerInitiatedExchangeFeeVnd: 50_000,
+    // Who bears the shipping in each case is a normative B1 commitment. Held here rather than in
+    // page prose, so the constant matching §4 and the page saying the same thing are one fact.
+    customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
+    shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
+    // §4 states there is no separate excluded-category list. Empty is the decision, not a gap, and
+    // the note is what that emptiness means — the page renders the state rather than asserting it.
+    nonReturnableCategories: [],
+    nonReturnableCategoriesNote:
+      "Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
+    refundWorkingDays: { minimum: 7, maximum: 10 },
+    refundChannelNote:
+      "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
+  });
+
+  // Intl's vi-VN currency form puts a non-breaking space before the symbol; pinned explicitly so
+  // the expectation cannot drift into an ordinary space that only looks the same.
+  assert.equal(describePublicExchangeFee(), "50.000\u00a0₫ / sản phẩm");
+
+  // Both windows carry the semantics a buyer argues about, not just the number: when the return
+  // window starts, and which event starts the refund clock. Left in page prose those could drift
+  // from §4 while the numeric fields still matched it.
+  assert.equal(describePublicReturnWindow(), "15 ngày kể từ ngày khách hàng nhận hàng");
+  assert.equal(
+    describePublicRefundWindow(),
+    "7–10 ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền",
+  );
+});
+
+test("U33b the delivery facts transcribe §5 and hold no shipping price", () => {
+  assert.deepEqual(PUBLIC_DELIVERY_FACTS, {
+    coverage: "Giao hàng toàn quốc",
+    carriers: ["GHN", "GHTK"],
+    estimateDays: {
+      innerCity: { minimum: 1, maximum: 3 },
+      otherProvince: { minimum: 3, maximum: 15 },
+    },
+    estimateCaveat: "Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.",
+    // Stored as the sentence the page renders, not as a boolean beside hard-coded copy: a flag no
+    // rendering reads is how a fact changes here while the page keeps saying the old thing.
+    carrierTrackingNote:
+      "LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
+    phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
+  });
+
+  // B4 keeps the server-owned policy as the pricing authority, because production may legitimately
+  // override it. A fee copied here is how a policy page starts contradicting checkout.
+  const delivery = PUBLIC_DELIVERY_FACTS as Record<string, unknown>;
+  for (const priceKey of [
+    "feeVnd",
+    "shippingFeeVnd",
+    "freeShippingSubtotalVnd",
+    "freeShippingMinQuantity",
+  ]) {
+    assert.equal(priceKey in delivery, false, priceKey);
+  }
+
+  assert.equal(describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.innerCity), "1–3 ngày");
+  assert.equal(
+    describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.otherProvince),
+    "3–15 ngày",
+  );
+});
+
+test("U33b payment facts stay with the builder that already owned them", () => {
+  // `buildPublicBrandFacts` owned the payment method, the no-account fact and the server
+  // re-verification sentence before /shipping existed, and the footer renders them. U33b reuses it
+  // rather than adding a second representation of the same public facts.
+  const facts = buildPublicBrandFacts({
+    feeVnd: 25_000,
+    freeShippingSubtotalVnd: 750_000,
+    freeShippingMinQuantity: 4,
+  }) as Record<string, unknown>;
+  assert.equal(facts.paymentMethod, "Thanh toán khi nhận hàng (COD).");
+  assert.equal(facts.checkoutAccount, "Không cần tài khoản để thanh toán.");
+
+  // §3 forbids publishing transfer, card or wallet as a checkout method while checkout does not
+  // support them. Bank transfer may be named as a refund channel, never as a way to pay.
+  const paymentMethod = String(facts.paymentMethod);
+  for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i, /chuyển khoản/i]) {
+    assert.equal(unsupported.test(paymentMethod), false, unsupported.source);
+  }
+  assert.equal(/chuyển khoản/i.test(PUBLIC_RETURNS_POLICY.refundChannelNote), true);
 });

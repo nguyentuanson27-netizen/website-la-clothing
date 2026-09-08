@@ -7,12 +7,19 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 import {
   describePublicAddress,
   describePublicSupportHours,
+  describePublicDeliveryEstimate,
+  describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
+  PUBLIC_RETURNS_POLICY,
 } from "../../src/content/public-brand-facts.ts";
 
 const HOST = "127.0.0.1";
@@ -150,13 +157,99 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U33a each evergreen page is reachable from the site footer", async ({ page }) => {
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+test("U33a/U33b each evergreen page is reachable from the site footer", async ({ page }) => {
+  // Started from an evergreen page rather than the homepage on purpose: the footer is site-wide, so
+  // any page proves reachability, and the homepage additionally needs the catalog database. Coupling
+  // a navigation assertion to catalog availability makes it fail for reasons it does not test.
+  await page.goto(`${BASE_URL}/about`, { waitUntil: "networkidle" });
 
-  const footer = page.locator("footer");
-  await footer.locator('a[href="/about"]').click();
-  await page.waitForURL((url) => url.pathname === "/about");
+  for (const path of ["/contact", "/shipping", "/returns", "/about"]) {
+    await page.locator("footer").locator(`a[href="${path}"]`).click();
+    await page.waitForURL((url) => url.pathname === path);
+  }
+});
 
-  await page.locator("footer").locator('a[href="/contact"]').click();
-  await page.waitForURL((url) => url.pathname === "/contact");
+test("U33b the Returns page renders every approved clause and adds none", async ({ page }) => {
+  const response = await page.goto(`${BASE_URL}/returns`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+
+  const main = page.locator("main");
+  await expect(
+    page.getByRole("heading", { level: 1, name: /Đổi trả .* hoàn tiền/ }),
+  ).toBeVisible();
+
+  // Every clause the owner approved reaches the page — the whole list, not a sample.
+  for (const condition of PUBLIC_RETURNS_POLICY.productConditions) {
+    await expect(main).toContainText(condition);
+  }
+  for (const supportedCase of PUBLIC_RETURNS_POLICY.supportedCases) {
+    await expect(main).toContainText(supportedCase);
+  }
+  // The windows with their semantics, and the no-exclusion state, all from the authority: a value
+  // that changed there while the page kept the old wording fails here.
+  await expect(main).toContainText(describePublicReturnWindow());
+  await expect(main).toContainText(describePublicExchangeFee());
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.customerInitiatedShippingNote);
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.shopFaultShippingNote);
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.nonReturnableCategoriesNote);
+  await expect(main).toContainText(describePublicRefundWindow());
+  await expect(main).toContainText(PUBLIC_RETURNS_POLICY.refundChannelNote);
+
+  // And no clause the owner did not write. A restocking fee or a category exclusion would be an
+  // invented policy, and §4 states outright that there is no excluded-category list.
+  for (const invented of [/phí lưu kho/i, /restocking/i, /không áp dụng cho/i, /danh mục loại trừ:/i]) {
+    await expect(main).not.toContainText(invented);
+  }
+
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("U33b the Shipping page states estimates as estimates and only the supported payment method", async ({
+  page,
+}) => {
+  const response = await page.goto(`${BASE_URL}/shipping`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+
+  const main = page.locator("main");
+  await expect(main).toContainText(PUBLIC_DELIVERY_FACTS.coverage);
+  for (const carrier of PUBLIC_DELIVERY_FACTS.carriers) {
+    await expect(main).toContainText(carrier);
+  }
+  await expect(main).toContainText(
+    describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.innerCity),
+  );
+  await expect(main).toContainText(
+    describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.otherProvince),
+  );
+
+  // §5: an estimate presented as a promise is a policy the owner did not make, and the absence of
+  // carrier tracking is stated rather than left for a buyer to assume.
+  await expect(main).toContainText(PUBLIC_DELIVERY_FACTS.estimateCaveat);
+  await expect(main).toContainText(PUBLIC_DELIVERY_FACTS.carrierTrackingNote);
+  for (const overclaim of [/cam kết giao trong/i, /đảm bảo giao/i, /theo dõi đơn hàng GHN/i]) {
+    await expect(main).not.toContainText(overclaim);
+  }
+
+  // Exactly the method checkout supports, from the builder that already owned that fact — the same
+  // one the footer renders, so the page and the footer cannot describe different payment terms.
+  const brandFacts = buildPublicBrandFacts({
+    feeVnd: 25_000,
+    freeShippingSubtotalVnd: 750_000,
+    freeShippingMinQuantity: 4,
+  });
+  await expect(main).toContainText(brandFacts.paymentMethod);
+  await expect(main).toContainText(brandFacts.checkoutAccount);
+  // The tracking capability sentence is the builder's, not a second telling on this page.
+  await expect(main).toContainText(brandFacts.orderTracking.detail);
+  for (const unsupported of [/thẻ tín dụng/i, /ví điện tử/i, /momo/i, /vnpay/i]) {
+    await expect(main).not.toContainText(unsupported);
+  }
+
+  // The shipping price comes from the server-owned policy this spec's server was started with.
+  await expect(main).toContainText("750.000");
+  await expect(main).toContainText("4 sản phẩm");
+
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
