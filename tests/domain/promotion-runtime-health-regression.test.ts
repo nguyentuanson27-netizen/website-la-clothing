@@ -140,12 +140,13 @@ describe("promotion runtime-health regression guards", () => {
     assert.equal(emittedLines.length, 0, "no runtime-health signal is emitted for incomplete source truth");
   });
 
-  it("documents an emergency rollback session shape accepted by the activation service", () => {
+  it("documents an executable emergency rollback command and accepted admin session shape", () => {
     const runbook = readFileSync(
       new URL("../../docs/operations/promotion-rollback-runbook.md", import.meta.url),
       "utf8",
     );
 
+    assert.match(runbook, /node --experimental-strip-types --input-type=module -e/);
     assert.match(runbook, /session:\s*\{\s*id:\s*"emergency-ops"\s*\}/);
   });
 });
