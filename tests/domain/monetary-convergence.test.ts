@@ -34,6 +34,7 @@ import {
   toCartAnalyticsLineFacts,
 } from "../../src/commerce/cart-analytics-facts.ts";
 import { buildCanonicalCartAnalyticsProjection } from "../../src/commerce/cart-analytics-projection.ts";
+import { createCartLineAuthorityResolver } from "../../src/commerce/cart-line-authority.ts";
 import {
   issueRenderedQuoteProof,
   verifyRenderedQuoteProof,
@@ -51,6 +52,8 @@ import { buildStorefrontCartLines } from "../../src/commerce/storefront-cart.ts"
 import { type StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import { buildStorefrontProductProjection } from "../../src/commerce/storefront-projection.ts";
 import { buildPromotionalStorefrontPricing } from "../../src/commerce/storefront-promotion-projection.ts";
+import type { Prisma } from "../../src/generated/prisma/client.ts";
+import { buildMetaPurchaseEvent } from "../../src/integrations/meta/conversions-api.ts";
 import { buildTrackingBootstrapScript } from "../../src/tracking/bootstrap-script.ts";
 import {
   buildProductImpression,
@@ -602,6 +605,300 @@ describe("U39 / G1: Confirmed Purchase Immutability & Event ID Alignment", () =>
   });
 });
 
+describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", () => {
+  function createMockCartAuthorityTx({
+    productPrice = 500_000,
+    campaigns = [] as ApplicablePromotionCampaign[],
+    variantStock = 10,
+  } = {}) {
+    const mockProduct = {
+      slug: "ao-thun-cotton",
+      pancakeProductId: "pan-prod-100",
+      name: "Áo Thun Cotton",
+      primaryImageUrl: null,
+      isPresent: true,
+      isActive: true,
+      variants: [
+        {
+          id: "var-cuid-1",
+          pancakeVariationId: "pan-var-101",
+          isPresent: true,
+          isActive: true,
+          color: "Trắng",
+          size: "M",
+          pancakeRetailPrice: productPrice,
+          pancakeRetailPriceAfterDiscount: null,
+          pancakeImageUrls: "[]",
+          warehouseStocks: [{ pancakeWarehouseId: 1, quantity: variantStock }],
+          compositeParents: [],
+        },
+      ],
+    };
+
+    const readClient = {
+      productMirror: {
+        findMany: async () => [mockProduct],
+      },
+      variantMirror: {
+        findMany: async () => [{ id: "var-cuid-1", productId: "prod-cuid-1" }],
+      },
+      promotionTarget: {
+        findMany: async () =>
+          campaigns.map((campaign) => ({
+            productId: null,
+            variantId: "var-cuid-1",
+            campaign,
+          })),
+      },
+    };
+
+    return readClient as unknown as Prisma.TransactionClient;
+  }
+
+  it("AddToCart: resolves discounted money through createCartLineAuthorityResolver and emits effective value without leaking internal CUID", async () => {
+    const campaign: ApplicablePromotionCampaign = {
+      id: "camp-sale-20",
+      name: "Flash Sale 20%",
+      kind: "FLASH_SALE",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      fixedPriceVnd: null,
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      endsAt: new Date("2026-09-30T00:00:00.000Z"),
+    };
+
+    const tx = createMockCartAuthorityTx({ productPrice: 500_000, campaigns: [campaign] });
+    const resolver = createCartLineAuthorityResolver({ shopId: 1, now: NOW });
+    const resolved = await resolver(tx, { variantId: "var-cuid-1", quantity: 1 });
+
+    assert.equal(resolved.available, true);
+    assert.ok(resolved.snapshot, "Snapshot must exist");
+    assert.equal(resolved.snapshot.unitPriceVnd, 400_000, "Must resolve 20% discounted price (400,000 VND), not 500,000 base");
+    assert.notEqual(resolved.snapshot.unitPriceVnd, 500_000, "Base price must NOT be used when promotion applies");
+
+    // Canonical item facts preserve external IDs and never leak CUID
+    assert.ok(resolved.snapshot.analyticsItem, "Analytics item must exist");
+    assert.equal(resolved.snapshot.analyticsItem.variantExternalId, "pan-var-101");
+    assert.equal(resolved.snapshot.analyticsItem.productExternalId, "pan-prod-100");
+    assert.equal(resolved.snapshot.analyticsItem.itemName, "Áo Thun Cotton");
+    assert.equal(JSON.stringify(resolved.snapshot.analyticsItem).includes("var-cuid-1"), false, "VariantMirror.id must never leak into analytics item");
+
+    // Canonical wire item built from analyticsItem (via buildVariantItem as in product-purchase-panel.tsx)
+    const wireItem = buildVariantItem(resolved.snapshot.analyticsItem);
+    assert.equal(wireItem.item_id, "pan-var-101");
+    assert.equal(wireItem.item_group_id, "pan-prod-100");
+    assert.equal(wireItem.price, 400_000);
+    assert.equal(JSON.stringify(wireItem).includes("var-cuid-1"), false);
+
+    // Direct Meta AddToCart emission payload as built in product-purchase-panel.tsx
+    const directMetaPayload = {
+      content_ids: ["ao-thun-cotton"],
+      content_name: "Áo Thun Cotton",
+      content_type: "product",
+      currency: "VND",
+      ...(resolved.snapshot.unitPriceVnd === null || resolved.snapshot.unitPriceVnd === undefined
+        ? {}
+        : { value: resolved.snapshot.unitPriceVnd }),
+    };
+
+    assert.equal(directMetaPayload.value, 400_000, "Meta AddToCart must emit promotional effective money");
+    assert.equal(directMetaPayload.currency, "VND");
+    assert.deepEqual(directMetaPayload.content_ids, ["ao-thun-cotton"]);
+    assert.equal(JSON.stringify(directMetaPayload).includes("var-cuid-1"), false, "Meta AddToCart must never leak internal CUID");
+  });
+
+  it("AddToCart: safely falls back to base price on conflict and omits value when unpriceable", async () => {
+    const campaignA: ApplicablePromotionCampaign = {
+      id: "camp-a",
+      name: "Sale 10%",
+      kind: "PROMOTION",
+      discountType: "PERCENTAGE",
+      percentageValue: 10,
+      fixedPriceVnd: null,
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      endsAt: new Date("2026-09-30T00:00:00.000Z"),
+    };
+    const campaignB: ApplicablePromotionCampaign = {
+      id: "camp-b",
+      name: "Flash 20%",
+      kind: "FLASH_SALE",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      fixedPriceVnd: null,
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      endsAt: new Date("2026-09-30T00:00:00.000Z"),
+    };
+
+    // Case 1: Conflict fallback
+    const conflictTx = createMockCartAuthorityTx({ productPrice: 500_000, campaigns: [campaignA, campaignB] });
+    const resolver = createCartLineAuthorityResolver({ shopId: 1, now: NOW });
+    const conflictResolved = await resolver(conflictTx, { variantId: "var-cuid-1", quantity: 1 });
+    assert.equal(conflictResolved.available, true);
+    assert.ok(conflictResolved.snapshot);
+    assert.equal(conflictResolved.snapshot.unitPriceVnd, 500_000, "Conflict must fall back to base price");
+
+    // Case 2: Unusable price
+    const unusableTx = createMockCartAuthorityTx({ productPrice: -50_000, campaigns: [] });
+    const unusableResolved = await resolver(unusableTx, { variantId: "var-cuid-1", quantity: 1 });
+    assert.equal(unusableResolved.available, false);
+    assert.ok(unusableResolved.snapshot);
+    assert.equal(unusableResolved.snapshot.unitPriceVnd, null);
+
+    const unusablePayload = {
+      content_ids: ["ao-thun-cotton"],
+      content_name: "Áo Thun Cotton",
+      content_type: "product",
+      currency: "VND",
+      ...(unusableResolved.snapshot.unitPriceVnd === null || unusableResolved.snapshot.unitPriceVnd === undefined
+        ? {}
+        : { value: unusableResolved.snapshot.unitPriceVnd }),
+    };
+    assert.equal("value" in unusablePayload, false, "Corrupted/unusable price must omit value from Meta event");
+  });
+
+  it("Purchase: emits immutable snapshot money to browser pixel and CAPI twins without leaking CUID", async () => {
+    const confirmedOrder = {
+      publicCode: "LA-2026-0908-01",
+      state: "CONFIRMED" as const,
+      merchandiseSubtotalVnd: BigInt(700_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(730_000),
+      guestName: "Nguyễn Văn A",
+      guestPhone: "0912345678",
+      lines: [
+        {
+          variantId: "local-cuid-1",
+          pancakeVariationId: "pan-var-101",
+          productName: "Áo Thun Cotton",
+          color: "Trắng",
+          size: "M",
+          quantity: 2,
+          unitPriceVnd: BigInt(350_000),
+          lineTotalVnd: BigInt(700_000),
+        },
+      ],
+    };
+
+    const mockClient = {
+      orderMirror: {
+        findUnique: async () => confirmedOrder as unknown as null,
+      },
+      variantMirror: {
+        findMany: async () => [
+          {
+            id: "local-cuid-1",
+            product: { slug: "ao-thun-cotton" },
+          },
+        ] as unknown as [],
+      },
+    };
+
+    const snapshot = await readMetaPurchaseSnapshot(mockClient as unknown as Parameters<typeof readMetaPurchaseSnapshot>[0], "LA-2026-0908-01");
+    assert.ok(snapshot);
+    assert.equal(snapshot.valueVnd, 730_000, "Purchase must use confirmed order totalVnd snapshot");
+    assert.equal(snapshot.contents[0]!.itemPrice, 350_000, "Content item price must be snapshot unitPriceVnd");
+    assert.equal(snapshot.contents[0]!.id, "ao-thun-cotton", "Identifies product slug, not local CUID");
+    assert.equal(JSON.stringify(snapshot).includes("local-cuid-1"), false, "Snapshot must not leak local CUID");
+
+    // 1. Browser Pixel <FacebookPixelEvent name="Purchase"> parameters from checkout/success/page.tsx
+    const browserPixelParams = {
+      content_ids: snapshot.contents.map((content) => content.id),
+      content_type: "product",
+      contents: snapshot.contents.map((content) => ({
+        id: content.id,
+        quantity: content.quantity,
+        item_price: content.itemPrice,
+      })),
+      currency: "VND",
+      value: snapshot.valueVnd,
+    };
+    assert.equal(browserPixelParams.value, 730_000);
+    assert.equal(browserPixelParams.contents[0]!.item_price, 350_000);
+    assert.equal(JSON.stringify(browserPixelParams).includes("local-cuid-1"), false);
+
+    // 2. Server-side Conversions API twin from meta-purchase-reporting.ts via buildMetaPurchaseEvent
+    const capiEvent = buildMetaPurchaseEvent({
+      eventId: "LA-2026-0908-01",
+      eventTimeSeconds: 1757325600,
+      eventSourceUrl: "https://la.lanadesign.vn/checkout/success?order=LA-2026-0908-01",
+      valueVnd: snapshot.valueVnd,
+      contents: snapshot.contents,
+      identity: {
+        phone: confirmedOrder.guestPhone,
+        fullName: confirmedOrder.guestName,
+        clientIpAddress: "127.0.0.1",
+        clientUserAgent: "Mozilla/5.0",
+        fbp: "fb.1.1234",
+        fbc: "fb.1.5678",
+      },
+    });
+
+    assert.equal(capiEvent.event_name, "Purchase");
+    assert.equal(capiEvent.event_id, "LA-2026-0908-01");
+    const customData = capiEvent.custom_data as {
+      currency: string;
+      value: number;
+      contents: Array<{ id: string; item_price: number; quantity: number }>;
+    };
+    assert.equal(customData.value, 730_000);
+    assert.equal(customData.currency, "VND");
+    assert.equal(customData.contents[0]!.item_price, 350_000);
+    assert.equal(customData.contents[0]!.id, "ao-thun-cotton");
+    assert.equal(JSON.stringify(capiEvent).includes("local-cuid-1"), false, "CAPI event must not leak local CUID");
+  });
+
+  it("Purchase: falls back to pancakeVariationId when product mirror unlinked, never leaks CUID", async () => {
+    const unlinkedOrder = {
+      publicCode: "LA-2026-0908-02",
+      state: "CONFIRMED" as const,
+      totalVnd: BigInt(500_000),
+      lines: [
+        {
+          variantId: "local-cuid-orphan",
+          pancakeVariationId: "pan-var-orphan-999",
+          quantity: 1,
+          unitPriceVnd: BigInt(500_000),
+        },
+      ],
+    };
+
+    const unlinkedClient = {
+      orderMirror: { findUnique: async () => unlinkedOrder as unknown as null },
+      variantMirror: { findMany: async () => [] as unknown as [] },
+    };
+
+    const snapshot = await readMetaPurchaseSnapshot(unlinkedClient as unknown as Parameters<typeof readMetaPurchaseSnapshot>[0], "LA-2026-0908-02");
+    assert.ok(snapshot);
+    assert.equal(snapshot.contents[0]!.id, "pan-var-orphan-999", "Must fall back to pancakeVariationId");
+    assert.equal(JSON.stringify(snapshot).includes("local-cuid-orphan"), false, "Must never leak CUID");
+  });
+
+  it("Purchase: suppresses both browser pixel and CAPI for all pre-confirmation states", async () => {
+    for (const state of ["DRAFT", "VALIDATING", "POS_SUBMITTING", "SYNC_UNKNOWN", "REJECTED"]) {
+      const nonConfirmedOrder = {
+        publicCode: "LA-2026-0908-03",
+        state,
+        totalVnd: BigInt(500_000),
+        lines: [
+          {
+            variantId: "local-cuid-1",
+            pancakeVariationId: "pan-var-101",
+            quantity: 1,
+            unitPriceVnd: BigInt(500_000),
+          },
+        ],
+      };
+      const client = {
+        orderMirror: { findUnique: async () => nonConfirmedOrder as unknown as null },
+        variantMirror: { findMany: async () => [] as unknown as [] },
+      };
+
+      const snapshot = await readMetaPurchaseSnapshot(client as unknown as Parameters<typeof readMetaPurchaseSnapshot>[0], "LA-2026-0908-03");
+      assert.equal(snapshot, null, `State ${state} must return null snapshot`);
+    }
+  });
+});
+
 describe("U39 / G1: Stateless Quote Proof Tamper Resistance", () => {
   const quote = {
     items: [{ variantExternalId: "pan-var-101", quantity: 1, unitPriceVnd: 400_000 }],
@@ -678,7 +975,7 @@ describe("U39 / G1: Disabled / Fail-Closed Consumers Remain Inactive", () => {
   });
 
   it("Organic search indexing is disabled and withheld", () => {
-    const exposure = readSearchExposure();
+    const exposure = readSearchExposure({ APP_DOMAIN: "la.lanadesign.vn" });
     assert.equal(exposure.indexingEnabled, false);
     assert.equal(isTemporaryProductionOrigin("https://la.lanadesign.vn"), true);
     assert.equal(

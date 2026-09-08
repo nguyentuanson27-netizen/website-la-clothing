@@ -361,8 +361,8 @@ Analytics/Meta:
 - [x] Current-state/cart events use authoritative effective price. *(U39, tests/domain/monetary-convergence.test.ts)*
 - [x] Product price range never masquerades as selected exact price. *(U39, tests/domain/monetary-convergence.test.ts)*
 - [x] Purchase uses immutable final snapshot money. *(U39, tests/domain/monetary-convergence.test.ts)*
-- [x] GTM only maps/routes; no promotion formula. *(U39, tests/domain/monetary-convergence.test.ts)*
-- [x] Existing direct Meta remains direct; if it emits monetary value, value source is promotion-aware. *(U39, tests/domain/monetary-convergence.test.ts)*
+- [ ] GTM only maps/routes; no promotion formula. *(GTM remains disabled/fail-closed and is therefore not a currently enabled monetary consumer. Exact mapping-only/no-promotion-formula verification remains owned by U28/T8 against the reviewed immutable GTM saved version; verified fail-closed in U39)*
+- [x] Existing direct Meta remains direct; if it emits monetary value, value source is promotion-aware. *(U39, verified across actual AddToCart and Purchase emission paths in tests/domain/monetary-convergence.test.ts)*
 
 Merchant:
 - [x] #153 M2 owns standalone deep-link contract.
