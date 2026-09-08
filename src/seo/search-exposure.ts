@@ -40,6 +40,12 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/collections$/,
   /^\/collections\/[^/]+$/,
   /^\/lookbook$/,
+  // U33 evergreen pages with approved first-party content
+  /^\/about$/,
+  /^\/contact$/,
+  /^\/returns$/,
+  /^\/shipping$/,
+  /^\/size-guide$/,
 ] as const;
 
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [

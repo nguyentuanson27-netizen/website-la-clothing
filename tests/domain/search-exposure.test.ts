@@ -133,6 +133,11 @@ test("enabled noindex policy allows only explicit public routes without query st
     "/collections",
     "/collections/summer-shirts",
     "/lookbook",
+    "/about",
+    "/contact",
+    "/returns",
+    "/shipping",
+    "/size-guide",
   ]) {
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "" }),
@@ -151,6 +156,8 @@ test("enabled noindex policy allows only explicit public routes without query st
     "/search",
     "/new-arrivals",
     "/unexpected",
+    "/shipping-returns",
+    "/faq",
     "/shop/a/nested-path",
     "/collections/a/nested-path",
   ]) {
@@ -165,6 +172,8 @@ test("enabled noindex policy allows only explicit public routes without query st
     { pathname: "/shop", search: "?sort=price-asc" },
     { pathname: "/shop/current-product", search: "?utm_source=test" },
     { pathname: "/collections/summer-shirts", search: "?color=black" },
+    { pathname: "/size-guide", search: "?ref=smoke" },
+    { pathname: "/about", search: "?utm_medium=email" },
   ]) {
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: true, ...request }),
