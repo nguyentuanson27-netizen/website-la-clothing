@@ -411,21 +411,21 @@ Activation rule:
 - [x] Mirrored-money audit accepted.
 
 ## G3 — Definition of Done
-- [ ] Focused new/regression tests.
-- [ ] Relevant DB/domain suites green.
-- [ ] Lint green.
-- [ ] Typecheck green.
-- [ ] Production build green.
-- [ ] Applicable runtime/browser/a11y green.
-- [ ] No duplicate pricing/business logic.
-- [ ] No unrelated refactor.
-- [ ] No N+1/unbounded query or unbounded quote-proof state.
-- [ ] No raw HttpOnly cart/session handle exposed in browser-visible proof or logs.
-- [ ] Security review complete.
-- [ ] Docs/runbooks current.
-- [ ] #153 identity/cart/Purchase/Merchant-cache regressions remain green.
-- [ ] #152 indexing policy unchanged unless separately approved.
-- [ ] Human final review: 0 Critical / 0 Required.
+- [x] Focused new/regression tests. *(tests/domain/promotion-integrated-dod.test.ts)*
+- [x] Relevant DB/domain suites green. *(1,210 domain tests pass)*
+- [x] Lint green. *(eslint 0 errors)*
+- [x] Typecheck green. *(tsc 0 errors)*
+- [x] Production build green.
+- [x] Applicable runtime/browser/a11y green.
+- [x] No duplicate pricing/business logic. *(central resolver resolvePromotionPricing)*
+- [x] No unrelated refactor.
+- [x] No N+1/unbounded query or unbounded quote-proof state. *(stateless HMAC laq1)*
+- [x] No raw HttpOnly cart/session handle exposed in browser-visible proof or logs.
+- [x] Security review complete. *(<1KB NDJSON, zero PII, zero tokens, zero cart UUIDs)*
+- [x] Docs/runbooks current. *(docs/operations/promotion-rollback-runbook.md)*
+- [x] #153 identity/cart/Purchase/Merchant-cache regressions remain green.
+- [x] #152 indexing policy unchanged unless separately approved.
+- [x] Human final review: 0 Critical / 0 Required. *(docs/audits/promotion-integrated-dod-g3.md)*
 
 ## Recommended implementation sequence
 - [x] A1 P1 persistence + durable pricing revision. *(U3, PR #158)*
@@ -445,7 +445,7 @@ Activation rule:
 - [x] #153 T7 Purchase consumer. *(U24, PR #193 merged; verified U39)*
 - [x] G1 enabled-consumer monetary convergence. *(U39, PR #223)*
 - [x] G2 readiness. *(U40, PR #224)*
-- [ ] G3 integrated verification. *(U43)*
+- [x] G3 integrated verification. *(U43)*
 
 ## Separate launch gates
 Promotion:
