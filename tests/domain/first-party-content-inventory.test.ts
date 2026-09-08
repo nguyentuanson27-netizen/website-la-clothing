@@ -152,6 +152,26 @@ test("W13A describes the current authority set and the real reason each Organiza
       `${authority} must appear in the current authority set`,
     );
   }
+
+  // Naming an authority is not enough: the row has to say what it owns, and say it correctly. The
+  // legal-facts row is the one that has gone wrong twice, in both directions at once.
+  const legalRow = inventory
+    .split("\n")
+    .find((line) => line.startsWith("| `PUBLIC_LEGAL_FACTS` |"));
+  assert.ok(legalRow, "the current authority set must carry a PUBLIC_LEGAL_FACTS row");
+  // §1 holds the legal identity; §7/B6 is the decision to publish it on a minimal About. §11 is the
+  // Google Ads Purchase value, and citing it sends a reader to the wrong owner decision entirely.
+  assert.match(legalRow, /§1 legal entity name \+ confirmed MST/);
+  assert.match(legalRow, /B6\/§7/);
+  assert.doesNotMatch(legalRow, /§11/, "§11 is Google Ads Purchase value, not the legal identity");
+  // The constant holds no address. Claiming it owns one gives `address` two authorities, which is
+  // the exact contract this slice exists to keep.
+  assert.doesNotMatch(
+    legalRow,
+    /(?<!Not the )address/,
+    "the address belongs to PUBLIC_CONTACT_FACTS; PUBLIC_LEGAL_FACTS must not claim it",
+  );
+  assert.match(legalRow, /\*\*Not the address\*\*[^|]*`PUBLIC_CONTACT_FACTS`/);
   // B4's pricing authority is the one that must stay outside the content module entirely.
   assert.match(inventory, /shipping price stays outside all of them\*\*, with the server-owned\s+`readGuestShippingPolicy`/);
 

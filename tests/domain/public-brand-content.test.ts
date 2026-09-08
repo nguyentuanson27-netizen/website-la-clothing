@@ -154,13 +154,13 @@ test("U32b carries no fact outside the B2 contact contract", () => {
 });
 
 /**
- * U33a / B6. The About page publishes exactly what §7 and §11 approve and nothing more.
+ * U33a / B6. The About page publishes exactly what §1 and §7 approve and nothing more.
  *
  * B6 is the decision most likely to be widened by accident: the owner approved a positioning
  * sentence, the legal entity and the confirmed MST, and explicitly withheld the founding year, the
  * founder and any brand story. A page written from prose rather than from this constant is how an
  * invented history reaches the storefront, so the facts are transcribed here once and asserted
- * against §7/§11 word for word.
+ * against §1/§7 word for word.
  */
 test("U33a the approved brand positioning is the owner's sentence, not a paraphrase", () => {
   assert.equal(
@@ -169,7 +169,7 @@ test("U33a the approved brand positioning is the owner's sentence, not a paraphr
   );
 });
 
-test("U33a the approved legal facts transcribe §11 exactly", () => {
+test("U33a the approved legal facts transcribe §1 exactly, and own no address", () => {
   assert.deepEqual(PUBLIC_LEGAL_FACTS, {
     legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxCode: "0111242251",

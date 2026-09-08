@@ -22,7 +22,7 @@ missing.
 
 | Page / surface | U6-time verdict | Current truth |
 |---|---|---|
-| About | BLOCKED on B6 | **Built (U33a)** — `/about`, from `PUBLIC_BRAND_POSITIONING` (§7) and `PUBLIC_LEGAL_FACTS` (§11). Founder, founding year, story and values stay unapproved and off the page. |
+| About | BLOCKED on B6 | **Built (U33a)** — `/about`, from `PUBLIC_BRAND_POSITIONING` (§7), `PUBLIC_LEGAL_FACTS` (§1) and, for the address, `describePublicAddress()` over `PUBLIC_CONTACT_FACTS` (§2). Founder, founding year, story and values stay unapproved and off the page. |
 | Contact | BLOCKED on B2 | **Built (U33a)** — `/contact`, from `PUBLIC_CONTACT_FACTS` (§2). |
 | Returns | BLOCKED on B1 | **Built (U33b)** — `/returns`, from `PUBLIC_RETURNS_POLICY` (§4). |
 | Shipping / Payment | BLOCKED on B4 | **Built (U33b)** — `/shipping`, from `PUBLIC_DELIVERY_FACTS` (§5), `buildPublicBrandFacts`, and the server-owned `readGuestShippingPolicy` for price. |
@@ -59,7 +59,7 @@ fact group, each with a single consumer contract:
 | `buildPublicBrandFacts(policy)` | brand name/summary, payment method, no-account checkout, server re-verification, order tracking, and shipping derived from the server-owned policy | U6 (pre-existing) |
 | `PUBLIC_CONTACT_FACTS` | §2 contact channels, address, support hours | U32b |
 | `PUBLIC_BRAND_POSITIONING` | §7 positioning sentence | U33a |
-| `PUBLIC_LEGAL_FACTS` | §11 legal entity, MST, address | U33a |
+| `PUBLIC_LEGAL_FACTS` | §1 legal entity name + confirmed MST, approved for a minimal About by B6/§7. **Not the address** — that stays with `PUBLIC_CONTACT_FACTS`, and `/about` renders it through `describePublicAddress()` | U33a |
 | `PUBLIC_RETURNS_POLICY` | §4 returns/exchange/refund clauses, §3 refund channel | U33b |
 | `PUBLIC_DELIVERY_FACTS` | §5 coverage, carriers, estimates, tracking and verification notes | U33b |
 
@@ -114,7 +114,8 @@ approved facts:
 | Page | Facts it publishes | Source |
 |---|---|---|
 | `/contact` | Hotline/Zalo, email, address, support hours, Fanpage | `PUBLIC_CONTACT_FACTS` (§2) |
-| `/about` | Brand positioning sentence; legal entity, MST, address | `PUBLIC_BRAND_POSITIONING` (§7), `PUBLIC_LEGAL_FACTS` (§11) |
+| `/about` | Brand positioning sentence; legal entity, MST | `PUBLIC_BRAND_POSITIONING` (§7), `PUBLIC_LEGAL_FACTS` (§1, published under B6/§7) |
+| `/about` | Address | `describePublicAddress()` over `PUBLIC_CONTACT_FACTS` (§2) — one address authority, shared with `/contact`, the footer and `Organization` |
 
 Neither page transcribes a fact a second time — they render the same constants the footer renders
 and the `Organization` structured data marks up. What each page **omits** is asserted, not just

@@ -117,7 +117,11 @@ export const PUBLIC_BRAND_POSITIONING =
   "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.";
 
 /**
- * B6/§11 — the legal identity the owner confirmed and approved for publication.
+ * §1 legal identity, approved for publication on a minimal About page by B6/§7.
+ *
+ * Only the entity name and the confirmed MST live here. The **address is not duplicated**: it is a
+ * §2 contact fact, so `PUBLIC_CONTACT_FACTS` owns it and `/about` renders it through
+ * `describePublicAddress()`, the same call the footer and the `Organization` node use.
  *
  * U32b left these out because they are not B2 contact facts and the `Organization` entity it built
  * implements the B2 contract. The About/legal surface is where they belong, and this is where a
