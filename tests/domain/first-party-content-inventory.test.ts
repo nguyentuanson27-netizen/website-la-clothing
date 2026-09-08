@@ -74,6 +74,53 @@ test("W13A historical inventory still documents every fact it owned or classifie
   }
 });
 
+/**
+ * The audit is what a later agent reads before starting the next U33 slice. If its top-level status
+ * or its per-page snapshot still reads as owner-blocked, that agent stops work the owner has already
+ * unblocked. So the record has to do two things at once: state the present truth up front, and keep
+ * the U6-time evidence clearly marked as history rather than deleting it.
+ */
+test("W13A states the current truth and marks the U6-time snapshot as historical", async () => {
+  const inventory = await readFile(INVENTORY, "utf8");
+
+  const [status] = inventory.split("## Classification");
+  assert.ok(status, "the audit must open with a status block");
+
+  // The stale top-level verdict must not survive: it contradicted every update section below it.
+  assert.doesNotMatch(
+    status,
+    /Status: \*\*BLOCKED/,
+    "the top-level status must state the current truth, not the U6-time verdict",
+  );
+  assert.match(status, /Status: \*\*CURRENT — B1–B4 and B6 are RESOLVED/);
+  assert.match(status, /U33a and U33b are\nimplemented/);
+
+  // B3 is resolved, so the Size Guide is implementation work. An agent that reads "owner-blocked"
+  // here stops U33c for a decision that has already been made.
+  assert.match(
+    status,
+    /\| Size Guide \| BLOCKED on B3 \| \*\*Owner-unblocked, not yet built\.\*\*[^\n]*U33c implementation work, not an owner gate/,
+  );
+  // U32b is implemented; the audit used to call the same enrichment blocked.
+  assert.match(status, /\| `Organization` structured data \|[^\n]*\*\*Enriched \(U32b\)\*\*/);
+  // The surfaces that genuinely have no approved facts must stay recorded as blocked, or a later
+  // reconciliation reads "everything is resolved" and authors a privacy policy from nothing.
+  assert.match(status, /§15 policy surfaces[^\n]*\*\*Still blocked — no approved facts exist\.\*\*/);
+
+  // Keeping the evidence is the point; presenting it as current status is the bug.
+  assert.match(inventory, /## Per-page inventory — the U6-time snapshot \(historical\)/);
+  assert.match(inventory, /## Consequence for structured data — resolved by U32b/);
+
+  // Every retained U6-time verdict must carry both its historical label and a superseded note, so
+  // no page section can be read as a live blocker.
+  const retainedVerdicts = inventory.match(/`BLOCKED — OWNER FACT\/APPROVAL REQUIRED`/g) ?? [];
+  const historicalLabels = inventory.match(/\*\(U6-time verdict\)\*/g) ?? [];
+  const supersededNotes = inventory.match(/\*\*Superseded/g) ?? [];
+  assert.equal(retainedVerdicts.length, 5, "the five U6-time page verdicts are the historical record");
+  assert.equal(historicalLabels.length, retainedVerdicts.length);
+  assert.equal(supersededNotes.length, retainedVerdicts.length);
+});
+
 test("current roadmap preserves W13A history while recording the resolved owner decisions", async () => {
   const [inventory, masterTodo] = await Promise.all([
     readFile(INVENTORY, "utf8"),

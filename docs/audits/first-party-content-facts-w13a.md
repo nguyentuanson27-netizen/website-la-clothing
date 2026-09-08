@@ -3,13 +3,36 @@
 Owning source: `docs/audits/seo-geo-audit.md` findings **W13A** / **W13**, planning step **P5**.
 Master-plan unit: **U6**. Consumer: **U33 / W13**.
 
-Status: **BLOCKED — OWNER FACT/APPROVAL REQUIRED for every page except a partial Shipping/Payment
-section.** No evergreen page may be built until the facts marked blocked below are supplied and
-approved by the human owner. Nothing in this inventory is inferred from UI copy, naming conventions
-or code structure.
+Status: **CURRENT — B1–B4 and B6 are RESOLVED in the owner-approved facts source; U33a and U33b are
+implemented; U33c (Size Guide) is implementation-ready from the approved B3 facts.** The only
+evergreen surfaces still blocked on an owner decision are the §15 policy pages — general terms,
+pricing, privacy, complaint handling, rights and obligations — which have **no approved facts at
+all**.
 
-U6 builds no pages. It records what exists, what is close but not authoritative, and what is
+**The per-page inventory further down is the U6-time snapshot.** It records what the repository
+owned *when this audit was written*, before any owner gate was answered. It is kept as historical
+evidence and must not be read as current status: every `BLOCKED` verdict in it has since been
+superseded by the row for that page in the current-status table immediately below. Nothing in the
+original inventory was inferred from UI copy, naming conventions or code structure.
+
+U6 built no pages. It recorded what existed, what was close but not authoritative, and what was
 missing.
+
+## Current status — supersedes the U6-time snapshot
+
+| Page / surface | U6-time verdict | Current truth |
+|---|---|---|
+| About | BLOCKED on B6 | **Built (U33a)** — `/about`, from `PUBLIC_BRAND_POSITIONING` (§7) and `PUBLIC_LEGAL_FACTS` (§11). Founder, founding year, story and values stay unapproved and off the page. |
+| Contact | BLOCKED on B2 | **Built (U33a)** — `/contact`, from `PUBLIC_CONTACT_FACTS` (§2). |
+| Returns | BLOCKED on B1 | **Built (U33b)** — `/returns`, from `PUBLIC_RETURNS_POLICY` (§4). |
+| Shipping / Payment | BLOCKED on B4 | **Built (U33b)** — `/shipping`, from `PUBLIC_DELIVERY_FACTS` (§5), `buildPublicBrandFacts`, and the server-owned `readGuestShippingPolicy` for price. |
+| Size Guide | BLOCKED on B3 | **Owner-unblocked, not yet built.** B3 is RESOLVED — two approved charts, centimetres, circumference semantics, ±3 cm tolerance. What remains is **U33c implementation work, not an owner gate.** |
+| `Organization` structured data | BLOCKED on B2 | **Enriched (U32b)** — address, contact point and social profile are emitted from `PUBLIC_CONTACT_FACTS`, and the footer renders the same facts, so the markup corresponds to visible content. |
+| §15 policy surfaces — general terms, pricing, privacy, complaint handling, rights and obligations | not inventoried | **Still blocked — no approved facts exist.** They stay unbuilt and unlinked rather than authored. |
+
+An agent picking up **U33c** should work from this table and from
+`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, **not** from the U6-time Size Guide
+section below, which predates B3 and would stop the unit incorrectly.
 
 ## Classification
 
@@ -36,8 +59,9 @@ pinned by `tests/domain/public-brand-content.test.ts`.
 | `orderTracking` | Constant describing the `/track-order` capability that exists | **A** |
 | `serverVerification` | Constant describing behaviour the checkout actually implements | **A** |
 
-Everything an evergreen page needs beyond this list is B, C or D **as of when this inventory was
-written**. One class-D block has since been resolved and implemented — see below.
+Everything an evergreen page needs beyond this list was B, C or D **as of when this inventory was
+written**. Every class-D block it names has since been answered by the owner, and all but the Size
+Guide has been implemented — see the current-status table above and the update sections below.
 
 ### Update: the approved B2 contact facts (U32b)
 
@@ -100,9 +124,13 @@ legal entity and the confirmed MST — but they are **outside the B2 contact con
 implements, so U32b did not publish them; **U33a's About page publishes them**. Founder and founding
 year do remain unapproved under B6. Everything else in this inventory still stands.
 
-## Per-page inventory
+## Per-page inventory — the U6-time snapshot (historical)
 
-### About
+Everything from here to the end of this section is the state **as of U6**, retained so a later
+reader can see what was actually missing before the owner answered. Each page's `BLOCKED` line is
+the verdict *at that time*; the current-status table above is what holds today.
+
+### About — U6-time
 
 | Fact needed | Current state | Class |
 |---|---|---|
@@ -113,10 +141,13 @@ year do remain unapproved under B6. Everything else in this inventory still stan
 | `legalEntity` — registered business name | Nowhere | **C / D** |
 | `taxCode` — business registration or tax identifier | Nowhere | **C / D** |
 
-`BLOCKED — OWNER FACT/APPROVAL REQUIRED`: founding facts, registered entity name, and whether the
-legal identifier should be public at all.
+`BLOCKED — OWNER FACT/APPROVAL REQUIRED` *(U6-time verdict)*: founding facts, registered entity
+name, and whether the legal identifier should be public at all.
 
-### Returns
+**Superseded:** B6 approved the registered entity, address and MST, and `/about` publishes them
+(U33a). Founder, founding year, story and values were *not* approved and remain unpublished.
+
+### Returns — U6-time
 
 | Fact needed | Current state | Class |
 |---|---|---|
@@ -127,11 +158,14 @@ legal identifier should be public at all.
 | Who pays return shipping | Nowhere | **C / D** |
 | Non-returnable categories, if any | Nowhere | **C / D** |
 
-`BLOCKED — OWNER FACT/APPROVAL REQUIRED`: the entire returns policy. Nothing in the repository
-implies one, and a returns page is exactly the kind of content a coding agent must not invent — it
-is a commitment to customers and a consumer-law surface.
+`BLOCKED — OWNER FACT/APPROVAL REQUIRED` *(U6-time verdict)*: the entire returns policy. Nothing in
+the repository implied one, and a returns page is exactly the kind of content a coding agent must not
+invent — it is a commitment to customers and a consumer-law surface.
 
-### Shipping / Payment
+**Superseded:** B1 is RESOLVED and `/returns` is built (U33b) from `PUBLIC_RETURNS_POLICY` (§4).
+The policy was supplied by the owner, not derived.
+
+### Shipping / Payment — U6-time
 
 | Fact needed | Current state | Class |
 |---|---|---|
@@ -145,13 +179,19 @@ is a commitment to customers and a consumer-law surface.
 | Carrier, and whether orders are trackable with the carrier | Nowhere. `/track-order` exposes the local COD order state only | **C / D** |
 | Other payment methods (bank transfer, card, wallet) | Not implemented; checkout is COD only | **C / D** |
 
-This is the only page with a substantial A-class base. It still cannot ship complete: a shipping
-page without a delivery estimate or coverage statement is the part buyers look for.
+This was the only page with a substantial A-class base. It still could not ship complete: a
+shipping page without a delivery estimate or coverage statement is the part buyers look for.
 
-`BLOCKED — OWNER FACT/APPROVAL REQUIRED`: delivery estimate, coverage, carrier, and confirmation
-that the phone-confirmation step is a policy rather than current practice.
+`BLOCKED — OWNER FACT/APPROVAL REQUIRED` *(U6-time verdict)*: delivery estimate, coverage, carrier,
+and confirmation that the phone-confirmation step is a policy rather than current practice.
 
-### Size Guide
+**Superseded:** B4 is RESOLVED and `/shipping` is built (U33b). Coverage, carriers, estimates and
+the "no default carrier tracking" fact come from `PUBLIC_DELIVERY_FACTS` (§5); phone verification is
+published as optional because that is what B4 says. The **shipping price stays with the server-owned
+`readGuestShippingPolicy`** — B4 keeps it as the pricing authority, so no fee was copied into the
+content module.
+
+### Size Guide — U6-time
 
 | Fact needed | Current state | Class |
 |---|---|---|
@@ -162,11 +202,18 @@ that the phone-confirmation step is a policy rather than current practice.
 | Fit guidance (regular, relaxed, oversized) and what each means | Product names hint at fit; no defined vocabulary | **C / D** |
 | Units and tolerance | Nowhere | **C / D** |
 
-`BLOCKED — OWNER FACT/APPROVAL REQUIRED`: the size chart itself. Deriving centimetres from product
-names or existing per-product free text would be inventing measurements, which is worse than having
-no page: a wrong chart drives returns the returns policy does not yet cover.
+`BLOCKED — OWNER FACT/APPROVAL REQUIRED` *(U6-time verdict)*: the size chart itself. Deriving
+centimetres from product names or existing per-product free text would be inventing measurements,
+which is worse than having no page: a wrong chart drives returns the returns policy did not then
+cover.
 
-### Contact
+**Superseded — read this before starting U33c:** B3 is RESOLVED. The owner supplied two size charts
+in centimetres, with circumference semantics and a ±3 cm tolerance; height and weight stay guidance
+and never a fit guarantee. **The Size Guide is no longer owner-blocked** — it is unbuilt
+implementation work (U33c). The original prohibition still binds in one respect: no measurement, fit
+vocabulary or tolerance beyond the approved charts may be derived.
+
+### Contact — U6-time
 
 | Fact needed | Current state | Class |
 |---|---|---|
@@ -177,22 +224,34 @@ no page: a wrong chart drives returns the returns policy does not yet cover.
 | Social or messaging channels | Nowhere in first-party content | **C / D** |
 | Order-specific support route | `/track-order` exists and is described by `orderTracking` | **A**, but it is self-service status lookup, not a contact channel |
 
-`BLOCKED — OWNER FACT/APPROVAL REQUIRED`: every contact channel. The storefront currently gives a
-buyer no way to reach the brand other than waiting for the confirmation call, and inventing a
-channel would send customers somewhere nobody is listening.
+`BLOCKED — OWNER FACT/APPROVAL REQUIRED` *(U6-time verdict)*: every contact channel. The storefront
+then gave a buyer no way to reach the brand other than waiting for the confirmation call, and
+inventing a channel would send customers somewhere nobody is listening.
 
-## Consequence for structured data
+**Superseded:** B2 is RESOLVED. `PUBLIC_CONTACT_FACTS` owns the approved channels, `/contact` is
+built (U33a), and the footer and `Organization` markup render the same constants.
 
-`buildSiteStructuredData` emits `Organization` with only `name` and `url`. W6 / U32 wants to enrich
-it with verified first-party facts — address, contact point, social profiles. Every one of those is
-class C/D above, so **U32's Organization enrichment is blocked by the same owner decision as U33**,
-not by anything technical.
+## Consequence for structured data — resolved by U32b
+
+*U6-time:* `buildSiteStructuredData` emitted `Organization` with only `name` and `url`. W6 / U32
+wanted to enrich it with verified first-party facts — address, contact point, social profiles —
+every one of which was class C/D above, so U32's enrichment was blocked by the same owner decision
+as U33, not by anything technical.
+
+**Current:** B2 resolved that decision and **U32b is implemented.** `Organization` now carries
+`address`, `contactPoint` (with the country-coded telephone, email and support hours) and `sameAs`,
+all read from `PUBLIC_CONTACT_FACTS`. There is exactly one `Organization` node, and the site footer
+renders the same facts, so the markup corresponds to content a reader can see. Facts the owner did
+not approve — logo, legal name in the markup, `availableLanguage`, founder, founding date — stay
+omitted rather than inferred.
 
 ## Registered decision gates
 
-These are recorded as **B1–B4 and B6** in the "Owner decision gates" register in
+These were recorded as **B1–B4 and B6** in the "Owner decision gates" register in
 `tasks/growth-commerce-master-todo.md`, each with its owner, what it blocks and where the blocked
-unit must stop:
+unit must stop. **All five now read resolved in that register** — B1–B4 as `RESOLVED` and B6 as
+`RESOLVED FOR MINIMAL ABOUT`. That register is the live one; the table below is the U6-time
+statement of what each gate was holding up:
 
 | Gate | Covers | Blocks |
 |---|---|---|
@@ -206,7 +265,15 @@ Owner in every case: repository owner / brand authority. Until a gate is answere
 stops and reports; every other unit continues. No page is built from an inferred policy, and no
 missing fact is reconstructed from UI copy, checkout wording or naming conventions.
 
-## What the owner needs to supply
+**All five gates have since been answered** (B6 for a minimal About only). The rule they encode did
+not lapse with them: it still binds the §15 surfaces, which have no approved facts and therefore stay
+unbuilt.
+
+## What the owner needed to supply — answered
+
+This was the U6-time ask. It has been answered in
+`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, which is now the authority for every
+item below.
 
 For each of About, Returns, Shipping delivery terms, Size Guide and Contact:
 
@@ -216,5 +283,10 @@ For each of About, Returns, Shipping delivery terms, Size Guide and Contact:
    in editable website-owned content.
 
 U33 then builds the pages from that single approved source rather than duplicating copy between the
-footer, the pages and structured data. Until then, no evergreen page is created, and no thin page is
-published to chase GEO keywords.
+footer, the pages and structured data.
+
+**Where that stands:** the facts were supplied, and U33a, U33b and U32b built About, Contact,
+Returns, Shipping/Payment and the `Organization` markup from them; **U33c (Size Guide) is the
+remaining slice, and its facts already exist.** The closing rule still applies to what has no
+approved source: the §15 policy surfaces get no page, and no thin page is published to chase GEO
+keywords.
