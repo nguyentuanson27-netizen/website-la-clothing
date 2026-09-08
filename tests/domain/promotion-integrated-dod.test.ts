@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
+import type { RenderedQuoteProofRejection } from "../../src/commerce/checkout-quote-proof.ts";
 import {
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
@@ -553,6 +555,162 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
       if (publishResultWithThrow.ok) {
         assert.equal(publishResultWithThrow.revision, BigInt(11));
       }
+    });
+
+    it("evaluates complete campaign coverage across >2,000 variants without truncation", async () => {
+      const TOTAL_VARIANTS = 2050;
+      const allMockVariants = Array.from({ length: TOTAL_VARIANTS }, (_, i) => ({
+        id: `var-cov-${i.toString().padStart(4, "0")}`,
+        productId: "prod-huge",
+        pancakeRetailPrice: 100_000,
+      }));
+
+      const mockCampaign = {
+        id: "camp-huge-integrated",
+        kind: "PROMOTION" as const,
+        name: "Huge Catalog Integrated Promo",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 15,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: "prod-huge", variantId: null }],
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaign,
+        },
+        variantMirror: {
+          findMany: async (args: {
+            take?: number;
+            cursor?: { id: string };
+            skip?: number;
+            where?: unknown;
+          }) => {
+            const take = args.take ?? 500;
+            let startIndex = 0;
+            if (args.cursor) {
+              const idx = allMockVariants.findIndex((v) => v.id === args.cursor?.id);
+              startIndex = idx >= 0 ? idx + (args.skip ?? 0) : 0;
+            }
+            return allMockVariants.slice(startIndex, startIndex + take);
+          },
+        },
+      };
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-huge-integrated",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-15T00:00:00Z"),
+        writer: () => {},
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "HEALTHY");
+      assert.equal(health.coveredVariants, 2050);
+      assert.equal(health.discountedVariants, 2050);
+      assert.equal(health.affectedVariants, 0);
+    });
+
+    it("discovers concurrent competing campaign conflicts and populates conflictingCampaignIds", async () => {
+      const emittedSignals: string[] = [];
+      const writer = (line: string) => emittedSignals.push(line);
+
+      const mockCampaignA = {
+        id: "camp-alpha-int",
+        kind: "PROMOTION" as const,
+        name: "Alpha Promo",
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 20,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+        targets: [{ productId: null, variantId: "var-conflict-dod" }],
+      };
+
+      const competingCampaignB = {
+        id: "camp-beta-int",
+        name: "Beta Promo",
+        kind: "PROMOTION" as const,
+        discountType: "PERCENTAGE" as const,
+        percentageValue: 25,
+        fixedPriceVnd: null,
+        startsAt: new Date("2026-03-01T00:00:00Z"),
+        endsAt: new Date("2026-03-31T00:00:00Z"),
+      };
+
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => mockCampaignA,
+        },
+        variantMirror: {
+          findMany: async () => {
+            return [{ id: "var-conflict-dod", productId: "prod-int", pancakeRetailPrice: 200_000 }];
+          },
+        },
+        promotionTarget: {
+          findMany: async () => {
+            return [
+              {
+                productId: null,
+                variantId: "var-conflict-dod",
+                campaign: competingCampaignB,
+              },
+            ];
+          },
+        },
+      };
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: "camp-alpha-int",
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now: new Date("2026-03-10T00:00:00Z"),
+        writer,
+      });
+
+      assert.ok(health);
+      assert.equal(health.status, "FULLY_INVALID");
+      assert.equal(health.coveredVariants, 1);
+      assert.equal(health.discountedVariants, 0);
+      assert.equal(health.affectedVariants, 1);
+      assert.equal(health.affected[0]?.variantId, "var-conflict-dod");
+      assert.equal(health.affected[0]?.reason, "PROMOTION_CONFLICT");
+      assert.deepEqual(health.affected[0]?.conflictingCampaignIds, ["camp-beta-int"]);
+
+      assert.equal(emittedSignals.length, 1);
+      const parsed = JSON.parse(emittedSignals[0]!);
+      assert.equal(parsed.name, "promotion.runtime_health");
+      assert.equal(parsed.status, "FULLY_INVALID");
+      assert.deepEqual(parsed.affectedSample[0]?.conflictingCampaignIds, ["camp-beta-int"]);
+    });
+
+    it("asserts promotion rollback runbook documents the 5 canonical quote proof rejection reasons without WRONG_CART", () => {
+      const runbookSource = readFileSync(
+        new URL("../../docs/operations/promotion-rollback-runbook.md", import.meta.url),
+        "utf8",
+      );
+
+      const CANONICAL_REASONS: RenderedQuoteProofRejection[] = [
+        "PRICE_CHANGED",
+        "PROOF_MISSING",
+        "PROOF_OVERSIZED",
+        "PROOF_MALFORMED",
+        "PROOF_UNVERIFIED",
+      ];
+
+      for (const reason of CANONICAL_REASONS) {
+        assert.ok(
+          runbookSource.includes(`\`${reason}\``),
+          `Runbook must document canonical rejection reason ${reason}`,
+        );
+      }
+
+      assert.equal(
+        runbookSource.includes("WRONG_CART"),
+        false,
+        "Runbook must NOT include non-existent WRONG_CART reason",
+      );
     });
   });
 
