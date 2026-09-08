@@ -68,6 +68,59 @@ export type CampaignRuntimeHealth = Readonly<{
   affectedTruncated: boolean;
 }>;
 
+type FinalizeCampaignRuntimeHealthInput = Readonly<{
+  campaignId: string;
+  coveredVariants: number;
+  discountedVariants: number;
+  affectedVariants: number;
+  affected: readonly AffectedVariant[];
+  emit?: (signal: PromotionRuntimeHealthSignal) => void;
+  writer?: PromotionSignalWriter;
+}>;
+
+function finalizeCampaignRuntimeHealth({
+  campaignId,
+  coveredVariants,
+  discountedVariants,
+  affectedVariants,
+  affected,
+  emit,
+  writer,
+}: FinalizeCampaignRuntimeHealthInput): CampaignRuntimeHealth {
+  const status: CampaignRuntimeStatus = coveredVariants === 0
+    ? "NO_COVERAGE"
+    : affectedVariants === 0
+      ? "HEALTHY"
+      : discountedVariants === 0
+        ? "FULLY_INVALID"
+        : "PARTIALLY_INVALID";
+
+  const health = Object.freeze({
+    campaignId,
+    status,
+    coveredVariants,
+    discountedVariants,
+    affectedVariants,
+    affected: Object.freeze([...affected]),
+    affectedTruncated: affectedVariants > affected.length,
+  });
+
+  try {
+    const signal = describeCampaignRuntimeHealth(health);
+    if (emit) {
+      emit(signal);
+    } else if (writer) {
+      emitPromotionSignal(signal, writer);
+    } else {
+      emitPromotionSignal(signal);
+    }
+  } catch {
+    // Observability emission failures are swallowed to protect caller execution.
+  }
+
+  return health;
+}
+
 export type AssessCampaignRuntimeHealthInput = Readonly<{
   campaignId: string;
   outcomes: readonly VariantPricingOutcome[];
@@ -104,39 +157,15 @@ export function assessCampaignRuntimeHealth({
     }
   }
 
-  const coveredVariants = outcomes.length;
-  const status: CampaignRuntimeStatus = coveredVariants === 0
-    ? "NO_COVERAGE"
-    : affectedVariants === 0
-      ? "HEALTHY"
-      : discountedVariants === 0
-        ? "FULLY_INVALID"
-        : "PARTIALLY_INVALID";
-
-  const health = Object.freeze({
+  return finalizeCampaignRuntimeHealth({
     campaignId,
-    status,
-    coveredVariants,
+    coveredVariants: outcomes.length,
     discountedVariants,
     affectedVariants,
-    affected: Object.freeze(affected),
-    affectedTruncated: affectedVariants > affected.length,
+    affected,
+    emit,
+    writer,
   });
-
-  try {
-    const signal = describeCampaignRuntimeHealth(health);
-    if (emit) {
-      emit(signal);
-    } else if (writer) {
-      emitPromotionSignal(signal, writer);
-    } else {
-      emitPromotionSignal(signal);
-    }
-  } catch {
-    // Observability emission failures are swallowed to protect caller execution.
-  }
-
-  return health;
 }
 
 export type EvaluateCampaignRuntimeHealthInput = Readonly<{
@@ -151,9 +180,11 @@ export type EvaluateCampaignRuntimeHealthInput = Readonly<{
 /**
  * Evaluates runtime health on-demand for a persisted campaign.
  * Resolves current variant outcomes against the database mirror without coverage truncation,
- * discovers concurrent competing campaign conflicts via candidate batching, invokes
- * assessCampaignRuntimeHealth, and emits promotion.runtime_health signal.
- * Telemetry failures are swallowed to safeguard caller execution.
+ * discovers concurrent competing campaign conflicts via candidate batching, invokes the shared
+ * health finalizer, and emits promotion.runtime_health signal. Coverage is aggregated one bounded
+ * page at a time so catalog growth does not turn an admin diagnostic into unbounded process state.
+ * Telemetry failures are swallowed to safeguard caller execution; candidate-authority failures are
+ * not, because incomplete promotion truth must never masquerade as HEALTHY.
  */
 export async function evaluateCampaignRuntimeHealth({
   campaignId,
@@ -196,40 +227,14 @@ export async function evaluateCampaignRuntimeHealth({
           : null;
 
   if (whereClause === null) {
-    return assessCampaignRuntimeHealth({ campaignId: campaign.id, outcomes: [], writer });
-  }
-
-  const BATCH_SIZE = 500;
-  const variants: Array<{ id: string; pancakeRetailPrice: number | null }> = [];
-  const seenVariantIds = new Set<string>();
-  let cursorId: string | undefined = undefined;
-
-  while (true) {
-    const batch = (await client.variantMirror.findMany({
-      where: whereClause,
-      select: { id: true, pancakeRetailPrice: true },
-      orderBy: { id: "asc" },
-      take: BATCH_SIZE,
-      ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
-    })) as Array<{ id: string; pancakeRetailPrice: number | null }>;
-
-    if (!Array.isArray(batch) || batch.length === 0) break;
-
-    let added = 0;
-    for (const v of batch) {
-      if (!seenVariantIds.has(v.id)) {
-        seenVariantIds.add(v.id);
-        variants.push(v);
-        added++;
-      }
-    }
-
-    if (added === 0 || batch.length < BATCH_SIZE) break;
-    cursorId = batch[batch.length - 1]?.id;
-  }
-
-  if (variants.length === 0) {
-    return assessCampaignRuntimeHealth({ campaignId: campaign.id, outcomes: [], writer });
+    return finalizeCampaignRuntimeHealth({
+      campaignId: campaign.id,
+      coveredVariants: 0,
+      discountedVariants: 0,
+      affectedVariants: 0,
+      affected: [],
+      writer,
+    });
   }
 
   const applicable: ApplicablePromotionCampaign = {
@@ -243,59 +248,97 @@ export async function evaluateCampaignRuntimeHealth({
     endsAt: campaign.endsAt,
   };
 
-  const allVariantIds = variants.map((v) => v.id);
-  let competingCampaignsByVariant = new Map<string, readonly ApplicablePromotionCampaign[]>();
-
   const hasPromotionTarget =
     "promotionTarget" in client &&
     typeof (client as Record<string, unknown>).promotionTarget === "object" &&
     (client as Record<string, unknown>).promotionTarget !== null;
 
-  if (hasPromotionTarget) {
-    try {
-      const lookup = await readApplicablePromotionCampaignsBatched({
-        variantIds: allVariantIds,
-        client: client as unknown as Parameters<typeof readApplicablePromotionCampaignsBatched>[0]["client"],
-      });
-      competingCampaignsByVariant = new Map(lookup.campaignsByVariantId);
-    } catch {
-      // If candidate lookup fails or is unsupported by client mock, proceed without competing candidates
+  const BATCH_SIZE = 500;
+  let cursorId: string | undefined = undefined;
+  let coveredVariants = 0;
+  let discountedVariants = 0;
+  let affectedVariants = 0;
+  const affected: AffectedVariant[] = [];
+
+  while (true) {
+    const batch = (await client.variantMirror.findMany({
+      where: whereClause,
+      select: { id: true, pancakeRetailPrice: true },
+      orderBy: { id: "asc" },
+      take: BATCH_SIZE,
+      ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
+    })) as Array<{ id: string; pancakeRetailPrice: number | null }>;
+
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    let competingCampaignsByVariant = new Map<string, readonly ApplicablePromotionCampaign[]>();
+    if (hasPromotionTarget) {
+      try {
+        const lookup = await readApplicablePromotionCampaignsBatched({
+          variantIds: batch.map((variant) => variant.id),
+          client: client as unknown as Parameters<typeof readApplicablePromotionCampaignsBatched>[0]["client"],
+        });
+        if (lookup.unknownVariantIds.length > 0) return null;
+        competingCampaignsByVariant = new Map(lookup.campaignsByVariantId);
+      } catch {
+        // Source-data truth is unavailable. Do not emit a partial or falsely healthy diagnostic.
+        return null;
+      }
     }
+
+    for (const variant of batch) {
+      coveredVariants += 1;
+      const competing = competingCampaignsByVariant.get(variant.id) ?? [];
+      const combinedCandidates = [
+        applicable,
+        ...competing.filter((candidate) => candidate.id !== applicable.id),
+      ];
+
+      const pricing = resolvePromotionPricing({
+        basePriceVnd: variant.pancakeRetailPrice,
+        campaigns: combinedCandidates,
+        now,
+      });
+
+      if (pricing.isDiscounted) {
+        discountedVariants += 1;
+        continue;
+      }
+
+      affectedVariants += 1;
+      if (affected.length >= MAX_REPORTED_AFFECTED_VARIANTS) continue;
+
+      const activeOtherCampaigns = combinedCandidates.filter(
+        (candidate) => candidate.id !== applicable.id && isActiveAt(candidate, now),
+      );
+      const conflictingCampaignIds = pricing.reason === "PROMOTION_CONFLICT"
+        ? activeOtherCampaigns.map((candidate) => candidate.id)
+        : [];
+
+      affected.push(
+        Object.freeze({
+          variantId: variant.id,
+          reason: pricing.reason,
+          conflictingCampaignIds: Object.freeze(conflictingCampaignIds),
+        }),
+      );
+    }
+
+    if (batch.length < BATCH_SIZE) break;
+    const nextCursorId = batch[batch.length - 1]?.id;
+    if (!nextCursorId || nextCursorId === cursorId) {
+      // A non-advancing cursor means coverage completeness is unknown; never return a partial health.
+      return null;
+    }
+    cursorId = nextCursorId;
   }
 
-  const outcomes: VariantPricingOutcome[] = variants.map((variant) => {
-    const competing = competingCampaignsByVariant.get(variant.id) ?? [];
-    const combinedCandidates = [
-      applicable,
-      ...competing.filter((c) => c.id !== applicable.id),
-    ];
-
-    const pricing = resolvePromotionPricing({
-      basePriceVnd: variant.pancakeRetailPrice,
-      campaigns: combinedCandidates,
-      now,
-    });
-
-    const activeOtherCampaigns = combinedCandidates.filter(
-      (c) => c.id !== applicable.id && isActiveAt(c, now),
-    );
-
-    const conflictingCampaignIds = pricing.reason === "PROMOTION_CONFLICT"
-      ? activeOtherCampaigns.map((c) => c.id)
-      : [];
-
-    return {
-      variantId: variant.id,
-      isDiscounted: pricing.isDiscounted,
-      reason: pricing.reason,
-      conflictingCampaignIds,
-    };
-  });
-
-  return assessCampaignRuntimeHealth({
+  return finalizeCampaignRuntimeHealth({
     campaignId: campaign.id,
-    outcomes,
+    coveredVariants,
+    discountedVariants,
+    affectedVariants,
+    affected,
     writer,
   });
 }
-
