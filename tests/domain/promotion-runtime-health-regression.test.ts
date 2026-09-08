@@ -140,13 +140,14 @@ describe("promotion runtime-health regression guards", () => {
     assert.equal(emittedLines.length, 0, "no runtime-health signal is emitted for incomplete source truth");
   });
 
-  it("documents an executable emergency rollback command and accepted admin session shape", () => {
+  it("documents an executable emergency rollback command on the source-capable ops image", () => {
     const runbook = readFileSync(
       new URL("../../docs/operations/promotion-rollback-runbook.md", import.meta.url),
       "utf8",
     );
 
-    assert.match(runbook, /node --experimental-strip-types --input-type=module -e/);
+    assert.match(runbook, /docker compose --profile ops run --rm ops node --experimental-strip-types --input-type=module -e/);
     assert.match(runbook, /session:\s*\{\s*id:\s*"emergency-ops"\s*\}/);
+    assert.doesNotMatch(runbook, /From the app container/);
   });
 });
