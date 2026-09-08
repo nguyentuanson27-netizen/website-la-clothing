@@ -9,7 +9,7 @@ import {
 
 const publicOrigin = "https://shop.example.com";
 
-test("U36 crawler governance matrix covers all owner-approved categories and verified agents", () => {
+test("U36 crawler governance matrix covers reviewed named crawlers across owner-approved categories", () => {
   // Traditional search
   assert.deepEqual(APPROVED_CRAWLER_CATEGORIES.traditionalSearch.userAgents, [
     "Googlebot",
@@ -38,11 +38,11 @@ test("U36 crawler governance matrix covers all owner-approved categories and ver
     "GoogleOther",
   ]);
 
-  // Total named crawlers
+  // Total named crawlers in current reviewed matrix
   assert.equal(ALL_APPROVED_NAMED_CRAWLERS.length, 12);
 });
 
-test("U36 robots policy is fail-closed on indexing and explicit on crawler governance when indexing is disabled", () => {
+test("U36 robots policy is fail-closed on indexing and explicit on reviewed crawlers when indexing is disabled", () => {
   const doc = buildRobotsDocument({ origin: publicOrigin, indexingEnabled: false });
 
   // Sitemap must be withheld while indexing is disabled
@@ -51,13 +51,13 @@ test("U36 robots policy is fail-closed on indexing and explicit on crawler gover
   assert.ok(Array.isArray(doc.rules));
   const rules = doc.rules;
 
-  // Wildcard rule exists
+  // Wildcard rule exists as fallback enforcing owner-wide ALLOW for compliant crawlers
   const wildcard = rules.find((r) => r.userAgent === "*");
   assert.ok(wildcard, "wildcard * rule must exist");
   assert.equal(wildcard.allow, "/");
   assert.deepEqual(wildcard.disallow, ["/api"]);
 
-  // Every approved named agent has an explicit rule
+  // Every approved named agent in current reviewed matrix has an explicit rule
   for (const userAgent of ALL_APPROVED_NAMED_CRAWLERS) {
     const rule = rules.find((r) => r.userAgent === userAgent);
     assert.ok(rule, `explicit rule for ${userAgent} must exist`);
@@ -72,7 +72,7 @@ test("U36 robots policy is fail-closed on indexing and explicit on crawler gover
   }
 });
 
-test("U36 robots policy advertises canonical sitemap and preserves crawler access when indexing is enabled", () => {
+test("U36 robots policy advertises canonical sitemap and preserves crawler access for reviewed crawlers + wildcard when indexing is enabled", () => {
   const doc = buildRobotsDocument({ origin: publicOrigin, indexingEnabled: true });
 
   // Sitemap must be advertised on canonical origin

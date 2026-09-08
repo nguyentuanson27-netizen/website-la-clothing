@@ -2,7 +2,7 @@
 
 Status: **IMPLEMENTED**  
 Branch: `feat/u36-crawler-governance`  
-Base: `main@9bd8de4f07a726ea7ae136b8e86016a2ae55ea82`  
+Base: `main@9bd8de464b339340cdcf47a08a3ee341e4b733e8`  
 Governing specs:
 - `docs/specs/la-clothing-owner-approved-facts-and-decisions.md` (§9)
 - `docs/audits/seo-geo-audit.md` (W19 / P6 item 25)
@@ -15,9 +15,12 @@ Governing specs:
 Audit item **W19** observed that crawler governance was previously monolithic: bots were either grouped or left to wildcard rules without distinguishing between traditional search crawlers, AI search assistants, foundation model training, or vendor-specific crawlers.
 
 The repository owner reviewed the crawler distribution matrix and established the definitive policy:
-**ALLOW ALL crawler categories across all verified bots.**
+**ALLOW ALL crawler categories across reviewed named crawlers + wildcard fallback.**
 
-### Purpose-Based Categories & Approved User-Agents
+- `APPROVED_CRAWLER_CATEGORIES` / `ALL_APPROVED_NAMED_CRAWLERS`: defines the **currently reviewed explicit named crawler matrix** across 4 categories.
+- Wildcard `*`: serves as the **fallback that enforces the owner-wide ALLOW policy for other compliant crawlers**.
+
+### Purpose-Based Categories & Reviewed Explicit Named Crawlers
 
 1. **Traditional Search Discovery & Indexing** (`traditionalSearch`):
    - `Googlebot` (Google search indexing & discovery)
@@ -36,7 +39,7 @@ The repository owner reviewed the crawler distribution matrix and established th
 4. **Vendor-Specific Research & Ancillary Crawlers** (`vendorResearch`):
    - `GoogleOther` (Google non-search internal R&D and platform crawling)
 5. **Wildcard Fallback** (`*`):
-   - Standard fallback coverage for unspecified or compliant web user-agents.
+   - Standard fallback coverage enforcing owner-wide ALLOW policy for other compliant crawlers.
 
 ---
 
@@ -56,7 +59,7 @@ The repository owner reviewed the crawler distribution matrix and established th
      - Public HTML routes are allowed (`Allow: /`).
      - Protected routes (`/api`) remain blocked (`Disallow: /api`).
 4. **Revert and Review Boundary**:
-   - U36 is implemented in a dedicated branch and PR (`feat/u36-crawler-governance`) branching directly from `main@9bd8de4f07a726ea7ae136b8e86016a2ae55ea82`.
+   - U36 is implemented in a dedicated branch and PR (`feat/u36-crawler-governance`) branching directly from `main@9bd8de464b339340cdcf47a08a3ee341e4b733e8`.
    - Independent from U33c (Size Guide).
 
 ---
@@ -94,9 +97,9 @@ The repository owner reviewed the crawler distribution matrix and established th
 1. **Domain Policy Tests**:
    - Command: `node --experimental-strip-types --test tests/domain/robots-policy.test.ts`
    - Verified:
-     - All 4 categories and all 12 named user-agents are present.
+     - All 4 categories and all 12 approved named crawlers in the current reviewed matrix are present.
      - Sitemap withheld when indexing disabled.
-     - Explicit rules for wildcard and all 12 crawlers.
+     - Explicit rules for wildcard fallback and all 12 reviewed crawlers.
      - Protected `/api` boundary enforced.
      - Sitemap advertised when indexing enabled.
      - P16C backwards compatibility maintained for `OAI-SearchBot`.
