@@ -153,7 +153,7 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 7 — convergence, readiness and final operations
 
-- [ ] **U39** #151 G1 — prove monetary convergence for every currently enabled price-bearing consumer; use focused consumer-specific fixes/evidence, not one mega PR. Disabled/fail-closed future consumers remain non-blocking.
+- [x] **U39** #151 G1 — prove monetary convergence for every currently enabled price-bearing consumer; verified in `tests/domain/monetary-convergence.test.ts`. Disabled/fail-closed future consumers (Merchant 503, GTM disabled, search exposure withheld) remain non-blocking.
 - [ ] **U40** #151 G2 — bounded/redacted observability + readiness/runbook + rollback rehearsal for activation rejection, invalid/recovery/conflict/`PARTIALLY_INVALID`, `PRICE_CHANGED`/quote-proof, Merchant revision mismatch/rebuild, Pancake semantic validation and activation-gate state; no PII/secrets/raw quote proofs/cart UUIDs.
 - [ ] **U41** #153 M5 — after Gate M preconditions, execute Merchant Center Scheduled Fetch activation, account/site/data-source/market/shipping/returns/Ads linkage and collect Diagnostics/crawler evidence without implicitly enabling search indexing.
 - [ ] **U42** #153 V1 — final marketing convergence/rollback verification after U28 + U41; code only for a focused verified launch defect.
@@ -198,7 +198,7 @@ the current owner-decision status above supersedes only their old owner-blocked 
 ## Gate P — Promotion activation
 
 - [ ] #151 P1–P10 accepted; price/catalog evidence + controlled Pancake custom-price acceptance green.
-- [ ] **U39/G1** covers every currently enabled monetary consumer; disabled/fail-closed future consumers do not block.
+- [x] **U39/G1** covers every currently enabled monetary consumer; disabled/fail-closed future consumers do not block.
 - [ ] **U40/G2** readiness/rollback accepted and **U43/G3** exact-head DoD green.
 - [ ] Human explicitly enables promotion activation.
 
