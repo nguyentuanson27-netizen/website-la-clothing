@@ -69,6 +69,14 @@ export const MAX_REPORTED_SIGNAL_IDENTIFIERS = 10;
 export const MAX_REPORTED_HEALTH_SAMPLE = 5;
 
 /**
+ * How many conflicting campaign IDs one affected variant in a runtime health signal may carry.
+ *
+ * Three IDs provides immediate triage context on competing promotions while ensuring the
+ * complete JSON line remains strictly below 1 KB even with 5 sampled variants.
+ */
+export const MAX_REPORTED_HEALTH_CONFLICTS = 3;
+
+/**
  * Which admin operation produced the signal.
  *
  * A closed set matching the Server Actions in `src/app/admin/promotions/actions.ts`, so the value
@@ -190,6 +198,15 @@ function boundedIdentifiers(ids: readonly string[]): readonly string[] {
   const sample: string[] = [];
   for (const id of ids) {
     if (sample.length >= MAX_REPORTED_SIGNAL_IDENTIFIERS) break;
+    if (isBoundedPromotionIdentifier(id)) sample.push(id);
+  }
+  return Object.freeze(sample);
+}
+
+function boundedHealthConflicts(ids: readonly string[]): readonly string[] {
+  const sample: string[] = [];
+  for (const id of ids) {
+    if (sample.length >= MAX_REPORTED_HEALTH_CONFLICTS) break;
     if (isBoundedPromotionIdentifier(id)) sample.push(id);
   }
   return Object.freeze(sample);
@@ -318,7 +335,7 @@ export function describeCampaignRuntimeHealth(
         Object.freeze({
           variantId: item.variantId,
           reason: item.reason,
-          conflictingCampaignIds: boundedIdentifiers(item.conflictingCampaignIds),
+          conflictingCampaignIds: boundedHealthConflicts(item.conflictingCampaignIds),
         }),
       );
     }
