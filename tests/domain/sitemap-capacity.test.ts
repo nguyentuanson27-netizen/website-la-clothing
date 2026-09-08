@@ -43,14 +43,17 @@ test("one path past the dynamic bound is over budget", () => {
 test("the static path count is read from the canonical list, not restated", () => {
   // If a static canonical path is ever added, the budget arithmetic has to move with it rather
   // than keep reporting a stale constant.
-  assert.equal(STATIC_CANONICAL_PATHS.length, 4);
-  assert.equal(summarizeSitemapCapacity({ productPaths: 0, collectionPaths: 0 }).staticPaths, 4);
+  // U33a added `/about` and `/contact`. The pin is deliberate rather than derived: it exists so a
+  // new static path cannot silently widen the document, which means updating it is the moment to
+  // notice the dynamic budget shrank by the same amount.
+  assert.equal(STATIC_CANONICAL_PATHS.length, 6);
+  assert.equal(summarizeSitemapCapacity({ productPaths: 0, collectionPaths: 0 }).staticPaths, 6);
 });
 
 test("the dynamic bound is the per-document limit less the static paths", () => {
   // The bound is derived, so this pins the reviewed value the derivation currently produces: a
   // fifth static path must cost a dynamic slot rather than quietly widen the document past 50,000.
-  assert.equal(MAX_DYNAMIC_SITEMAP_PATHS, 49_996);
+  assert.equal(MAX_DYNAMIC_SITEMAP_PATHS, 49_994);
   assert.equal(MAX_DYNAMIC_SITEMAP_PATHS + STATIC_CANONICAL_PATHS.length, 50_000);
 });
 
@@ -61,8 +64,8 @@ test("an empty catalog reports the whole dynamic budget as headroom", () => {
     productPaths: 0,
     collectionPaths: 0,
     dynamicPaths: 0,
-    staticPaths: 4,
-    totalPaths: 4,
+    staticPaths: 6,
+    totalPaths: 6,
     dynamicBudget: MAX_DYNAMIC_SITEMAP_PATHS,
     remainingDynamicHeadroom: MAX_DYNAMIC_SITEMAP_PATHS,
     utilizationPercent: 0,

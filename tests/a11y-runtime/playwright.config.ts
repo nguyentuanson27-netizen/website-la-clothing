@@ -23,6 +23,7 @@ export default defineConfig({
     "commerce-events.spec.ts",
     "discovery.spec.ts",
     "editorial.spec.ts",
+    "evergreen-pages.spec.ts",
     "facebook-pixel.spec.ts",
     "facebook-pixel-disabled.spec.ts",
     "flash-sale-freshness.spec.ts",
