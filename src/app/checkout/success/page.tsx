@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { readCanonicalPurchaseSnapshotSafely } from "@/commerce/canonical-purchase-snapshot";
+import { buildMetaPurchasePixelParameters } from "@/commerce/meta-pixel-parameters";
 import { readMetaPurchaseSnapshot } from "@/commerce/meta-purchase-snapshot";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
@@ -78,17 +79,7 @@ export default async function CheckoutSuccessPage({
           name="Purchase"
           eventId={orderCode}
           once
-          parameters={{
-            content_ids: purchase.contents.map((content) => content.id),
-            content_type: "product",
-            contents: purchase.contents.map((content) => ({
-              id: content.id,
-              quantity: content.quantity,
-              item_price: content.itemPrice,
-            })),
-            currency: "VND",
-            value: purchase.valueVnd,
-          }}
+          parameters={buildMetaPurchasePixelParameters(purchase)}
         />
       ) : null}
 

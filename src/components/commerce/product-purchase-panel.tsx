@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
+import { buildMetaAddToCartPixelParameters } from "@/commerce/meta-pixel-parameters";
 import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
@@ -126,17 +127,14 @@ export function ProductPurchasePanel({
   ) {
     if (!result.ok) return;
 
-    trackFacebookPixelEvent("AddToCart", {
-      // Existing direct-Meta content identity is unchanged; only the value moves from the stale
-      // rendered price to the price the server committed.
-      content_ids: [slug],
-      content_name: productName,
-      content_type: "product",
-      currency: "VND",
-      ...(result.committedUnitPriceVnd === undefined
-        ? {}
-        : { value: result.committedUnitPriceVnd }),
-    });
+    trackFacebookPixelEvent(
+      "AddToCart",
+      buildMetaAddToCartPixelParameters({
+        slug,
+        productName,
+        committedUnitPriceVnd: result.committedUnitPriceVnd,
+      }),
+    );
 
     const committed = result.analyticsItem;
     if (!commerceTrackingEnabled || committed === undefined) return;
