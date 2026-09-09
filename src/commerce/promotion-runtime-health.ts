@@ -230,8 +230,6 @@ export async function evaluateCampaignRuntimeHealth({
     endsAt: campaign.endsAt,
   };
 
-  // Prisma guarantees a boolean here in production. The explicit `=== false` keeps structural test
-  // doubles that predate this selected field from accidentally becoming a different behavior source.
   if (campaign.isEnabled === false || !isActiveAt(applicable, now)) return null;
 
   const directVariantIds = campaign.targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
