@@ -110,8 +110,9 @@ Nếu LA Clothing giao sai hoặc lỗi thuộc shop / nhà sản xuất:
 
 ## Refund
 - Thời gian hoàn tiền dự kiến trên website: **7–10 ngày làm việc** kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền.
-- **Merchant Center operational mapping — owner-approved 2026-09-09:** dùng giá trị số **`10`** cho field refund processing time như upper-bound numeric mapping của policy hiện tại. Việc map này **không thay đổi** public wording `7–10 ngày làm việc` trên website.
-- Nếu Merchant Center UI tại thời điểm cấu hình đưa ra semantics khác materially so với một numeric processing-time field, phải ghi nhận UI thực tế trước khi save; không tự sửa public policy để fit vendor UI.
+- **Merchant Center mapping:** chưa khóa thành một số ngày calendar cố định. Owner giữ nguyên policy `7–10 ngày làm việc`; khi Merchant Center account được kết nối, phải đọc chính xác semantics/đơn vị của field hiện tại rồi chọn representation không làm ngắn hơn hoặc sai nghĩa policy website.
+- Không được tự coi `10` calendar days là owner-approved chỉ vì đó là upper bound của `7–10 working days`.
+- Không tự sửa public policy để fit vendor UI.
 
 **B1 status:** `RESOLVED`
 
@@ -454,7 +455,7 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 
 | Gate / Unit | Status | Decision / blocker |
 |---|---|---|
-| B1 Returns | ✅ RESOLVED | 15 ngày; return in-store + by mail; mail label/shipping customer responsibility; restocking 0; đổi mẫu/size/màu 50k + 2-way ship nếu customer-initiated; shop/manufacturer fault thì LA Clothing chịu ship; refund website 7–10 working days, Merchant numeric mapping 10; no separate excluded categories |
+| B1 Returns | ✅ RESOLVED | 15 ngày; return in-store + by mail; mail label/shipping customer responsibility; restocking 0; đổi mẫu/size/màu 50k + 2-way ship nếu customer-initiated; shop/manufacturer fault thì LA Clothing chịu ship; refund website 7–10 working days; exact Merchant vendor-field mapping waits for account UI semantics; no separate excluded categories |
 | B2 Contact / U32b | ✅ RESOLVED | Phone, email, address, hours, Fanpage approved |
 | B3 Size Guide | ✅ RESOLVED | 2 size charts, cm, circumference semantics, ±3 cm tolerance |
 | B4 Shipping | ✅ RESOLVED | Nationwide, GHN/GHTK, 1–3 days current 48-ward inner-Hanoi operational footprint, 3–15 days elsewhere, no default carrier tracking, phone confirmation optional; production shipping values owner-confirmed 30k / >1M / >=3 items |
@@ -477,7 +478,7 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 - U33 / W13
 - U36 / W19
 - O1/O2-dependent Ads/Merchant planning
-- U41 / M5 operational setup once Merchant Center account access is connected; owner-fact blockers for return methods/restocking/refund numeric mapping/inner-Hanoi geography are resolved.
+- U41 / M5 operational setup once Merchant Center account access is connected; owner-fact blockers for return methods/restocking/inner-Hanoi geography are resolved, while the refund vendor-field representation is intentionally deferred until the actual account UI semantics can be observed.
 
 ## Still blocked / deferred
 - U35 — permanent domain not chosen.
