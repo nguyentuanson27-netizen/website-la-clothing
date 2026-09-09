@@ -40,11 +40,15 @@ To immediately freeze all promotion publishing and prevent any new or modified p
    ```bash
    LA_PROMOTION_ACTIVATION_ENABLED=false
    ```
-2. From `deploy/vps`, reload or restart the application container:
+2. From `deploy/vps`, **recreate** the application container so Compose reloads `.env.production` into the container environment. A plain `docker compose restart app` is not sufficient after environment changes because it restarts the existing container with its existing environment:
    ```bash
-   docker compose restart app
+   docker compose up -d --no-deps --force-recreate app
    ```
-3. **Verified Effect:**
+3. Verify the recreated container received the disabled gate value before relying on the kill switch:
+   ```bash
+   docker compose exec app node -e 'if (process.env.LA_PROMOTION_ACTIVATION_ENABLED !== "false") process.exit(1)'
+   ```
+4. **Verified Effect:**
    - Any attempt to publish or update scheduled campaigns is immediately blocked with `ACTIVATION_DISABLED`.
    - Emits structured telemetry:
      ```json
