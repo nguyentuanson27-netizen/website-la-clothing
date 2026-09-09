@@ -370,7 +370,7 @@ Merchant:
 - [x] Composite Merchant remains deferred.
 - [ ] #153 300s success TTL is maximum normal TTL; effective expiry is `min(300s, nearest relevant known promotion transition)` or equivalent tested invalidation.
 - [ ] Success-cache entry stores the durable promotion-pricing revision it was built under.
-- [ ] Each cache-hit decision linearizes at one bounded cheap current-revision read. Read after promotion commit => prior-revision bytes invalid; read completed before concurrent commit => request is ordered before mutation even if response completes later.
+- [ ] Each cache-hit decision linearizes at one bounded cheap current-revision read. Read after promotion commit => prior-revision bytes invalid; read completed before concurrent commit => request is ordered before that mutation even if response completes later.
 - [ ] Current-revision read is not heavy feed regeneration and remains inside route DB budget.
 - [ ] Heavy generation captures current durable revision before work and re-reads immediately before publishing. If changed, do not publish as current; if a commit races after final read, the entry remains tagged old revision and later cache decisions observing newer revision cannot serve it.
 - [ ] Effective promotion mutation advances revision in the **same DB transaction**, so no later cache decision depends on a best-effort invalidation callback.
@@ -412,7 +412,7 @@ Activation rule:
 
 ## G3 — Definition of Done
 - [x] Focused new/regression tests. *(tests/domain/promotion-integrated-dod.test.ts)*
-- [x] Relevant DB/domain suites green. *(1,210 domain tests pass)*
+- [x] Relevant DB/domain suites green. *(exact-head CI full suite; workflow evidence is authoritative)*
 - [x] Lint green. *(eslint 0 errors)*
 - [x] Typecheck green. *(tsc 0 errors)*
 - [x] Production build green.
