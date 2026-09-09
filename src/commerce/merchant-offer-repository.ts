@@ -5,6 +5,7 @@ import {
   type MerchantCandidateProduct,
   type MerchantCandidateVariation,
   type MerchantMappingResult,
+  type MerchantMarketEnvironment,
 } from "./merchant-offer-mapper.ts";
 import { MAX_MERCHANT_CANDIDATE_VARIANTS } from "./merchant-feed-limits.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
@@ -453,19 +454,31 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{ shopId: number; origin: string; now?: Date }>): Promise<MerchantMappingResult> {
+    env = process.env,
+  }: Readonly<{
+    shopId: number;
+    origin: string;
+    now?: Date;
+    env?: MerchantMarketEnvironment;
+  }>): Promise<MerchantMappingResult> {
     const loaded = await loadCandidateProducts({ shopId, now });
-    return mapMerchantOffers({ products: loaded.products, origin });
+    return mapMerchantOffers({ products: loaded.products, origin, env });
   }
 
   async function readMerchantFeedSnapshot({
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{ shopId: number; origin: string; now?: Date }>) {
+    env = process.env,
+  }: Readonly<{
+    shopId: number;
+    origin: string;
+    now?: Date;
+    env?: MerchantMarketEnvironment;
+  }>) {
     const loaded = await loadCandidateProducts({ shopId, now });
     return Object.freeze({
-      mapping: mapMerchantOffers({ products: loaded.products, origin }),
+      mapping: mapMerchantOffers({ products: loaded.products, origin, env }),
       nextPricingTransitionAtMs: loaded.nextPricingTransitionAtMs,
     });
   }

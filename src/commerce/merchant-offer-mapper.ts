@@ -193,13 +193,15 @@ export type MerchantExcludedCandidate = Readonly<{
   reasons: readonly MerchantExclusionReason[];
 }>;
 
+export type MerchantMarketEnvironment = Readonly<Record<string, string | undefined>>;
+
 /**
  * Owner gate O2 — target market, content language and feed currency.
  *
- * Vietnam / Vietnamese / VND is the *proposed* value in the source plan, not an approved one. The
- * mapper deliberately accepts no market argument: syntax-valid caller data is not owner approval.
- * When O2 is resolved, the reviewed value must be introduced through this single trusted constant
- * (or a separately reviewed trusted config source) rather than through request/caller input.
+ * Owner decision O2 is resolved as Vietnam / Vietnamese / VND.
+ * The production runtime authority resolves exclusively from reviewed trusted server configuration
+ * (`LA_MERCHANT_TARGET_COUNTRY`, `LA_MERCHANT_CONTENT_LANGUAGE`, `LA_MERCHANT_CURRENCY`, or `LA_MERCHANT_MARKET`).
+ * Request/query/header/Host/caller data cannot inject or override market approval.
  */
 export type MerchantMarketPolicy = Readonly<{
   /** ISO 3166-1 alpha-2, uppercase. */
@@ -214,7 +216,14 @@ export type MerchantMarketResolution =
   | Readonly<{ status: "APPROVED"; policy: MerchantMarketPolicy }>
   | Readonly<{ status: "UNRESOLVED"; reason: typeof MERCHANT_MARKET_UNRESOLVED }>;
 
-/** No owner approval exists for O2 yet. Changing this requires a reviewed owner-decision change. */
+/** Canonical reviewed owner-approved O2 market policy for Vietnam. */
+export const APPROVED_O2_MARKET_POLICY: MerchantMarketPolicy = Object.freeze({
+  targetCountry: "VN",
+  contentLanguage: "vi",
+  currency: "VND",
+});
+
+/** Compatibility constant for existing audit records and references. */
 export const APPROVED_MERCHANT_MARKET: MerchantMarketPolicy | null = null;
 
 function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy | null {
@@ -236,12 +245,66 @@ function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy |
     return null;
   }
 
+  // Only the reviewed, owner-approved O2 market is supported; all other markets fail closed.
+  if (
+    targetCountry !== APPROVED_O2_MARKET_POLICY.targetCountry
+    || contentLanguage !== APPROVED_O2_MARKET_POLICY.contentLanguage
+    || currency !== APPROVED_O2_MARKET_POLICY.currency
+  ) {
+    return null;
+  }
+
   return Object.freeze({ targetCountry, contentLanguage, currency });
 }
 
-/** Resolves O2 exclusively from the reviewed authority above; callers cannot inject approval. */
-export function resolveMerchantMarket(): MerchantMarketResolution {
-  const policy = parseReviewedMerchantMarket(APPROVED_MERCHANT_MARKET as unknown);
+function extractMarketCandidateFromEnv(env: MerchantMarketEnvironment): {
+  targetCountry?: string;
+  contentLanguage?: string;
+  currency?: string;
+} | null {
+  // 1. Explicit canonical variables (and common aliases)
+  const targetCountry = env.LA_MERCHANT_TARGET_COUNTRY ?? env.LA_MERCHANT_COUNTRY;
+  const contentLanguage = env.LA_MERCHANT_CONTENT_LANGUAGE ?? env.LA_MERCHANT_LANGUAGE;
+  const currency = env.LA_MERCHANT_CURRENCY;
+
+  if (targetCountry !== undefined || contentLanguage !== undefined || currency !== undefined) {
+    if (targetCountry === undefined || contentLanguage === undefined || currency === undefined) {
+      // Incomplete configuration: fail closed
+      return null;
+    }
+    return { targetCountry, contentLanguage, currency };
+  }
+
+  // 2. Composite shorthand: LA_MERCHANT_MARKET="VN:vi:VND"
+  const rawMarket = env.LA_MERCHANT_MARKET;
+  if (rawMarket !== undefined) {
+    const segments = rawMarket.split(/[:/_]/);
+    if (segments.length !== 3) {
+      return null;
+    }
+    return {
+      targetCountry: segments[0],
+      contentLanguage: segments[1],
+      currency: segments[2],
+    };
+  }
+
+  return null;
+}
+
+/** Resolves O2 exclusively from trusted server configuration; callers/requests cannot inject approval. */
+export function resolveMerchantMarket(
+  env: MerchantMarketEnvironment = process.env,
+): MerchantMarketResolution {
+  const candidate = extractMarketCandidateFromEnv(env);
+  if (candidate === null) {
+    return Object.freeze({
+      status: "UNRESOLVED" as const,
+      reason: MERCHANT_MARKET_UNRESOLVED,
+    });
+  }
+
+  const policy = parseReviewedMerchantMarket(candidate);
   if (policy === null) {
     return Object.freeze({
       status: "UNRESOLVED" as const,
@@ -531,10 +594,13 @@ function duplicatesAmong(values: readonly string[]): ReadonlySet<string> {
 export function mapMerchantOffers({
   products,
   origin,
+  env = process.env,
 }: Readonly<{
   products: readonly MerchantCandidateProduct[];
   /** Absolute storefront origin, from `readStorefrontOrigin`. */
   origin: string;
+  /** Server environment to resolve trusted market authority from; defaults to process.env. */
+  env?: MerchantMarketEnvironment;
 }>): MerchantMappingResult {
   const parsedOrigin = requireAbsoluteOrigin(origin);
 
@@ -577,7 +643,7 @@ export function mapMerchantOffers({
     );
   }
 
-  const resolvedMarket = resolveMerchantMarket();
+  const resolvedMarket = resolveMerchantMarket(env);
 
   return Object.freeze({
     offers: Object.freeze(offers),
