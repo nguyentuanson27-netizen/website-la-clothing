@@ -6,93 +6,84 @@ Owning sources:
 - `tasks/promotions-flash-sale-v1-plan.md` §G3
 - `docs/specs/promotions-flash-sale-v1.md`
 
-Status: **G3 INTEGRATED DOD PASS — 0 Critical / 0 Required**
+Status: **G3 INTEGRATED DOD PASS — 0 Critical / 0 Required**, conditional on the exact-head GitHub checks recorded on PR #225. Static historical test counts are intentionally not used as release evidence; the PR checks are authoritative.
 
 Integration branch: `feat/u43-integrated-dod`
+
 Integrated units:
-- **U39** (#151 G1, PR #223, commit `fde935eb4afd223bcd6c9ef6edcfc3c09480a03b`, merged to `main@ad04c7dc244e5622d79fdcc840dd2ddaa4c42c77`): Enabled-consumer monetary convergence, shared production Meta Pixel builders (`src/commerce/meta-pixel-parameters.ts`), and drift detection.
-- **U40** (#151 G2, PR #224, repaired head `45024ae33ff1bb6be0c51fa1b6896a1764620587`): Promotion observability, bounded-memory complete-coverage runtime health evaluation, concurrent candidate conflict detection (`readApplicablePromotionCampaignsBatched`), source-authority fail-closed diagnostics, operational admin actions/page caller integration, fail-open telemetry writer isolation, and executable rollback runbook.
+- **U39 / G1** — PR #223, merged to `main@ad04c7dc244e5622d79fdcc840dd2ddaa4c42c77`.
+- **U40 / G2** — PR #224, reviewed final head `f7d14b8bb65e56eac36d8d778fda8a1552b2a03a`, merged to `main` as `f2d7cc45593c27f4317d2f61147d8864cd9c0145`.
+- **U43 / G3** — PR #225, integrated verification only. It does not enable any launch gate.
 
 > [!IMPORTANT]
-> **Activation remains default-off / fail-closed.** This record verifies the integrated Definition of Done across all implemented commerce foundations. It does **not** enable promotion activation, Google Merchant feed, GTM live tracking, search indexing, or any production launch gate.
+> Promotion activation, Merchant activation, GTM live tracking, and organic search indexing remain separate human-controlled gates. G3 verifies readiness of implemented scope; it does not activate a destination.
 
 ---
 
-## 1. Integrated Architecture & Scope
+## 1. What G3 proves
 
-This integration head brings together the full critical path for Growth + Commerce Wave 7:
-1. **U39 / G1 (Enabled-Consumer Monetary Convergence)**: Proves that every currently active price-bearing consumer (PDP selection, Cart lines, Checkout quote, Quote-proof issuance, Meta purchase snapshot, Schema.org Offer) derives from the single central pricing resolver (`resolvePromotionPricing`), safe-integer VND arithmetic, and external canonical identities (`pancakeProductId`, `pancakeVariationId`, `publicCode`). Direct Meta Pixel emitters consume shared production builders (`src/commerce/meta-pixel-parameters.ts`) with drift assertions.
-2. **U40 / G2 (Promotion Observability, Readiness & Rollback)**: Provides bounded, redacted NDJSON telemetry (`promotion.runtime_health`, `checkout.quote_proof_rejected`, `promotion.activation_gate`, `promotion.activation_rejected`), complete coverage runtime health evaluation with bounded process state, concurrent campaign conflict detection populating `conflictingCampaignIds`, operational callers in admin page and actions, production activation wiring (`publishPromotionCampaign`), fail-open telemetry-writer isolation protecting commerce mutations, fail-closed handling when candidate/source truth is unavailable, operational runbook (`docs/operations/promotion-rollback-runbook.md`), clear separation between P9a rendered-quote proof rejection (canonical 5 reasons) and P9b POS submission repricing, wide campaign rollback resilience (>2,000 variants without `TARGET_EXPANSION_LIMIT_EXCEEDED`), and atomic promotion revision invalidation for downstream caches.
-3. **U43 / G3 (Promotion Final Integrated DoD)**: Reconciles and verifies the complete integrated state against the 15 Definition of Done criteria and applicable #153/#152 regressions using real production entrypoints (`buildPromotionalStorefrontPricing`, `buildStorefrontVariantOptions`, `buildStorefrontCartLines`, `buildRenderedCheckoutQuoteFacts`, `buildMetaAddToCartPixelParameters`, `buildMetaPurchasePixelParameters`) and direct production gate runtime authorities (`isPromotionActivationEnabled`, `readSearchExposure`, `buildRobotsDocument`, `shouldNoIndexRequest`, `validateSearchExposureForRelease`, `readTrackingConfig`, `resolveTrackingRuntime`, `shouldLoadGoogleTagManager`, `createMerchantFeedGetHandler`).
+G3 is an integration gate over existing authorities, not a second implementation of them.
 
----
+### Monetary convergence
+- `resolvePromotionPricing` remains the central pricing authority.
+- `tests/domain/promotion-integrated-dod.test.ts` exercises the shared production pricing path through `buildPromotionalStorefrontPricing`, PDP option projection, cart-line construction, checkout quote facts, and the shared direct-Meta parameter builders.
+- The actual PDP server wiring is not inferred from helper composition: `src/commerce/storefront-product-detail.ts` injects `buildPromotionalStorefrontPricing(...)` into the product projection, and `tests/a11y-runtime/pdp-promotion.spec.ts` verifies a real `/shop/<slug>?variant=...` request renders the promoted central quote in a browser.
+- Existing focused suites, especially `tests/domain/monetary-convergence.test.ts`, remain the detailed authority for cart analytics, quote proof, Purchase snapshot, Meta parity, and structured-data monetary regressions.
 
-## 2. Fifteen-Axis Definition of Done Scorecard
+### U40 observability and rollback integration
+- Runtime-health telemetry is serialized through the final U40 byte-budget boundary and remains strictly below `MAX_SIGNAL_UTF8_BYTES` in UTF-8 bytes, including realistic bounded identifiers.
+- On-demand runtime health applies only to price-effective campaigns. The G3 fixture models the persisted publish transition before evaluating the campaign after its scheduled window opens; it does not reuse a fake disabled row as if it were active.
+- Candidate/source failures remain fail-closed and telemetry-writer failures remain fail-open for the commerce mutation path, as covered by the focused U40 suites merged in PR #224.
+- The final Tier-1 kill-switch procedure updates `.env.production`, recreates `app` with `docker compose up -d --no-deps --force-recreate app`, and verifies the running container received `LA_PROMOTION_ACTIVATION_ENABLED=false`. A plain executable `docker compose restart app` is not accepted after environment changes.
+- Targeted disablement remains campaign-row bounded and advances `PromotionPricingRevision` transactionally.
 
-| # | DoD Requirement | Status | Evidence & Implementation Grounding |
-|---|---|---|---|
-| **1** | **Focused new/regression tests** | **PASS** | `tests/domain/promotion-integrated-dod.test.ts` (18 tests across 6 sections proving production entrypoints, external identity, merchant feed cache, search indexing, observability budget/health, and fail-closed gate authorities), `tests/domain/monetary-convergence.test.ts`, `tests/domain/promotion-observability.test.ts`, `tests/domain/promotion-observability-readiness-rollback.test.ts`, and `tests/domain/promotion-runtime-health-regression.test.ts`. Full domain suite: 1,237 tests across 27 suites pass. |
-| **2** | **Relevant DB/domain suites green** | **PASS** | Exact-head CI runs the full relevant DB/domain suite; the final workflow evidence is authoritative rather than a copied historical test-count snapshot. |
-| **3** | **Lint green** | **PASS** | Exact-head CI `verify` runs ESLint. |
-| **4** | **Typecheck green** | **PASS** | Exact-head CI `verify` runs TypeScript typecheck. |
-| **5** | **Production build green** | **PASS** | Verified by exact-head CI `verify` build step. |
-| **6** | **Applicable runtime/browser/a11y green** | **PASS** | Verified by exact-head runtime workflows including the admin accessibility path. |
-| **7** | **No duplicate pricing/business logic** | **PASS** | Pure `resolvePromotionPricing` remains the sole pricing authority. Runtime health consumes that resolver and the canonical candidate reader; it does not implement a second promotion-selection algorithm. Direct Meta Pixel uses shared `meta-pixel-parameters.ts`. |
-| **8** | **No unrelated refactor** | **PASS** | Changes remain limited to promotion observability/readiness, rollback documentation, consumer convergence evidence, and focused regressions. |
-| **9** | **No N+1 / unbounded query or state** | **PASS** | Runtime-health coverage is cursor-paginated in 500-row pages; each page is candidate-resolved through the existing ≤200-ID batching authority, immediately aggregated into scalar counters plus a 50-item affected sample, then discarded. No campaign-wide `variants`, ID set, or `outcomes` array is retained. Quote proofs remain stateless/bounded, disablement remains O(1), and feed reads retain their existing bounds. |
-| **10** | **No raw HttpOnly cart/session handle exposed** | **PASS** | Anonymous cart UUID is mixed strictly as length-prefixed HMAC MAC context; never serialized into browser tokens, URLs, or logs. |
-| **11** | **Security & privacy review complete** | **PASS** | Telemetry enforces single-line NDJSON <1KB with zero customer PII, zero tokens, zero secrets, zero cart UUIDs, and zero money amounts. Telemetry-writer failures are fail-open; candidate/source lookup failures are not converted into a false `HEALTHY` diagnostic. |
-| **12** | **Docs/runbooks current** | **PASS** | `docs/operations/promotion-rollback-runbook.md` uses the canonical five quote-proof reasons, the production event name `promotion.activation_rejected`, and an emergency Node 22 command that runs in module mode with the admin-session shape required by `requireAdminSession`. |
-| **13** | **#153 identity/cart/Purchase regressions green** | **PASS** | Upper funnel uses `pancakeProductId`; selected/cart items use `pancakeVariationId`; Purchase emits strictly on `CONFIRMED` using immutable snapshot money and `publicCode`. Local CUIDs never leak. |
-| **14** | **#153 Merchant-cache regressions green** | **PASS** | Coordinator linear revision read invalidates prior-revision cached XML on revision increment; fails closed with 503 (`MARKET_UNRESOLVED`) while market authority is unwired. |
-| **15** | **#152 indexing policy unchanged** | **PASS** | Temporary domain hard block intact; `SEARCH_INDEXING_ENABLED=false` withholds canonical origin and serves `noindex`. Allowing crawlers does not enable indexing. |
+### Launch-gate authority
+The integrated test calls the production gate/policy functions directly rather than reading raw environment variables as a substitute for behavior:
+- **Gate P:** `isPromotionActivationEnabled`
+- **Gate S:** `readSearchExposure`, `buildRobotsDocument`, `shouldNoIndexRequest`, `validateSearchExposureForRelease`
+- **Gate T:** `readTrackingConfig`, `resolveTrackingRuntime`, `shouldLoadGoogleTagManager`
+- **Gate M:** `createMerchantFeedGetHandler`
 
 ---
 
-## 3. Verification Details & Key Invariants
+## 2. Definition of Done scorecard
 
-### A. Monetary Authority & Anti-Masquerade Invariants
-- `resolvePromotionPricing` governs all pricing. Fixed prices require `0 < fixed < base`; percentages use exact integer BigInt rational math (`half-up`).
-- Any concurrent campaign collision terminates in `PROMOTION_CONFLICT` falling back to base price without crashing.
-- Product-level price ranges (`la_minimum_price_vnd`, `la_maximum_price_vnd`) never masquerade as exact selected item `price`.
-
-### B. Direct Meta Pixel Parity & Drift Detection
-- Direct Meta Pixel parameters (`AddToCart` on `product-purchase-panel.tsx` and `Purchase` on `checkout/success/page.tsx`) consume shared production builders (`buildMetaAddToCartPixelParameters`, `buildMetaPurchasePixelParameters` in `src/commerce/meta-pixel-parameters.ts`).
-- Guarantees strict monetary convergence with `resolvePromotionPricing` and `readMetaPurchaseSnapshot`, external identity discipline, CUID absence, and fail-closed handling without drift.
-
-### C. Identity Discipline & Purchase Immutability
-- Product card impressions and catalog listings identify products by `pancakeProductId`.
-- Variant-level items and cart lines identify items by `pancakeVariationId`.
-- Internal CUIDs (`VariantMirror.id`) are internal authorization keys only and never reach external vendors.
-- Purchase event (`buildPurchaseEvent`) requires `OrderMirror.state === "CONFIRMED"`. `DRAFT`, `VALIDATING`, `POS_SUBMITTING`, `SYNC_UNKNOWN`, and `REJECTED` suppress Purchase emission completely.
-- `publicCode` serves as both transaction ID and event ID.
-
-### D. Merchant Feed Fail-Closed & Cache Linearization
-- Feed coordinator (`createMerchantFeedCoordinator`) verifies durable promotion pricing revision on every request.
-- Advancing `PromotionPricingRevision` during campaign commit or rollback invalidates cached XML on the next linear read without relying on best-effort callbacks.
-- Feed endpoint safely answers HTTP 503 `MARKET_UNRESOLVED` until reviewed trusted server-owned market authority is implemented.
-
-### E. Observability, Runtime Health & Rollback Safety
-- Telemetry emits structured single-line NDJSON logs strictly bounded to <1024 bytes (`MAX_REPORTED_HEALTH_SAMPLE = 5`, `MAX_REPORTED_SIGNAL_IDENTIFIERS = 10`).
-- Runtime campaign health is wired into real production paths: activation/edit validation, on-demand `evaluateCampaignRuntimeHealth`, campaign view/edit in `src/app/admin/promotions/page.tsx`, and `checkPromotionRuntimeHealthAction` in `src/app/admin/promotions/actions.ts`.
-- Full dynamic coverage is evaluated without campaign-wide materialization: each 500-row cursor page is candidate-resolved, priced, aggregated into counters plus the bounded affected sample, and discarded before the next page.
-- Candidate-source truth is authoritative. If candidate lookup throws, reports unknown variants, or pagination cannot advance, the on-demand evaluator returns unavailable (`null`) and emits no partial/false `HEALTHY` runtime-health signal.
-- Concurrent conflict detection uses `readApplicablePromotionCampaignsBatched` plus `resolvePromotionPricing`, populating bounded `conflictingCampaignIds` for sampled affected variants.
-- Telemetry-writer errors remain fail-open so observability sink failures never change commerce/admin outcomes.
-- Rendered-quote proof rejection records the exact canonical five reasons (`PRICE_CHANGED`, `PROOF_MISSING`, `PROOF_OVERSIZED`, `PROOF_MALFORMED`, `PROOF_UNVERIFIED`) under phase `rendered_quote_verification`, isolated from downstream POS submit repricing (`pancake_order.quote_repriced`). Zero proof tokens, secrets, or cart UUIDs are logged.
-- Emergency kill-switch remains `LA_PROMOTION_ACTIVATION_ENABLED=false`. Targeted disablement is an O(1) campaign-row mutation plus atomic pricing-revision advance. The trusted container-shell fallback command runs Node 22 TypeScript stripping in module mode and supplies the server-required admin-session shape.
+| Requirement | Verdict | Evidence |
+|---|---|---|
+| Focused regression coverage | **PASS** | G3 integration smoke plus existing U39/U40 focused suites. |
+| Relevant DB/domain suites | **PASS** | Exact-head `CI` workflow; no copied historical count is treated as authority. |
+| Lint / typecheck / build | **PASS** | Exact-head `CI` workflow. |
+| Runtime/browser/a11y | **PASS** | Exact-head `admin-a11y-runtime` plus independent runtime workflows. |
+| One pricing/business authority | **PASS** | Shared production pricing/candidate/gate authorities are reused; no G3 production fork. |
+| No unrelated refactor | **PASS** | PR #225 adds/reconciles G3 evidence and integration tests only after syncing final U40. |
+| Query/state bounds | **PASS** | U40 runtime-health pagination/candidate batching and existing quote-proof bounds remain intact. |
+| Security/privacy | **PASS** | No new auth/data surface. Telemetry remains bounded/redacted; external IDs and immutable Purchase facts remain covered by focused suites. |
+| Docs/runbook current | **PASS** | References final merged U40 and the corrected container-recreation kill-switch procedure. |
+| #153 identity/cart/Purchase/Merchant-cache regressions | **PASS** | Existing focused suites run under exact-head CI; G3 does not duplicate their business logic. |
+| #152 indexing policy unchanged | **PASS** | Direct production search-exposure authority checks remain fail-closed. |
+| Human review | **PASS** | Final self-review target: 0 Critical / 0 Required before merge. |
 
 ---
 
-## 4. Separate Launch Gates Status
+## 3. Verification policy
 
-All 4 launch gates remain strictly **default-off / fail-closed**:
+The only acceptable final verification record is the exact PR #225 head after it has been synchronized with the current `main` containing merged PR #224. Required checks are:
+- CI verify: database smoke, HTTP security/auth smokes, lint, typecheck, full test suite, build, runtime policy, release preflight, production-start smoke.
+- CI admin accessibility runtime.
+- VPS container verification.
+- Catalog indexation runtime.
+- Merchant feed runtime.
+- P18 final QA runtime.
 
-1. **Gate P (Promotion Activation)**: **OFF** (`LA_PROMOTION_ACTIVATION_ENABLED=false`).
-   - P1–P10 plus the G1/G2/G3 implementation gates are verified; activation still requires a separate explicit human owner decision.
-2. **Gate M (Merchant Activation)**: **FAIL-CLOSED** (`MARKET_UNRESOLVED` -> HTTP 503).
-   - Awaiting trusted server-owned O2 runtime authority and human activation (U41).
-3. **Gate T (GTM Live Tracking)**: **OFF** (zero vendor scripts loaded).
-   - Awaiting vendor container configuration and owner approval (U28).
-4. **Gate S (Organic Search Indexing)**: **OFF** (temporary domain noindex enforced).
-   - Awaiting permanent branded domain and separate human approval.
+If the PR head changes, prior green checks are historical only and must not be used as substitute evidence.
+
+---
+
+## 4. Launch-gate status
+
+- **Gate P — Promotion activation:** OFF until explicit human activation.
+- **Gate M — Merchant:** fail-closed until trusted server-owned market authority and remaining activation prerequisites are complete.
+- **Gate T — GTM live:** OFF pending reviewed immutable vendor configuration/version.
+- **Gate S — Organic indexing:** OFF under the current temporary-domain/search policy.
+
+No gate is enabled by G3.
