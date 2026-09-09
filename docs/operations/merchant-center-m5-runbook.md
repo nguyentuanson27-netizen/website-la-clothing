@@ -54,11 +54,11 @@ Approved delivery facts:
 - these are estimates, not guaranteed SLAs
 - no carrier tracking link/number is provided by default
 
-The owner-approved geography for “inner Hanoi” is now recorded in the owner-facts source as the current 48-ward operational footprint derived from the former 12 inner-city districts after Resolution 1656/NQ-UBTVQH15. It deliberately excludes Chương Mỹ, Sơn Tây and Tùng Thiện from the 1–3 day tier.
+The owner-approved geography for “inner Hanoi” is recorded in the owner-facts source as the current 48-ward operational footprint derived from the former 12 inner-city districts after Resolution 1656/NQ-UBTVQH15. It deliberately excludes Chương Mỹ, Sơn Tây and Tùng Thiện from the 1–3 day tier. The public `/shipping` page names the two scopes explicitly; the detailed ward list remains an operational mapping rather than page copy.
 
 ### Return / exchange authority
 
-Owner-approved current policy now states:
+Owner-approved current policy states:
 
 - return/exchange window: 15 days from customer receipt
 - returned product must be new/unused, with tags and without damage/odor/use signs, and be the LA Clothing product purchased
@@ -68,12 +68,13 @@ Owner-approved current policy now states:
 - customer-initiated exchange fee: `50,000 VND / product`
 - customer-initiated case: customer pays two-way shipping
 - shop/manufacturer fault: LA Clothing pays reasonable return/exchange shipping
-- Merchant restocking fee: **0 VND / no cost**
+- restocking fee: **0 VND / no cost**
 - the `50,000 VND` exchange fee is not a restocking fee
 - no separate excluded-category list
 - website refund wording: 7–10 **working days** after LA Clothing receives, inspects and confirms eligibility
-- owner-approved Merchant numeric refund-processing mapping: **10**
 - COD refunds may use bank transfer or another method agreed with the customer
+
+PR #228 also aligns the public `/returns` page with the newly approved return methods, customer label responsibility and zero restocking fee before any Merchant return policy is configured.
 
 ## 2. Current Google Merchant Center requirements checked
 
@@ -97,7 +98,7 @@ Important current requirements / constraints:
 3. Shipping information submitted to Merchant Center should match the website as closely as possible; if exact cost rules cannot be represented, Google permits a slight overestimate rather than understating checkout shipping.
 4. Merchant Center return-policy setup requires explicit choices for return acceptance, exchanges, product condition, return window, return method, currency, restocking fee, and refund processing time.
 5. Google Ads linking requires the appropriate account ID/access and, depending on ownership, admin approval.
-6. Current Google region documentation lists Vietnam for regional availability/pricing, but **does not list Vietnam as supporting shipping cost/transit-time custom areas**. The account-level shipping-speed-by-postal-code feature is currently documented only for Australia, Brazil, Canada, France, Germany, India, New Zealand, the United Kingdom and the United States.
+6. Current Google region documentation lists Vietnam for regional availability/pricing, but **does not list Vietnam as supporting shipping cost/transit-time custom areas**. Do not infer support from the generic “destination by zone” UI documentation when the country-availability table leaves Vietnam blank for shipping cost/transit-time custom areas.
 
 ## 3. Preflight resolution state
 
@@ -119,14 +120,17 @@ Owner decision 2026-09-09:
 
 The existing `50,000 VND / product` customer-initiated exchange fee remains a separate exchange-policy fact.
 
-### RESOLVED M5-R3 — refund numeric mapping
+### DEFERRED M5-R3 — exact Merchant refund-processing field representation
 
-Owner decision 2026-09-09:
+Owner keeps the public policy at `7–10 working days` after receipt/inspection/eligibility confirmation.
 
-- website remains `7–10 working days` after receipt/inspection/eligibility confirmation;
-- Merchant Center numeric refund-processing field uses **10** as the approved upper-bound numeric mapping.
+Do **not** treat `10 calendar days` as owner-approved merely because 10 is the upper bound of the working-day range. When Merchant Center access is connected:
 
-If the actual account UI presents materially different semantics from a generic numeric processing-time field, record the UI wording before saving; do not silently rewrite the public policy.
+1. inspect the current field wording, units and allowed range;
+2. choose a representation that does not shorten or contradict the website policy;
+3. if the vendor field cannot represent the policy truthfully, stop and surface the mismatch rather than changing the public policy silently.
+
+This is an account/UI observation dependency, not a missing public-policy fact.
 
 ### RESOLVED M5-S1 — inner-Hanoi policy geography
 
@@ -135,7 +139,7 @@ Owner decision 2026-09-09:
 - 1–3 day tier = inner Hanoi;
 - operational current mapping is the 48 wards recorded in `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, preserving continuity with the former 12 inner-city districts under the 2025 administrative reorganization.
 
-However, **this does not imply Merchant Center can configure a Vietnam shipping-speed custom region**. Current Google docs do not expose that capability for Vietnam.
+However, **this does not imply Merchant Center can configure a Vietnam shipping-speed custom region**. Current Google country-availability docs do not expose that capability for Vietnam.
 
 Merchant execution rule:
 
@@ -172,6 +176,7 @@ No connected Merchant Center account/tool is currently available to observe or m
 - Merchant Automations
 - Diagnostics
 - Ads linkage
+- exact current refund-processing-field semantics
 
 Do not claim any of these are configured until observed in the actual account.
 
@@ -213,7 +218,7 @@ Do not create a dependency on GTM merely to verify the site; T8/O4 remains indep
 4. Delivery-time configuration:
    - first inspect the current account UI;
    - do not assume custom-region speed is supported for Vietnam;
-   - if no truthful regional split is available, use the approved conservative nationwide target `3–15 days` rather than inventing unsupported regions;
+   - if no truthful regional split is available, use the conservative nationwide target `3–15 days` rather than inventing unsupported regions;
    - if handling/transit split is mandatory, record the actual UI semantics and operational handling facts before final save.
 5. Shipping cost:
    - `30,000 VND` standard;
@@ -234,7 +239,7 @@ Do not create a dependency on GTM merely to verify the site; T8/O4 remains indep
 8. By-mail return label: **customer responsibility**.
 9. Currency: VND.
 10. Restocking fee: **No cost / 0 VND**.
-11. Refund processing time: **10** using the owner-approved numeric mapping; keep website wording at `7–10 working days`.
+11. Refund processing time: inspect the account's current field semantics and map the public `7–10 working days` policy without shortening or changing its meaning; do not assume `10 calendar days`.
 12. Save and wait for Merchant verification status; record `Verified`, `Pending`, or `Rejected` truthfully.
 
 ### E. Product data source / Scheduled Fetch
