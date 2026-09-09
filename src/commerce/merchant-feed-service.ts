@@ -13,7 +13,6 @@ import {
   serializeMerchantFeed,
 } from "./merchant-feed-serializer.ts";
 import { createMerchantOfferRepository, MerchantOfferReadError } from "./merchant-offer-repository.ts";
-import type { MerchantMarketEnvironment } from "./merchant-offer-mapper.ts";
 import { readStorefrontOrigin } from "./storefront-origin.ts";
 
 const MERCHANT_FEED_SCHEMA_VERSION = "rss-v1";
@@ -72,14 +71,12 @@ function classifyGenerationFailure(error: unknown): MerchantFeedFailureClass {
   return "GENERATION_FAILURE";
 }
 
-export async function getMerchantFeed(
-  env: MerchantMarketEnvironment = process.env,
-): Promise<MerchantFeedCoordinatorResult> {
+export async function getMerchantFeed(): Promise<MerchantFeedCoordinatorResult> {
   let shopId: number;
   let origin: string;
   try {
-    shopId = readPancakeShopId(env);
-    origin = readStorefrontOrigin(env);
+    shopId = readPancakeShopId();
+    origin = readStorefrontOrigin();
   } catch {
     return Object.freeze({
       ok: false,
@@ -108,7 +105,6 @@ export async function getMerchantFeed(
         const snapshot = await createMerchantOfferRepository(prisma).readMerchantFeedSnapshot({
           shopId,
           origin,
-          env,
         });
         const mapped = snapshot.mapping;
 
