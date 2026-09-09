@@ -146,7 +146,7 @@ describe("promotion runtime-health regression guards", () => {
       "utf8",
     );
 
-    assert.match(runbook, /docker compose --profile ops run --rm --build ops node --experimental-strip-types --input-type=module -e/);
+    assert.match(runbook, /docker compose --profile ops run --rm ops node --experimental-strip-types --input-type=module -e/);
     assert.match(runbook, /session:\s*\{\s*id:\s*"emergency-ops"\s*\}/);
     assert.doesNotMatch(runbook, /From the app container/);
   });
