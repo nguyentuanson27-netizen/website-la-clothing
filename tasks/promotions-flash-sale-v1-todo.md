@@ -370,7 +370,7 @@ Merchant:
 - [x] Composite Merchant remains deferred.
 - [ ] #153 300s success TTL is maximum normal TTL; effective expiry is `min(300s, nearest relevant known promotion transition)` or equivalent tested invalidation.
 - [ ] Success-cache entry stores the durable promotion-pricing revision it was built under.
-- [ ] Each cache-hit decision linearizes at one bounded cheap current-revision read. Read after promotion commit => prior-revision bytes invalid; read completed before concurrent commit => request is ordered before mutation even if response completes later.
+- [ ] Each cache-hit decision linearizes at one bounded cheap current-revision read. Read after promotion commit => prior-revision bytes invalid; read completed before concurrent commit => request is ordered before that mutation even if response completes later.
 - [ ] Current-revision read is not heavy feed regeneration and remains inside route DB budget.
 - [ ] Heavy generation captures current durable revision before work and re-reads immediately before publishing. If changed, do not publish as current; if a commit races after final read, the entry remains tagged old revision and later cache decisions observing newer revision cannot serve it.
 - [ ] Effective promotion mutation advances revision in the **same DB transaction**, so no later cache decision depends on a best-effort invalidation callback.
@@ -411,21 +411,21 @@ Activation rule:
 - [x] Mirrored-money audit accepted.
 
 ## G3 — Definition of Done
-- [ ] Focused new/regression tests.
-- [ ] Relevant DB/domain suites green.
-- [ ] Lint green.
-- [ ] Typecheck green.
-- [ ] Production build green.
-- [ ] Applicable runtime/browser/a11y green.
-- [ ] No duplicate pricing/business logic.
-- [ ] No unrelated refactor.
-- [ ] No N+1/unbounded query or unbounded quote-proof state.
-- [ ] No raw HttpOnly cart/session handle exposed in browser-visible proof or logs.
-- [ ] Security review complete.
-- [ ] Docs/runbooks current.
-- [ ] #153 identity/cart/Purchase/Merchant-cache regressions remain green.
-- [ ] #152 indexing policy unchanged unless separately approved.
-- [ ] Human final review: 0 Critical / 0 Required.
+- [x] Focused new/regression tests. *(tests/domain/promotion-integrated-dod.test.ts)*
+- [x] Relevant DB/domain suites green. *(exact-head CI full suite; workflow evidence is authoritative)*
+- [x] Lint green. *(eslint 0 errors)*
+- [x] Typecheck green. *(tsc 0 errors)*
+- [x] Production build green.
+- [x] Applicable runtime/browser/a11y green.
+- [x] No duplicate pricing/business logic. *(central resolver resolvePromotionPricing)*
+- [x] No unrelated refactor.
+- [x] No N+1/unbounded query or unbounded quote-proof state. *(stateless HMAC laq1)*
+- [x] No raw HttpOnly cart/session handle exposed in browser-visible proof or logs.
+- [x] Security review complete. *(<1KB NDJSON, zero PII, zero tokens, zero cart UUIDs)*
+- [x] Docs/runbooks current. *(docs/operations/promotion-rollback-runbook.md)*
+- [x] #153 identity/cart/Purchase/Merchant-cache regressions remain green.
+- [x] #152 indexing policy unchanged unless separately approved.
+- [x] Human final review: 0 Critical / 0 Required. *(docs/audits/promotion-integrated-dod-g3.md)*
 
 ## Recommended implementation sequence
 - [x] A1 P1 persistence + durable pricing revision. *(U3, PR #158)*
@@ -442,10 +442,10 @@ Activation rule:
 - [x] E2 P9a stateless rendered quote proof/reconfirmation. *(U21, PR #190 merged)*
 - [x] E3 P9b fresh-Pancake reconfirmation. *(U22, PR #191 merged)*
 - [x] F P10 final Pancake price. *(U23, PR #192 merged)*
-- [x] #153 T7 Purchase consumer. *(U39, tests/domain/monetary-convergence.test.ts)*
-- [x] G1 enabled-consumer monetary convergence. *(U39, tests/domain/monetary-convergence.test.ts)*
-- [x] G2 readiness. *(U40)*
-- [ ] G3 integrated verification.
+- [x] #153 T7 Purchase consumer. *(U24, PR #193 merged; verified U39)*
+- [x] G1 enabled-consumer monetary convergence. *(U39, PR #223)*
+- [x] G2 readiness. *(U40, PR #224)*
+- [x] G3 integrated verification. *(U43)*
 
 ## Separate launch gates
 Promotion:

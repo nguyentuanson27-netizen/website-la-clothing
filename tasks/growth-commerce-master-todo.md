@@ -153,11 +153,11 @@ price. U20/P8 was unblocked by the master storefront Checkpoint B and is now mer
 
 ## Wave 7 — convergence, readiness and final operations
 
-- [x] **U39** #151 G1 — prove monetary convergence for every currently enabled price-bearing consumer; verified in `tests/domain/monetary-convergence.test.ts`. Disabled/fail-closed future consumers (Merchant 503, GTM disabled, search exposure withheld) remain non-blocking.
-- [x] **U40** #151 G2 — bounded/redacted observability + readiness/runbook + rollback rehearsal for activation rejection, invalid/recovery/conflict/`PARTIALLY_INVALID`, `PRICE_CHANGED`/quote-proof, Merchant revision mismatch/rebuild, Pancake semantic validation and activation-gate state; no PII/secrets/raw quote proofs/cart UUIDs. Implemented in `src/operations/promotion-observability.ts`, `src/commerce/guest-checkout-submit.ts`, `docs/operations/promotion-rollback-runbook.md`, and verified via `tests/domain/promotion-observability-readiness-rollback.test.ts` and `tests/database/promotion-activation-service.test.ts`.
+- [x] **U39** #151 G1 — prove monetary convergence for every currently enabled price-bearing consumer; verified in `tests/domain/monetary-convergence.test.ts` (PR #223). Disabled/fail-closed future consumers (Merchant 503, GTM disabled, search exposure withheld) remain non-blocking.
+- [x] **U40** #151 G2 — bounded/redacted observability + readiness/runbook + rollback rehearsal for activation rejection, invalid/recovery/conflict/`PARTIALLY_INVALID`, `PRICE_CHANGED`/quote-proof, Merchant revision mismatch/rebuild, Pancake semantic validation and activation-gate state; no PII/secrets/raw quote proofs/cart UUIDs. Implemented in `src/operations/promotion-observability.ts`, `src/commerce/guest-checkout-submit.ts`, `docs/operations/promotion-rollback-runbook.md`, and verified via `tests/domain/promotion-observability-readiness-rollback.test.ts` and `tests/database/promotion-activation-service.test.ts` (PR #224).
 - [ ] **U41** #153 M5 — after Gate M preconditions, execute Merchant Center Scheduled Fetch activation, account/site/data-source/market/shipping/returns/Ads linkage and collect Diagnostics/crawler evidence without implicitly enabling search indexing.
 - [ ] **U42** #153 V1 — final marketing convergence/rollback verification after U28 + U41; code only for a focused verified launch defect.
-- [ ] **U43** #151 G3 — exact-head final integrated DoD after U39 + U40; verify **applicable #153 identity/cart/Purchase/Merchant-cache regressions for slices actually implemented** plus unchanged #152 indexing policy unless separately approved. Disabled/fail-closed future consumers are not prerequisites.
+- [x] **U43** #151 G3 — exact-head final integrated DoD after U39 + U40; verify **applicable #153 identity/cart/Purchase/Merchant-cache regressions for slices actually implemented** plus unchanged #152 indexing policy unless separately approved. Disabled/fail-closed future consumers are not prerequisites. Verified in `tests/domain/promotion-integrated-dod.test.ts` and documented in `docs/audits/promotion-integrated-dod-g3.md`.
 
 ## Conditional — not on default critical path
 
@@ -199,7 +199,7 @@ the current owner-decision status above supersedes only their old owner-blocked 
 
 - [ ] #151 P1–P10 accepted; price/catalog evidence + controlled Pancake custom-price acceptance green.
 - [x] **U39/G1** covers every currently enabled monetary consumer; disabled/fail-closed future consumers do not block.
-- [ ] **U40/G2** readiness/rollback accepted and **U43/G3** exact-head DoD green.
+- [x] **U40/G2** readiness/rollback accepted and **U43/G3** exact-head DoD green.
 - [ ] Human explicitly enables promotion activation.
 
 ## Gate T — GTM live
@@ -232,7 +232,7 @@ the current owner-decision status above supersedes only their old owner-blocked 
 ## Final combined program gate
 
 - [ ] If both GTM live and Merchant activation are part of the release, **U42/#153 V1** final marketing convergence/rollback evidence is green.
-- [ ] **U43/#151 G3** final promotion-integrated DoD is green for implemented scope.
+- [x] **U43/#151 G3** final promotion-integrated DoD is green for implemented scope.
 - [ ] Intentionally disabled destinations remain explicitly disabled rather than silently treated as complete.
 
 # Major checkpoint verification
