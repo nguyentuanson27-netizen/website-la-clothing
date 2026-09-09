@@ -198,10 +198,10 @@ export type MerchantMarketEnvironment = Readonly<Record<string, string | undefin
 /**
  * Owner gate O2 — target market, content language and feed currency.
  *
- * Owner decision O2 is resolved as Vietnam / Vietnamese / VND.
- * The production runtime authority resolves exclusively from reviewed trusted server configuration
- * (`LA_MERCHANT_TARGET_COUNTRY`, `LA_MERCHANT_CONTENT_LANGUAGE`, `LA_MERCHANT_CURRENCY`, or `LA_MERCHANT_MARKET`).
- * Request/query/header/Host/caller data cannot inject or override market approval.
+ * Owner decision O2 is resolved as Vietnam / Vietnamese / VND. Production commerce code reads this
+ * only through the zero-argument `resolveMerchantMarket()` server boundary. The parameterized
+ * `resolveMerchantMarketFromEnvironment()` exists for release validation and focused tests; request,
+ * query, header, Host and business-call arguments are not market authorities.
  */
 export type MerchantMarketPolicy = Readonly<{
   /** ISO 3166-1 alpha-2, uppercase. */
@@ -223,8 +223,15 @@ export const APPROVED_O2_MARKET_POLICY: MerchantMarketPolicy = Object.freeze({
   currency: "VND",
 });
 
-/** Compatibility constant for existing audit records and references. */
+/** Compatibility constant for historical audit imports; runtime authority is server configuration. */
 export const APPROVED_MERCHANT_MARKET: MerchantMarketPolicy | null = null;
+
+function unresolvedMerchantMarket(): MerchantMarketResolution {
+  return Object.freeze({
+    status: "UNRESOLVED" as const,
+    reason: MERCHANT_MARKET_UNRESOLVED,
+  });
+}
 
 function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy | null {
   if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return null;
@@ -245,7 +252,6 @@ function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy |
     return null;
   }
 
-  // Only the reviewed, owner-approved O2 market is supported; all other markets fail closed.
   if (
     targetCountry !== APPROVED_O2_MARKET_POLICY.targetCountry
     || contentLanguage !== APPROVED_O2_MARKET_POLICY.contentLanguage
@@ -257,62 +263,27 @@ function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy |
   return Object.freeze({ targetCountry, contentLanguage, currency });
 }
 
-function extractMarketCandidateFromEnv(env: MerchantMarketEnvironment): {
-  targetCountry?: string;
-  contentLanguage?: string;
-  currency?: string;
-} | null {
-  // 1. Explicit canonical variables (and common aliases)
-  const targetCountry = env.LA_MERCHANT_TARGET_COUNTRY ?? env.LA_MERCHANT_COUNTRY;
-  const contentLanguage = env.LA_MERCHANT_CONTENT_LANGUAGE ?? env.LA_MERCHANT_LANGUAGE;
+/** Pure release/test reader for the three canonical server-owned variables. */
+export function resolveMerchantMarketFromEnvironment(
+  env: MerchantMarketEnvironment,
+): MerchantMarketResolution {
+  const targetCountry = env.LA_MERCHANT_TARGET_COUNTRY;
+  const contentLanguage = env.LA_MERCHANT_CONTENT_LANGUAGE;
   const currency = env.LA_MERCHANT_CURRENCY;
 
-  if (targetCountry !== undefined || contentLanguage !== undefined || currency !== undefined) {
-    if (targetCountry === undefined || contentLanguage === undefined || currency === undefined) {
-      // Incomplete configuration: fail closed
-      return null;
-    }
-    return { targetCountry, contentLanguage, currency };
+  if (targetCountry === undefined || contentLanguage === undefined || currency === undefined) {
+    return unresolvedMerchantMarket();
   }
 
-  // 2. Composite shorthand: LA_MERCHANT_MARKET="VN:vi:VND"
-  const rawMarket = env.LA_MERCHANT_MARKET;
-  if (rawMarket !== undefined) {
-    const segments = rawMarket.split(/[:/_]/);
-    if (segments.length !== 3) {
-      return null;
-    }
-    return {
-      targetCountry: segments[0],
-      contentLanguage: segments[1],
-      currency: segments[2],
-    };
-  }
-
-  return null;
+  const policy = parseReviewedMerchantMarket({ targetCountry, contentLanguage, currency });
+  return policy === null
+    ? unresolvedMerchantMarket()
+    : Object.freeze({ status: "APPROVED" as const, policy });
 }
 
-/** Resolves O2 exclusively from trusted server configuration; callers/requests cannot inject approval. */
-export function resolveMerchantMarket(
-  env: MerchantMarketEnvironment = process.env,
-): MerchantMarketResolution {
-  const candidate = extractMarketCandidateFromEnv(env);
-  if (candidate === null) {
-    return Object.freeze({
-      status: "UNRESOLVED" as const,
-      reason: MERCHANT_MARKET_UNRESOLVED,
-    });
-  }
-
-  const policy = parseReviewedMerchantMarket(candidate);
-  if (policy === null) {
-    return Object.freeze({
-      status: "UNRESOLVED" as const,
-      reason: MERCHANT_MARKET_UNRESOLVED,
-    });
-  }
-
-  return Object.freeze({ status: "APPROVED" as const, policy });
+/** Production runtime authority. No request or business caller can supply the market configuration. */
+export function resolveMerchantMarket(): MerchantMarketResolution {
+  return resolveMerchantMarketFromEnvironment(process.env);
 }
 
 export type MerchantMappingResult = Readonly<{
@@ -424,20 +395,11 @@ function resolveAddressableOption(
   if (selection === null || selection.variantId !== variation.variantId) return null;
 
   const option = optionsByVariantId.get(variation.variantId);
-  // The external identity must still agree with the option the internal handle names. U12 already
-  // refused a duplicated identity, so this only rejects a candidate row that disagrees with the
-  // projection it was loaded beside.
   return option !== undefined && option.pancakeVariationId === variation.pancakeVariationId
     ? option
     : null;
 }
 
-/**
- * Index of a product's authorized options by internal variant id.
- *
- * Built once per product rather than searched per candidate: a duplicated internal id cannot be
- * resolved to one option, so it is dropped from the index and its candidate reads as unaddressable.
- */
 function indexOptionsByVariantId(
   projection: StorefrontProductProjection,
 ): ReadonlyMap<string, StorefrontProjectionOption> {
@@ -461,9 +423,6 @@ function draftCandidate(
 ): Draft {
   const pancakeVariationId = variation.pancakeVariationId;
 
-  // Composite is a whole-projection verdict as well as a per-variation one: a set's parent option
-  // and its components are equally deferred, and reporting one reason keeps the excluded counts
-  // reconcilable with the M1 audit rather than mixing a deferral with incidental readiness gaps.
   if (variation.isComposite || product.projection.mode !== "standalone") {
     return {
       pancakeVariationId,
@@ -494,10 +453,6 @@ function draftCandidate(
   const addressableOption = resolveAddressableOption(product, variation, optionsByVariantId);
   if (addressableOption === null) reasons.add("OPTION_NOT_ADDRESSABLE");
 
-  // Two reasons are reported only when they are the candidate's own fault rather than a consequence
-  // of one already recorded: a landing URL cannot be blamed on a slug when the offer identity itself
-  // is unusable, and a price cannot be called unresolved when no option was ever resolved to price.
-  // Cascaded reasons would make every excluded row look like several independent defects.
   const path =
     hasOfferId && pancakeVariationId !== null
       ? buildStandaloneVariantDeepLinkPath({ slug: product.slug, pancakeVariationId })
@@ -534,9 +489,6 @@ function draftCandidate(
       : resolveRequiredApparelAttribute(addressableOption.size, MERCHANT_SIZE_MAX_LENGTH);
   if (addressableOption !== null && size === null) reasons.add("SIZE_UNRESOLVED");
 
-  // Every condition below has already recorded its own reason, so `reasons.size` alone decides the
-  // outcome. They are repeated here only so the emitted offer needs no cast to convince the type
-  // checker that a fact it refused to emit without is present.
   if (
     reasons.size > 0
     || !apparel.ok
@@ -580,7 +532,6 @@ function draftCandidate(
   };
 }
 
-/** Values claimed by more than one otherwise-emittable draft. */
 function duplicatesAmong(values: readonly string[]): ReadonlySet<string> {
   const seen = new Set<string>();
   const duplicated = new Set<string>();
@@ -594,13 +545,10 @@ function duplicatesAmong(values: readonly string[]): ReadonlySet<string> {
 export function mapMerchantOffers({
   products,
   origin,
-  env = process.env,
 }: Readonly<{
   products: readonly MerchantCandidateProduct[];
   /** Absolute storefront origin, from `readStorefrontOrigin`. */
   origin: string;
-  /** Server environment to resolve trusted market authority from; defaults to process.env. */
-  env?: MerchantMarketEnvironment;
 }>): MerchantMappingResult {
   const parsedOrigin = requireAbsoluteOrigin(origin);
 
@@ -612,9 +560,6 @@ export function mapMerchantOffers({
     }
   }
 
-  // Uniqueness is a property of the emittable set, so it is decided after every candidate has been
-  // judged on its own facts. A duplicate is never resolved by preferring one claimant: both are
-  // excluded, because the catalog cannot say which offer the identity or the part number names.
   const emittable = drafts.filter((draft) => draft.offer !== null);
   const duplicateIds = duplicatesAmong(emittable.map((draft) => draft.offer!.id));
   const duplicateMpns = duplicatesAmong(emittable.map((draft) => draft.offer!.mpn));
@@ -643,7 +588,7 @@ export function mapMerchantOffers({
     );
   }
 
-  const resolvedMarket = resolveMerchantMarket(env);
+  const resolvedMarket = resolveMerchantMarket();
 
   return Object.freeze({
     offers: Object.freeze(offers),
