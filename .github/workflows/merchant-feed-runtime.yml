@@ -43,6 +43,9 @@ jobs:
       LA_SHIPPING_FEE_VND: "17000"
       LA_FREE_SHIPPING_SUBTOTAL_VND: "650000"
       LA_FREE_SHIPPING_MIN_QUANTITY: "5"
+      LA_MERCHANT_TARGET_COUNTRY: "VN"
+      LA_MERCHANT_CONTENT_LANGUAGE: "vi"
+      LA_MERCHANT_CURRENCY: "VND"
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -100,15 +103,19 @@ jobs:
           first_status="$(curl --silent --output "$RUNNER_TEMP/feed-first.txt" --dump-header "$RUNNER_TEMP/feed-first.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/google-merchant?country=VN&currency=VND&foo=1')"
           second_status="$(curl --silent --output "$RUNNER_TEMP/feed-second.txt" --dump-header "$RUNNER_TEMP/feed-second.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/google-merchant?country=US&currency=USD&foo=2')"
 
-          test "$first_status" = "503"
-          test "$second_status" = "503"
-          grep -Fqi 'retry-after: 60' "$RUNNER_TEMP/feed-first.headers"
-          grep -Fqi 'retry-after: 60' "$RUNNER_TEMP/feed-second.headers"
-          grep -Fqi 'x-la-merchant-feed-failure: MARKET_UNRESOLVED' "$RUNNER_TEMP/feed-first.headers"
-          grep -Fqi 'x-la-merchant-feed-failure: MARKET_UNRESOLVED' "$RUNNER_TEMP/feed-second.headers"
-          test "$(cat "$RUNNER_TEMP/feed-first.txt")" = "Merchant feed temporarily unavailable."
-          test "$(cat "$RUNNER_TEMP/feed-second.txt")" = "Merchant feed temporarily unavailable."
+          test "$first_status" = "200"
+          test "$second_status" = "200"
+          grep -Fqi 'content-type: application/rss+xml; charset=utf-8' "$RUNNER_TEMP/feed-first.headers"
+          grep -Fqi 'content-type: application/rss+xml; charset=utf-8' "$RUNNER_TEMP/feed-second.headers"
+          grep -Fqi 'x-la-merchant-feed-state: generated' "$RUNNER_TEMP/feed-first.headers"
+          grep -Fqi 'x-la-merchant-feed-state: hit' "$RUNNER_TEMP/feed-second.headers"
+          grep -Fq '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">' "$RUNNER_TEMP/feed-first.txt"
+          cmp -s "$RUNNER_TEMP/feed-first.txt" "$RUNNER_TEMP/feed-second.txt"
 
           test "$(grep -Fc '[merchant-feed] cold_generation' "$RUNNER_TEMP/merchant-feed-runtime.log")" = "1"
-          grep -Fq '[merchant-feed] market_unresolved' "$RUNNER_TEMP/merchant-feed-runtime.log"
-          grep -Fq '[merchant-feed] backoff_hit' "$RUNNER_TEMP/merchant-feed-runtime.log"
+          grep -Fq '[merchant-feed] generation_success' "$RUNNER_TEMP/merchant-feed-runtime.log"
+          grep -Fq '[merchant-feed] success_cache_hit' "$RUNNER_TEMP/merchant-feed-runtime.log"
+          if grep -Fq '[merchant-feed] market_unresolved' "$RUNNER_TEMP/merchant-feed-runtime.log"; then
+            cat "$RUNNER_TEMP/merchant-feed-runtime.log"
+            exit 1
+          fi
