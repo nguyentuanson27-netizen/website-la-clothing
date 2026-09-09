@@ -20,6 +20,15 @@ test("M5 public return authority exposes the owner-approved Merchant-compatible 
 
   // The existing customer-initiated exchange fee remains a different business fact.
   assert.equal(PUBLIC_RETURNS_POLICY.customerInitiatedExchangeFeeVnd, 50_000);
+
+  const customerChangeCases = PUBLIC_RETURNS_POLICY.supportedCases.filter((supportedCase) =>
+    supportedCase.startsWith("Khách hàng"),
+  );
+  assert.equal(customerChangeCases.length, 2);
+  for (const supportedCase of customerChangeCases) {
+    assert.match(supportedCase, /chỉ đổi hàng/i);
+    assert.match(supportedCase, /không trả hàng để hoàn tiền/i);
+  }
 });
 
 test("M5 public delivery authority names the owner-approved Hanoi scopes explicitly", () => {
