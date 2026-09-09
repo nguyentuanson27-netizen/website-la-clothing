@@ -4,7 +4,19 @@ import { describe, it } from "node:test";
 
 import { evaluateCampaignRuntimeHealth } from "../../src/commerce/promotion-runtime-health.ts";
 
-function createCampaign(id: string, productId: string) {
+type CampaignLifecycleOverrides = Partial<{
+  isEnabled: boolean;
+  enabledAt: Date | null;
+  disabledAt: Date | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+}>;
+
+function createCampaign(
+  id: string,
+  productId: string,
+  overrides: CampaignLifecycleOverrides = {},
+) {
   return {
     id,
     kind: "PROMOTION" as const,
@@ -12,9 +24,13 @@ function createCampaign(id: string, productId: string) {
     discountType: "PERCENTAGE" as const,
     percentageValue: 10,
     fixedPriceVnd: null,
+    isEnabled: true,
+    enabledAt: new Date("2026-03-01T00:00:00Z"),
+    disabledAt: null,
     startsAt: new Date("2026-03-01T00:00:00Z"),
     endsAt: new Date("2026-03-31T00:00:00Z"),
     targets: [{ productId, variantId: null }],
+    ...overrides,
   };
 }
 
@@ -99,6 +115,69 @@ describe("promotion runtime-health regression guards", () => {
       candidateVariantBatchSizes.every((size) => size <= 200),
       "canonical candidate reader must retain its per-query safety bound",
     );
+  });
+
+  it("does not evaluate or emit runtime health for campaigns that are not ACTIVE", async () => {
+    const now = new Date("2026-03-15T00:00:00Z");
+    const cases: readonly [string, CampaignLifecycleOverrides][] = [
+      ["DRAFT", { isEnabled: false, enabledAt: null, disabledAt: null }],
+      [
+        "SCHEDULED",
+        {
+          isEnabled: true,
+          enabledAt: new Date("2026-03-01T00:00:00Z"),
+          startsAt: new Date("2026-03-20T00:00:00Z"),
+          endsAt: new Date("2026-03-31T00:00:00Z"),
+        },
+      ],
+      [
+        "ENDED",
+        {
+          isEnabled: true,
+          enabledAt: new Date("2026-03-01T00:00:00Z"),
+          startsAt: new Date("2026-03-01T00:00:00Z"),
+          endsAt: new Date("2026-03-10T00:00:00Z"),
+        },
+      ],
+      [
+        "DISABLED",
+        {
+          isEnabled: false,
+          enabledAt: new Date("2026-03-01T00:00:00Z"),
+          disabledAt: new Date("2026-03-10T00:00:00Z"),
+        },
+      ],
+    ];
+
+    for (const [lifecycle, overrides] of cases) {
+      let variantReads = 0;
+      const emittedLines: string[] = [];
+      const mockClient = {
+        promotionCampaign: {
+          findUnique: async () => createCampaign(`camp-${lifecycle.toLowerCase()}`, "prod-1", overrides),
+        },
+        variantMirror: {
+          findMany: async () => {
+            variantReads += 1;
+            return [{ id: "var-1", productId: "prod-1", pancakeRetailPrice: 100_000 }];
+          },
+        },
+        promotionTarget: {
+          findMany: async () => [],
+        },
+      };
+
+      const health = await evaluateCampaignRuntimeHealth({
+        campaignId: `camp-${lifecycle.toLowerCase()}`,
+        client: mockClient as unknown as Parameters<typeof evaluateCampaignRuntimeHealth>[0]["client"],
+        now,
+        writer: (line) => emittedLines.push(line),
+      });
+
+      assert.equal(health, null, `${lifecycle} must not be reported as current runtime health`);
+      assert.equal(variantReads, 0, `${lifecycle} must short-circuit before coverage reads`);
+      assert.equal(emittedLines.length, 0, `${lifecycle} must not emit promotion.runtime_health`);
+    }
   });
 
   it("does not return or emit HEALTHY when candidate authority fails", async () => {
