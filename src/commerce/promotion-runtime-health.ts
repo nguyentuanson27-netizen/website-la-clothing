@@ -178,7 +178,11 @@ export type EvaluateCampaignRuntimeHealthInput = Readonly<{
 }>;
 
 /**
- * Evaluates runtime health on-demand for a persisted campaign.
+ * Evaluates current runtime health on-demand for a persisted, price-effective campaign.
+ * Disabled campaigns and enabled campaigns outside their active window have no current pricing
+ * effect, so they return unavailable before coverage reads and do not emit a misleading
+ * promotion.runtime_health signal. This uses the same `isEnabled` + `isActiveAt` eligibility split
+ * as the production candidate/pricing path instead of introducing a second lifecycle rule.
  * Resolves current variant outcomes against the database mirror without coverage truncation,
  * discovers concurrent competing campaign conflicts via candidate batching, invokes the shared
  * health finalizer, and emits promotion.runtime_health signal. Coverage is aggregated one bounded
@@ -204,6 +208,7 @@ export async function evaluateCampaignRuntimeHealth({
       discountType: true,
       percentageValue: true,
       fixedPriceVnd: true,
+      isEnabled: true,
       startsAt: true,
       endsAt: true,
       targets: {
@@ -213,6 +218,19 @@ export async function evaluateCampaignRuntimeHealth({
   });
 
   if (campaign === null) return null;
+
+  const applicable: ApplicablePromotionCampaign = {
+    id: campaign.id,
+    name: campaign.name,
+    kind: campaign.kind,
+    discountType: campaign.discountType,
+    percentageValue: campaign.percentageValue,
+    fixedPriceVnd: campaign.fixedPriceVnd,
+    startsAt: campaign.startsAt,
+    endsAt: campaign.endsAt,
+  };
+
+  if (campaign.isEnabled === false || !isActiveAt(applicable, now)) return null;
 
   const directVariantIds = campaign.targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
   const productIds = campaign.targets.flatMap((t) => (t.productId === null ? [] : [t.productId]));
@@ -236,17 +254,6 @@ export async function evaluateCampaignRuntimeHealth({
       writer,
     });
   }
-
-  const applicable: ApplicablePromotionCampaign = {
-    id: campaign.id,
-    name: campaign.name,
-    kind: campaign.kind,
-    discountType: campaign.discountType,
-    percentageValue: campaign.percentageValue,
-    fixedPriceVnd: campaign.fixedPriceVnd,
-    startsAt: campaign.startsAt,
-    endsAt: campaign.endsAt,
-  };
 
   const hasPromotionTarget =
     "promotionTarget" in client &&
