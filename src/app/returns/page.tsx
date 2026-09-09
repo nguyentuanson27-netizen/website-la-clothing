@@ -31,9 +31,10 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  * W13/U33b + U41/M5 — public returns policy from owner-approved authorities only.
  *
  * `PUBLIC_RETURNS_POLICY` keeps the existing window, eligibility, fee and refund facts;
- * `PUBLIC_RETURN_LOGISTICS_FACTS` carries the later owner-approved return methods and restocking
- * decision. Page prose only labels sections: every normative return statement below comes from one
- * of those reviewed content authorities.
+ * `PUBLIC_RETURN_LOGISTICS_FACTS` carries the later owner-approved return methods, restocking
+ * decision and the exchange-only rule for correct/non-defective customer-change cases. Page prose
+ * only labels sections: every normative return statement below comes from one of those reviewed
+ * content authorities.
  */
 export default function ReturnsPage() {
   const {
@@ -45,7 +46,8 @@ export default function ReturnsPage() {
     nonReturnableCategoriesNote,
     refundChannelNote,
   } = PUBLIC_RETURNS_POLICY;
-  const { returnMethods, restockingFeeNote } = PUBLIC_RETURN_LOGISTICS_FACTS;
+  const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } =
+    PUBLIC_RETURN_LOGISTICS_FACTS;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -81,6 +83,9 @@ export default function ReturnsPage() {
               <li key={supportedCase}>{supportedCase}</li>
             ))}
           </ul>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
+            {nonDefectiveRefundNote}
+          </p>
           {nonReturnableCategories.length === 0 ? (
             <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
               {nonReturnableCategoriesNote}
