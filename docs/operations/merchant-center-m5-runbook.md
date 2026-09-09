@@ -1,6 +1,6 @@
 # Merchant Center M5 activation runbook
 
-Status: **PRE-ACTIVATION / BLOCKED ON MERCHANT CENTER ACCOUNT ACCESS**
+Status: **PRE-ACTIVATION / BLOCKED ON MERCHANT ACCOUNT + POLICY INPUTS**
 
 Base repository truth reviewed from `main@f30fdb67d85c3d9ccb258df3dae1a60db5c7b7be` after PR #227. Owner operational decisions were refreshed on 2026-09-09 in `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`.
 
@@ -45,20 +45,20 @@ Owner production confirmation on 2026-09-09 says the VPS currently matches repos
 
 This is **owner-provided production confirmation**, not an independent SSH/runtime observation by the coding agent. Do not expose or request production secrets to prove it.
 
-Approved delivery facts:
+Approved customer-facing delivery facts:
 
 - coverage: nationwide Vietnam
 - carriers: GHN, GHTK
-- inner-Hanoi estimate: 1–3 days
-- outside inner Hanoi / other provinces and cities: 3–15 days
-- these are estimates, not guaranteed SLAs
+- LA Clothing inner-Hanoi business zone estimate: 1–3 days
+- outside that business zone / other provinces and cities: 3–15 days
+- these are end-to-end estimates, not guaranteed SLAs
 - no carrier tracking link/number is provided by default
 
-The owner-approved geography for “inner Hanoi” is recorded in the owner-facts source as the current 48-ward operational footprint derived from the former 12 inner-city districts after Resolution 1656/NQ-UBTVQH15. It deliberately excludes Chương Mỹ, Sơn Tây and Tùng Thiện from the 1–3 day tier. The public `/shipping` page names the two scopes explicitly; the detailed ward list remains an operational mapping rather than page copy.
+The 48-ward list in the owner-facts source is an **LA Clothing business delivery zone selected from current administrative units**, not a claim that those wards are an exact administrative transformation of the former 12 districts. The public `/shipping` page names only the two buyer-facing scopes; the ward list remains operational detail.
 
 ### Return / exchange authority
 
-Owner-approved current policy states:
+Owner-approved current public policy states:
 
 - return/exchange window: 15 days from customer receipt
 - returned product must be new/unused, with tags and without damage/odor/use signs, and be the LA Clothing product purchased
@@ -74,7 +74,13 @@ Owner-approved current policy states:
 - website refund wording: 7–10 **working days** after LA Clothing receives, inspects and confirms eligibility
 - COD refunds may use bank transfer or another method agreed with the customer
 
-PR #228 also aligns the public `/returns` page with the newly approved return methods, customer label responsibility and zero restocking fee before any Merchant return policy is configured.
+PR #228 aligns the public `/returns` page with the approved return methods, customer label responsibility and zero restocking fee before any Merchant return policy is configured.
+
+What is **not** yet an owner fact:
+
+- whether a customer who received a correct, non-defective product but simply changes their mind may return it for a **refund** rather than exchange;
+- exact Merchant refund-processing field representation;
+- Merchant shipping handling-time minimum/maximum and handling business days.
 
 ## 2. Current Google Merchant Center requirements checked
 
@@ -84,6 +90,7 @@ Official Google Merchant Center documentation reviewed on 2026-09-09:
 - Scheduled product-data fetch: <https://support.google.com/merchants/answer/14991445>
 - Product source from a file: <https://support.google.com/merchants/answer/12158380>
 - Shipping settings: <https://support.google.com/merchants/answer/12577710>
+- Shipping information required: <https://support.google.com/merchants/answer/12578516>
 - Estimated delivery time: <https://support.google.com/merchants/answer/14949917>
 - Regions: <https://support.google.com/merchants/answer/15406457>
 - Return policies: <https://support.google.com/merchants/answer/14011730>
@@ -96,9 +103,11 @@ Important current requirements / constraints:
 1. Merchant Center website verification/claim must be completed against a store URL owned and maintained by the merchant.
 2. Scheduled fetch must point directly to the product-data file URL; Googlebot and AdsBot-Google must not be blocked from the directory containing it.
 3. Shipping information submitted to Merchant Center should match the website as closely as possible; if exact cost rules cannot be represented, Google permits a slight overestimate rather than understating checkout shipping.
-4. Merchant Center return-policy setup requires explicit choices for return acceptance, exchanges, product condition, return window, return method, currency, restocking fee, and refund processing time.
-5. Google Ads linking requires the appropriate account ID/access and, depending on ownership, admin approval.
-6. Current Google region documentation lists Vietnam for regional availability/pricing, but **does not list Vietnam as supporting shipping cost/transit-time custom areas**. Do not infer support from the generic “destination by zone” UI documentation when the country-availability table leaves Vietnam blank for shipping cost/transit-time custom areas.
+4. Manual delivery speed requires separate shipping inputs: **handling time** is the business-day range from order placement to carrier pickup, while **transit time** is the business-day range after pickup. Order cut-off can also affect the displayed estimate.
+5. Merchant Center return-policy setup asks **return acceptance** and **exchange acceptance** as separate decisions. Do not infer non-defective return-for-refund permission from an exchange policy.
+6. Merchant Center return setup also requires product condition, return window, return method, currency, restocking fee and refund processing time.
+7. Google Ads linking requires the appropriate account ID/access and, depending on ownership, admin approval.
+8. Current Google region documentation lists Vietnam for regional availability/pricing, but **does not list Vietnam as supporting shipping cost/transit-time custom areas**. Do not infer support from generic destination-by-zone instructions when the country-availability table leaves Vietnam blank for this capability.
 
 ## 3. Preflight resolution state
 
@@ -130,23 +139,37 @@ Do **not** treat `10 calendar days` as owner-approved merely because 10 is the u
 2. choose a representation that does not shorten or contradict the website policy;
 3. if the vendor field cannot represent the policy truthfully, stop and surface the mismatch rather than changing the public policy silently.
 
-This is an account/UI observation dependency, not a missing public-policy fact.
+This is an account/UI observation dependency, not a missing public-policy timeline.
 
-### RESOLVED M5-S1 — inner-Hanoi policy geography
+### BLOCKER M5-R4 — non-defective return-for-refund acceptance
+
+Google asks whether the merchant accepts returns for:
+
+- defective and non-defective products;
+- defective products only;
+- or no returns.
+
+It then asks about exchanges separately.
+
+Current LA Clothing facts clearly approve exchanges for the listed customer-change cases, but they do **not** separately approve a refund return for a correct, non-defective product when the customer merely changes their mind.
+
+Therefore:
+
+- do not select “defective and non-defective returns” based only on exchange wording;
+- do not silently downgrade the public policy either;
+- Merchant return-policy save is blocked until the owner explicitly decides this return-for-refund case.
+
+### RESOLVED M5-S1 — LA Clothing inner-Hanoi business delivery zone
 
 Owner decision 2026-09-09:
 
-- 1–3 day tier = inner Hanoi;
-- operational current mapping is the 48 wards recorded in `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, preserving continuity with the former 12 inner-city districts under the 2025 administrative reorganization.
+- 1–3 day tier = “Nội thành Hà Nội” for buyer-facing wording;
+- owner delegated a researched operational mapping using current administrative units;
+- the current 48-ward list in the owner-facts document is the LA Clothing business zone for that tier.
 
-However, **this does not imply Merchant Center can configure a Vietnam shipping-speed custom region**. Current Google country-availability docs do not expose that capability for Vietnam.
+The list is **not** described as formal post-2025 “inner-city” administration and is **not** claimed to be an exact boundary-preserving transformation of the former 12 districts.
 
-Merchant execution rule:
-
-- keep website/checkout policy unchanged;
-- if Merchant UI still cannot express a Vietnam regional transit-time split, use a single conservative nationwide delivery-time representation, with **3–15 days** as the initial target range;
-- do not advertise a Merchant speed faster than the website can meet;
-- if the UI requires handling time + transit time separately, observe the exact controls and operational handling facts before final save rather than inventing handling days.
+This business-zone decision also does **not** imply Merchant Center can configure a Vietnam shipping-speed custom region. Current Google country-availability docs do not expose that capability for Vietnam.
 
 ### RESOLVED M5-S2 — production shipping values owner-confirmed
 
@@ -160,7 +183,27 @@ Merchant cost execution rule:
 
 - represent the exact order-value and item-count logic if the actual account UI supports it;
 - if the `>= 3 items` free-shipping condition cannot be represented, do not understate shipping cost;
-- use a conservative overestimate such as retaining `30,000 VND` for the unrepresentable case rather than falsely advertising free shipping. This follows Google's current inaccurate-shipping-cost guidance.
+- use a conservative overestimate such as retaining `30,000 VND` for the unrepresentable case rather than falsely advertising free shipping.
+
+### BLOCKER M5-S3 — Merchant handling-time authority
+
+The public website currently has end-to-end delivery estimates (`1–3` / `3–15` days), but Merchant manual shipping speed requires separate handling and transit inputs.
+
+No approved source currently defines:
+
+- minimum handling days;
+- maximum handling days;
+- handling business days / fulfillment weekdays;
+- optional shipping order cut-off time.
+
+Rules:
+
+- do not assume handling time `0`;
+- do not copy `3–15` directly into Merchant transit time;
+- do not subtract an invented handling duration from the website estimate;
+- shipping-policy save remains blocked until handling facts are owner-approved or directly observed from an authoritative fulfillment process and reviewed.
+
+Once handling facts exist, choose transit values so the resulting Merchant delivery estimate remains truthful and does not promise faster delivery than the website can meet.
 
 ### BLOCKER M5-ACCOUNT — Merchant Center account access deferred
 
@@ -180,7 +223,9 @@ No connected Merchant Center account/tool is currently available to observe or m
 
 Do not claim any of these are configured until observed in the actual account.
 
-## 4. External execution sequence once Merchant Center access is connected
+## 4. External execution sequence once blockers are cleared
+
+Account observation can begin once Merchant Center access is connected, but **shipping or return policy save must also wait for M5-S3 / M5-R4 as applicable**.
 
 ### A. Observe production before touching Merchant Center
 
@@ -212,14 +257,19 @@ Do not create a dependency on GTM merely to verify the site; T8/O4 remains indep
 
 ### C. Shipping configuration
 
+Do not save a shipping-speed policy while `M5-S3` remains open.
+
+When handling facts are approved and account UI is observed:
+
 1. Products & store → Shipping and returns → Shipping policies.
 2. Country: Vietnam.
 3. Products: all Merchant v1 standalone products unless a reviewed label policy exists.
 4. Delivery-time configuration:
-   - first inspect the current account UI;
+   - enter the reviewed **handling minimum/maximum** and handling business days;
+   - configure transit time separately;
    - do not assume custom-region speed is supported for Vietnam;
-   - if no truthful regional split is available, use the conservative nationwide target `3–15 days` rather than inventing unsupported regions;
-   - if handling/transit split is mandatory, record the actual UI semantics and operational handling facts before final save.
+   - if no truthful regional split is available, use one conservative nationwide representation whose **computed total ETA** does not understate the website policy;
+   - treat website `1–3` / `3–15` as end-to-end policy constraints, not raw Merchant transit values.
 5. Shipping cost:
    - `30,000 VND` standard;
    - free for order value above `1,000,000 VND` where supported;
@@ -229,10 +279,14 @@ Do not create a dependency on GTM merely to verify the site; T8/O4 remains indep
 
 ### D. Return policy
 
+Do not save the Merchant return policy while `M5-R4` remains open.
+
+When the owner has separately decided non-defective return-for-refund acceptance:
+
 1. Return policy URL: `https://<APP_DOMAIN>/returns`.
 2. Country: Vietnam.
-3. Accept returns for the owner-approved cases, including non-defective/customer-change cases already present in the policy.
-4. Exchanges: enabled, matching the public policy.
+3. Select the Merchant return-acceptance option that exactly matches the owner decision; do not infer it from exchange support.
+4. Exchanges: enabled, matching the existing public policy.
 5. Product condition: map only the approved new/unused condition.
 6. Return window: 15 days.
 7. Return methods: **in store + by mail**.
@@ -284,8 +338,10 @@ Composite products remain outside Merchant v1 scope.
 
 ## 5. Human activation gate
 
-Stop at **READY FOR HUMAN MERCHANT ACTIVATION APPROVAL** when:
+Stop at **READY FOR HUMAN MERCHANT ACTIVATION APPROVAL** only when:
 
+- M5-R4 is resolved
+- M5-S3 is resolved
 - account/site verification is complete
 - shipping and return policies are configured and truthful
 - production feed Scheduled Fetch succeeds
@@ -307,7 +363,9 @@ Merchant account ID (non-secret):
 Website verified/claimed:
 Production shipping evidence class: OWNER_CONFIRMED | DIRECTLY_OBSERVED
 Observed/confirmed production shipping policy:
+Approved Merchant handling min/max/business days:
 Merchant shipping policy:
+Owner non-defective return-for-refund decision:
 Merchant return policy status:
 Product data source name:
 Feed URL:
