@@ -25,12 +25,15 @@ import {
 import {
   readSearchExposure,
   shouldNoIndexRequest,
+  validateSearchExposureForRelease,
 } from "../../src/seo/search-exposure.ts";
+import { buildRobotsDocument } from "../../src/seo/robots-policy.ts";
 import {
   describeActivationGate,
   describeCampaignRuntimeHealth,
   describeRenderedQuoteProofRejection,
   emitPromotionSignal,
+  MAX_SIGNAL_UTF8_BYTES,
 } from "../../src/operations/promotion-observability.ts";
 import {
   buildMetaAddToCartPixelParameters,
@@ -42,6 +45,15 @@ import {
 import {
   evaluateCampaignRuntimeHealth,
 } from "../../src/commerce/promotion-runtime-health.ts";
+import { buildPromotionalStorefrontPricing } from "../../src/commerce/storefront-promotion-projection.ts";
+import { buildStorefrontVariantOptions } from "../../src/commerce/storefront-product.ts";
+import { isPromotionActivationEnabled } from "../../src/commerce/promotion-activation.ts";
+import {
+  readTrackingConfig,
+  resolveTrackingRuntime,
+  shouldLoadGoogleTagManager,
+} from "../../src/tracking/config.ts";
+import { createMerchantFeedGetHandler } from "../../src/commerce/merchant-feed-http.ts";
 
 describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
   const NOW = new Date("2026-09-08T12:00:00.000Z");
@@ -60,17 +72,36 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
   describe("1. Central Pricing Authority & Enabled-Consumer Monetary Convergence (#151 G1)", () => {
     it("PDP projection, cart lines, and checkout quote share the exact same promotional price", () => {
       const basePrice = 500_000;
-      const resolved = resolvePromotionPricing({
-        basePriceVnd: basePrice,
-        campaigns: [sampleCampaign],
+      const campaignsByVariantId = new Map([["var-local-01", [sampleCampaign]]]);
+
+      // Production shared promotional pricing rule (src/commerce/storefront-promotion-projection.ts)
+      const promotionalPricingRule = buildPromotionalStorefrontPricing({
+        campaignsByVariantId,
         now: NOW,
       });
 
-      // 500,000 * 0.8 = 400,000
-      assert.equal(resolved.effectivePriceVnd, 400_000);
-      assert.equal(resolved.isDiscounted, true);
+      // 1. PDP projection using production pricingRule
+      const pdpOptions = buildStorefrontVariantOptions(
+        [
+          {
+            id: "var-local-01",
+            pancakeVariationId: "pan-var-01",
+            color: "Đen",
+            size: "L",
+            sellableStock: 10,
+            retailPrice: basePrice,
+            retailPriceAfterDiscount: null,
+          },
+        ],
+        promotionalPricingRule,
+      );
 
-      // Cart line assembly
+      assert.equal(pdpOptions.length, 1);
+      assert.equal(pdpOptions[0]!.price, 400_000);
+      assert.equal(pdpOptions[0]!.basePriceVnd, 500_000);
+      assert.equal(pdpOptions[0]!.isDiscounted, true);
+
+      // 2. Cart lines assembly using production pricingRule
       const cartLines = buildStorefrontCartLines({
         items: [{ variantId: "var-local-01", quantity: 2 }],
         products: [
@@ -96,18 +127,7 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
             ],
           },
         ],
-        pricingRule: (variant) => {
-          const promo = resolvePromotionPricing({
-            basePriceVnd: variant.retailPrice,
-            campaigns: [sampleCampaign],
-            now: NOW,
-          });
-          return {
-            price: promo.effectivePriceVnd,
-            basePriceVnd: promo.basePriceVnd,
-            isDiscounted: promo.isDiscounted,
-          };
-        },
+        pricingRule: promotionalPricingRule,
       });
 
       assert.equal(cartLines.length, 1);
@@ -115,7 +135,7 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
       assert.equal(cartLines[0]!.pancakeVariationId, "pan-var-01");
       assert.equal(cartLines[0]!.pancakeProductId, "pan-prod-01");
 
-      // Checkout quote facts
+      // 3. Checkout quote facts
       const quoteFacts = buildRenderedCheckoutQuoteFacts(cartLines);
       assert.ok(quoteFacts);
       assert.equal(quoteFacts.merchandiseSubtotalVnd, 800_000); // 400,000 * 2
@@ -131,14 +151,25 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
     });
 
     it("unusable base price fails closed across all consumers without fabricating a discount", () => {
-      const resolved = resolvePromotionPricing({
-        basePriceVnd: -100,
-        campaigns: [sampleCampaign],
+      const unusableCampaigns = new Map([["var-unusable", [sampleCampaign]]]);
+      const rule = buildPromotionalStorefrontPricing({
+        campaignsByVariantId: unusableCampaigns,
         now: NOW,
       });
-      assert.equal(resolved.effectivePriceVnd, null);
-      assert.equal(resolved.isDiscounted, false);
-      assert.equal(resolved.reason, "BASE_PRICE_UNAVAILABLE");
+
+      const priced = rule({
+        id: "var-unusable",
+        pancakeVariationId: "pan-var-unusable",
+        color: "Đen",
+        size: "M",
+        sellableStock: 5,
+        retailPrice: -100,
+        retailPriceAfterDiscount: null,
+      });
+
+      assert.equal(priced.price, null);
+      assert.equal(priced.basePriceVnd, null);
+      assert.equal(priced.isDiscounted, false);
     });
 
     it("direct Meta Pixel parameters are produced by shared production builder with full monetary convergence and no CUID", () => {
@@ -714,23 +745,100 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
     });
   });
 
-  describe("6. Launch Gates Default-Off Verification", () => {
-    it("all 4 launch gates remain default-off / fail-closed", () => {
-      // Gate P: promotions disabled unless explicitly set to 'true'
-      const promotionEnabled = process.env.LA_PROMOTION_ACTIVATION_ENABLED === "true";
-      assert.equal(promotionEnabled, false, "Gate P (Promotions) must be default-off");
+  describe("6. Launch Gates Default-Off & Runtime Policy Authority Verification", () => {
+    it("Gate P: promotion activation is fail-closed by default and decoupled from search indexing", () => {
+      // 1. Production activation service fails closed when env is default/empty
+      assert.equal(isPromotionActivationEnabled({}), false, "Gate P must be default-off");
+      assert.equal(isPromotionActivationEnabled({ LA_PROMOTION_ACTIVATION_ENABLED: "false" }), false);
 
-      // Gate S: organic search indexing disabled unless explicitly set to 'true'
-      const searchEnabled = process.env.SEARCH_INDEXING_ENABLED === "true";
-      assert.equal(searchEnabled, false, "Gate S (Search Indexing) must be default-off");
+      // 2. Promotion activation does NOT imply search indexing activation
+      const promoActiveEnv = {
+        LA_PROMOTION_ACTIVATION_ENABLED: "true",
+        SEARCH_INDEXING_ENABLED: "false",
+        APP_DOMAIN: "la-clothing.example.com",
+      };
+      assert.equal(isPromotionActivationEnabled(promoActiveEnv), true, "Gate P enabled under explicit env");
+      const searchExposure = readSearchExposure(promoActiveEnv);
+      assert.equal(searchExposure.indexingEnabled, false, "Promotion activation must never enable search indexing");
+    });
 
-      // Gate T: GTM tracking disabled unless explicitly configured
-      const gtmEnabled = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID != null && process.env.NEXT_PUBLIC_GTM_CONTAINER_ID.length > 0;
-      assert.equal(gtmEnabled, false, "Gate T (GTM Tracking) must be default-off");
+    it("Gate S: organic search indexing fails closed, withholding sitemap and enforcing noindex under crawler ALLOW ALL", () => {
+      // Missing APP_DOMAIN fails closed
+      assert.throws(
+        () => readSearchExposure({}),
+        /APP_DOMAIN must be configured on the server/,
+        "Must fail closed when APP_DOMAIN is missing",
+      );
 
-      // Gate M: Google Merchant feed market unresolved until reviewed runtime authority wired
-      const marketConfigured = process.env.MERCHANT_MARKET_RESOLVED === "true";
-      assert.equal(marketConfigured, false, "Gate M (Merchant Feed) must be fail-closed");
+      const defaultExposure = readSearchExposure({ APP_DOMAIN: "la-clothing.example.com" });
+      assert.equal(defaultExposure.indexingEnabled, false, "Default search indexing must be disabled");
+
+      // Robots document allows crawler navigation across all approved categories...
+      const robots = buildRobotsDocument(defaultExposure);
+      assert.ok(robots.rules);
+      assert.ok(Array.isArray(robots.rules));
+      assert.equal(robots.rules[0]?.allow, "/");
+
+      // ...BUT sitemap is strictly withheld when indexing is disabled
+      assert.equal(robots.sitemap, undefined, "Sitemap must be withheld when indexing is disabled");
+
+      // All storefront requests are strictly noindexed
+      assert.equal(
+        shouldNoIndexRequest({
+          indexingEnabled: defaultExposure.indexingEnabled,
+          pathname: "/shop",
+          search: "",
+        }),
+        true,
+        "Storefront pages must be noindexed when indexing is disabled",
+      );
+
+      // Temporary domain controls remain the authority: la.lanadesign.vn always fails closed
+      const tempDomainExposure = readSearchExposure({
+        APP_DOMAIN: "la.lanadesign.vn",
+        SEARCH_INDEXING_ENABLED: "true",
+      });
+      assert.equal(tempDomainExposure.indexingEnabled, false, "Temporary production origin must never be indexable");
+      assert.throws(
+        () => validateSearchExposureForRelease({ APP_DOMAIN: "la.lanadesign.vn", SEARCH_INDEXING_ENABLED: "true" }),
+        /Search indexing cannot be enabled on the temporary production storefront origin/,
+      );
+    });
+
+    it("Gate T: GTM tracking remains fail-closed pending reviewed container version (O4)", () => {
+      // Default tracking configuration is disabled
+      const defaultConfig = readTrackingConfig({});
+      assert.equal(defaultConfig.desiredMode, "disabled");
+      assert.equal(defaultConfig.containerId, null);
+
+      const defaultRuntime = resolveTrackingRuntime(defaultConfig);
+      assert.equal(defaultRuntime.loadsGoogleTagManager, false);
+      assert.equal(shouldLoadGoogleTagManager(defaultRuntime), false);
+
+      // Even when desiredMode is "live" with a valid container id, GTM loading is refused before O4
+      const liveConfig = { desiredMode: "live" as const, containerId: "GTM-TEST1234" };
+      const liveRuntime = resolveTrackingRuntime(liveConfig);
+      assert.equal(
+        shouldLoadGoogleTagManager(liveRuntime),
+        false,
+        "Gate T must fail closed until reviewed immutable GTM container version is available (O4)",
+      );
+    });
+
+    it("Gate M: Google Merchant feed returns HTTP 503 fail-closed when market authority is unresolved", async () => {
+      const getHandler = createMerchantFeedGetHandler(async () => ({
+        ok: false,
+        failureClass: "MARKET_UNRESOLVED",
+        retryAfterSeconds: 60,
+        backoff: false,
+      }));
+
+      const mockRequest = new Request("https://la-clothing.example.com/api/feeds/google-merchant.xml");
+      const response = await getHandler(mockRequest);
+
+      assert.equal(response.status, 503, "Merchant feed HTTP handler must return 503 on MARKET_UNRESOLVED");
+      assert.equal(response.headers.get("x-la-merchant-feed-failure"), "MARKET_UNRESOLVED");
+      assert.equal(response.headers.get("cache-control"), "no-store");
     });
   });
 });
