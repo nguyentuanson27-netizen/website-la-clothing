@@ -91,17 +91,20 @@ Khách hàng có thể trả hàng bằng **cả hai** phương thức:
 - **khách hàng tự chịu trách nhiệm gửi hàng và nhãn/phiếu gửi trả**;
 - không được claim LA Clothing cung cấp prepaid return label nếu chưa có quyết định mới.
 
-## Merchant return acceptance — `OPEN`
+## Merchant return acceptance — owner-approved 2026-09-09
 Google Merchant Center tách hai quyết định khác nhau:
 - có **nhận return/refund** cho hàng defective và non-defective hay không;
 - có **nhận exchange** hay không.
 
-Current public policy chứng minh:
-- các trường hợp lỗi/sai hàng được hỗ trợ đổi/trả;
-- customer-initiated đổi mẫu/size/màu được hỗ trợ **exchange**;
-- exchanges được chấp nhận theo các trường hợp đã liệt kê.
+Owner chốt:
+- hàng đúng, không lỗi nhưng khách đổi ý **không được trả hàng để hoàn tiền**;
+- các trường hợp customer-initiated chỉ được **đổi hàng** theo policy đổi mẫu / size / màu hiện hành;
+- các trường hợp lỗi/sai hàng vẫn được hỗ trợ đổi/trả theo policy hiện tại.
 
-Current owner facts **chưa tách riêng** việc khách mua đúng hàng, không lỗi nhưng đổi ý có được trả hàng để **hoàn tiền** hay không. Không được suy từ “được đổi size/màu” thành “được non-defective return/refund”. Vì vậy Merchant Center return-acceptance option cho non-defective products vẫn `OPEN` và phải fail-closed cho tới khi owner chốt riêng.
+Merchant mapping rule:
+- return acceptance: **defective products only**;
+- exchange acceptance: **enabled** cho các trường hợp exchange đã được owner phê duyệt;
+- không được map customer-change exchange thành non-defective return/refund.
 
 ## Customer-initiated exchange
 Nếu khách hàng chủ động đổi mẫu / size / màu:
@@ -126,7 +129,7 @@ Nếu LA Clothing giao sai hoặc lỗi thuộc shop / nhà sản xuất:
 - Không được tự coi `10` calendar days là owner-approved chỉ vì đó là upper bound của `7–10 working days`.
 - Không tự sửa public policy để fit vendor UI.
 
-**B1 status:** `RESOLVED FOR PUBLIC WEBSITE; MERCHANT NON-DEFECTIVE RETURN ACCEPTANCE OPEN`
+**B1 status:** `RESOLVED FOR WEBSITE + MERCHANT RETURN ACCEPTANCE; REFUND VENDOR-FIELD REPRESENTATION DEFERRED TO ACCOUNT UI`
 
 ---
 
@@ -217,9 +220,8 @@ Therefore:
 - website/checkout keeps the truthful end-to-end estimates: 1–3 days inside the LA Clothing inner-Hanoi business zone and 3–15 days elsewhere;
 - these end-to-end website estimates are **not** automatically Merchant `transit time` values;
 - Merchant Center must not invent an unsupported Vietnam custom shipping-speed region;
-- Merchant shipping-speed save is blocked until a reviewed handling-time minimum/maximum and handling-business-day policy exists;
-- do not assume handling time `0` and do not subtract an invented handling duration from the website estimate;
-- after handling facts and account UI are observed, choose the broadest truthful Merchant representation whose computed delivery estimate does not promise faster delivery than the website can meet.
+- do not copy 1–3 / 3–15 directly into Merchant transit-time fields;
+- after account UI is observed, choose transit inputs whose computed delivery estimate remains truthful and does not promise faster delivery than the website can meet.
 
 Google references:
 - https://support.google.com/merchants/answer/15406457
@@ -227,14 +229,18 @@ Google references:
 - https://support.google.com/merchants/answer/14949917
 - https://support.google.com/merchants/answer/12578516
 
-### Merchant handling-time authority — `OPEN`
-The current repository has no approved fact for:
-- minimum handling days;
-- maximum handling days;
-- handling business days / fulfillment weekdays;
-- optional order cut-off time for shipping ETA.
+### Merchant handling-time authority — owner-approved 2026-09-09
+Owner confirms the current fulfillment process:
+- orders are processed **Monday–Saturday**;
+- an order is handed to GHN/GHTK **within 1 handling business day**.
 
-This is a Merchant shipping-input blocker, not permission to invent values from the 1–3 / 3–15 customer-facing estimate.
+Merchant manual handling mapping:
+- minimum handling time: **1 business day**;
+- maximum handling time: **1 business day**;
+- handling business days: **Monday–Saturday**;
+- order cut-off time: **not separately approved**; do not invent one unless the Merchant UI requires a value, in which case stop and request/observe the real operational cut-off.
+
+This handling input does not replace the public end-to-end delivery estimates and must not be used to invent transit times without reviewing the actual Merchant controls.
 
 ## Carrier tracking
 - **Mặc định không cung cấp mã vận đơn / link tracking GHN/GHTK cho khách hàng.**
@@ -260,7 +266,7 @@ Merchant mapping rule:
 - ưu tiên match chính xác nếu Merchant account UI support được cả order-value và item-count condition;
 - nếu UI không biểu diễn được điều kiện `>= 3 sản phẩm`, không được submit mức thấp hơn checkout; Google cho phép overestimate nhẹ khi không thể match chính xác, vì vậy giữ `30.000 VND` cho case không biểu diễn được sẽ an toàn hơn việc quảng cáo free shipping sai.
 
-**B4 status:** `RESOLVED FOR WEBSITE; MERCHANT HANDLING-TIME INPUT OPEN`
+**B4 status:** `RESOLVED FOR WEBSITE + MERCHANT HANDLING INPUT; TRANSIT REPRESENTATION WAITS FOR ACCOUNT UI`
 
 ---
 
@@ -478,10 +484,10 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 
 | Gate / Unit | Status | Decision / blocker |
 |---|---|---|
-| B1 Returns | ⚠️ WEBSITE RESOLVED / MERCHANT INPUT OPEN | 15 ngày; return in-store + by mail; mail label/shipping customer responsibility; restocking 0; exchanges for listed cases; non-defective return-for-refund acceptance is not yet separately approved; refund website 7–10 working days; exact Merchant vendor-field mapping waits for account UI semantics |
+| B1 Returns | ✅ RESOLVED FOR OWNER INPUT | 15 ngày; return in-store + by mail; mail label/shipping customer responsibility; restocking 0; customer-change cases are exchange-only (no non-defective refund return); defective/wrong-item cases remain returnable; refund website 7–10 working days; exact Merchant refund-processing field mapping waits for account UI semantics |
 | B2 Contact / U32b | ✅ RESOLVED | Phone, email, address, hours, Fanpage approved |
 | B3 Size Guide | ✅ RESOLVED | 2 size charts, cm, circumference semantics, ±3 cm tolerance |
-| B4 Shipping | ⚠️ WEBSITE RESOLVED / MERCHANT INPUT OPEN | Nationwide, GHN/GHTK, 1–3 days in the researched 48-ward LA Clothing business zone, 3–15 days elsewhere; production price values owner-confirmed 30k / >1M / >=3 items; Merchant handling-time min/max/business-days still open |
+| B4 Shipping | ✅ RESOLVED FOR OWNER INPUT | Nationwide, GHN/GHTK, 1–3 days in the researched 48-ward LA Clothing business zone, 3–15 days elsewhere; production price values owner-confirmed 30k / >1M / >=3 items; Merchant handling = 1 business day, Monday–Saturday; exact transit representation waits for account UI |
 | B5 Metadata uniqueness / U29 | ✅ RESOLVED | Pair-level unique on publish; draft warning; collision blocks publish |
 | B6 About/legal | ✅ RESOLVED FOR MINIMAL PAGE | No founding year/founder; no invented story; legal entity + MST + contact may be public |
 | U35 / Permanent domain | ⏳ OPEN | Permanent domain deferred |
@@ -502,13 +508,15 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 - U36 / W19
 - O1/O2-dependent Ads/Merchant planning
 - U41 / M5 account observation, website verification planning and data-source preparation once Merchant Center access is connected.
+- Merchant shipping-policy configuration may use handling `1–1 business day`, Monday–Saturday; transit values must still be mapped against the actual Merchant UI without underpromising website delivery estimates.
+- Merchant return-policy configuration may select defective-product returns only and keep exchanges enabled for the approved exchange cases; exact refund-processing-field representation still waits for account UI semantics.
 
 ## Still blocked / deferred
 - U35 — permanent domain not chosen.
 - Gate T live — O4 real vendor IDs missing.
-- Merchant shipping-policy save — handling-time minimum/maximum and handling-business-day facts are still `OPEN`; do not derive them from the 1–3 / 3–15 end-to-end estimates.
-- Merchant return-policy save — non-defective return-for-refund acceptance is still `OPEN`; exchanges must not be treated as the same decision.
 - Merchant activation (Gate M) — external Merchant Center account access / observed account state is still required for website verification/claim, shipping/returns save, Scheduled Fetch, Diagnostics and Ads linkage. Trusted O2 runtime authority and feed↔JSON-LD parity are already closed.
+- Exact Merchant refund-processing-field mapping — inspect current account UI semantics before save; do not reinterpret `7–10 working days` as a shorter calendar-day promise.
+- Merchant transit-time representation — inspect actual account controls and choose a truthful representation consistent with website end-to-end estimates; do not invent custom Vietnam regions.
 - Gate S activation — separate human gate.
 - Brand story / values — optional future content.
 
