@@ -286,6 +286,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       throw new MerchantOfferReadError("Merchant shop id must fit a positive PostgreSQL INTEGER");
     }
 
+    // 1/6 — bounded product authority.
     const products = await client.productMirror.findMany({
       where: { pancakeShopId: shopId, isPresent: true, isActive: true },
       select: productSelection,
@@ -303,6 +304,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
 
     const productIds = products.map((product) => product.id);
 
+    // 2/6 — all active/present variants, bounded before any fan-out reads.
     const variants = await client.variantMirror.findMany({
       where: { productId: { in: productIds }, isPresent: true, isActive: true },
       select: variantSelection,
@@ -317,6 +319,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
 
     const variantIds = variants.map((variant) => variant.id);
 
+    // 3/6 — both website-owned product-fact tables in one parameterized, product-bounded read.
     const productFacts = await client.$queryRawUnsafe<ProductFactRow[]>(
       `SELECT
          p."id" AS "productId",
@@ -334,6 +337,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       productIds,
     );
 
+    // 4/6 and 5/6 — variant inventory and composite membership. Empty variant sets stay cheap.
     const stocks =
       variantIds.length === 0
         ? []
@@ -355,6 +359,8 @@ export function createMerchantOfferRepository(client: PrismaClient) {
             select: compositeSelection,
           });
 
+    // 6/6 — target membership and enabled campaign facts in one parameterized bounded-domain read.
+    // This is also where the next known pricing boundary is discovered for cache-expiry capping.
     const promotionRows =
       variantIds.length === 0
         ? []
@@ -447,11 +453,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{
-    shopId: number;
-    origin: string;
-    now?: Date;
-  }>): Promise<MerchantMappingResult> {
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>): Promise<MerchantMappingResult> {
     const loaded = await loadCandidateProducts({ shopId, now });
     return mapMerchantOffers({ products: loaded.products, origin });
   }
@@ -460,11 +462,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     shopId,
     origin,
     now = new Date(),
-  }: Readonly<{
-    shopId: number;
-    origin: string;
-    now?: Date;
-  }>) {
+  }: Readonly<{ shopId: number; origin: string; now?: Date }>) {
     const loaded = await loadCandidateProducts({ shopId, now });
     return Object.freeze({
       mapping: mapMerchantOffers({ products: loaded.products, origin }),
