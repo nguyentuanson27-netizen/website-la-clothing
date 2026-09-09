@@ -13,9 +13,14 @@ test("promotion kill-switch runbook recreates the app container after env change
     /docker compose up -d --no-deps --force-recreate app/,
     "changing .env.production must recreate app so the new kill-switch value reaches the container",
   );
+  assert.match(
+    runbook,
+    /docker compose exec app node -e 'if \(process\.env\.LA_PROMOTION_ACTIVATION_ENABLED !== "false"\) process\.exit\(1\)'/,
+    "the runbook must verify the recreated app received the disabled gate value",
+  );
   assert.doesNotMatch(
     runbook,
-    /docker compose restart app/,
-    "restart preserves the existing container environment and must not be documented for env changes",
+    /```bash\s*docker compose restart app\s*```/,
+    "restart must not be the executable command documented after an environment change",
   );
 });
