@@ -6,7 +6,7 @@ Owning sources:
 - `tasks/promotions-flash-sale-v1-plan.md` §G3
 - `docs/specs/promotions-flash-sale-v1.md`
 
-Status: **G3 INTEGRATED DOD PASS — 0 Critical / 0 Required**, conditional on the exact-head GitHub checks recorded on PR #225. Static historical test counts are intentionally not used as release evidence; the PR checks are authoritative.
+Status: **G3 INTEGRATED DOD PASS — 0 Critical / 0 Required**, conditional on the applicable exact-head GitHub checks recorded on PR #225. Static historical test counts are intentionally not used as release evidence; the PR checks are authoritative.
 
 Integration branch: `feat/u43-integrated-dod`
 
@@ -53,7 +53,7 @@ The integrated test calls the production gate/policy functions directly rather t
 | Focused regression coverage | **PASS** | G3 integration smoke plus existing U39/U40 focused suites. |
 | Relevant DB/domain suites | **PASS** | Exact-head `CI` workflow; no copied historical count is treated as authority. |
 | Lint / typecheck / build | **PASS** | Exact-head `CI` workflow. |
-| Runtime/browser/a11y | **PASS** | Exact-head `admin-a11y-runtime` plus independent runtime workflows. |
+| Runtime/browser/a11y | **PASS** | Exact-head `admin-a11y-runtime` plus the applicable path-filtered runtime workflows. |
 | One pricing/business authority | **PASS** | Shared production pricing/candidate/gate authorities are reused; no G3 production fork. |
 | No unrelated refactor | **PASS** | PR #225 adds/reconciles G3 evidence and integration tests only after syncing final U40. |
 | Query/state bounds | **PASS** | U40 runtime-health pagination/candidate batching and existing quote-proof bounds remain intact. |
@@ -67,15 +67,16 @@ The integrated test calls the production gate/policy functions directly rather t
 
 ## 3. Verification policy
 
-The only acceptable final verification record is the exact PR #225 head after it has been synchronized with the current `main` containing merged PR #224. Required checks are:
+The final verification record uses the exact PR #225 head after synchronization with `main@f2d7cc45593c27f4317d2f61147d8864cd9c0145` and every workflow applicable to the final four-file diff:
 - CI verify: database smoke, HTTP security/auth smokes, lint, typecheck, full test suite, build, runtime policy, release preflight, production-start smoke.
-- CI admin accessibility runtime.
-- VPS container verification.
+- CI admin accessibility runtime, which includes the real-browser PDP promotion regression.
 - Catalog indexation runtime.
 - Merchant feed runtime.
 - P18 final QA runtime.
 
-If the PR head changes, prior green checks are historical only and must not be used as substitute evidence.
+`VPS container verification` is intentionally **not an exact-head requirement for this final docs/tasks/tests-only diff**. Its workflow is path-filtered to Docker/deploy/package/prisma/src/Next-config changes, none of which PR #225 changes relative to merged `main`. The relevant container/runtime implementation was already verified on final U40 / PR #224 before `main@f2d7cc45593c27f4317d2f61147d8864cd9c0145`. If #225 changes any path covered by that VPS workflow, it becomes applicable again and must be green on the new exact head.
+
+If the PR head changes, prior green checks for workflows that are applicable to the new diff are historical only and must not be used as substitute evidence.
 
 ---
 
