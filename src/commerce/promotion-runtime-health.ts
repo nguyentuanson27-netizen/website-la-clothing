@@ -17,6 +17,7 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { prisma } from "../db/prisma.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
+import { deriveCampaignLifecycle } from "./promotion-campaign-lifecycle.ts";
 import {
   isActiveAt,
   resolvePromotionPricing,
@@ -178,7 +179,9 @@ export type EvaluateCampaignRuntimeHealthInput = Readonly<{
 }>;
 
 /**
- * Evaluates runtime health on-demand for a persisted campaign.
+ * Evaluates runtime health on-demand for a persisted campaign that is ACTIVE at `now`.
+ * Non-active lifecycle states have no current runtime pricing effect, so they return unavailable
+ * before coverage reads and do not emit a misleading promotion.runtime_health signal.
  * Resolves current variant outcomes against the database mirror without coverage truncation,
  * discovers concurrent competing campaign conflicts via candidate batching, invokes the shared
  * health finalizer, and emits promotion.runtime_health signal. Coverage is aggregated one bounded
@@ -204,6 +207,9 @@ export async function evaluateCampaignRuntimeHealth({
       discountType: true,
       percentageValue: true,
       fixedPriceVnd: true,
+      isEnabled: true,
+      enabledAt: true,
+      disabledAt: true,
       startsAt: true,
       endsAt: true,
       targets: {
@@ -213,6 +219,16 @@ export async function evaluateCampaignRuntimeHealth({
   });
 
   if (campaign === null) return null;
+
+  const lifecycle = deriveCampaignLifecycle({
+    isEnabled: campaign.isEnabled,
+    enabledAt: campaign.enabledAt,
+    disabledAt: campaign.disabledAt,
+    startsAt: campaign.startsAt,
+    endsAt: campaign.endsAt,
+    now,
+  });
+  if (lifecycle.status !== "ACTIVE") return null;
 
   const directVariantIds = campaign.targets.flatMap((t) => (t.variantId === null ? [] : [t.variantId]));
   const productIds = campaign.targets.flatMap((t) => (t.productId === null ? [] : [t.productId]));
