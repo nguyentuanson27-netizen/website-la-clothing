@@ -8,6 +8,7 @@ import {
   MAX_REPORTED_ACTIVATION_ERRORS,
   MAX_REPORTED_SIGNAL_IDENTIFIERS,
   MAX_REPORTED_HEALTH_SAMPLE,
+  MAX_SIGNAL_UTF8_BYTES,
   describeActivationGate,
   describeActivationRejection,
   describeCampaignRuntimeHealth,
@@ -273,6 +274,101 @@ test("a failing writer never propagates out of emission", () => {
       throw new Error("stdout is gone");
     }),
   );
+});
+
+test("emission enforces <1024 UTF-8 bytes for normal, oversized, and multibyte payloads", () => {
+  const lines: string[] = [];
+  const writer = (line: string) => lines.push(line);
+
+  // 1. Normal payload emits accurately
+  const normalSignal = describeActivationGate({ operation: "publish", enabled: true });
+  emitPromotionSignal(normalSignal, writer);
+  assert.equal(lines.length, 1);
+  const normalParsed = JSON.parse(lines[0]!);
+  assert.equal(normalParsed.name, "promotion.activation_gate");
+  assert.equal(normalParsed.enabled, true);
+  assert.ok(Buffer.byteLength(lines[0]!, "utf8") < MAX_SIGNAL_UTF8_BYTES);
+
+  // 2. Very long payload remains <1024 UTF-8 bytes
+  const oversizedHealth = {
+    name: "promotion.runtime_health" as const,
+    campaignId: "c".repeat(500),
+    status: "PARTIALLY_INVALID" as const,
+    coveredVariants: 5000,
+    discountedVariants: 4000,
+    affectedVariants: 1000,
+    affectedTruncated: true,
+    affectedSample: Array.from({ length: 50 }, (_, i) => ({
+      variantId: `var-${i}-${"x".repeat(100)}`,
+      reason: "PROMOTION_INVALID",
+      conflictingCampaignIds: [`conf-${i}-${"y".repeat(100)}`],
+    })),
+  };
+  emitPromotionSignal(oversizedHealth, writer);
+  assert.equal(lines.length, 2);
+  const oversizedLine = lines[1]!;
+  assert.ok(
+    Buffer.byteLength(oversizedLine, "utf8") < MAX_SIGNAL_UTF8_BYTES,
+    `Must be <1024 bytes, got ${Buffer.byteLength(oversizedLine, "utf8")}`,
+  );
+  const oversizedParsed = JSON.parse(oversizedLine);
+  assert.equal(oversizedParsed.name, "promotion.runtime_health");
+  assert.equal(oversizedParsed.status, "PARTIALLY_INVALID");
+  assert.equal(oversizedParsed.affectedVariants, 1000);
+  assert.equal(oversizedParsed.affectedTruncated, true);
+
+  // 3. Multibyte/Unicode input remains within byte budget and JSON parse succeeds
+  const unicodeHealth = {
+    name: "promotion.runtime_health" as const,
+    campaignId: "chiến_dịch_khuyến_mãi_đặc_biệt_áo_khoác_mùa_đông_2026_🌟🌟🌟".repeat(10),
+    status: "FULLY_INVALID" as const,
+    coveredVariants: 200,
+    discountedVariants: 0,
+    affectedVariants: 200,
+    affectedTruncated: true,
+    affectedSample: Array.from({ length: 20 }, (_, i) => ({
+      variantId: `biến_thể_${i}_tiếng_việt_có_dấu_sản_phẩm_chất_lượng_cao_🇻🇳`,
+      reason: "XUNG_ĐỘT_CHƯƠNG_TRÌNH_KHUYẾN_MÃI",
+      conflictingCampaignIds: [`chiến_dịch_đối_thủ_${i}`],
+    })),
+  };
+  emitPromotionSignal(unicodeHealth, writer);
+  assert.equal(lines.length, 3);
+  const unicodeLine = lines[2]!;
+  assert.ok(
+    Buffer.byteLength(unicodeLine, "utf8") < MAX_SIGNAL_UTF8_BYTES,
+    `Multibyte line must be <1024 UTF-8 bytes, got ${Buffer.byteLength(unicodeLine, "utf8")}`,
+  );
+  const unicodeParsed = JSON.parse(unicodeLine);
+  assert.equal(unicodeParsed.name, "promotion.runtime_health");
+  assert.equal(unicodeParsed.status, "FULLY_INVALID");
+
+  // 4. Important fields are retained in fallback
+  const rejectionWithExcessiveData = {
+    name: "promotion.activation_rejected" as const,
+    operation: "publish" as const,
+    campaignId: "c-fallback-" + "z".repeat(300),
+    reason: "OVERLAPPING_CAMPAIGN" as const,
+    affectedCount: 99,
+    conflictingCampaignIds: Array.from({ length: 50 }, (_, i) => `conflicting-campaign-${i}-${"w".repeat(100)}`),
+  };
+  emitPromotionSignal(rejectionWithExcessiveData, writer);
+  assert.equal(lines.length, 4);
+  const fallbackLine = lines[3]!;
+  assert.ok(Buffer.byteLength(fallbackLine, "utf8") < MAX_SIGNAL_UTF8_BYTES);
+  const fallbackParsed = JSON.parse(fallbackLine);
+  assert.equal(fallbackParsed.name, "promotion.activation_rejected");
+  assert.equal(fallbackParsed.operation, "publish");
+  assert.equal(fallbackParsed.reason, "OVERLAPPING_CAMPAIGN");
+  assert.equal(fallbackParsed.affectedCount, 99);
+  assert.ok(typeof fallbackParsed.campaignId === "string" && fallbackParsed.campaignId.length > 0);
+
+  // 5. Writer throw does not affect caller/business path
+  assert.doesNotThrow(() => {
+    emitPromotionSignal(normalSignal, () => {
+      throw new Error("Broken pipe / disk full");
+    });
+  });
 });
 
 test("describeCampaignRuntimeHealth maps status and bounds affected variant samples", () => {

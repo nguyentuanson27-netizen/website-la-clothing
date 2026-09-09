@@ -384,8 +384,180 @@ function writeToStdout(line: string): void {
   process.stdout.write(line);
 }
 
+/** Maximum allowed UTF-8 bytes for an emitted NDJSON signal line, strictly below 1024 bytes. */
+export const MAX_SIGNAL_UTF8_BYTES = 1024;
+
 /**
- * Writes one signal as a single JSON line.
+ * Truncates a string by Unicode code points to avoid splitting surrogate pairs or multibyte characters.
+ */
+function safeTruncateUnicode(str: string, maxCodePoints: number): string {
+  const chars = Array.from(str);
+  if (chars.length <= maxCodePoints) return str;
+  return chars.slice(0, maxCodePoints).join("");
+}
+
+/**
+ * Produces a structurally reduced version of the signal to bring its serialized size under budget.
+ */
+function normalizeSignalForBudget(
+  signal: PromotionObservabilitySignal,
+): Record<string, unknown> {
+  switch (signal.name) {
+    case "promotion.runtime_health": {
+      const sample = signal.affectedSample.slice(0, 1).map((item) => ({
+        variantId: safeTruncateUnicode(item.variantId, 48),
+        reason: item.reason,
+        conflictingCampaignIds: item.conflictingCampaignIds
+          .slice(0, 1)
+          .map((id) => safeTruncateUnicode(id, 48)),
+      }));
+
+      return {
+        name: signal.name,
+        campaignId: safeTruncateUnicode(signal.campaignId, 48),
+        status: signal.status,
+        coveredVariants: signal.coveredVariants,
+        discountedVariants: signal.discountedVariants,
+        affectedVariants: signal.affectedVariants,
+        affectedTruncated: true,
+        affectedSample: sample,
+      };
+    }
+
+    case "promotion.activation_rejected": {
+      const base: Record<string, unknown> = {
+        name: signal.name,
+        operation: signal.operation,
+        reason: signal.reason,
+      };
+      if (signal.campaignId) {
+        base.campaignId = safeTruncateUnicode(signal.campaignId, 48);
+      }
+      if ("affectedCount" in signal) {
+        base.affectedCount = signal.affectedCount;
+      }
+      if ("from" in signal) {
+        base.from = signal.from;
+      }
+      if ("invalidVariantIds" in signal) {
+        base.invalidVariantIds = signal.invalidVariantIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("variantIds" in signal) {
+        base.variantIds = signal.variantIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("conflictingCampaignIds" in signal) {
+        base.conflictingCampaignIds = signal.conflictingCampaignIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("errors" in signal) {
+        base.errors = signal.errors.slice(0, 3);
+      }
+      return base;
+    }
+
+    case "promotion.activation_gate":
+      return {
+        name: signal.name,
+        operation: signal.operation,
+        enabled: signal.enabled,
+      };
+
+    case "checkout.quote_proof_rejected":
+      return {
+        name: signal.name,
+        phase: signal.phase,
+        reason: signal.reason,
+      };
+  }
+}
+
+/**
+ * Minimal semantic fallback guaranteed to fit well within 1024 UTF-8 bytes (<256 bytes typical),
+ * retaining all essential diagnostic fields (event name, status, reason, bounded allowlisted identifiers).
+ */
+function minimalFallbackSignal(
+  signal: PromotionObservabilitySignal,
+): Record<string, unknown> {
+  switch (signal.name) {
+    case "promotion.runtime_health":
+      return {
+        name: signal.name,
+        campaignId: safeTruncateUnicode(signal.campaignId, 32),
+        status: signal.status,
+        coveredVariants: signal.coveredVariants,
+        discountedVariants: signal.discountedVariants,
+        affectedVariants: signal.affectedVariants,
+        affectedTruncated: true,
+        affectedSample: [],
+      };
+
+    case "promotion.activation_rejected": {
+      const result: Record<string, unknown> = {
+        name: signal.name,
+        operation: signal.operation,
+        reason: signal.reason,
+      };
+      if (signal.campaignId) {
+        result.campaignId = safeTruncateUnicode(signal.campaignId, 32);
+      }
+      if ("affectedCount" in signal) {
+        result.affectedCount = signal.affectedCount;
+      }
+      if ("from" in signal) {
+        result.from = signal.from;
+      }
+      return result;
+    }
+
+    case "promotion.activation_gate":
+      return {
+        name: signal.name,
+        operation: signal.operation,
+        enabled: signal.enabled,
+      };
+
+    case "checkout.quote_proof_rejected":
+      return {
+        name: signal.name,
+        phase: signal.phase,
+        reason: signal.reason,
+      };
+  }
+}
+
+/**
+ * Serializes a promotion signal into an NDJSON line strictly under 1024 UTF-8 bytes.
+ * Uses structural normalization and semantic fallback without raw byte slicing.
+ */
+export function serializePromotionSignal(signal: PromotionObservabilitySignal): string {
+  try {
+    const raw = `${JSON.stringify(signal)}\n`;
+    if (Buffer.byteLength(raw, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return raw;
+    }
+
+    const normalized = normalizeSignalForBudget(signal);
+    const normalizedJson = `${JSON.stringify(normalized)}\n`;
+    if (Buffer.byteLength(normalizedJson, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return normalizedJson;
+    }
+
+    const minimal = minimalFallbackSignal(signal);
+    const minimalJson = `${JSON.stringify(minimal)}\n`;
+    if (Buffer.byteLength(minimalJson, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return minimalJson;
+    }
+
+    return `${JSON.stringify({ name: signal.name })}\n`;
+  } catch {
+    return `${JSON.stringify({ name: typeof signal?.name === "string" ? signal.name : "promotion.signal" })}\n`;
+  }
+}
+
+/**
+ * Writes one signal as a single JSON line strictly bounded to <1024 UTF-8 bytes.
  *
  * Failures are swallowed for the same reason `emitSafely` swallows them in `pancake-order-submit.ts`:
  * observability must never change an admin outcome. A promotion that was refused for a real reason
@@ -396,8 +568,11 @@ export function emitPromotionSignal(
   write: PromotionSignalWriter = writeToStdout,
 ): void {
   try {
-    write(`${JSON.stringify(signal)}\n`);
+    const line = serializePromotionSignal(signal);
+    if (Buffer.byteLength(line, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      write(line);
+    }
   } catch {
-    // Intentionally ignored.
+    // Intentionally ignored: fail-open error isolation protecting business path.
   }
 }

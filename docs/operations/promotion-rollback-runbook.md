@@ -63,7 +63,7 @@ To revert an active campaign back to base pricing:
 2. **Via Server Command (if Admin UI is inaccessible):**
    Run the command from the deployed repository checkout's `deploy/vps` directory. Use the source-capable `ops` Compose profile: the production `app` runner image intentionally contains only the Next.js runtime plus generated Prisma files and cannot import `src/commerce/promotion-activation-service.ts`. The synthetic session below satisfies the same server-side admin session shape used by the activation service; trusted VPS/Compose access is itself an operator privilege and this command must not be exposed through a public endpoint.
    ```bash
-   docker compose --profile ops run --rm --build ops node --experimental-strip-types --input-type=module -e '
+   docker compose --profile ops run --rm ops node --experimental-strip-types --input-type=module -e '
      const { disablePromotionCampaign } = await import("./src/commerce/promotion-activation-service.ts");
      const result = await disablePromotionCampaign({
        campaignId: process.argv[1],
