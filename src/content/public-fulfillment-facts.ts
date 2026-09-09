@@ -6,6 +6,8 @@ export const PUBLIC_RETURN_LOGISTICS_FACTS = Object.freeze({
   }),
   restockingFeeVnd: 0,
   restockingFeeNote: "Không thu phí restocking.",
+  nonDefectiveRefundNote:
+    "Sản phẩm đúng, không lỗi không được trả hàng để hoàn tiền; khách hàng chỉ được đổi hàng theo chính sách đổi mẫu / size / màu hiện hành.",
 });
 
 /**
