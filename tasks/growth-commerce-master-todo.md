@@ -215,7 +215,7 @@ the current owner-decision status above supersedes only their old owner-blocked 
 - [ ] **Pre-activation:** M1–M4 through U9/U12/U25/U26 + exact variant URL + audited IDs/MPN + canonical pricing + cache/single-flight/backoff/topology proof green. U9 includes the attributable exact-SHA real-catalog rerun; supporting observations without immutable execution provenance do not satisfy this line.
 - [x] **O2** market approved as Vietnam / `vi` / `VND`.
 - [x] **O3** apparel-fact runtime implementation verified.
-- [ ] Trusted server-owned O2 runtime authority wired and verified; caller/request data cannot choose the market.
+- [x] Trusted server-owned O2 runtime authority wired and verified; caller/request data cannot choose the market.
 - [ ] Merchant site/account/shipping/returns prerequisites satisfied.
 - [x] Feed↔JSON-LD one-survivor parity implementation + verification green under the approved contract. **Implementation PR #214, proof set completed by PR #216**; see `docs/audits/merchant-jsonld-parity.md`.
 - [ ] If promotions are active, U39/G1 covers Merchant monetary/cache behavior.
