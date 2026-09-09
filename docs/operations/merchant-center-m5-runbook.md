@@ -360,3 +360,5 @@ Crawler/landing/image evidence:
 Open blockers:
 Gate M state: BLOCKED | READY FOR HUMAN APPROVAL | ACTIVATED
 ```
+
+Owner inputs `M5-S3` and `M5-R4` are now resolved. The remaining execution blocker is **Merchant Center account access / observed external state**, plus live-field observation for refund-processing and transit representation before saving those vendor settings.
