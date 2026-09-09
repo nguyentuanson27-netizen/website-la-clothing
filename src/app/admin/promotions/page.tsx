@@ -11,6 +11,7 @@ import {
 } from "@/commerce/promotion-admin-feedback";
 import { PromotionAdminStatus } from "@/components/admin/promotion-admin-status";
 import { PromotionCampaignForm } from "@/components/admin/promotion-campaign-form";
+import { evaluateCampaignRuntimeHealth } from "@/commerce/promotion-runtime-health";
 import { prisma } from "@/db/prisma";
 
 import {
@@ -100,6 +101,9 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
 
   const campaigns = await repository.listCampaigns({ search, now: requestNow });
   const campaignToEdit = editId ? await repository.getCampaignForEdit(editId, requestNow) : null;
+  const campaignRuntimeHealth = campaignToEdit
+    ? await evaluateCampaignRuntimeHealth({ campaignId: campaignToEdit.id, now: requestNow })
+    : null;
   // Read on the server for display only. The gate is enforced by the activation service; this
   // banner exists so an operator understands why publishing is refused, not to decide anything.
   const activationEnabled = isPromotionActivationEnabled();
@@ -193,6 +197,14 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
                 <p className="text-xs uppercase tracking-[0.14em] text-neutral-800">
                   Trạng thái: <strong>{STATUS_LABELS[campaignToEdit.status] ?? campaignToEdit.status}</strong>
                 </p>
+                {campaignRuntimeHealth ? (
+                  <p className="text-xs uppercase tracking-[0.14em] text-neutral-800">
+                    Sức khỏe vận hành: <strong>{campaignRuntimeHealth.status}</strong>
+                    {campaignRuntimeHealth.affectedVariants > 0
+                      ? ` (${campaignRuntimeHealth.affectedVariants} biến thể bị ảnh hưởng)`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
 
               {campaignToEdit.status === "DRAFT" || campaignToEdit.status === "SCHEDULED" ? (

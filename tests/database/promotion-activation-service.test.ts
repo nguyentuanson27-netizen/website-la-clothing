@@ -360,6 +360,28 @@ test("P4 an enabled campaign whose coverage cannot be enumerated blocks a publis
   assert.equal(await revision(), before);
 });
 
+test("P4 rollback disable works on a campaign covering >2000 variants and advances durable pricing revision", async () => {
+  await seedWideProduct();
+  await draftTargeting("wide", `${P}-wide-prod`, null);
+  await prisma.promotionCampaign.update({
+    where: { id: `${P}-wide` },
+    data: { isEnabled: true, enabledAt: NOW },
+  });
+  const before = await revision();
+
+  // Rollback disable: must not call enumerateCoverage or fail with TARGET_EXPANSION_LIMIT_EXCEEDED
+  const result = await disablePromotionCampaign({
+    campaignId: `${P}-wide`,
+    now: new Date(NOW.getTime() + 60_000),
+    session: ADMIN,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(await revision(), before + BigInt(1));
+  const campaign = await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: `${P}-wide` } });
+  assert.equal(campaign.isEnabled, false);
+});
+
 test("P4 an unknown campaign fails closed without advancing the revision", async () => {
   const before = await revision();
 

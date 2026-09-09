@@ -35,6 +35,11 @@ import {
 } from "../commerce/promotion-activation.ts";
 import type { PromotionAdminFailure } from "../commerce/promotion-admin-feedback.ts";
 import type { CampaignLifecycleStatus } from "../commerce/promotion-campaign-lifecycle.ts";
+import type {
+  CampaignRuntimeHealth,
+  CampaignRuntimeStatus,
+} from "../commerce/promotion-runtime-health.ts";
+import type { RenderedQuoteProofRejection } from "../commerce/checkout-quote-proof.ts";
 
 /**
  * Bounds the reason list so one malformed submission cannot turn a diagnostic into a flood.
@@ -54,6 +59,22 @@ export const MAX_REPORTED_ACTIVATION_ERRORS = 12;
  * read as the whole.
  */
 export const MAX_REPORTED_SIGNAL_IDENTIFIERS = 10;
+
+/**
+ * How many affected variant detail items one runtime health signal may carry.
+ *
+ * Each item contains a variant ID, pricing failure reason, and conflicting campaign IDs.
+ * Five items provides immediate triage context while keeping the JSON line well below 1 KB.
+ */
+export const MAX_REPORTED_HEALTH_SAMPLE = 5;
+
+/**
+ * How many conflicting campaign IDs one affected variant in a runtime health signal may carry.
+ *
+ * Three IDs provides immediate triage context on competing promotions while ensuring the
+ * complete JSON line remains strictly below 1 KB even with 5 sampled variants.
+ */
+export const MAX_REPORTED_HEALTH_CONFLICTS = 3;
 
 /**
  * Which admin operation produced the signal.
@@ -123,9 +144,34 @@ export type PromotionActivationRejectionSignal = Readonly<
     )
 >;
 
+export type PromotionRuntimeHealthSampleItem = Readonly<{
+  variantId: string;
+  reason: string | null;
+  conflictingCampaignIds: readonly string[];
+}>;
+
+export type PromotionRuntimeHealthSignal = Readonly<{
+  name: "promotion.runtime_health";
+  campaignId: string;
+  status: CampaignRuntimeStatus;
+  coveredVariants: number;
+  discountedVariants: number;
+  affectedVariants: number;
+  affectedTruncated: boolean;
+  affectedSample: readonly PromotionRuntimeHealthSampleItem[];
+}>;
+
+export type RenderedQuoteProofRejectionSignal = Readonly<{
+  name: "checkout.quote_proof_rejected";
+  phase: "rendered_quote_verification";
+  reason: RenderedQuoteProofRejection;
+}>;
+
 export type PromotionObservabilitySignal =
   | PromotionActivationGateSignal
-  | PromotionActivationRejectionSignal;
+  | PromotionActivationRejectionSignal
+  | PromotionRuntimeHealthSignal
+  | RenderedQuoteProofRejectionSignal;
 
 export function describeActivationGate({
   operation,
@@ -152,6 +198,15 @@ function boundedIdentifiers(ids: readonly string[]): readonly string[] {
   const sample: string[] = [];
   for (const id of ids) {
     if (sample.length >= MAX_REPORTED_SIGNAL_IDENTIFIERS) break;
+    if (isBoundedPromotionIdentifier(id)) sample.push(id);
+  }
+  return Object.freeze(sample);
+}
+
+function boundedHealthConflicts(ids: readonly string[]): readonly string[] {
+  const sample: string[] = [];
+  for (const id of ids) {
+    if (sample.length >= MAX_REPORTED_HEALTH_CONFLICTS) break;
     if (isBoundedPromotionIdentifier(id)) sample.push(id);
   }
   return Object.freeze(sample);
@@ -262,6 +317,66 @@ export function describeActivationRejection({
   }
 }
 
+/**
+ * Reduces runtime campaign health to a bounded signal safe to emit to stdout.
+ *
+ * Health diagnostics report why variants fail or recover at runtime (e.g. PARTIALLY_INVALID,
+ * FULLY_INVALID). Affected variants are sampled up to MAX_REPORTED_SIGNAL_IDENTIFIERS (10)
+ * with individual identifiers bounded. Prices and customer data are never carried.
+ */
+export function describeCampaignRuntimeHealth(
+  health: CampaignRuntimeHealth,
+): PromotionRuntimeHealthSignal {
+  const boundedSample: PromotionRuntimeHealthSampleItem[] = [];
+  for (const item of health.affected) {
+    if (boundedSample.length >= MAX_REPORTED_HEALTH_SAMPLE) break;
+    if (isBoundedPromotionIdentifier(item.variantId)) {
+      boundedSample.push(
+        Object.freeze({
+          variantId: item.variantId,
+          reason: item.reason,
+          conflictingCampaignIds: boundedHealthConflicts(item.conflictingCampaignIds),
+        }),
+      );
+    }
+  }
+
+  const campaignId = isBoundedPromotionIdentifier(health.campaignId.trim())
+    ? health.campaignId.trim()
+    : "";
+
+  return Object.freeze({
+    name: "promotion.runtime_health",
+    campaignId,
+    status: health.status,
+    coveredVariants: health.coveredVariants,
+    discountedVariants: health.discountedVariants,
+    affectedVariants: health.affectedVariants,
+    affectedTruncated:
+      health.affectedTruncated || health.affected.length > boundedSample.length,
+    affectedSample: Object.freeze(boundedSample),
+  });
+}
+
+/**
+ * Describes a rendered quote proof rejection during the checkout snapshot phase (P9a).
+ *
+ * Distinguishes the checkout snapshot phase ("rendered_quote_verification") from the downstream
+ * catalog re-verification phase ("catalog_submission" via pancake_order.quote_repriced).
+ * Zero proof tokens, MAC signatures, cart UUIDs or customer PII are logged.
+ */
+export function describeRenderedQuoteProofRejection({
+  reason,
+}: Readonly<{
+  reason: RenderedQuoteProofRejection;
+}>): RenderedQuoteProofRejectionSignal {
+  return Object.freeze({
+    name: "checkout.quote_proof_rejected",
+    phase: "rendered_quote_verification",
+    reason,
+  });
+}
+
 /** Where a signal is written. Injectable so tests assert real emission rather than a spy on stdout. */
 export type PromotionSignalWriter = (line: string) => void;
 
@@ -269,8 +384,180 @@ function writeToStdout(line: string): void {
   process.stdout.write(line);
 }
 
+/** Maximum allowed UTF-8 bytes for an emitted NDJSON signal line, strictly below 1024 bytes. */
+export const MAX_SIGNAL_UTF8_BYTES = 1024;
+
 /**
- * Writes one signal as a single JSON line.
+ * Truncates a string by Unicode code points to avoid splitting surrogate pairs or multibyte characters.
+ */
+function safeTruncateUnicode(str: string, maxCodePoints: number): string {
+  const chars = Array.from(str);
+  if (chars.length <= maxCodePoints) return str;
+  return chars.slice(0, maxCodePoints).join("");
+}
+
+/**
+ * Produces a structurally reduced version of the signal to bring its serialized size under budget.
+ */
+function normalizeSignalForBudget(
+  signal: PromotionObservabilitySignal,
+): Record<string, unknown> {
+  switch (signal.name) {
+    case "promotion.runtime_health": {
+      const sample = signal.affectedSample.slice(0, 1).map((item) => ({
+        variantId: safeTruncateUnicode(item.variantId, 48),
+        reason: item.reason,
+        conflictingCampaignIds: item.conflictingCampaignIds
+          .slice(0, 1)
+          .map((id) => safeTruncateUnicode(id, 48)),
+      }));
+
+      return {
+        name: signal.name,
+        campaignId: safeTruncateUnicode(signal.campaignId, 48),
+        status: signal.status,
+        coveredVariants: signal.coveredVariants,
+        discountedVariants: signal.discountedVariants,
+        affectedVariants: signal.affectedVariants,
+        affectedTruncated: true,
+        affectedSample: sample,
+      };
+    }
+
+    case "promotion.activation_rejected": {
+      const base: Record<string, unknown> = {
+        name: signal.name,
+        operation: signal.operation,
+        reason: signal.reason,
+      };
+      if (signal.campaignId) {
+        base.campaignId = safeTruncateUnicode(signal.campaignId, 48);
+      }
+      if ("affectedCount" in signal) {
+        base.affectedCount = signal.affectedCount;
+      }
+      if ("from" in signal) {
+        base.from = signal.from;
+      }
+      if ("invalidVariantIds" in signal) {
+        base.invalidVariantIds = signal.invalidVariantIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("variantIds" in signal) {
+        base.variantIds = signal.variantIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("conflictingCampaignIds" in signal) {
+        base.conflictingCampaignIds = signal.conflictingCampaignIds
+          .slice(0, 2)
+          .map((id) => safeTruncateUnicode(id, 48));
+      } else if ("errors" in signal) {
+        base.errors = signal.errors.slice(0, 3);
+      }
+      return base;
+    }
+
+    case "promotion.activation_gate":
+      return {
+        name: signal.name,
+        operation: signal.operation,
+        enabled: signal.enabled,
+      };
+
+    case "checkout.quote_proof_rejected":
+      return {
+        name: signal.name,
+        phase: signal.phase,
+        reason: signal.reason,
+      };
+  }
+}
+
+/**
+ * Minimal semantic fallback guaranteed to fit well within 1024 UTF-8 bytes (<256 bytes typical),
+ * retaining all essential diagnostic fields (event name, status, reason, bounded allowlisted identifiers).
+ */
+function minimalFallbackSignal(
+  signal: PromotionObservabilitySignal,
+): Record<string, unknown> {
+  switch (signal.name) {
+    case "promotion.runtime_health":
+      return {
+        name: signal.name,
+        campaignId: safeTruncateUnicode(signal.campaignId, 32),
+        status: signal.status,
+        coveredVariants: signal.coveredVariants,
+        discountedVariants: signal.discountedVariants,
+        affectedVariants: signal.affectedVariants,
+        affectedTruncated: true,
+        affectedSample: [],
+      };
+
+    case "promotion.activation_rejected": {
+      const result: Record<string, unknown> = {
+        name: signal.name,
+        operation: signal.operation,
+        reason: signal.reason,
+      };
+      if (signal.campaignId) {
+        result.campaignId = safeTruncateUnicode(signal.campaignId, 32);
+      }
+      if ("affectedCount" in signal) {
+        result.affectedCount = signal.affectedCount;
+      }
+      if ("from" in signal) {
+        result.from = signal.from;
+      }
+      return result;
+    }
+
+    case "promotion.activation_gate":
+      return {
+        name: signal.name,
+        operation: signal.operation,
+        enabled: signal.enabled,
+      };
+
+    case "checkout.quote_proof_rejected":
+      return {
+        name: signal.name,
+        phase: signal.phase,
+        reason: signal.reason,
+      };
+  }
+}
+
+/**
+ * Serializes a promotion signal into an NDJSON line strictly under 1024 UTF-8 bytes.
+ * Uses structural normalization and semantic fallback without raw byte slicing.
+ */
+export function serializePromotionSignal(signal: PromotionObservabilitySignal): string {
+  try {
+    const raw = `${JSON.stringify(signal)}\n`;
+    if (Buffer.byteLength(raw, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return raw;
+    }
+
+    const normalized = normalizeSignalForBudget(signal);
+    const normalizedJson = `${JSON.stringify(normalized)}\n`;
+    if (Buffer.byteLength(normalizedJson, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return normalizedJson;
+    }
+
+    const minimal = minimalFallbackSignal(signal);
+    const minimalJson = `${JSON.stringify(minimal)}\n`;
+    if (Buffer.byteLength(minimalJson, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      return minimalJson;
+    }
+
+    return `${JSON.stringify({ name: signal.name })}\n`;
+  } catch {
+    return `${JSON.stringify({ name: typeof signal?.name === "string" ? signal.name : "promotion.signal" })}\n`;
+  }
+}
+
+/**
+ * Writes one signal as a single JSON line strictly bounded to <1024 UTF-8 bytes.
  *
  * Failures are swallowed for the same reason `emitSafely` swallows them in `pancake-order-submit.ts`:
  * observability must never change an admin outcome. A promotion that was refused for a real reason
@@ -281,8 +568,11 @@ export function emitPromotionSignal(
   write: PromotionSignalWriter = writeToStdout,
 ): void {
   try {
-    write(`${JSON.stringify(signal)}\n`);
+    const line = serializePromotionSignal(signal);
+    if (Buffer.byteLength(line, "utf8") < MAX_SIGNAL_UTF8_BYTES) {
+      write(line);
+    }
   } catch {
-    // Intentionally ignored.
+    // Intentionally ignored: fail-open error isolation protecting business path.
   }
 }

@@ -124,6 +124,11 @@ Application or database rollback does not undo a Pancake order accepted by the e
 
 For an order in `SYNC_UNKNOWN`, never issue a blind duplicate create request. Use the existing status/reconciliation path to determine the remote outcome before any additional write.
 
+## Promotion and campaign rollback
+
+For promotion and campaign rollback, operational runbooks, kill-switch procedures, and durable pricing revision invalidation, refer to [Promotion rollback runbook](./promotion-rollback-runbook.md).
+
+
 ## Post-release evidence
 
 Record without secrets:

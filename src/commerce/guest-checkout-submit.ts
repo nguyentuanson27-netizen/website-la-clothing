@@ -92,6 +92,7 @@ export type GuestCheckoutSubmitDependencies = {
   snapshot: SnapshotService;
   orderSubmission: OrderSubmissionService;
   generatePublicCode: () => string;
+  onQuoteProofRejection?: (reason: RenderedQuoteProofRejection) => void;
 };
 
 function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitResult {
@@ -167,6 +168,7 @@ export function createGuestCheckoutSubmitService({
   snapshot,
   orderSubmission,
   generatePublicCode,
+  onQuoteProofRejection,
 }: GuestCheckoutSubmitDependencies) {
   async function submit({
     cartId,
@@ -190,6 +192,7 @@ export function createGuestCheckoutSubmitService({
 
     if (!snapshotResult.ok) {
       if (snapshotResult.reason === "QUOTE_UNPROVEN") {
+        onQuoteProofRejection?.(snapshotResult.quoteReason);
         // Every unproven outcome — missing, oversized, malformed, forged, wrong-cart or simply
         // stale — converges here deliberately: the buyer is shown the current price and must accept
         // it again. Reporting *why* the proof failed would tell a probing client which of its

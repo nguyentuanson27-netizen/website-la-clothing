@@ -53,6 +53,11 @@ import {
   type ApplicablePromotionCampaign,
   type PromotionDiscountType,
 } from "./promotion-pricing.ts";
+import {
+  assessCampaignRuntimeHealth,
+  type VariantPricingOutcome,
+} from "./promotion-runtime-health.ts";
+import type { PromotionSignalWriter } from "../operations/promotion-observability.ts";
 
 /**
  * Coverage-validating writes expand PRODUCT targets to their current variants. The bound protects
@@ -226,8 +231,13 @@ async function findVariantsTheCampaignCannotDiscount(
   candidate: CandidateMoney,
   coveredVariantIds: readonly string[],
   now: Date,
-): Promise<{ invalid: string[]; unusableBase: string[]; discounted: number }> {
-  if (coveredVariantIds.length === 0) return { invalid: [], unusableBase: [], discounted: 0 };
+): Promise<{
+  invalid: string[];
+  unusableBase: string[];
+  discounted: number;
+  outcomes: VariantPricingOutcome[];
+}> {
+  if (coveredVariantIds.length === 0) return { invalid: [], unusableBase: [], discounted: 0, outcomes: [] };
 
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: [...coveredVariantIds] } },
@@ -250,12 +260,19 @@ async function findVariantsTheCampaignCannotDiscount(
 
   const invalid: string[] = [];
   const unusableBase: string[] = [];
+  const outcomes: VariantPricingOutcome[] = [];
   let discounted = 0;
   for (const variant of variants) {
     const pricing = resolvePromotionPricing({
       basePriceVnd: variant.pancakeRetailPrice,
       campaigns: [applicable],
       now,
+    });
+    outcomes.push({
+      variantId: variant.id,
+      isDiscounted: pricing.isDiscounted,
+      reason: pricing.reason,
+      conflictingCampaignIds: [],
     });
     if (pricing.isDiscounted) {
       discounted += 1;
@@ -265,7 +282,7 @@ async function findVariantsTheCampaignCannotDiscount(
     else invalid.push(variant.id);
   }
 
-  return { invalid, unusableBase, discounted };
+  return { invalid, unusableBase, discounted, outcomes };
 }
 
 function windowsOverlap(
@@ -318,6 +335,7 @@ export type PublishInput = Readonly<{
   session: AdminSessionCandidate;
   client?: PrismaClient;
   env?: Readonly<Record<string, string | undefined>>;
+  writer?: PromotionSignalWriter;
 }>;
 
 /** The campaign fields an effective mutation needs to re-validate what it is about to enable. */
@@ -347,6 +365,7 @@ async function validateEffectiveState(
   campaignId: string,
   candidate: CandidateState,
   now: Date,
+  writer?: PromotionSignalWriter,
 ): Promise<ActivationFailure | null> {
   // Owning products, then the variants the probe finds. The caller has already locked the campaign
   // row; everything below is read after these locks are held, so catalog sync cannot move a fact
@@ -381,6 +400,17 @@ async function validateEffectiveState(
   }
 
   const money = await findVariantsTheCampaignCannotDiscount(tx, candidate, coverage, now);
+
+  try {
+    assessCampaignRuntimeHealth({
+      campaignId,
+      outcomes: money.outcomes,
+      writer,
+    });
+  } catch {
+    // Telemetry emission failures are swallowed to safeguard business path execution.
+  }
+
   // Reported before the discount mismatch: an unusable base is a catalog fact the admin must fix
   // first, and surfacing it as a campaign problem would send them to the wrong screen.
   if (money.unusableBase.length > 0) {
@@ -406,6 +436,7 @@ export async function publishPromotionCampaign({
   session,
   client = prisma,
   env = process.env,
+  writer,
 }: PublishInput): Promise<ActivationOutcome> {
   authorize(session);
   const unbounded = refuseUnboundedCampaignId(campaignId);
@@ -434,7 +465,7 @@ export async function publishPromotionCampaign({
       } as const;
     }
 
-    const failure = await validateEffectiveState(tx, campaign.id, campaign, now);
+    const failure = await validateEffectiveState(tx, campaign.id, campaign, now, writer);
     if (failure !== null) return { ok: false, failure } as const;
     await tx.promotionCampaign.update({
       where: { id: campaign.id },
@@ -613,6 +644,7 @@ export async function editScheduledPromotionCampaign({
   patch,
   client = prisma,
   env = process.env,
+  writer,
 }: EditInput): Promise<ActivationOutcome> {
   authorize(session);
   const unbounded = refuseUnboundedCampaignId(campaignId);
@@ -648,7 +680,7 @@ export async function editScheduledPromotionCampaign({
       return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } } as const;
     }
 
-    const failure = await validateEffectiveState(tx, campaign.id, applyPatch(campaign, patch), now);
+    const failure = await validateEffectiveState(tx, campaign.id, applyPatch(campaign, patch), now, writer);
     if (failure !== null) return { ok: false, failure } as const;
 
     await writePatch(tx, campaign.id, patch);

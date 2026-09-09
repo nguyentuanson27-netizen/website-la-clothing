@@ -399,16 +399,16 @@ Activation rule:
 - [ ] Future GTM/Merchant activation must re-check promotion-aware monetary behavior if promotions are active.
 
 ## G2 — observability/readiness/rollback
-- [ ] Bounded/redacted activation rejection telemetry.
-- [ ] Invalid/recovery/PARTIALLY_INVALID telemetry.
-- [ ] Conflict telemetry with bounded identifiers.
-- [ ] `PRICE_CHANGED` phase and rendered-quote-proof rejection reason observable without logging proof/PII.
-- [ ] Merchant durable-revision mismatch/rebuild observable when Merchant enabled.
-- [ ] Pancake semantic acceptance evidence handled securely.
-- [ ] No PII/secrets/raw external payloads/raw quote proofs/cart UUIDs/session handles in logs.
-- [ ] Rollback runbook: gate off + explicit Disable; Disable works >2000 variants and advances durable pricing revision transactionally.
-- [ ] Merchant-enabled rollback relies on later cache decisions observing new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation dependency.
-- [ ] Mirrored-money audit accepted.
+- [x] Bounded/redacted activation rejection telemetry.
+- [x] Invalid/recovery/PARTIALLY_INVALID telemetry.
+- [x] Conflict telemetry with bounded identifiers.
+- [x] `PRICE_CHANGED` phase and rendered-quote-proof rejection reason observable without logging proof/PII.
+- [x] Merchant durable-revision mismatch/rebuild observable when Merchant enabled.
+- [x] Pancake semantic acceptance evidence handled securely.
+- [x] No PII/secrets/raw external payloads/raw quote proofs/cart UUIDs/session handles in logs.
+- [x] Rollback runbook: gate off + explicit Disable; Disable works >2000 variants and advances durable pricing revision transactionally.
+- [x] Merchant-enabled rollback relies on later cache decisions observing new durable revision so stale sale bytes cannot mask rollback; no best-effort post-commit invalidation dependency.
+- [x] Mirrored-money audit accepted.
 
 ## G3 — Definition of Done
 - [ ] Focused new/regression tests.
@@ -444,7 +444,7 @@ Activation rule:
 - [x] F P10 final Pancake price. *(U23, PR #192 merged)*
 - [x] #153 T7 Purchase consumer. *(U39, tests/domain/monetary-convergence.test.ts)*
 - [x] G1 enabled-consumer monetary convergence. *(U39, tests/domain/monetary-convergence.test.ts)*
-- [ ] G2 readiness.
+- [x] G2 readiness. *(U40)*
 - [ ] G3 integrated verification.
 
 ## Separate launch gates

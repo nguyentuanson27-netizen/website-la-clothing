@@ -91,7 +91,7 @@ export function isUsableBasePriceVnd(value: number | null): value is number {
   return value !== null && Number.isSafeInteger(value) && value > 0;
 }
 
-function isActiveAt(campaign: ApplicablePromotionCampaign, now: Date): boolean {
+export function isActiveAt(campaign: ApplicablePromotionCampaign, now: Date): boolean {
   const startedAt = campaign.startsAt;
   const endsAt = campaign.endsAt;
   // Half-open [startsAt, endsAt): start inclusive, end exclusive, so B may start exactly when A
