@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import type { RenderedQuoteProofRejection } from "../../src/commerce/checkout-quote-proof.ts";
-import {
-  resolvePromotionPricing,
-  type ApplicablePromotionCampaign,
-} from "../../src/commerce/promotion-pricing.ts";
+import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
 import { buildStorefrontCartLines } from "../../src/commerce/storefront-cart.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { calculateGuestShippingFeeVnd } from "../../src/commerce/guest-shipping-policy.ts";
@@ -477,7 +474,7 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
         assert.ok(line.endsWith("\n"));
         assert.equal(line.trim().includes("\n"), false);
         // Bounded size
-        assert.ok(Buffer.byteLength(line, "utf8") < 1024);
+        assert.ok(Buffer.byteLength(line, "utf8") < MAX_SIGNAL_UTF8_BYTES);
         // Privacy assertions: no secrets, no tokens, no cart UUIDs
         assert.equal(line.includes("cart_id"), false);
         assert.equal(line.includes("token"), false);
