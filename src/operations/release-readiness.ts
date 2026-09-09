@@ -1,5 +1,6 @@
 import { readAuthServerConfig } from "../auth/config.ts";
 import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import { resolveMerchantMarketFromEnvironment } from "../commerce/merchant-offer-mapper.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 import { validateSearchExposureForRelease } from "../seo/search-exposure.ts";
 import { readTrackingConfig, resolveTrackingRuntime, type TrackingMode } from "../tracking/config.ts";
@@ -12,6 +13,7 @@ export type ReleaseReadinessSummary = Readonly<{
   searchIndexingEnabled: boolean;
   trackingMode: TrackingMode;
   trackingLoadsGoogleTagManager: boolean;
+  merchantMarketStatus: "APPROVED" | "UNRESOLVED";
   authConfigured: true;
   trustedIpHeaderConfigured: boolean;
   pancakeConfigured: true;
@@ -49,6 +51,7 @@ export function validateReleaseEnvironment(
   // request. The reported posture is deliberately mode-only: the container id is configuration, not
   // a secret, but the summary is printed and has no reason to carry vendor identifiers.
   const tracking = resolveTrackingRuntime(readTrackingConfig(env));
+  const merchantMarket = resolveMerchantMarketFromEnvironment(env);
   const auth = readAuthServerConfig(env);
   const pancake = readPancakeConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
@@ -59,6 +62,7 @@ export function validateReleaseEnvironment(
     searchIndexingEnabled: searchExposure.indexingEnabled,
     trackingMode: tracking.mode,
     trackingLoadsGoogleTagManager: tracking.loadsGoogleTagManager,
+    merchantMarketStatus: merchantMarket.status,
     authConfigured: true,
     trustedIpHeaderConfigured: auth.ipAddressHeader !== undefined,
     pancakeConfigured: true,

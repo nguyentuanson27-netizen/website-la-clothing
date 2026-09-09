@@ -290,7 +290,7 @@ can be identified from a real artifact.
 ## PR-F — Merchant activation + final convergence
 
 ### M5 Merchant Center setup
-- [ ] Wire the approved O2 market **Vietnam / `vi` / `VND`** through reviewed trusted server-owned configuration; no Host/query/request/caller market authority.
+- [x] Wire the approved O2 market **Vietnam / `vi` / `VND`** through reviewed trusted server-owned configuration; no Host/query/request/caller market authority.
 - [ ] Verify/claim website and configure shipping/returns, product data source, Ads linkage.
 - [ ] Scheduled Fetch uses production HTTPS route at highest practical regular account-supported cadence.
 - [ ] Review Merchant Automations; keep automatic price/availability/condition updates off until exact variant structured data is proven.

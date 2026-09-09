@@ -193,13 +193,15 @@ export type MerchantExcludedCandidate = Readonly<{
   reasons: readonly MerchantExclusionReason[];
 }>;
 
+export type MerchantMarketEnvironment = Readonly<Record<string, string | undefined>>;
+
 /**
  * Owner gate O2 — target market, content language and feed currency.
  *
- * Vietnam / Vietnamese / VND is the *proposed* value in the source plan, not an approved one. The
- * mapper deliberately accepts no market argument: syntax-valid caller data is not owner approval.
- * When O2 is resolved, the reviewed value must be introduced through this single trusted constant
- * (or a separately reviewed trusted config source) rather than through request/caller input.
+ * Owner decision O2 is resolved as Vietnam / Vietnamese / VND. Production commerce code reads this
+ * only through the zero-argument `resolveMerchantMarket()` server boundary. The parameterized
+ * `resolveMerchantMarketFromEnvironment()` exists for release validation and focused tests; request,
+ * query, header, Host and business-call arguments are not market authorities.
  */
 export type MerchantMarketPolicy = Readonly<{
   /** ISO 3166-1 alpha-2, uppercase. */
@@ -214,8 +216,22 @@ export type MerchantMarketResolution =
   | Readonly<{ status: "APPROVED"; policy: MerchantMarketPolicy }>
   | Readonly<{ status: "UNRESOLVED"; reason: typeof MERCHANT_MARKET_UNRESOLVED }>;
 
-/** No owner approval exists for O2 yet. Changing this requires a reviewed owner-decision change. */
+/** Canonical reviewed owner-approved O2 market policy for Vietnam. */
+export const APPROVED_O2_MARKET_POLICY: MerchantMarketPolicy = Object.freeze({
+  targetCountry: "VN",
+  contentLanguage: "vi",
+  currency: "VND",
+});
+
+/** Compatibility constant for historical audit imports; runtime authority is server configuration. */
 export const APPROVED_MERCHANT_MARKET: MerchantMarketPolicy | null = null;
+
+function unresolvedMerchantMarket(): MerchantMarketResolution {
+  return Object.freeze({
+    status: "UNRESOLVED" as const,
+    reason: MERCHANT_MARKET_UNRESOLVED,
+  });
+}
 
 function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy | null {
   if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) return null;
@@ -236,20 +252,38 @@ function parseReviewedMerchantMarket(candidate: unknown): MerchantMarketPolicy |
     return null;
   }
 
+  if (
+    targetCountry !== APPROVED_O2_MARKET_POLICY.targetCountry
+    || contentLanguage !== APPROVED_O2_MARKET_POLICY.contentLanguage
+    || currency !== APPROVED_O2_MARKET_POLICY.currency
+  ) {
+    return null;
+  }
+
   return Object.freeze({ targetCountry, contentLanguage, currency });
 }
 
-/** Resolves O2 exclusively from the reviewed authority above; callers cannot inject approval. */
-export function resolveMerchantMarket(): MerchantMarketResolution {
-  const policy = parseReviewedMerchantMarket(APPROVED_MERCHANT_MARKET as unknown);
-  if (policy === null) {
-    return Object.freeze({
-      status: "UNRESOLVED" as const,
-      reason: MERCHANT_MARKET_UNRESOLVED,
-    });
+/** Pure release/test reader for the three canonical server-owned variables. */
+export function resolveMerchantMarketFromEnvironment(
+  env: MerchantMarketEnvironment,
+): MerchantMarketResolution {
+  const targetCountry = env.LA_MERCHANT_TARGET_COUNTRY;
+  const contentLanguage = env.LA_MERCHANT_CONTENT_LANGUAGE;
+  const currency = env.LA_MERCHANT_CURRENCY;
+
+  if (targetCountry === undefined || contentLanguage === undefined || currency === undefined) {
+    return unresolvedMerchantMarket();
   }
 
-  return Object.freeze({ status: "APPROVED" as const, policy });
+  const policy = parseReviewedMerchantMarket({ targetCountry, contentLanguage, currency });
+  return policy === null
+    ? unresolvedMerchantMarket()
+    : Object.freeze({ status: "APPROVED" as const, policy });
+}
+
+/** Production runtime authority. No request or business caller can supply the market configuration. */
+export function resolveMerchantMarket(): MerchantMarketResolution {
+  return resolveMerchantMarketFromEnvironment(process.env);
 }
 
 export type MerchantMappingResult = Readonly<{

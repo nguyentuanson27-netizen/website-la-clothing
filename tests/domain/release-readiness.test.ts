@@ -26,6 +26,7 @@ test("release preflight validates required server configuration without returnin
     searchIndexingEnabled: false,
     trackingMode: "disabled",
     trackingLoadsGoogleTagManager: false,
+    merchantMarketStatus: "UNRESOLVED",
     authConfigured: true,
     trustedIpHeaderConfigured: true,
     pancakeConfigured: true,
@@ -161,3 +162,15 @@ test("release preflight delegates auth, Pancake and shipping validation fail clo
     /LA_SHIPPING_FEE_VND/,
   );
 });
+
+test("release preflight reports approved Merchant market status when configured on the server", () => {
+  const summary = validateReleaseEnvironment({
+    ...validEnvironment,
+    LA_MERCHANT_TARGET_COUNTRY: "VN",
+    LA_MERCHANT_CONTENT_LANGUAGE: "vi",
+    LA_MERCHANT_CURRENCY: "VND",
+  });
+
+  assert.equal(summary.merchantMarketStatus, "APPROVED");
+});
+
