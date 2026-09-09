@@ -11,6 +11,7 @@ import {
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
+import { PUBLIC_DELIVERY_SCOPE_LABELS } from "@/content/public-fulfillment-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -32,25 +33,12 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
 }
 
 /**
- * W13/U33b — the Shipping & Payment page.
+ * W13/U33b + U41/M5 — Shipping & Payment page from reviewed public authorities.
  *
- * One source per fact, and three of them, each owning something the others do not:
- *
- * - **`readGuestShippingPolicy`** owns the shipping price. B4 keeps it as the pricing authority
- *   because production may legitimately override it, so a fee copied into the content module would
- *   let this page contradict what checkout actually charges.
- * - **`buildPublicBrandFacts`** already owned the payment method, the no-account fact and the
- *   server re-verification sentence before this page existed, and the footer renders them. The page
- *   reuses it rather than restating those facts, so there is no second representation to drift.
- * - **`PUBLIC_DELIVERY_FACTS`** owns only what is genuinely new here: §5 coverage, carriers,
- *   estimates, the estimate caveat, the no-tracking statement and the verification-call wording.
- *
- * The refund channel lives with the refund policy in `PUBLIC_RETURNS_POLICY`: a way to receive money
- * back is not a way to pay for an order, and both pages read that one string.
- *
- * The delivery windows are printed as estimates because §5 says they are estimates and not a
- * guaranteed SLA. The page also states plainly that no carrier tracking is provided by default,
- * rather than staying silent and letting a buyer assume it exists.
+ * Shipping price remains server-owned in `readGuestShippingPolicy`. Delivery windows stay in
+ * `PUBLIC_DELIVERY_FACTS`, while `PUBLIC_DELIVERY_SCOPE_LABELS` names the owner-approved Hanoi
+ * scopes explicitly so the public page does not publish the ambiguous historical labels “Nội thành”
+ * and “Ngoại tỉnh”. No Merchant-only fallback changes the customer-facing delivery policy.
  */
 export default function ShippingPage() {
   const policy = readGuestShippingPolicy();
@@ -86,13 +74,17 @@ export default function ShippingPage() {
               <dd className="mt-2 text-black/70">{carriers.join(" · ")}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Nội thành</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+                {PUBLIC_DELIVERY_SCOPE_LABELS.innerCity}
+              </dt>
               <dd className="mt-2 text-black/70">
                 {describePublicDeliveryEstimate(estimateDays.innerCity)} (dự kiến)
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Ngoại tỉnh</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+                {PUBLIC_DELIVERY_SCOPE_LABELS.otherProvince}
+              </dt>
               <dd className="mt-2 text-black/70">
                 {describePublicDeliveryEstimate(estimateDays.otherProvince)} (dự kiến)
               </dd>
@@ -116,10 +108,6 @@ export default function ShippingPage() {
             Theo dõi đơn hàng
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {/*
-              The tracking capability sentence is `buildPublicBrandFacts`'s — the reviewed A-class
-              authority the footer already renders — rather than a second telling of it here.
-            */}
             {carrierTrackingNote} {brandFacts.orderTracking.detail}{" "}
             <Link
               className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"

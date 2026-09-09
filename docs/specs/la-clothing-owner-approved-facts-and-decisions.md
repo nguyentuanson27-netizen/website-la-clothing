@@ -1,7 +1,7 @@
 # LA Clothing — Owner-approved public facts & operational decisions
 
 **Status:** Consolidated owner-approved source of truth  
-**Last updated:** 2026-09-07  
+**Last updated:** 2026-09-09  
 **Owner / brand authority:** `@nguyentuanson27-netizen`
 
 > Tài liệu này tổng hợp các fact, policy và owner decision đã được xác nhận cho LA Clothing.
@@ -82,6 +82,30 @@ Sản phẩm đổi/trả phải:
 - Khách hàng chủ động đổi sang mẫu khác.
 - Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.
 
+## Return methods — owner-approved 2026-09-09
+Khách hàng có thể trả hàng bằng **cả hai** phương thức:
+- **trả trực tiếp tại cửa hàng / địa điểm kinh doanh**;
+- **gửi trả qua đường vận chuyển / bưu gửi**.
+
+Đối với gửi trả qua đường vận chuyển:
+- **khách hàng tự chịu trách nhiệm gửi hàng và nhãn/phiếu gửi trả**;
+- không được claim LA Clothing cung cấp prepaid return label nếu chưa có quyết định mới.
+
+## Merchant return acceptance — owner-approved 2026-09-09
+Google Merchant Center tách hai quyết định khác nhau:
+- có **nhận return/refund** cho hàng defective và non-defective hay không;
+- có **nhận exchange** hay không.
+
+Owner chốt:
+- hàng đúng, không lỗi nhưng khách đổi ý **không được trả hàng để hoàn tiền**;
+- các trường hợp customer-initiated chỉ được **đổi hàng** theo policy đổi mẫu / size / màu hiện hành;
+- các trường hợp lỗi/sai hàng vẫn được hỗ trợ đổi/trả theo policy hiện tại.
+
+Merchant mapping rule:
+- return acceptance: **defective products only**;
+- exchange acceptance: **enabled** cho các trường hợp exchange đã được owner phê duyệt;
+- không được map customer-change exchange thành non-defective return/refund.
+
 ## Customer-initiated exchange
 Nếu khách hàng chủ động đổi mẫu / size / màu:
 - **Phí đổi: 50.000 đồng / 01 sản phẩm**
@@ -91,14 +115,21 @@ Nếu khách hàng chủ động đổi mẫu / size / màu:
 Nếu LA Clothing giao sai hoặc lỗi thuộc shop / nhà sản xuất:
 - **LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.**
 
+## Restocking fee — owner-approved 2026-09-09
+- **Không thu restocking fee: 0 VND.**
+- Phí đổi `50.000 VND / sản phẩm` ở customer-initiated exchange **không phải** restocking fee và không được map sang field restocking fee của Merchant Center.
+
 ## Non-returnable categories
 - **Không có danh mục loại trừ riêng.**
 - Chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách.
 
 ## Refund
-- Thời gian hoàn tiền dự kiến: **7–10 ngày làm việc** kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền.
+- Thời gian hoàn tiền dự kiến trên website: **7–10 ngày làm việc** kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền.
+- **Merchant Center mapping:** chưa khóa thành một số ngày calendar cố định. Owner giữ nguyên policy `7–10 ngày làm việc`; khi Merchant Center account được kết nối, phải đọc chính xác semantics/đơn vị của field hiện tại rồi chọn representation không làm ngắn hơn hoặc sai nghĩa policy website.
+- Không được tự coi `10` calendar days là owner-approved chỉ vì đó là upper bound của `7–10 working days`.
+- Không tự sửa public policy để fit vendor UI.
 
-**B1 status:** `RESOLVED`
+**B1 status:** `RESOLVED FOR WEBSITE + MERCHANT RETURN ACCEPTANCE; REFUND VENDOR-FIELD REPRESENTATION DEFERRED TO ACCOUNT UI`
 
 ---
 
@@ -114,10 +145,102 @@ Nếu LA Clothing giao sai hoặc lỗi thuộc shop / nhà sản xuất:
 Có thể dùng wording customer-facing là “đơn vị vận chuyển phù hợp” nếu không muốn hard-code carrier ở mọi surface.
 
 ## Delivery estimate
-- **Nội thành:** 1–3 ngày
-- **Ngoại tỉnh:** 3–15 ngày
+- **Nội thành Hà Nội:** 1–3 ngày
+- **Ngoài nội thành Hà Nội / các tỉnh, thành khác:** 3–15 ngày
 
 Đây là thời gian dự kiến, không phải guaranteed SLA tuyệt đối.
+
+### “Nội thành Hà Nội” — researched LA Clothing business delivery zone 2026-09-09
+Owner xác nhận tier 1–3 ngày áp dụng cho **nội thành Hà Nội** và giao cho agent nghiên cứu một operational mapping theo địa giới hiện hành.
+
+Sau sắp xếp 2025, ranh giới các phường mới cắt qua ranh giới quận/huyện cũ ở một số nơi. Vì vậy danh sách dưới đây được dùng như **LA Clothing business delivery zone** để vận hành tier 1–3 ngày; nó **không** phải tuyên bố rằng 48 phường mới là phép chuyển đổi hành chính chính xác của 12 quận cũ, và cũng không phải một cấp hành chính chính thức mang tên “nội thành”.
+
+Business zone 1–3 ngày hiện dùng 48 phường tại khoản 1–48 Điều 1 Nghị quyết 1656/NQ-UBTVQH15:
+1. Hoàn Kiếm
+2. Cửa Nam
+3. Ba Đình
+4. Ngọc Hà
+5. Giảng Võ
+6. Hai Bà Trưng
+7. Vĩnh Tuy
+8. Bạch Mai
+9. Đống Đa
+10. Kim Liên
+11. Văn Miếu - Quốc Tử Giám
+12. Láng
+13. Ô Chợ Dừa
+14. Hồng Hà
+15. Lĩnh Nam
+16. Hoàng Mai
+17. Vĩnh Hưng
+18. Tương Mai
+19. Định Công
+20. Hoàng Liệt
+21. Yên Sở
+22. Thanh Xuân
+23. Khương Đình
+24. Phương Liệt
+25. Cầu Giấy
+26. Nghĩa Đô
+27. Yên Hòa
+28. Tây Hồ
+29. Phú Thượng
+30. Tây Tựu
+31. Phú Diễn
+32. Xuân Đỉnh
+33. Đông Ngạc
+34. Thượng Cát
+35. Từ Liêm
+36. Xuân Phương
+37. Tây Mỗ
+38. Đại Mỗ
+39. Long Biên
+40. Bồ Đề
+41. Việt Hưng
+42. Phúc Lợi
+43. Hà Đông
+44. Dương Nội
+45. Yên Nghĩa
+46. Phú Lương
+47. Kiến Hưng
+48. Thanh Liệt
+
+Các phường Chương Mỹ, Sơn Tây và Tùng Thiện không nằm trong business zone 1–3 ngày hiện tại; chúng dùng tier 3–15 ngày cùng phần còn lại ngoài zone.
+
+Source references reviewed 2026-09-09:
+- Nghị quyết 1656/NQ-UBTVQH15: https://xaydungchinhsach.chinhphu.vn/toan-van-nghi-quyet-so-1656-nq-ubtvqh15-sap-xep-cac-dvhc-cap-xa-cua-thanh-pho-ha-noi-nam-2025-119250616192433872.htm
+- Hà Nội pre-reform 12-quận core description (historical context only, not an exact boundary transform): https://phuchoa.phuctho.hanoi.gov.vn/tin-chi-tiet/-/chi-tiet/cong-khai-du-thao-phuong-an-sap-xep-on-vi-hanh-chinh-cap-xa-cua-thanh-pho-ha-noi-5744-175.html
+
+## Merchant Center shipping-speed compatibility
+Current Google Merchant Center documentation reviewed 2026-09-09 shows:
+- Vietnam supports regions for regional availability/pricing, but **does not list Vietnam as supporting shipping cost/transit-time custom areas**;
+- manually entered delivery speed uses **handling time** (minimum/maximum processing business days before carrier pickup) plus **transit time** (minimum/maximum business days after pickup). Order cut-off may also affect the displayed date.
+
+Therefore:
+- website/checkout keeps the truthful end-to-end estimates: 1–3 days inside the LA Clothing inner-Hanoi business zone and 3–15 days elsewhere;
+- these end-to-end website estimates are **not** automatically Merchant `transit time` values;
+- Merchant Center must not invent an unsupported Vietnam custom shipping-speed region;
+- do not copy 1–3 / 3–15 directly into Merchant transit-time fields;
+- after account UI is observed, choose transit inputs whose computed delivery estimate remains truthful and does not promise faster delivery than the website can meet.
+
+Google references:
+- https://support.google.com/merchants/answer/15406457
+- https://support.google.com/merchants/answer/12577710
+- https://support.google.com/merchants/answer/14949917
+- https://support.google.com/merchants/answer/12578516
+
+### Merchant handling-time authority — owner-approved 2026-09-09
+Owner confirms the current fulfillment process:
+- orders are processed **Monday–Saturday**;
+- an order is handed to GHN/GHTK **within 1 handling business day**.
+
+Merchant manual handling mapping:
+- minimum handling time: **1 business day**;
+- maximum handling time: **1 business day**;
+- handling business days: **Monday–Saturday**;
+- order cut-off time: **not separately approved**; do not invent one unless the Merchant UI requires a value, in which case stop and request/observe the real operational cut-off.
+
+This handling input does not replace the public end-to-end delivery estimates and must not be used to invent transit times without reviewing the actual Merchant controls.
 
 ## Carrier tracking
 - **Mặc định không cung cấp mã vận đơn / link tracking GHN/GHTK cho khách hàng.**
@@ -137,8 +260,13 @@ Giữ current server-owned shipping policy cho tới khi owner thay đổi:
   - subtotal **trên 1.000.000 VND**, hoặc
   - từ **3 sản phẩm**
 - Runtime/server config vẫn là authority nếu production env có override hợp lệ.
+- **Production confirmation 2026-09-09:** owner xác nhận VPS production hiện dùng đúng các giá trị trên. Đây là owner-provided production confirmation, không phải independent SSH/runtime observation của coding agent.
 
-**B4 status:** `RESOLVED`
+Merchant mapping rule:
+- ưu tiên match chính xác nếu Merchant account UI support được cả order-value và item-count condition;
+- nếu UI không biểu diễn được điều kiện `>= 3 sản phẩm`, không được submit mức thấp hơn checkout; Google cho phép overestimate nhẹ khi không thể match chính xác, vì vậy giữ `30.000 VND` cho case không biểu diễn được sẽ an toàn hơn việc quảng cáo free shipping sai.
+
+**B4 status:** `RESOLVED FOR WEBSITE + MERCHANT HANDLING INPUT; TRANSIT REPRESENTATION WAITS FOR ACCOUNT UI`
 
 ---
 
@@ -356,10 +484,10 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 
 | Gate / Unit | Status | Decision / blocker |
 |---|---|---|
-| B1 Returns | ✅ RESOLVED | 15 ngày; đổi mẫu/size/màu; 50k + 2-way ship nếu customer-initiated; shop/manufacturer fault thì LA Clothing chịu ship; no separate excluded categories |
+| B1 Returns | ✅ RESOLVED FOR OWNER INPUT | 15 ngày; return in-store + by mail; mail label/shipping customer responsibility; restocking 0; customer-change cases are exchange-only (no non-defective refund return); defective/wrong-item cases remain returnable; refund website 7–10 working days; exact Merchant refund-processing field mapping waits for account UI semantics |
 | B2 Contact / U32b | ✅ RESOLVED | Phone, email, address, hours, Fanpage approved |
 | B3 Size Guide | ✅ RESOLVED | 2 size charts, cm, circumference semantics, ±3 cm tolerance |
-| B4 Shipping | ✅ RESOLVED | Nationwide, GHN/GHTK, 1–3 days inner-city, 3–15 days other provinces, no default carrier tracking, phone confirmation optional |
+| B4 Shipping | ✅ RESOLVED FOR OWNER INPUT | Nationwide, GHN/GHTK, 1–3 days in the researched 48-ward LA Clothing business zone, 3–15 days elsewhere; production price values owner-confirmed 30k / >1M / >=3 items; Merchant handling = 1 business day, Monday–Saturday; exact transit representation waits for account UI |
 | B5 Metadata uniqueness / U29 | ✅ RESOLVED | Pair-level unique on publish; draft warning; collision blocks publish |
 | B6 About/legal | ✅ RESOLVED FOR MINIMAL PAGE | No founding year/founder; no invented story; legal entity + MST + contact may be public |
 | U35 / Permanent domain | ⏳ OPEN | Permanent domain deferred |
@@ -379,11 +507,16 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 - U33 / W13
 - U36 / W19
 - O1/O2-dependent Ads/Merchant planning
+- U41 / M5 account observation, website verification planning and data-source preparation once Merchant Center access is connected.
+- Merchant shipping-policy configuration may use handling `1–1 business day`, Monday–Saturday; transit values must still be mapped against the actual Merchant UI without underpromising website delivery estimates.
+- Merchant return-policy configuration may select defective-product returns only and keep exchanges enabled for the approved exchange cases; exact refund-processing-field representation still waits for account UI semantics.
 
 ## Still blocked / deferred
 - U35 — permanent domain not chosen.
 - Gate T live — O4 real vendor IDs missing.
-- Merchant activation (Gate M) — trusted O2 runtime authority not wired; the feed↔JSON-LD parity gate itself is now closed with PR #216, on PR #214's implementation.
+- Merchant activation (Gate M) — external Merchant Center account access / observed account state is still required for website verification/claim, shipping/returns save, Scheduled Fetch, Diagnostics and Ads linkage. Trusted O2 runtime authority and feed↔JSON-LD parity are already closed.
+- Exact Merchant refund-processing-field mapping — inspect current account UI semantics before save; do not reinterpret `7–10 working days` as a shorter calendar-day promise.
+- Merchant transit-time representation — inspect actual account controls and choose a truthful representation consistent with website end-to-end estimates; do not invent custom Vietnam regions.
 - Gate S activation — separate human gate.
 - Brand story / values — optional future content.
 
@@ -391,9 +524,9 @@ Các page nên consume một source-of-truth chung cho contact/legal/policy fact
 
 # 18. Owner approval record
 
-Owner confirms the facts/decisions in this document as current business truth for LA Clothing as of **2026-09-07**, except sections explicitly marked `OPEN`.
+Owner confirms the facts/decisions in this document as current business truth for LA Clothing as of **2026-09-09**, except sections explicitly marked `OPEN`.
 
 **Approved by:** `@nguyentuanson27-netizen`  
-**Approval date:** `2026-09-07`
+**Approval date:** `2026-09-09`
 
-Any future change to return window, fees, shipping terms, delivery estimates, carriers, size measurements/tolerance, contact/legal facts, crawler policy, Ads value semantics, Merchant target market, SEO publish uniqueness policy, or the Merchant↔JSON-LD one-survivor convergence contract should update this source-of-truth before implementation/publication changes rely on the new value.
+Any future change to return window/methods/fees, shipping terms/geography/delivery estimates/carriers, size measurements/tolerance, contact/legal facts, crawler policy, Ads value semantics, Merchant target market, SEO publish uniqueness policy, or the Merchant↔JSON-LD one-survivor convergence contract should update this source-of-truth before implementation/publication changes rely on the new value.

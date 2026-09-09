@@ -7,6 +7,7 @@ import {
   describePublicReturnWindow,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
+import { PUBLIC_RETURN_LOGISTICS_FACTS } from "@/content/public-fulfillment-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -27,15 +28,13 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
 }
 
 /**
- * W13/U33b — the Returns page, rendered entirely from `PUBLIC_RETURNS_POLICY`.
+ * W13/U33b + U41/M5 — public returns policy from owner-approved authorities only.
  *
- * Every clause is a member of that constant rather than prose written here. Policy is the one kind
- * of content this repository must never author, and a page that maps over the approved arrays cannot
- * quietly gain a condition, a supported case or an exception the owner did not write.
- *
- * The page states no timeline, exception or channel §4 does not: no restocking fee, no per-category
- * exclusions — §4 says there are none — and no promise about how a return is collected beyond
- * following the support team's instructions.
+ * `PUBLIC_RETURNS_POLICY` keeps the existing window, eligibility, fee and refund facts;
+ * `PUBLIC_RETURN_LOGISTICS_FACTS` carries the later owner-approved return methods, restocking
+ * decision and the exchange-only rule for correct/non-defective customer-change cases. Page prose
+ * only labels sections: every normative return statement below comes from one of those reviewed
+ * content authorities.
  */
 export default function ReturnsPage() {
   const {
@@ -47,6 +46,8 @@ export default function ReturnsPage() {
     nonReturnableCategoriesNote,
     refundChannelNote,
   } = PUBLIC_RETURNS_POLICY;
+  const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } =
+    PUBLIC_RETURN_LOGISTICS_FACTS;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -82,11 +83,9 @@ export default function ReturnsPage() {
               <li key={supportedCase}>{supportedCase}</li>
             ))}
           </ul>
-          {/*
-            Rendered from the state, not asserted: the approved list of excluded categories is empty,
-            and this sentence is what that emptiness means. Should the owner ever add a category, the
-            page stops making the claim instead of continuing to make it falsely.
-          */}
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
+            {nonDefectiveRefundNote}
+          </p>
           {nonReturnableCategories.length === 0 ? (
             <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
               {nonReturnableCategoriesNote}
@@ -98,6 +97,19 @@ export default function ReturnsPage() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section aria-labelledby="return-method-heading">
+          <h2 id="return-method-heading" className="font-serif text-3xl tracking-[-0.03em]">
+            Cách trả hàng
+          </h2>
+          <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
+            <li>{returnMethods.inStore}</li>
+            <li>{returnMethods.byMail}</li>
+          </ul>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
+            {returnMethods.byMailResponsibility}
+          </p>
         </section>
 
         <section aria-labelledby="fees-heading">
@@ -117,9 +129,11 @@ export default function ReturnsPage() {
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
                 Lỗi thuộc shop hoặc nhà sản xuất
               </dt>
-              <dd className="mt-2 text-black/70">
-                {shopFaultShippingNote}
-              </dd>
+              <dd className="mt-2 text-black/70">{shopFaultShippingNote}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Phí restocking</dt>
+              <dd className="mt-2 text-black/70">{restockingFeeNote}</dd>
             </div>
           </dl>
         </section>

@@ -29,6 +29,7 @@ export default defineConfig({
     "flash-sale-freshness.spec.ts",
     "footer-support.spec.ts",
     "homepage-taxonomy.spec.ts",
+    "merchant-return-policy.spec.ts",
     "not-found-recovery.spec.ts",
     "pdp-language.spec.ts",
     "pdp-promotion.spec.ts",
