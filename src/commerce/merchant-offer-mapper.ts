@@ -395,11 +395,20 @@ function resolveAddressableOption(
   if (selection === null || selection.variantId !== variation.variantId) return null;
 
   const option = optionsByVariantId.get(variation.variantId);
+  // The external identity must still agree with the option the internal handle names. U12 already
+  // refused a duplicated identity, so this only rejects a candidate row that disagrees with the
+  // projection it was loaded beside.
   return option !== undefined && option.pancakeVariationId === variation.pancakeVariationId
     ? option
     : null;
 }
 
+/**
+ * Index of a product's authorized options by internal variant id.
+ *
+ * Built once per product rather than searched per candidate: a duplicated internal id cannot be
+ * resolved to one option, so it is dropped from the index and its candidate reads as unaddressable.
+ */
 function indexOptionsByVariantId(
   projection: StorefrontProductProjection,
 ): ReadonlyMap<string, StorefrontProjectionOption> {
@@ -423,6 +432,9 @@ function draftCandidate(
 ): Draft {
   const pancakeVariationId = variation.pancakeVariationId;
 
+  // Composite is a whole-projection verdict as well as a per-variation one: a set's parent option
+  // and its components are equally deferred, and reporting one reason keeps the excluded counts
+  // reconcilable with the M1 audit rather than mixing a deferral with incidental readiness gaps.
   if (variation.isComposite || product.projection.mode !== "standalone") {
     return {
       pancakeVariationId,
@@ -453,6 +465,10 @@ function draftCandidate(
   const addressableOption = resolveAddressableOption(product, variation, optionsByVariantId);
   if (addressableOption === null) reasons.add("OPTION_NOT_ADDRESSABLE");
 
+  // Two reasons are reported only when they are the candidate's own fault rather than a consequence
+  // of one already recorded: a landing URL cannot be blamed on a slug when the offer identity itself
+  // is unusable, and a price cannot be called unresolved when no option was ever resolved to price.
+  // Cascaded reasons would make every excluded row look like several independent defects.
   const path =
     hasOfferId && pancakeVariationId !== null
       ? buildStandaloneVariantDeepLinkPath({ slug: product.slug, pancakeVariationId })
@@ -489,6 +505,9 @@ function draftCandidate(
       : resolveRequiredApparelAttribute(addressableOption.size, MERCHANT_SIZE_MAX_LENGTH);
   if (addressableOption !== null && size === null) reasons.add("SIZE_UNRESOLVED");
 
+  // Every condition below has already recorded its own reason, so `reasons.size` alone decides the
+  // outcome. They are repeated here only so the emitted offer needs no cast to convince the type
+  // checker that a fact it refused to emit without is present.
   if (
     reasons.size > 0
     || !apparel.ok
@@ -532,6 +551,7 @@ function draftCandidate(
   };
 }
 
+/** Values claimed by more than one otherwise-emittable draft. */
 function duplicatesAmong(values: readonly string[]): ReadonlySet<string> {
   const seen = new Set<string>();
   const duplicated = new Set<string>();
@@ -560,6 +580,9 @@ export function mapMerchantOffers({
     }
   }
 
+  // Uniqueness is a property of the emittable set, so it is decided after every candidate has been
+  // judged on its own facts. A duplicate is never resolved by preferring one claimant: both are
+  // excluded, because the catalog cannot say which offer the identity or the part number names.
   const emittable = drafts.filter((draft) => draft.offer !== null);
   const duplicateIds = duplicatesAmong(emittable.map((draft) => draft.offer!.id));
   const duplicateMpns = duplicatesAmong(emittable.map((draft) => draft.offer!.mpn));
