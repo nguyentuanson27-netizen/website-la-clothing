@@ -22,7 +22,7 @@ The U37/W21 capacity contract remains closed and unchanged by the domain decisio
 
 - Named owner: `@nguyentuanson27-netizen`.
 - Cadence: per release, with a fresh activation-time rerun immediately before indexing enablement.
-- Single-sitemap hard budget: **49,996 dynamic URLs** plus reviewed static paths, bounded by the 50,000-URL document limit.
+- Single-sitemap hard budget: **49,991 dynamic URLs** plus the current 9 reviewed static paths, bounded by the 50,000-URL document limit.
 - Warning: **40,000 dynamic URLs** → `ALLOW_WITH_ACK`; initiate the sharding plan and record owner acknowledgement.
 - Act: **45,000 dynamic URLs** or projected time to the hard bound shorter than one sharding cycle → `BLOCK`; implement U37b sharding first.
 - Above the hard dynamic budget → `BLOCK`; never publish a partial sitemap or raise the per-document bound as a workaround.
