@@ -27,9 +27,9 @@
 - **Owner confirmation:** MST `0111242251` thuộc CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS.
 
 ## Domain
-- **Current website:** https://www.lafashion.asia
+- **Current website:** https://la.lanadesign.vn
+- `la.lanadesign.vn` vẫn là temporary production domain.
 - **Permanent branded domain:** `www.lafashion.asia` (ADR 0009)
-- **Legacy temporary domain:** `la.lanadesign.vn` (ADR 0004)
 - **Google Site Verification:** `N2OZE83tu6EA4bc-oP1u2uhDYBrDwLKJJCZstMm5lhs`
 - Không coi tài liệu này là phê duyệt bật organic indexing.
 
