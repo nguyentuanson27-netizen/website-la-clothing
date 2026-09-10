@@ -8,9 +8,10 @@ import {
 } from "../../src/seo/search-exposure.ts";
 
 const TEMPORARY_PRODUCTION_DOMAIN = "la.lanadesign.vn";
+const OFFICIAL_PRODUCTION_DOMAIN = "www.lafashion.asia";
 
 const publicEnvironment = {
-  APP_DOMAIN: "shop.example.com",
+  APP_DOMAIN: OFFICIAL_PRODUCTION_DOMAIN,
   SEARCH_INDEXING_ENABLED: "true",
 } as const;
 
@@ -44,23 +45,23 @@ test("runtime search exposure never enables staging or local origins", () => {
   }
 });
 
-test("runtime search exposure can enable only an explicitly requested public origin", () => {
+test("runtime search exposure can enable only the explicitly requested approved permanent origin", () => {
   assert.deepEqual(readSearchExposure(publicEnvironment), {
-    origin: "https://shop.example.com",
+    origin: `https://${OFFICIAL_PRODUCTION_DOMAIN}`,
     indexingEnabled: true,
   });
 });
 
 test("release search exposure requires an explicit canonical boolean flag without echoing hostile input", () => {
   assert.throws(
-    () => validateSearchExposureForRelease({ APP_DOMAIN: "shop.example.com" }),
+    () => validateSearchExposureForRelease({ APP_DOMAIN: OFFICIAL_PRODUCTION_DOMAIN }),
     /SEARCH_INDEXING_ENABLED must be explicitly configured as true or false/,
   );
 
   const hostile = "TRUE?token=should-not-leak";
   try {
     validateSearchExposureForRelease({
-      APP_DOMAIN: "shop.example.com",
+      APP_DOMAIN: OFFICIAL_PRODUCTION_DOMAIN,
       SEARCH_INDEXING_ENABLED: hostile,
     });
     assert.fail("expected malformed indexing flag to fail");
@@ -96,9 +97,9 @@ test("release search exposure blocks indexing on staging/local but accepts expli
   }
 });
 
-test("release search exposure accepts explicit true on a non-staging public origin", () => {
+test("release search exposure accepts explicit true on the approved permanent origin", () => {
   assert.deepEqual(validateSearchExposureForRelease(publicEnvironment), {
-    origin: "https://shop.example.com",
+    origin: `https://${OFFICIAL_PRODUCTION_DOMAIN}`,
     indexingEnabled: true,
   });
 });
@@ -219,26 +220,29 @@ test("G1 keeps the approved temporary production origin serving buyer traffic wi
   );
 });
 
-test("G1 leaves a future approved permanent domain on the existing indexing gate", () => {
+test("permanent-domain selection fails closed for every other public hostname", () => {
   for (const appDomain of [
+    "lafashion.asia",
     "laclothing.example",
     "www.laclothing.example",
     "lanadesign.vn",
     `www.${TEMPORARY_PRODUCTION_DOMAIN}`,
     `${TEMPORARY_PRODUCTION_DOMAIN}.attacker.example`,
+    `${OFFICIAL_PRODUCTION_DOMAIN}.attacker.example`,
   ]) {
     assert.deepEqual(
       readSearchExposure({ APP_DOMAIN: appDomain, SEARCH_INDEXING_ENABLED: "true" }),
-      { origin: `https://${appDomain}`, indexingEnabled: true },
-      `${appDomain} must stay governed by the existing indexing gate`,
+      { origin: `https://${appDomain}`, indexingEnabled: false },
+      `${appDomain} must remain non-indexable`,
     );
-    assert.deepEqual(
-      validateSearchExposureForRelease({
-        APP_DOMAIN: appDomain,
-        SEARCH_INDEXING_ENABLED: "true",
-      }),
-      { origin: `https://${appDomain}`, indexingEnabled: true },
-      `${appDomain} must not be hardcoded out of release preflight`,
+    assert.throws(
+      () =>
+        validateSearchExposureForRelease({
+          APP_DOMAIN: appDomain,
+          SEARCH_INDEXING_ENABLED: "true",
+        }),
+      /approved permanent storefront origin/,
+      `${appDomain} must not pass release preflight for indexing`,
     );
   }
 });
@@ -247,8 +251,8 @@ test("G1 temporary-host enforcement reads only the server-owned storefront origi
   const clientControlled = {
     APP_DOMAIN: TEMPORARY_PRODUCTION_DOMAIN,
     SEARCH_INDEXING_ENABLED: "true",
-    HOST: "shop.example.com",
-    "x-forwarded-host": "shop.example.com",
+    HOST: OFFICIAL_PRODUCTION_DOMAIN,
+    "x-forwarded-host": OFFICIAL_PRODUCTION_DOMAIN,
     NEXT_PUBLIC_SEARCH_INDEXING_ENABLED: "true",
   } as const;
 
