@@ -13,7 +13,7 @@ const HOST = "127.0.0.1";
 const PORT = 3215;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_009;
-const PUBLIC_ORIGIN = "https://shop.example.com";
+const PUBLIC_ORIGIN = "https://www.lafashion.asia";
 const STAGING_ORIGIN = "https://la.lanadesign.vn";
 const TRUSTED_IMAGE_URL = "https://content.pancake.vn/catalog/11/22/33/p13-trusted.jpg";
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
@@ -212,7 +212,7 @@ try {
   }
 
   await startServer({
-    APP_DOMAIN: "shop.example.com",
+    APP_DOMAIN: "www.lafashion.asia",
     SEARCH_INDEXING_ENABLED: "true",
   });
 
