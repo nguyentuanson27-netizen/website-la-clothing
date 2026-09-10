@@ -1,5 +1,8 @@
 type StorefrontOriginEnvironment = Readonly<Record<string, string | undefined>>;
 
+export const OFFICIAL_PRODUCTION_STOREFRONT_HOST = "www.lafashion.asia";
+export const LEGACY_TEMPORARY_STOREFRONT_HOST = "la.lanadesign.vn";
+
 const MAX_APP_DOMAIN_LENGTH = 255;
 const HOSTNAME_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 const IPV4_PATTERN = /^\d{1,3}(?:\.\d{1,3}){3}$/;

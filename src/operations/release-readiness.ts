@@ -53,6 +53,9 @@ export function validateReleaseEnvironment(
   const tracking = resolveTrackingRuntime(readTrackingConfig(env));
   const merchantMarket = resolveMerchantMarketFromEnvironment(env);
   const auth = readAuthServerConfig(env);
+  if (auth.baseURL !== searchExposure.origin) {
+    throw new Error("BETTER_AUTH_URL must match APP_DOMAIN storefront origin");
+  }
   const pancake = readPancakeConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
 

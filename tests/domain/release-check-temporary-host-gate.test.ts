@@ -1,15 +1,8 @@
 /**
- * W15b signal 1 — the negative `release:check` case.
- *
- * The temporary-host indexing block is enforced in `validateSearchExposureForRelease`, and the
- * domain suite already proves that function refuses the configuration. What the U5 coverage
- * inventory found missing is a gate on the **command a deployment actually runs**: CI's release
- * preflight step only ever exercises the passing configuration, so a regression that removed the
- * temporary-host branch would leave every existing gate green and let a mistaken
- * `SEARCH_INDEXING_ENABLED=true` reach production preflight unopposed.
+ * W15b signal 1 — release:check search-origin wiring.
  *
  * This spawns `scripts/release-readiness.ts` — the exact entry point behind `pnpm release:check` —
- * rather than importing the validator, because the gap is the wiring, not the rule.
+ * rather than importing the validator, because the deployment command is the contract under test.
  */
 
 import assert from "node:assert/strict";
@@ -22,6 +15,7 @@ const releaseCheckScript = fileURLToPath(
 );
 
 const TEMPORARY_PRODUCTION_HOST = "la.lanadesign.vn";
+const OFFICIAL_PRODUCTION_HOST = "www.lafashion.asia";
 const DATABASE_PASSWORD = "super-secret-release-password";
 
 /**
@@ -30,8 +24,6 @@ const DATABASE_PASSWORD = "super-secret-release-password";
  */
 function releaseEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
   return {
-    // `NODE_ENV` is part of this repo's augmented `ProcessEnv`, so it is carried through rather
-    // than dropped; everything else is stated explicitly.
     NODE_ENV: process.env.NODE_ENV,
     PATH: process.env.PATH ?? "",
     DATABASE_URL: `postgresql://release_user:${DATABASE_PASSWORD}@db.internal:5432/la_clothing`,
@@ -39,6 +31,9 @@ function releaseEnvironment(overrides: Record<string, string>): NodeJS.ProcessEn
     BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
     PANCAKE_API_KEY: "super-secret-pancake-key",
     PANCAKE_SHOP_ID: "920007",
+    LA_MERCHANT_TARGET_COUNTRY: "VN",
+    LA_MERCHANT_CONTENT_LANGUAGE: "vi",
+    LA_MERCHANT_CURRENCY: "VND",
     ...overrides,
   };
 }
@@ -59,8 +54,6 @@ test("W15b release:check fails closed when the temporary production host request
   });
 
   assert.notEqual(result.status, 0, `release:check must fail for the temporary host\n${result.stderr}`);
-  // Named specifically so an unrelated failure — a missing Pancake key, say — cannot be mistaken
-  // for this gate holding.
   assert.match(
     result.stderr,
     /Search indexing cannot be enabled on the temporary production storefront origin/,
@@ -83,9 +76,7 @@ test("W15b the refused release:check leaks no credentials in its failure output"
   }
 });
 
-test("W15b the same host still passes preflight while indexing stays disabled", () => {
-  // The gate must refuse the requested-indexing configuration specifically. If it refused the
-  // temporary host outright, production — which runs on that host today — could never deploy.
+test("W15b the legacy temporary host still passes preflight while indexing stays disabled", () => {
   const result = runReleaseCheck({
     APP_DOMAIN: TEMPORARY_PRODUCTION_HOST,
     BETTER_AUTH_URL: `https://${TEMPORARY_PRODUCTION_HOST}`,
@@ -94,4 +85,33 @@ test("W15b the same host still passes preflight while indexing stays disabled", 
 
   assert.equal(result.status, 0, `the temporary host must still deploy with indexing off\n${result.stderr}`);
   assert.match(result.stdout, /"searchIndexingEnabled":\s*false/);
+});
+
+test("permanent-domain release preflight accepts the official host with indexing disabled", () => {
+  const result = runReleaseCheck({
+    APP_DOMAIN: OFFICIAL_PRODUCTION_HOST,
+    BETTER_AUTH_URL: `https://${OFFICIAL_PRODUCTION_HOST}`,
+    SEARCH_INDEXING_ENABLED: "false",
+  });
+
+  assert.equal(result.status, 0, `official permanent host must pass with indexing off\n${result.stderr}`);
+  assert.match(result.stdout, /"searchIndexingEnabled":\s*false/);
+});
+
+test("permanent-domain release preflight admits indexing only for the official host", () => {
+  const official = runReleaseCheck({
+    APP_DOMAIN: OFFICIAL_PRODUCTION_HOST,
+    BETTER_AUTH_URL: `https://${OFFICIAL_PRODUCTION_HOST}`,
+    SEARCH_INDEXING_ENABLED: "true",
+  });
+  assert.equal(official.status, 0, `official permanent host must be eligible for Gate S\n${official.stderr}`);
+  assert.match(official.stdout, /"searchIndexingEnabled":\s*true/);
+
+  const unapproved = runReleaseCheck({
+    APP_DOMAIN: "shop.example.com",
+    BETTER_AUTH_URL: "https://shop.example.com",
+    SEARCH_INDEXING_ENABLED: "true",
+  });
+  assert.notEqual(unapproved.status, 0);
+  assert.match(unapproved.stderr, /approved permanent storefront origin/);
 });

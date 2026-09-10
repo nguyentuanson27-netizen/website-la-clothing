@@ -1,96 +1,107 @@
 # P12 search exposure and technical SEO operations
 
-P12 is implemented as a fail-closed search-exposure boundary. P15 extends that boundary with a reviewed catalog-pagination exception. Neither P12 nor P15 chooses or approves the final LA Clothing production domain.
+P12 is implemented as a fail-closed search-exposure boundary. P15 extends that boundary with a reviewed catalog-pagination exception. ADR 0009 now supplies the permanent-domain authority that earlier revisions of this runbook deliberately left unresolved.
 
-## Locked launch rule
+## Current domain authority
 
-- `la.lanadesign.vn` is approved as the **TEMPORARY production domain** by human owner (ADR 0004) and serves real buyer traffic.
-- `staging.lanadesign.vn` is the dedicated staging hostname and indexing-blocked origin (`BLOCKED_INDEXING_HOSTS`).
-- `SEARCH_INDEXING_ENABLED=false` is the active production configuration for `la.lanadesign.vn`.
-- Runtime policy permits public hostnames (including `la.lanadesign.vn`), but enabling search indexing (`SEARCH_INDEXING_ENABLED=true`) is **NOT** approved by this temporary-domain decision.
-- That policy is now also **enforced in code**: `la.lanadesign.vn` is listed in `TEMPORARY_PRODUCTION_HOSTS` in `src/seo/search-exposure.ts`, so `SEARCH_INDEXING_ENABLED=true` on that host resolves to `indexingEnabled: false` at runtime and is rejected by `pnpm release:check`. The host stays a valid public origin; only index enablement fails closed.
-- Enabling search indexing requires a separate explicit human approval gate and permanent domain confirmation.
-- **U37 / W21 capacity monitoring contract is APPROVED and CLOSED.** Baseline capacity audit and operational policy are established (see `docs/audits/sitemap-capacity-w21.md` §2.4, §5, §8). Gate S must not enable indexing until all preconditions are revalidated at activation time:
-  - **Named Owner (D1):** `@nguyentuanson27-netizen` (Repository Owner & Lead Operator) is responsible for running capacity audits, logging attributable evidence, evaluating triggers, and managing sharding transitions.
-  - **Monitoring Cadence (D2):** `Per release` (integrated into release preflight prior to Gate S evaluation).
-  - **Trigger Thresholds & Behaviour (D3):** the approved **integer URL counts are authoritative**; percentages are descriptive only because the dynamic budget is 49,996 rather than 50,000.
-    - **Warning Condition:** Dynamic paths reach or exceed **40,000 URLs** (≈80.006% of the 49,996 dynamic budget).
-    - **Warning Behaviour:** `ALLOW_WITH_ACK`. When Warning is triggered but Act is false ($40,000 \le \text{dynamicPaths} < 45,000$), operator initiates the U37b sitemap-sharding plan and records explicit written acknowledgement from owner `@nguyentuanson27-netizen` in the release audit block. Gate S may proceed only if all other launch gates pass.
-    - **Act Condition:** Dynamic paths reach or exceed **45,000 URLs** (≈90.007% of the 49,996 dynamic budget) OR projected time to hard bound is under one full sharding cycle.
-    - **Act Behaviour:** `BLOCK`. Gate S is strictly blocked. U37b (sitemap index / sharding) must be implemented and verified before search indexing may be enabled.
-  - **Hard Boundary:** Single sitemap limit is 50,000 URLs (49,996 dynamic URLs + 4 static paths). Over 49,996 dynamic paths throws `RangeError` (HTTP 500 at `/sitemap.xml`). Neither a partial sitemap nor raising the per-document bound is permitted.
-  - **Activation-time Revalidation Rule:** A historical baseline establishes feasibility but does **not** authorize a later enablement — the catalog can grow in between, and recurring monitoring does not begin until indexing is enabled. Immediately before indexing enablement:
-    - Rerun `DATABASE_URL=<production> PANCAKE_SHOP_ID=<shop> pnpm sitemap:capacity:audit` on the **exact activation head**;
-    - Record attributable evidence: exact SHA, environment, timestamp, the reported figures, and the mirror-freshness line (`CatalogSyncState.syncedAt` / `updatedAt` for the shop);
-    - **The activation-time capacity result is valid only while sitemap-eligible catalog state remains unchanged.** Any product-mirror sync that changes `isPresent`, `isActive`, or shop membership, or any collection publish/unpublish/create/delete that changes the published-collection count, invalidates the audit and mandates a fresh rerun before indexing may be enabled. The git SHA pins which predicate ran, not which rows it counted;
-    - The fresh activation-time run must be within hard budget (<= 49,996 URLs) **and must not satisfy the approved Act trigger** (< 45,000 URLs).
-    - Evaluation order at activation:
-      1. Over hard budget (> 49,996 URLs) → **Block Gate S**, open U37b and shard first;
-      2. Approved **Act** trigger true ($\ge 45,000$ URLs) → **Block Gate S**, U37b must be implemented first;
-      3. Approved **Warning** true ($40,000 \le \text{dynamicPaths} < 45,000$) → apply `ALLOW_WITH_ACK` (open U37b plan, record owner's explicit acknowledgement, proceed only if all other gates pass);
-      4. Below Warning (< 40,000 URLs, 0.042% current baseline) → Gate S capacity condition satisfied, proceed with remaining Gate S checks.
-- Moving to the permanent domain is an explicit, reviewable removal of the temporary host from `TEMPORARY_PRODUCTION_HOSTS`. Any other hostname — including the future permanent brand domain — remains governed by the existing `SEARCH_INDEXING_ENABLED` gate and is not hardcoded out of it.
-- Until that separate approval: `noindex, nofollow`, no public canonical, and an empty non-advertised sitemap remain expected production behavior.
+- **Official permanent storefront:** `www.lafashion.asia` (ADR 0009).
+- **Legacy temporary production host:** `la.lanadesign.vn` (ADR 0004). It remains a valid rollback/buyer-traffic origin only while explicitly configured and remains in `TEMPORARY_PRODUCTION_HOSTS`, so it cannot become indexable.
+- **Dedicated staging origin:** `staging.lanadesign.vn`, plus local loopback hosts, remain indexing-blocked.
+- **Canonical origin authority:** server-owned `APP_DOMAIN`; request `Host`, forwarded-host headers, query state and client-visible values are not authority.
+- **Initial permanent-domain posture:** `APP_DOMAIN=www.lafashion.asia`, matching `BETTER_AUTH_URL`, and `SEARCH_INDEXING_ENABLED=false`.
+- Selecting the permanent domain does **not** approve organic indexing. Gate S still requires external domain verification, activation-time checks and separate explicit human approval.
+- The bare apex `lafashion.asia` is not the canonical application hostname. Any redirect to `www.lafashion.asia` is external edge behavior and must be observed before it is treated as active.
+
+Runtime search exposure now permits `SEARCH_INDEXING_ENABLED=true` only when the server-owned origin is exactly the approved permanent host `www.lafashion.asia`. A syntactically valid but unapproved public hostname remains non-indexable and release preflight refuses an indexing request for it. This prevents a configuration mistake from creating a second canonical/indexable production origin.
+
+Until Gate S is explicitly approved, expected production behavior remains `noindex, nofollow`, no public canonical, and no advertised canonical sitemap.
+
+## U37 sitemap-capacity gate
+
+The U37/W21 capacity contract remains closed and unchanged by the domain decision.
+
+- Named owner: `@nguyentuanson27-netizen`.
+- Cadence: per release, with a fresh activation-time rerun immediately before indexing enablement.
+- Single-sitemap hard budget: **49,991 dynamic URLs** plus the current 9 reviewed static paths, bounded by the 50,000-URL document limit.
+- Warning: **40,000 dynamic URLs** → `ALLOW_WITH_ACK`; initiate the sharding plan and record owner acknowledgement.
+- Act: **45,000 dynamic URLs** or projected time to the hard bound shorter than one sharding cycle → `BLOCK`; implement U37b sharding first.
+- Above the hard dynamic budget → `BLOCK`; never publish a partial sitemap or raise the per-document bound as a workaround.
+
+Immediately before indexing enablement, run the production capacity audit on the **exact activation head** and record SHA, environment, timestamp, reported counts, and catalog mirror freshness. Any sitemap-eligible catalog change after that measurement invalidates the audit and requires a rerun.
+
+Evaluation order is:
+
+1. over hard budget → block and shard;
+2. Act threshold met → block and shard;
+3. Warning threshold met → owner acknowledgement plus all other Gate S checks;
+4. below Warning → capacity condition satisfied, continue with remaining Gate S checks.
 
 ## Runtime policy
 
-The server-owned `APP_DOMAIN` is the only canonical origin input. The request `Host` header is not canonical authority.
-
-HTML routes that must stay out of search remain crawlable so crawlers can observe their `noindex` directives. `robots.txt` crawl blocking is reserved for non-HTML API surfaces; do not add an HTML route to `Disallow` merely because it is noindex.
+HTML routes that must stay out of search remain crawlable so crawlers can observe `noindex`. `robots.txt` crawl blocking is reserved for non-HTML API surfaces; do not hide noindex HTML behind a blanket robots disallow.
 
 When indexing is disabled:
 
-- root metadata emits `noindex, nofollow`;
-- response policy emits `X-Robots-Tag: noindex, nofollow` on application pages, including catalog pagination;
-- catalog listing metadata withholds canonical links;
-- `/robots.txt` allows HTML crawling, disallows `/api`, and does not advertise a sitemap;
-- `/sitemap.xml` returns no canonical URLs.
+- root/application metadata emits `noindex, nofollow`;
+- response policy emits `X-Robots-Tag: noindex, nofollow` on application pages;
+- catalog/static metadata withholds canonical links;
+- `/robots.txt` preserves the reviewed crawl boundary, disallows `/api`, and does not advertise a sitemap;
+- `/sitemap.xml` returns no canonical storefront URLs.
 
-When indexing is explicitly enabled on an eligible public origin:
+When indexing is explicitly enabled on the approved permanent host after Gate S approval:
 
-- canonical public routes without query state may be indexed;
-- P15 additionally permits only the exact raw pagination form `?page=N`, where `N` is an integer from 2 through 10000, on `/shop` and published `/collections/<slug>` listing pages;
-- each permitted pagination page emits a self-canonical URL including its own `?page=N` query;
-- explicit `?page=1`, leading-zero or percent-encoded pagination aliases, duplicate parameters, mixed filter/search/sort/faceted state, PDP query state, and other query-state HTML fail closed with the response-level `noindex` policy;
-- catalog canonical metadata is withheld for explicit `?page=1`, leading-zero, duplicate, mixed filter/search/sort/faceted, and staging/indexing-disabled states; percent-encoded aliases are governed by the raw response-level `noindex` boundary because framework-parsed metadata search params may already be decoded;
-- `/robots.txt` allows the site, disallows `/api`, and advertises the canonical sitemap;
-- `/sitemap.xml` continues to contain only reviewed canonical base public paths, current visible active product slugs for the configured Pancake shop, and published website-owned collections; it does not enumerate pagination URLs;
-- historical product slugs, inactive/stale/wrong-shop products, draft collections, and private/query URLs outside the reviewed pagination exception are excluded from the sitemap and indexation targets.
+- only reviewed public routes without unsafe query state are indexable;
+- P15 permits only exact raw pagination `?page=N`, with `N` from 2 through 10000, on `/shop` and published `/collections/<slug>` listing pages;
+- permitted pagination pages self-canonicalize including their own `?page=N`;
+- `?page=1`, leading-zero/encoded aliases, duplicates, mixed filter/search/sort/faceted state, PDP query state, private/account/admin/cart/checkout/search surfaces, and other unapproved query-state HTML fail closed to noindex;
+- `/robots.txt` may advertise the canonical sitemap while preserving `/api` blocking;
+- `/sitemap.xml` contains only reviewed canonical public paths, current visible active product slugs for the configured shop, and published website-owned collections; pagination URLs are not enumerated;
+- historical slugs, inactive/stale/wrong-shop products, draft collections and private/query URLs remain excluded.
 
-P6 remains the URL identity authority: current product slug returns 200, historical slug returns exact 301 to the current canonical slug, and unknown slug returns 404.
-
-P15 catalog discovery uses normal server-rendered links for products and previous/next pagination. Product cards expose the visible product name inside the PDP anchor, so image-less cards still provide descriptive crawlable link text. Filters may remain useful for visitors without becoming additional indexable crawl targets.
+P6 remains URL identity authority: current product slug returns 200, historical slug returns exact 301 to the current canonical slug, and unknown slug returns branded HTML 404.
 
 ## Verification
 
-The dedicated `Catalog indexation runtime` workflow runs `scripts/catalog-indexation-http-smoke.ts` against a real Next request path and a seeded two-page catalog. It verifies:
+The dedicated `Catalog indexation runtime` workflow and domain tests continue to verify the search boundary, including:
 
-- enabled `/shop` and a published collection base page expose visible crawlable links to their page-2 URL;
-- enabled page-2 shop and collection listings expose the visible product name inside a canonical PDP anchor, proving a page-1 → page-2 → PDP crawl chain even for products without trusted media;
-- enabled `/shop?page=2` is 200, has no `noindex`, and self-canonicalizes to page 2;
-- an enabled published `/collections/<slug>?page=2` does the same;
-- explicit `?page=1` and a mixed paginated discovery state remain `noindex` without canonical metadata;
-- staging/indexing-disabled shop and collection pagination remain `noindex` without canonical metadata.
+- crawlable page-1 → page-2 → PDP discovery chains;
+- correct page-2 self-canonical behavior when indexing is enabled in the approved test context;
+- explicit page 1, malformed/encoded/duplicate/over-limit/mixed query states remain noindex;
+- staging/indexing-disabled behavior remains noindex without canonical metadata;
+- sitemap membership excludes inactive, stale, wrong-shop, historical and draft targets;
+- the legacy temporary host refuses indexing;
+- `www.lafashion.asia` is the only permanent public hostname eligible for the indexing-origin gate;
+- request-controlled host data cannot substitute for `APP_DOMAIN`.
 
-Domain-level crawl-policy tests additionally verify malformed, leading-zero, percent-encoded, duplicate, over-limit, PDP, and non-catalog pagination states fail closed. Database sitemap tests verify only current visible active products in the configured shop and published website-owned collections are returned, excluding inactive, stale, wrong-shop, historical, and draft targets. These tests complement the existing CI, accessibility, build, release, and VPS gates rather than replacing them.
+## Permanent-domain cutover
 
-## Release preflight
+Use `docs/operations/permanent-domain-cutover.md` for DNS/TLS/edge/VPS cutover. Repository configuration is not evidence that the external cutover succeeded.
 
-`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`. Missing or malformed values fail closed. `true` is rejected for `staging.lanadesign.vn`, `localhost`, and `127.0.0.1` origins, and separately for the temporary production origin `la.lanadesign.vn` with a distinct temporary-host message.
+Before calling `www.lafashion.asia` live, observe at minimum:
 
-The repository examples and CI/VPS verification use `false`. Do not weaken this validation to make a deployment pass.
+1. DNS and valid HTTPS for the exact `www` hostname;
+2. nginx-proxy-manager/Caddy/application routing;
+3. matching `APP_DOMAIN` and `BETTER_AUTH_URL` on the deployed environment;
+4. `SEARCH_INDEXING_ENABLED=false` through the verification phase;
+5. homepage, shop, representative PDP, policy pages and buyer-critical paths;
+6. Merchant feed plus representative feed landing/image URLs using the new origin;
+7. noindex/canonical/sitemap/robots behavior under the disabled-indexing posture;
+8. legacy-host containment and, if configured, apex → `www` redirect behavior.
 
-Before a real deployment with indexing enabled, verify all of the following:
+## Release preflight and Gate S
 
-1. the exact dedicated LA Clothing domain has human approval;
-2. `APP_DOMAIN` is that exact approved hostname;
-3. TLS/NPM/Caddy/app routing for that hostname is verified;
-4. exact-head CI, catalog-indexation runtime, accessibility, and VPS verification are green;
-5. `/robots.txt`, `/sitemap.xml`, base canonicals, page-2 self-canonicals, response-level noindex for encoded aliases, and noindex/no-canonical behavior for explicit page-1 and mixed query states are inspected on the approved domain;
-6. final human launch approval explicitly includes changing `SEARCH_INDEXING_ENABLED=true`.
+`pnpm release:check` requires `SEARCH_INDEXING_ENABLED` to be exactly `true` or `false`.
 
-If any item is missing, keep `SEARCH_INDEXING_ENABLED=false`.
+- `true` is rejected for staging/local origins.
+- `true` is rejected for the legacy temporary origin `la.lanadesign.vn`.
+- `true` is rejected for any public hostname other than `www.lafashion.asia`.
+- `www.lafashion.asia` is technically eligible for the gate, but this repository rule is **not** human activation approval.
+- deployment examples remain `SEARCH_INDEXING_ENABLED=false`.
+
+Before a real deployment with indexing enabled, verify all Gate S requirements on the exact activation head: permanent-domain external verification, exact origin configuration, TLS/edge/application routing, exact-head CI/runtime/browser/VPS checks, canonical/noindex/robots/sitemap behavior, fresh U37 capacity evidence, and explicit human approval of the indexing change.
+
+If any required item is missing, keep `SEARCH_INDEXING_ENABLED=false`.
 
 ## Rollback / containment
 
-Search exposure is independently containable: set `SEARCH_INDEXING_ENABLED=false` and redeploy the approved configuration. This restores global HTML `noindex` (including all catalog pagination), withholds catalog canonical links, removes sitemap advertising/URLs, and keeps `/api` crawl-blocked without hiding HTML noindex directives behind `robots.txt`. Product, collection, checkout, and Pancake data are unchanged. Application rollback remains governed by `docs/operations/release-and-rollback.md`.
+Search exposure remains independently containable: set `SEARCH_INDEXING_ENABLED=false` and redeploy the approved configuration. If the permanent-domain cutover itself fails, the legacy host may be restored temporarily with matching `APP_DOMAIN` and `BETTER_AUTH_URL`, but it remains non-indexable. Product, collection, checkout and Pancake data are unchanged by this containment action. Application rollback remains governed by `docs/operations/release-and-rollback.md`.

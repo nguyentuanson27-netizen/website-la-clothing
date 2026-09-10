@@ -12,7 +12,7 @@ const HOST = "127.0.0.1";
 const PORT = 3220;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_015;
-const PUBLIC_ORIGIN = "https://shop.example.com";
+const PUBLIC_ORIGIN = "https://www.lafashion.asia";
 const PRODUCT_COUNT = 25;
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
@@ -213,7 +213,7 @@ try {
   await seedCatalog();
 
   await startServer({
-    APP_DOMAIN: "shop.example.com",
+    APP_DOMAIN: "www.lafashion.asia",
     SEARCH_INDEXING_ENABLED: "true",
   });
 

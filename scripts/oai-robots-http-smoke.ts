@@ -79,7 +79,7 @@ try {
     {
       env: {
         ...process.env,
-        APP_DOMAIN: "shop.example.com",
+        APP_DOMAIN: "www.lafashion.asia",
         SEARCH_INDEXING_ENABLED: "true",
         NEXT_TELEMETRY_DISABLED: "1",
       },
@@ -106,7 +106,7 @@ try {
     assert.equal(crawlerRules.includes("Disallow: /"), false, `${crawler} must not be globally blocked`);
   }
 
-  assert.equal(body.includes("Sitemap: https://shop.example.com/sitemap.xml"), true);
+  assert.equal(body.includes("Sitemap: https://www.lafashion.asia/sitemap.xml"), true);
 
   console.log(`U36 / P16C robots HTTP smoke passed: wildcard and all ${ALL_APPROVED_NAMED_CRAWLERS.length} approved crawlers can crawl public HTML, /api remains blocked, and canonical sitemap is advertised when indexing is enabled.`);
 } finally {
