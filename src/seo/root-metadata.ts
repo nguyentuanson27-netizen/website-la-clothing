@@ -15,6 +15,8 @@ type RootMetadataInput = Readonly<{
 const DEFAULT_TITLE = "LA Clothing — Modern Menswear";
 const DEFAULT_DESCRIPTION = "Minimal, modern menswear by LA Clothing.";
 
+export const GOOGLE_SITE_VERIFICATION = "N2OZE83tu6EA4bc-oP1u2uhDYBrDwLKJJCZstMm5lhs";
+
 /**
  * The metadata every route inherits, including the social card it falls back to.
  *
@@ -54,6 +56,9 @@ export function buildRootMetadata({ origin, indexingEnabled }: RootMetadataInput
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
       images: [image],
+    },
+    verification: {
+      google: GOOGLE_SITE_VERIFICATION,
     },
   };
 }

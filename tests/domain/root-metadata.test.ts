@@ -97,3 +97,9 @@ test("U30a invents no social account, handle or business fact", () => {
   assert.equal("phoneNumbers" in (metadata.openGraph ?? {}), false);
   assert.equal("emails" in (metadata.openGraph ?? {}), false);
 });
+
+test("U30a / U41 includes owner-approved Google site verification token", () => {
+  const metadata = buildRootMetadata({ origin: ORIGIN, indexingEnabled: true });
+
+  assert.equal(metadata.verification?.google, "N2OZE83tu6EA4bc-oP1u2uhDYBrDwLKJJCZstMm5lhs");
+});
