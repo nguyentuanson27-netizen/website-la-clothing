@@ -1,4 +1,8 @@
-import { readStorefrontOrigin } from "../commerce/storefront-origin.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+  readStorefrontOrigin,
+} from "../commerce/storefront-origin.ts";
 
 type SearchExposureEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -20,16 +24,10 @@ const BLOCKED_INDEXING_HOSTS = new Set([
   "127.0.0.1",
 ]);
 
-// ADR 0004 approved `la.lanadesign.vn` as the TEMPORARY production origin, so it deliberately is
-// not a blocked origin: it serves real buyer traffic. Organic indexing on it is a different
-// decision that ADR 0004 explicitly withheld, and until this file only carried the blocked-origin
-// list a mistaken `SEARCH_INDEXING_ENABLED=true` on that host would have passed release preflight.
-//
-// This is the enforcement half of that gate, not a second policy: the temporary host fails closed
-// on its own, while every other public hostname — including the future permanent brand domain —
-// stays governed by the existing `SEARCH_INDEXING_ENABLED` gate. Migrating off the temporary host
-// is then an explicit, reviewable removal from this set rather than a silent config flip.
-const TEMPORARY_PRODUCTION_HOSTS = new Set(["la.lanadesign.vn"]);
+// ADR 0004 remains the historical authority for the legacy temporary production origin. ADR 0009
+// selects `www.lafashion.asia` as the permanent storefront but does not turn indexing on. Keeping
+// the legacy host here prevents a rollback/cutover mistake from creating a second indexable origin.
+const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 
 export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
 
@@ -68,6 +66,10 @@ export function isTemporaryProductionOrigin(origin: string): boolean {
   return TEMPORARY_PRODUCTION_HOSTS.has(storefrontHostname(origin));
 }
 
+export function isApprovedPermanentProductionOrigin(origin: string): boolean {
+  return storefrontHostname(origin) === OFFICIAL_PRODUCTION_STOREFRONT_HOST;
+}
+
 function isCrawlBlockedPath(pathname: string): boolean {
   return CRAWL_BLOCKED_PATHS.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -98,7 +100,10 @@ export function readSearchExposure(
   return {
     origin,
     indexingEnabled:
-      requested && !isBlockedIndexingOrigin(origin) && !isTemporaryProductionOrigin(origin),
+      requested &&
+      isApprovedPermanentProductionOrigin(origin) &&
+      !isBlockedIndexingOrigin(origin) &&
+      !isTemporaryProductionOrigin(origin),
   };
 }
 
@@ -113,11 +118,16 @@ export function validateSearchExposureForRelease(
   const exposure = readSearchExposure(env);
   if (raw === "true" && isTemporaryProductionOrigin(exposure.origin)) {
     throw new Error(
-      "Search indexing cannot be enabled on the temporary production storefront origin; it requires a permanent domain and a separate explicit approval",
+      "Search indexing cannot be enabled on the temporary production storefront origin; it requires the approved permanent domain and a separate explicit approval",
     );
   }
-  if (raw === "true" && !exposure.indexingEnabled) {
+  if (raw === "true" && isBlockedIndexingOrigin(exposure.origin)) {
     throw new Error("Search indexing cannot be enabled on staging or local storefront origins");
+  }
+  if (raw === "true" && !isApprovedPermanentProductionOrigin(exposure.origin)) {
+    throw new Error(
+      "Search indexing can only be enabled on the approved permanent storefront origin",
+    );
   }
 
   return exposure;
