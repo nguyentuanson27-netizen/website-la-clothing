@@ -5,10 +5,10 @@ import { validateReleaseEnvironment } from "../../src/operations/release-readine
 
 const validEnvironment = {
   DATABASE_URL: "postgresql://release_user:super-secret-password@db.internal:5432/la_clothing",
-  APP_DOMAIN: "shop.example.com",
+  APP_DOMAIN: "www.lafashion.asia",
   SEARCH_INDEXING_ENABLED: "false",
   BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
-  BETTER_AUTH_URL: "https://shop.example.com",
+  BETTER_AUTH_URL: "https://www.lafashion.asia",
   BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
   PANCAKE_API_KEY: "super-secret-pancake-key",
   PANCAKE_SHOP_ID: "920007",
@@ -84,6 +84,26 @@ test("release preflight requires a safe server-owned storefront origin", () => {
   }
 });
 
+test("release preflight requires Better Auth to use the server-owned storefront origin", () => {
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        BETTER_AUTH_URL: "https://la.lanadesign.vn",
+      }),
+    /BETTER_AUTH_URL must match APP_DOMAIN storefront origin/,
+  );
+
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        APP_DOMAIN: "la.lanadesign.vn",
+      }),
+    /BETTER_AUTH_URL must match APP_DOMAIN storefront origin/,
+  );
+});
+
 test("release preflight requires explicit fail-closed search indexing configuration", () => {
   assert.throws(
     () => validateReleaseEnvironment({ ...validEnvironment, SEARCH_INDEXING_ENABLED: undefined }),
@@ -150,7 +170,7 @@ test("T2 release preflight reports a requested tracking mode that still loads no
 
 test("release preflight delegates auth, Pancake and shipping validation fail closed", () => {
   assert.throws(
-    () => validateReleaseEnvironment({ ...validEnvironment, BETTER_AUTH_URL: "http://shop.example.com" }),
+    () => validateReleaseEnvironment({ ...validEnvironment, BETTER_AUTH_URL: "http://www.lafashion.asia" }),
     /BETTER_AUTH_URL must use HTTPS/,
   );
   assert.throws(
@@ -173,4 +193,3 @@ test("release preflight reports approved Merchant market status when configured 
 
   assert.equal(summary.merchantMarketStatus, "APPROVED");
 });
-
