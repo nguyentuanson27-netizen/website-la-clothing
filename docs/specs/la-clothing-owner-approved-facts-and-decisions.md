@@ -29,7 +29,8 @@
 ## Domain
 - **Current website:** https://la.lanadesign.vn
 - `la.lanadesign.vn` vẫn là temporary production domain.
-- **Permanent branded domain:** `OPEN — làm sau`
+- **Permanent branded domain:** `www.lafashion.asia` (ADR 0009)
+- **Google Site Verification:** `N2OZE83tu6EA4bc-oP1u2uhDYBrDwLKJJCZstMm5lhs`
 - Không coi tài liệu này là phê duyệt bật organic indexing.
 
 ---
