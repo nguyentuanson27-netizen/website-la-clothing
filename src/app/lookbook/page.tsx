@@ -3,10 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import {
+  listConfiguredStorefrontProducts,
+  resolveStorefrontPromotionForProducts,
+} from "@/commerce/storefront-catalog-runtime";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
@@ -31,22 +35,28 @@ export async function generateMetadata({
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 
-async function loadLookbookProducts() {
+async function loadLookbookProducts(now: Date) {
   try {
-    return await listConfiguredStorefrontProducts(4);
+    const products = await listConfiguredStorefrontProducts(4);
+    const promotion = await resolveStorefrontPromotionForProducts({ products, now });
+    return { products, ...promotion };
   } catch (error) {
-    if (error instanceof PancakeConfigError) return [];
+    if (error instanceof PancakeConfigError) {
+      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
+    }
     throw error;
   }
 }
 
 export default async function LookbookPage() {
   await connection();
-  const featuredProducts = await loadLookbookProducts();
+  const requestNow = new Date();
+  const { products: featuredProducts, pricingRule, refreshAfterMs } = await loadLookbookProducts(requestNow);
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
   const listTracking = buildProductListTracking({
     products: featuredProducts,
     list: { listId: "lookbook-edit", listName: "Lookbook edit" },
+    pricingRule,
   });
   const chapter1Product = productsWithMedia[0];
   const chapter1Image = chapter1Product?.media?.primary ?? null;
@@ -55,6 +65,7 @@ export default async function LookbookPage() {
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-16 md:py-24">
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <header className="border-b border-black/20 pb-12 md:pb-16">
         <p className="eyebrow">Editorial / 02 · Permanent Edition</p>
         <h1 className="mt-4 max-w-6xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
@@ -148,6 +159,7 @@ export default async function LookbookPage() {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[index % tones.length]!}
               />

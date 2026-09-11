@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   MAX_STOREFRONT_PROMOTION_REFRESH_MS,
   resolveStorefrontPromotionRefresh,
+  resolveStorefrontPromotionRefreshFromCampaigns,
 } from "../../src/commerce/storefront-promotion-freshness.ts";
 
 const NOW = new Date("2026-09-15T00:00:00.000Z");
@@ -46,5 +47,24 @@ test("storefront promotion freshness fails safely on a malformed boundary", () =
   assert.deepEqual(
     resolveStorefrontPromotionRefresh({ now: NOW, nextBoundaryAt: new Date(Number.NaN) }),
     { refreshAfterMs: MAX_STOREFRONT_PROMOTION_REFRESH_MS },
+  );
+});
+
+test("storefront promotion freshness derives the nearest future boundary from pricing campaigns", () => {
+  assert.deepEqual(
+    resolveStorefrontPromotionRefreshFromCampaigns({
+      now: NOW,
+      campaigns: [
+        {
+          startsAt: new Date(NOW.getTime() - 10_000),
+          endsAt: new Date(NOW.getTime() + 45_000),
+        },
+        {
+          startsAt: new Date(NOW.getTime() + 5_000),
+          endsAt: new Date(NOW.getTime() + 120_000),
+        },
+      ],
+    }),
+    { refreshAfterMs: 5_000 },
   );
 });

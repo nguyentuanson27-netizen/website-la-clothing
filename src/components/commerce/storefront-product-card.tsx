@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import { ProductSelectLink } from "@/components/analytics/product-select-link";
 import type { StorefrontProductMedia } from "@/commerce/product-media";
+import { resolveStorefrontDiscountPresentation } from "@/commerce/storefront-discount-presentation";
 import type { TrackingEvent } from "@/tracking/commerce-events";
 import {
   buildStorefrontVariantOptions,
@@ -55,10 +56,13 @@ function describePrice(options: readonly StorefrontVariantOption[]): string {
     : `Từ ${currency.format(range.minimum)}`;
 }
 
-function describeFlashPrice(flashSale: StorefrontFlashSalePresentation): string {
-  return flashSale.hasCheaperCurrentVariant
-    ? `Sale từ ${currency.format(flashSale.effectivePriceVnd)}`
-    : currency.format(flashSale.effectivePriceVnd);
+function describePromotionalPrice({
+  effectivePriceVnd,
+  hasCheaperCurrentVariant,
+}: Readonly<{ effectivePriceVnd: number; hasCheaperCurrentVariant: boolean }>): string {
+  return hasCheaperCurrentVariant
+    ? `Sale từ ${currency.format(effectivePriceVnd)}`
+    : currency.format(effectivePriceVnd);
 }
 
 function describeFlashCountdown(remainingMs: number): string | null {
@@ -88,6 +92,7 @@ export function StorefrontProductCard({
   // Flash cards receive the exact representative selected before pagination. Other listings keep
   // their existing option-range path and can still inject a promotion-aware pricing rule.
   const options = flashSale ? null : buildStorefrontVariantOptions(variants, pricingRule);
+  const promotionSale = options ? resolveStorefrontDiscountPresentation(options) : null;
   const countdown = flashSale ? describeFlashCountdown(flashSale.remainingMs) : null;
   const primaryImage = media?.primary ?? null;
   const secondaryImage =
@@ -95,6 +100,14 @@ export function StorefrontProductCard({
       ? media.gallery[1]
       : null;
   const productHref = `/shop/${encodeURIComponent(slug)}`;
+
+  const flashSaleDiscountPercent =
+    flashSale && flashSale.basePriceVnd > flashSale.effectivePriceVnd
+      ? Math.round((1 - flashSale.effectivePriceVnd / flashSale.basePriceVnd) * 100)
+      : 0;
+  const discountPercent = flashSale
+    ? flashSaleDiscountPercent
+    : promotionSale?.discountPercent ?? 0;
 
   return (
     <article className="group">
@@ -108,6 +121,11 @@ export function StorefrontProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
+          {discountPercent > 0 ? (
+            <span className="product-badge product-badge--sale z-10">
+              -{discountPercent}%
+            </span>
+          ) : null}
           {primaryImage ? (
             <>
               <Image
@@ -150,11 +168,22 @@ export function StorefrontProductCard({
               </div>
               <p className="product-price mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="sr-only">Giá gốc</span>
-                <del className="text-black/60">{currency.format(flashSale.basePriceVnd)}</del>
+                <del className="text-black/60 line-through">{currency.format(flashSale.basePriceVnd)}</del>
                 <span className="sr-only">Giá Flash Sale</span>
-                <strong className="font-semibold text-black">{describeFlashPrice(flashSale)}</strong>
+                <strong className="font-semibold text-black">{describePromotionalPrice(flashSale)}</strong>
               </p>
             </>
+          ) : promotionSale ? (
+            <p className="product-price flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="sr-only">Giá gốc</span>
+              <del className="font-normal text-black/50 line-through">
+                {currency.format(promotionSale.basePriceVnd)}
+              </del>
+              <span className="sr-only">Giá khuyến mãi</span>
+              <strong className="font-semibold text-black">
+                {describePromotionalPrice(promotionSale)}
+              </strong>
+            </p>
           ) : (
             <p className="product-price">{describePrice(options ?? [])}</p>
           )}

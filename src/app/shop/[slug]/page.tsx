@@ -5,7 +5,9 @@ import { connection } from "next/server";
 import {
   getConfiguredStorefrontProductBySlug,
   listConfiguredRelatedStorefrontProducts,
+  resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 import {
@@ -15,6 +17,7 @@ import {
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { buildProductPageViewEvent } from "@/components/analytics/product-page-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import {
   VARIANT_QUERY_PARAM,
   resolveDeepLinkedVariantSelection,
@@ -45,12 +48,19 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   if (!product) notFound();
 
-  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
+  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product, requestNow);
+  const promotion = await resolveStorefrontPromotionForProducts({
+    products: [product, ...relatedProducts],
+    now: requestNow,
+  });
+  const relatedPricingRule = promotion.pricingRule;
   const relatedTracking = buildProductListTracking({
     products: relatedProducts,
     list: { listId: "related-products", listName: "Hoàn thiện phối đồ" },
+    pricingRule: relatedPricingRule,
   });
   const options = product.projection.options;
+  const productLevelOptions = selectStorefrontProductLevelOptions(product.projection);
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
     projection: product.projection,
     variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
@@ -72,6 +82,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
+      <StorefrontPromotionRefresher refreshAfterMs={promotion.refreshAfterMs} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
@@ -125,6 +136,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               slug={product.slug}
               productName={product.name}
               options={options}
+              productLevelOptions={productLevelOptions}
               initialSelection={deepLinkedSelection}
               commerceTrackingEnabled={isCommerceTrackingEnabled()}
             />
@@ -169,6 +181,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                 name={related.name}
                 media={related.media}
                 variants={related.variants}
+                pricingRule={relatedPricingRule}
                 selectEvent={relatedTracking.selectEventBySlug.get(related.slug) ?? null}
                 tone={relatedTones[index % relatedTones.length]!}
               />

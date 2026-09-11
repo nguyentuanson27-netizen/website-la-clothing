@@ -16,6 +16,7 @@ import {
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { prisma } from "@/db/prisma";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { buildCollectionBreadcrumbStructuredData } from "@/seo/collection-breadcrumb-structured-data";
@@ -85,10 +86,12 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   try {
     const query = await searchParams;
     discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
+    const requestNow = new Date();
     [catalogPage, facets] = await Promise.all([
       listConfiguredStorefrontDiscoveryPage({
         discovery,
         pageSize: PAGE_SIZE,
+        now: requestNow,
       }),
       listConfiguredStorefrontDiscoveryFacets(),
     ]);
@@ -97,11 +100,12 @@ export default async function CollectionPage({ params, searchParams }: Collectio
     throw error;
   }
 
-  const { page, products, totalCount, totalPages } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
   const listTracking = buildProductListTracking({
     products,
     list: { listId: `collection:${collection.slug}`, listName: collection.title },
+    pricingRule,
   });
 
   const filtered = discovery.size !== null;
@@ -115,6 +119,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(collectionBreadcrumb) }}
@@ -252,6 +257,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />

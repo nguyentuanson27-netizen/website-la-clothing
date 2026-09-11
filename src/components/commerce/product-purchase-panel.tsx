@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { buildMetaAddToCartPixelParameters } from "@/commerce/meta-pixel-parameters";
+import { resolveStorefrontDiscountPresentation } from "@/commerce/storefront-discount-presentation";
 import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
@@ -24,6 +25,8 @@ type ProductPurchasePanelProps = {
   slug: string;
   productName: string;
   options: StorefrontProjectionOption[];
+  /** Product-level options only: composite components must not speak for the parent before selection. */
+  productLevelOptions: StorefrontProjectionOption[];
   initialSelection?: DeepLinkedVariantSelection | null;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled?: boolean;
@@ -41,6 +44,7 @@ export function ProductPurchasePanel({
   slug,
   productName,
   options,
+  productLevelOptions,
   initialSelection = null,
   commerceTrackingEnabled = false,
 }: ProductPurchasePanelProps) {
@@ -56,13 +60,17 @@ export function ProductPurchasePanel({
   );
   const priceLabel =
     selection.selectedPrice === null
-      ? defaultPriceLabel(options)
+      ? defaultPriceLabel(productLevelOptions)
       : currency.format(selection.selectedPrice);
   const showsDiscount =
     selection.selectedIsDiscounted
     && selection.selectedPrice !== null
     && selection.selectedBasePriceVnd !== null
     && selection.selectedBasePriceVnd > selection.selectedPrice;
+  const initialDiscountInfo = useMemo(
+    () => resolveStorefrontDiscountPresentation(productLevelOptions),
+    [productLevelOptions],
+  );
   const hasPurchasableVariant = options.some((option) => option.purchasable);
   const selectedUnavailableMessage =
     selection.selectedVariantId !== null && !selection.canAdd
@@ -211,17 +219,37 @@ export function ProductPurchasePanel({
   return (
     <div className="border-t border-black/20 pt-6">
       <div className="flex items-baseline justify-between gap-6">
-        <p className="text-xl font-medium tracking-[-0.02em]">
+        <p className="flex flex-wrap items-baseline gap-2 text-xl font-medium tracking-[-0.02em]">
           {showsDiscount ? (
             <>
               <span className="sr-only">Giá gốc </span>
-              <span className="mr-2 align-baseline text-base font-normal text-black/60 line-through">
+              <span className="mr-1 align-baseline text-base font-normal text-black/60 line-through">
                 {currency.format(selection.selectedBasePriceVnd as number)}
               </span>
               <span className="sr-only">Giá khuyến mãi </span>
               <span>{priceLabel}</span>
+              <span className="ml-2 inline-flex items-center bg-black px-2 py-0.5 text-xs font-bold uppercase tracking-[0.1em] text-white">
+                -{Math.round((1 - (selection.selectedPrice as number) / (selection.selectedBasePriceVnd as number)) * 100)}%
+              </span>
             </>
-          ) : priceLabel}
+          ) : selection.selectedPrice === null && initialDiscountInfo ? (
+            <>
+              <span className="sr-only">Giá gốc </span>
+              <span className="mr-1 align-baseline text-base font-normal text-black/60 line-through">
+                {currency.format(initialDiscountInfo.basePriceVnd)}
+              </span>
+              <span className="sr-only">Giá khuyến mãi </span>
+              <span>
+                {initialDiscountInfo.hasCheaperCurrentVariant ? "Sale từ " : ""}
+                {currency.format(initialDiscountInfo.effectivePriceVnd)}
+              </span>
+              <span className="ml-2 inline-flex items-center bg-black px-2 py-0.5 text-xs font-bold uppercase tracking-[0.1em] text-white">
+                -{initialDiscountInfo.discountPercent}%
+              </span>
+            </>
+          ) : (
+            priceLabel
+          )}
         </p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/55">
           {hasPurchasableVariant
