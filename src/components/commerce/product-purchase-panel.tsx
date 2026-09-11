@@ -25,6 +25,8 @@ type ProductPurchasePanelProps = {
   slug: string;
   productName: string;
   options: StorefrontProjectionOption[];
+  /** Product-level options only: composite components must not speak for the parent before selection. */
+  productLevelOptions: StorefrontProjectionOption[];
   initialSelection?: DeepLinkedVariantSelection | null;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled?: boolean;
@@ -42,6 +44,7 @@ export function ProductPurchasePanel({
   slug,
   productName,
   options,
+  productLevelOptions,
   initialSelection = null,
   commerceTrackingEnabled = false,
 }: ProductPurchasePanelProps) {
@@ -57,7 +60,7 @@ export function ProductPurchasePanel({
   );
   const priceLabel =
     selection.selectedPrice === null
-      ? defaultPriceLabel(options)
+      ? defaultPriceLabel(productLevelOptions)
       : currency.format(selection.selectedPrice);
   const showsDiscount =
     selection.selectedIsDiscounted
@@ -65,8 +68,8 @@ export function ProductPurchasePanel({
     && selection.selectedBasePriceVnd !== null
     && selection.selectedBasePriceVnd > selection.selectedPrice;
   const initialDiscountInfo = useMemo(
-    () => resolveStorefrontDiscountPresentation(options),
-    [options],
+    () => resolveStorefrontDiscountPresentation(productLevelOptions),
+    [productLevelOptions],
   );
   const hasPurchasableVariant = options.some((option) => option.purchasable);
   const selectedUnavailableMessage =
