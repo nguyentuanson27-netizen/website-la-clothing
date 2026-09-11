@@ -231,7 +231,7 @@ export function ProductPurchasePanel({
               </span>
               <span className="sr-only">Giá khuyến mãi </span>
               <span>{priceLabel}</span>
-              <span className="ml-2 inline-flex items-center bg-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em] text-white">
+              <span className="ml-2 inline-flex items-center border border-black bg-white px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em] text-black">
                 -{Math.round((1 - (selection.selectedPrice as number) / (selection.selectedBasePriceVnd as number)) * 100)}%
               </span>
             </>
@@ -243,7 +243,7 @@ export function ProductPurchasePanel({
               </span>
               <span className="sr-only">Giá khuyến mãi </span>
               <span>{priceLabel}</span>
-              <span className="ml-2 inline-flex items-center bg-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em] text-white">
+              <span className="ml-2 inline-flex items-center border border-black bg-white px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em] text-black">
                 -{initialDiscountInfo.maxPercent}%
               </span>
             </>
