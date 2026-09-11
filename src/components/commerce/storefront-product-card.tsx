@@ -96,6 +96,28 @@ export function StorefrontProductCard({
       : null;
   const productHref = `/shop/${encodeURIComponent(slug)}`;
 
+  const discountedOptions =
+    options?.filter(
+      (option) =>
+        option.isDiscounted &&
+        option.price !== null &&
+        option.basePriceVnd !== null &&
+        option.basePriceVnd > option.price,
+    ) ?? [];
+  const isPromotionDiscounted = !flashSale && discountedOptions.length > 0;
+  const maxDiscountPercent = isPromotionDiscounted
+    ? Math.max(
+        ...discountedOptions.map((option) =>
+          Math.round((1 - option.price! / option.basePriceVnd!) * 100),
+        ),
+      )
+    : 0;
+
+  const minBasePrice = isPromotionDiscounted
+    ? Math.min(...discountedOptions.map((option) => option.basePriceVnd!))
+    : null;
+  const basePriceLabel = minBasePrice !== null ? currency.format(minBasePrice) : null;
+
   return (
     <article className="group">
       <ProductSelectLink
@@ -108,6 +130,11 @@ export function StorefrontProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
+          {isPromotionDiscounted && maxDiscountPercent > 0 ? (
+            <span className="product-badge product-badge--sale z-10">
+              -{maxDiscountPercent}%
+            </span>
+          ) : null}
           {primaryImage ? (
             <>
               <Image
@@ -155,6 +182,13 @@ export function StorefrontProductCard({
                 <strong className="font-semibold text-black">{describeFlashPrice(flashSale)}</strong>
               </p>
             </>
+          ) : isPromotionDiscounted && basePriceLabel ? (
+            <p className="product-price flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="sr-only">Giá gốc</span>
+              <del className="font-normal text-black/50">{basePriceLabel}</del>
+              <span className="sr-only">Giá khuyến mãi</span>
+              <strong className="font-semibold text-black">{describePrice(options ?? [])}</strong>
+            </p>
           ) : (
             <p className="product-price">{describePrice(options ?? [])}</p>
           )}

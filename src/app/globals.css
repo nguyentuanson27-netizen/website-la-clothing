@@ -367,6 +367,12 @@ summary:focus-visible {
   letter-spacing: 0.14em;
 }
 
+.product-badge--sale {
+  background: var(--black);
+  color: var(--white);
+  font-weight: 600;
+}
+
 .product-meta {
   display: flex;
   justify-content: space-between;
