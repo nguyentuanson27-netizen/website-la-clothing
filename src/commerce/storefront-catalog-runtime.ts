@@ -14,14 +14,22 @@ import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-pro
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { defaultStorefrontPricingRule, type StorefrontPricingRule } from "./storefront-product.ts";
 
+type StorefrontPromotionProduct = Readonly<{
+  variants: readonly Readonly<{ id: string }>[];
+  /** PDP projections can contain composite-component variants not present in the parent list. */
+  projection?: Readonly<{ options: readonly Readonly<{ id: string }>[] }>;
+}>;
+
 export async function resolveStorefrontPromotionForProducts({
   products,
   now = new Date(),
 }: {
-  products: readonly Readonly<{ variants: readonly Readonly<{ id: string }>[] }>[];
+  products: readonly StorefrontPromotionProduct[];
   now?: Date;
 }): Promise<Readonly<{ pricingRule: StorefrontPricingRule; refreshAfterMs: number }>> {
-  const variantIds = products.flatMap((p) => p.variants.map((v) => v.id));
+  const variantIds = products.flatMap((product) =>
+    (product.projection?.options ?? product.variants).map((variant) => variant.id),
+  );
   if (variantIds.length === 0) {
     return Object.freeze({
       pricingRule: defaultStorefrontPricingRule,
@@ -42,7 +50,7 @@ export async function resolveStorefrontPricingRuleForProducts({
   products,
   now = new Date(),
 }: {
-  products: readonly Readonly<{ variants: readonly Readonly<{ id: string }>[] }>[];
+  products: readonly StorefrontPromotionProduct[];
   now?: Date;
 }): Promise<StorefrontPricingRule> {
   return (await resolveStorefrontPromotionForProducts({ products, now })).pricingRule;
