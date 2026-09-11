@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import {
   getConfiguredStorefrontProductBySlug,
   listConfiguredRelatedStorefrontProducts,
-  resolveStorefrontPricingRuleForProducts,
+  resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
@@ -16,6 +16,7 @@ import {
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { buildProductPageViewEvent } from "@/components/analytics/product-page-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import {
   VARIANT_QUERY_PARAM,
   resolveDeepLinkedVariantSelection,
@@ -47,10 +48,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   if (!product) notFound();
 
   const relatedProducts = await listConfiguredRelatedStorefrontProducts(product, requestNow);
-  const relatedPricingRule = await resolveStorefrontPricingRuleForProducts({
-    products: relatedProducts,
+  const promotion = await resolveStorefrontPromotionForProducts({
+    products: [product, ...relatedProducts],
     now: requestNow,
   });
+  const relatedPricingRule = promotion.pricingRule;
   const relatedTracking = buildProductListTracking({
     products: relatedProducts,
     list: { listId: "related-products", listName: "Hoàn thiện phối đồ" },
@@ -78,6 +80,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
+      <StorefrontPromotionRefresher refreshAfterMs={promotion.refreshAfterMs} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
