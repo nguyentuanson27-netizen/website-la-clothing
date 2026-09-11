@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import { buildMetaAddToCartPixelParameters } from "@/commerce/meta-pixel-parameters";
+import { resolveStorefrontDiscountPresentation } from "@/commerce/storefront-discount-presentation";
 import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
@@ -63,17 +64,10 @@ export function ProductPurchasePanel({
     && selection.selectedPrice !== null
     && selection.selectedBasePriceVnd !== null
     && selection.selectedBasePriceVnd > selection.selectedPrice;
-  const initialDiscountInfo = useMemo(() => {
-    const discounted = options.filter(
-      (o) => o.isDiscounted && o.price !== null && o.basePriceVnd !== null && o.basePriceVnd > o.price,
-    );
-    if (discounted.length === 0) return null;
-    const minBase = Math.min(...discounted.map((o) => o.basePriceVnd!));
-    const maxPercent = Math.max(
-      ...discounted.map((o) => Math.round((1 - o.price! / o.basePriceVnd!) * 100)),
-    );
-    return { minBase, maxPercent };
-  }, [options]);
+  const initialDiscountInfo = useMemo(
+    () => resolveStorefrontDiscountPresentation(options),
+    [options],
+  );
   const hasPurchasableVariant = options.some((option) => option.purchasable);
   const selectedUnavailableMessage =
     selection.selectedVariantId !== null && !selection.canAdd
@@ -239,12 +233,15 @@ export function ProductPurchasePanel({
             <>
               <span className="sr-only">Giá gốc </span>
               <span className="mr-1 align-baseline text-base font-normal text-black/60 line-through">
-                {currency.format(initialDiscountInfo.minBase)}
+                {currency.format(initialDiscountInfo.basePriceVnd)}
               </span>
               <span className="sr-only">Giá khuyến mãi </span>
-              <span>{priceLabel}</span>
+              <span>
+                {initialDiscountInfo.hasCheaperCurrentVariant ? "Sale từ " : ""}
+                {currency.format(initialDiscountInfo.effectivePriceVnd)}
+              </span>
               <span className="ml-2 inline-flex items-center bg-black px-2 py-0.5 text-xs font-bold uppercase tracking-[0.1em] text-white">
-                -{initialDiscountInfo.maxPercent}%
+                -{initialDiscountInfo.discountPercent}%
               </span>
             </>
           ) : (
