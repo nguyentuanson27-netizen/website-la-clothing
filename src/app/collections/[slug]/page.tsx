@@ -16,6 +16,7 @@ import {
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { prisma } from "@/db/prisma";
 import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { buildCollectionBreadcrumbStructuredData } from "@/seo/collection-breadcrumb-structured-data";
@@ -85,10 +86,12 @@ export default async function CollectionPage({ params, searchParams }: Collectio
   try {
     const query = await searchParams;
     discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
+    const requestNow = new Date();
     [catalogPage, facets] = await Promise.all([
       listConfiguredStorefrontDiscoveryPage({
         discovery,
         pageSize: PAGE_SIZE,
+        now: requestNow,
       }),
       listConfiguredStorefrontDiscoveryFacets(),
     ]);
@@ -97,7 +100,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
     throw error;
   }
 
-  const { page, products, totalCount, totalPages, pricingRule } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
   const listTracking = buildProductListTracking({
     products,
@@ -116,27 +119,18 @@ export default async function CollectionPage({ params, searchParams }: Collectio
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(collectionBreadcrumb) }}
       />
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
-          <li>
-            <Link className="hover:underline" href="/">
-              Trang chủ
-            </Link>
-          </li>
+          <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
           <li aria-hidden="true">/</li>
-          <li>
-            <Link className="hover:underline" href="/collections">
-              Bộ sưu tập
-            </Link>
-          </li>
+          <li><Link className="hover:underline" href="/collections">Bộ sưu tập</Link></li>
           <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-black">
-            {collection.title}
-          </li>
+          <li aria-current="page" className="text-black">{collection.title}</li>
         </ol>
       </nav>
       <p className="eyebrow mt-6">LA Clothing / Bộ sưu tập</p>
@@ -155,21 +149,14 @@ export default async function CollectionPage({ params, searchParams }: Collectio
       <section className="mt-12 grid gap-8 border-y border-black/20 py-6 md:grid-cols-2" aria-label="Điều khiển bộ sưu tập">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.13em]">Sắp xếp</p>
-          <nav
-            aria-label="Sắp xếp bộ sưu tập"
-            className="mt-3 flex flex-wrap gap-2"
-          >
+          <nav aria-label="Sắp xếp bộ sưu tập" className="mt-3 flex flex-wrap gap-2">
             {sortOptions.map((option) => {
               const active = discovery.sort === option.value;
               return (
                 <Link
                   aria-current={active ? "true" : undefined}
                   className={`${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`}
-                  href={hrefFor({
-                    size: discovery.size,
-                    sort: option.value,
-                    page: 1,
-                  })}
+                  href={hrefFor({ size: discovery.size, sort: option.value, page: 1 })}
                   key={option.value}
                 >
                   {option.label}
@@ -184,14 +171,8 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           <nav aria-label="Lọc theo kích cỡ" className="mt-3 flex flex-wrap gap-2">
             <Link
               aria-current={discovery.size === null ? "true" : undefined}
-              className={`${optionLinkClassName}${
-                discovery.size === null ? ` ${activeOptionLinkClassName}` : ""
-              }`}
-              href={hrefFor({
-                size: null,
-                sort: discovery.sort,
-                page: 1,
-              })}
+              className={`${optionLinkClassName}${discovery.size === null ? ` ${activeOptionLinkClassName}` : ""}`}
+              href={hrefFor({ size: null, sort: discovery.sort, page: 1 })}
             >
               Tất cả kích cỡ
             </Link>
@@ -201,11 +182,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 <Link
                   aria-current={active ? "true" : undefined}
                   className={`${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`}
-                  href={hrefFor({
-                    size,
-                    sort: discovery.sort,
-                    page: 1,
-                  })}
+                  href={hrefFor({ size, sort: discovery.sort, page: 1 })}
                   key={size}
                 >
                   {size}
@@ -240,9 +217,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
         <section className="mt-16" aria-labelledby="collection-products-title">
           <div className="section-heading-row border-t border-black/20 pt-5">
             <h2 id="collection-products-title">Sản phẩm</h2>
-            <p className="eyebrow">
-              {totalCount} sản phẩm · Trang {page}/{totalPages}
-            </p>
+            <p className="eyebrow">{totalCount} sản phẩm · Trang {page}/{totalPages}</p>
           </div>
           <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
@@ -261,33 +236,20 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           </div>
 
           {totalPages > 1 ? (
-            <nav
-              className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
-              aria-label="Phân trang bộ sưu tập"
-            >
+            <nav className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6" aria-label="Phân trang bộ sưu tập">
               {catalogPage.hasPrevious ? (
                 <Link
                   className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-                  href={hrefFor({
-                    size: discovery.size,
-                    sort: discovery.sort,
-                    page: page - 1,
-                  })}
+                  href={hrefFor({ size: discovery.size, sort: discovery.sort, page: page - 1 })}
                   rel="prev"
                 >
                   ← Trang trước
                 </Link>
-              ) : (
-                <span aria-hidden="true" />
-              )}
+              ) : <span aria-hidden="true" />}
               {catalogPage.hasNext ? (
                 <Link
                   className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-                  href={hrefFor({
-                    size: discovery.size,
-                    sort: discovery.sort,
-                    page: page + 1,
-                  })}
+                  href={hrefFor({ size: discovery.size, sort: discovery.sort, page: page + 1 })}
                   rel="next"
                 >
                   Trang sau →
