@@ -484,7 +484,10 @@ summary:focus-visible {
   }
 
   .campaign-copy {
-    min-height: 55vh;
+    min-height: auto;
+    justify-content: flex-start;
+    padding-top: 1.5rem;
+    padding-bottom: 2.5rem;
   }
 
   .collection-intro {
