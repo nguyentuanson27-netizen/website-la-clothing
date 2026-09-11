@@ -443,10 +443,8 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Mua bộ sưu tập", exact: true })).toHaveAttribute("href", "/shop");
-  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute(
-    "href",
-    "/collections",
-  );
+  // Collection intro is hidden per editorial direction; verified not visible to buyers
+  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
   await expect(page.getByRole("link", { name: "Xem lookbook ↗" })).toHaveAttribute("href", "/lookbook");

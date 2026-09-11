@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { Playfair_Display } from "next/font/google";
+import { Lora } from "next/font/google";
 
 import { FacebookPixel } from "@/components/analytics/facebook-pixel";
 import { TrackingBootstrap } from "@/components/analytics/tracking-bootstrap";
@@ -14,7 +14,7 @@ import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data"
 
 import "./globals.css";
 
-const playfair = Playfair_Display({
+const lora = Lora({
   subsets: ["latin", "vietnamese"],
   variable: "--font-serif",
   display: "swap",
@@ -35,8 +35,8 @@ export default async function RootLayout({
   const siteStructuredData = buildSiteStructuredData({ origin: exposure.origin });
 
   return (
-    <html lang="vi" className={playfair.variable}>
-      <body className={playfair.variable}>
+    <html lang="vi" className={lora.variable}>
+      <body className={lora.variable}>
         <TrackingBootstrap />
         <script
           type="application/ld+json"

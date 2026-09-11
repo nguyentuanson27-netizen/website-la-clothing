@@ -112,7 +112,14 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="collection-intro" aria-labelledby="new-collection-title">
+      {/* Ẩn section ESSENTIALS FOR THE IN-BETWEEN theo yêu cầu: giữ nguyên code, chỉ ẩn trên giao diện */}
+      <section
+        className="collection-intro hidden"
+        aria-labelledby="new-collection-title"
+        aria-hidden="true"
+        hidden
+        style={{ display: "none" }}
+      >
         <p className="eyebrow">Collection / 01</p>
         <h2 id="new-collection-title">ESSENTIALS FOR THE IN-BETWEEN.</h2>
         <div>
