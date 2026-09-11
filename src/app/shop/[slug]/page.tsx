@@ -7,6 +7,7 @@ import {
   listConfiguredRelatedStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
 import {
@@ -59,6 +60,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
     pricingRule: relatedPricingRule,
   });
   const options = product.projection.options;
+  const productLevelOptions = selectStorefrontProductLevelOptions(product.projection);
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
     projection: product.projection,
     variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
@@ -134,6 +136,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               slug={product.slug}
               productName={product.name}
               options={options}
+              productLevelOptions={productLevelOptions}
               initialSelection={deepLinkedSelection}
               commerceTrackingEnabled={isCommerceTrackingEnabled()}
             />
