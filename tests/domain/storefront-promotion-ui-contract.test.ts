@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { resolveStorefrontDiscountPresentation } from "../../src/commerce/storefront-discount-presentation.ts";
 import {
   buildStorefrontProductProjection,
   deriveStorefrontProjectionSelection,
+  selectStorefrontProductLevelOptions,
 } from "../../src/commerce/storefront-projection.ts";
 import type {
   StorefrontPricingRule,
@@ -74,6 +76,49 @@ test("selected PDP variant keeps its own base price, effective price, and discou
       price: 100_000,
       isDiscounted: true,
     },
+  );
+});
+
+test("unselected composite PDP sale presentation is owned by the parent set, not a component", () => {
+  const pricingRule: StorefrontPricingRule = (candidate) =>
+    candidate.id === "set-m"
+      ? { price: 180_000, basePriceVnd: 200_000, isDiscounted: true }
+      : { price: 50_000, basePriceVnd: 100_000, isDiscounted: true };
+
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M")],
+    componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M")] }],
+    hasCompositeGraph: true,
+    pricingRule,
+  });
+
+  assert.deepEqual(
+    resolveStorefrontDiscountPresentation(selectStorefrontProductLevelOptions(projection)),
+    {
+      representativeVariantId: "set-m",
+      basePriceVnd: 200_000,
+      effectivePriceVnd: 180_000,
+      discountPercent: 10,
+      hasCheaperCurrentVariant: false,
+    },
+  );
+});
+
+test("PDP wires product-level options into its unselected price presentation", async () => {
+  const pageSource = await readFile(
+    new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const panelSource = await readFile(
+    new URL("../../src/components/commerce/product-purchase-panel.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(pageSource, /selectStorefrontProductLevelOptions/);
+  assert.match(pageSource, /productLevelOptions=\{productLevelOptions\}/);
+  assert.match(
+    panelSource,
+    /resolveStorefrontDiscountPresentation\(productLevelOptions\)/,
   );
 });
 
