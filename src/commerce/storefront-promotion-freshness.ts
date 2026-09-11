@@ -10,6 +10,11 @@ export const MAX_STOREFRONT_PROMOTION_REFRESH_MS = 60_000;
 
 export type StorefrontPromotionRefresh = Readonly<{ refreshAfterMs: number }>;
 
+type StorefrontPromotionBoundary = Readonly<{
+  startsAt: Date | null;
+  endsAt: Date | null;
+}>;
+
 export function resolveStorefrontPromotionRefresh({
   now,
   nextBoundaryAt,
@@ -27,4 +32,33 @@ export function resolveStorefrontPromotionRefresh({
   return Object.freeze({
     refreshAfterMs: Math.min(untilBoundary, MAX_STOREFRONT_PROMOTION_REFRESH_MS),
   });
+}
+
+/**
+ * Finds the next enabled-campaign transition already present in a server pricing projection.
+ * Callers pass the same candidate campaigns used for pricing, so the timer and rendered money share
+ * one request clock and one campaign set.
+ */
+export function resolveStorefrontPromotionRefreshFromCampaigns({
+  now,
+  campaigns,
+}: Readonly<{
+  now: Date;
+  campaigns: readonly StorefrontPromotionBoundary[];
+}>): StorefrontPromotionRefresh {
+  const nowMs = now.getTime();
+  let nextBoundaryAt: Date | null = null;
+
+  for (const campaign of campaigns) {
+    for (const boundary of [campaign.startsAt, campaign.endsAt]) {
+      if (boundary === null) continue;
+      const boundaryMs = boundary.getTime();
+      if (!Number.isFinite(boundaryMs) || boundaryMs <= nowMs) continue;
+      if (nextBoundaryAt === null || boundaryMs < nextBoundaryAt.getTime()) {
+        nextBoundaryAt = boundary;
+      }
+    }
+  }
+
+  return resolveStorefrontPromotionRefresh({ now, nextBoundaryAt });
 }

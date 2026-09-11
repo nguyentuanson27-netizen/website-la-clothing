@@ -5,10 +5,12 @@ import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
+import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
@@ -34,19 +36,32 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   });
 }
 
-async function loadHomepageProductEdit() {
+async function loadHomepageProductEdit(now: Date) {
   try {
-    return await listConfiguredStorefrontProducts(20);
+    const discovery = parseStorefrontDiscoverySearchParams({});
+    const page = await listConfiguredStorefrontDiscoveryPage({
+      discovery,
+      pageSize: 20,
+      now,
+    });
+    return {
+      products: page.products,
+      pricingRule: page.pricingRule,
+      refreshAfterMs: page.refreshAfterMs,
+    };
   } catch (error) {
-    if (error instanceof PancakeConfigError) return [];
+    if (error instanceof PancakeConfigError) {
+      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
+    }
     throw error;
   }
 }
 
 export default async function HomePage() {
   await connection();
-  const [featuredProducts, publishedCollections] = await Promise.all([
-    loadHomepageProductEdit(),
+  const requestNow = new Date();
+  const [{ products: featuredProducts, pricingRule, refreshAfterMs }, publishedCollections] = await Promise.all([
+    loadHomepageProductEdit(requestNow),
     collectionRepository.listHomepageMerchandising(),
   ]);
   const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
@@ -54,6 +69,7 @@ export default async function HomePage() {
   const listTracking = buildProductListTracking({
     products: featuredProducts,
     list: { listId: "homepage-edit", listName: "Tuyển chọn" },
+    pricingRule,
   });
   const heroProduct = productsWithMedia[0];
   const heroImage = heroProduct?.media?.primary ?? null;
@@ -65,6 +81,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <section className="campaign-hero" aria-labelledby="campaign-title">
         {heroImage ? (
           <div className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]">
@@ -95,7 +112,14 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="collection-intro" aria-labelledby="new-collection-title">
+      {/* Ẩn section ESSENTIALS FOR THE IN-BETWEEN theo yêu cầu: giữ nguyên code, chỉ ẩn trên giao diện */}
+      <section
+        className="collection-intro hidden"
+        aria-labelledby="new-collection-title"
+        aria-hidden="true"
+        hidden
+        style={{ display: "none" }}
+      >
         <p className="eyebrow">Collection / 01</p>
         <h2 id="new-collection-title">ESSENTIALS FOR THE IN-BETWEEN.</h2>
         <div>
@@ -125,6 +149,7 @@ export default async function HomePage() {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[index % tones.length]!}
               />

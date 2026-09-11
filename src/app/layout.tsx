@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { Lora } from "next/font/google";
 
 import { FacebookPixel } from "@/components/analytics/facebook-pixel";
 import { TrackingBootstrap } from "@/components/analytics/tracking-bootstrap";
@@ -12,6 +13,12 @@ import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
 import "./globals.css";
+
+const lora = Lora({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-serif",
+  display: "swap",
+});
 
 export async function generateMetadata(): Promise<Metadata> {
   await connection();
@@ -28,8 +35,8 @@ export default async function RootLayout({
   const siteStructuredData = buildSiteStructuredData({ origin: exposure.origin });
 
   return (
-    <html lang="vi">
-      <body>
+    <html lang="vi" className={lora.variable}>
+      <body className={lora.variable}>
         <TrackingBootstrap />
         <script
           type="application/ld+json"
