@@ -361,22 +361,22 @@ summary:focus-visible {
   z-index: 2;
   left: 0.75rem;
   top: 0.75rem;
-  padding: 0.35rem 0.5rem;
-  background: var(--white);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  font-size: 0.62rem;
-  font-weight: 600;
+  padding: 0.35rem 0.55rem;
+  background: #000000;
+  color: #ffffff;
+  border: none;
+  font-size: 0.65rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   line-height: 1;
 }
 
 .product-badge--sale {
-  background: var(--white);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  font-weight: 600;
+  background: #000000;
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
 }
 
 .product-meta {

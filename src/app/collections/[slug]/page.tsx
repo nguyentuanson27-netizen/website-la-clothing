@@ -97,11 +97,12 @@ export default async function CollectionPage({ params, searchParams }: Collectio
     throw error;
   }
 
-  const { page, products, totalCount, totalPages } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
   const listTracking = buildProductListTracking({
     products,
     list: { listId: `collection:${collection.slug}`, listName: collection.title },
+    pricingRule,
   });
 
   const filtered = discovery.size !== null;
@@ -252,6 +253,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
               />
