@@ -113,6 +113,12 @@ export function StorefrontProductCard({
       )
     : 0;
 
+  const flashSaleDiscountPercent =
+    flashSale && flashSale.basePriceVnd > flashSale.effectivePriceVnd
+      ? Math.round((1 - flashSale.effectivePriceVnd / flashSale.basePriceVnd) * 100)
+      : 0;
+  const discountPercent = flashSale ? flashSaleDiscountPercent : maxDiscountPercent;
+
   const minBasePrice = isPromotionDiscounted
     ? Math.min(...discountedOptions.map((option) => option.basePriceVnd!))
     : null;
@@ -130,9 +136,9 @@ export function StorefrontProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
-          {isPromotionDiscounted && maxDiscountPercent > 0 ? (
+          {discountPercent > 0 ? (
             <span className="product-badge product-badge--sale z-10">
-              -{maxDiscountPercent}%
+              -{discountPercent}%
             </span>
           ) : null}
           {primaryImage ? (
@@ -177,7 +183,7 @@ export function StorefrontProductCard({
               </div>
               <p className="product-price mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="sr-only">Giá gốc</span>
-                <del className="text-black/60">{currency.format(flashSale.basePriceVnd)}</del>
+                <del className="text-black/60 line-through">{currency.format(flashSale.basePriceVnd)}</del>
                 <span className="sr-only">Giá Flash Sale</span>
                 <strong className="font-semibold text-black">{describeFlashPrice(flashSale)}</strong>
               </p>
@@ -185,7 +191,7 @@ export function StorefrontProductCard({
           ) : isPromotionDiscounted && basePriceLabel ? (
             <p className="product-price flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="sr-only">Giá gốc</span>
-              <del className="font-normal text-black/50">{basePriceLabel}</del>
+              <del className="font-normal text-black/50 line-through">{basePriceLabel}</del>
               <span className="sr-only">Giá khuyến mãi</span>
               <strong className="font-semibold text-black">{describePrice(options ?? [])}</strong>
             </p>

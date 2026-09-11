@@ -9,6 +9,26 @@ import {
 import { createStorefrontProductDetailRepository } from "./storefront-product-detail.ts";
 import { listRelatedStorefrontProducts } from "./storefront-related-products.ts";
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
+import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { defaultStorefrontPricingRule, type StorefrontPricingRule } from "./storefront-product.ts";
+
+export async function resolveStorefrontPricingRuleForProducts({
+  products,
+  now = new Date(),
+}: {
+  products: readonly Readonly<{ variants: readonly Readonly<{ id: string }>[] }>[];
+  now?: Date;
+}): Promise<StorefrontPricingRule> {
+  const variantIds = products.flatMap((p) => p.variants.map((v) => v.id));
+  if (variantIds.length === 0) {
+    return defaultStorefrontPricingRule;
+  }
+  const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+    variantIds,
+  });
+  return buildPromotionalStorefrontPricing({ campaignsByVariantId, now });
+}
 
 export async function listConfiguredStorefrontProducts(limit: number) {
   const shopId = readPancakeShopId();
@@ -84,6 +104,7 @@ export async function listConfiguredRelatedStorefrontProducts(
     id: string;
     collections: readonly Readonly<{ slug: string }>[];
   }>,
+  now?: Date,
 ) {
   const shopId = readPancakeShopId();
   const catalog = createStorefrontCatalogRepository(prisma);
@@ -98,6 +119,7 @@ export async function listConfiguredRelatedStorefrontProducts(
         shopId,
         discovery,
         pageSize: limit,
+        now,
       });
       return page.products;
     },

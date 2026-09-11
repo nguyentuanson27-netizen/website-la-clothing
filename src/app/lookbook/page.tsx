@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { listConfiguredStorefrontProducts } from "@/commerce/storefront-catalog-runtime";
+import {
+  listConfiguredStorefrontProducts,
+  resolveStorefrontPricingRuleForProducts,
+} from "@/commerce/storefront-catalog-runtime";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
@@ -31,22 +34,29 @@ export async function generateMetadata({
 
 const tones = ["stone", "ink", "olive", "sand"] as const;
 
-async function loadLookbookProducts() {
+async function loadLookbookProducts(now: Date) {
   try {
-    return await listConfiguredStorefrontProducts(4);
+    const products = await listConfiguredStorefrontProducts(4);
+    const pricingRule = await resolveStorefrontPricingRuleForProducts({
+      products,
+      now,
+    });
+    return { products, pricingRule };
   } catch (error) {
-    if (error instanceof PancakeConfigError) return [];
+    if (error instanceof PancakeConfigError) return { products: [], pricingRule: undefined };
     throw error;
   }
 }
 
 export default async function LookbookPage() {
   await connection();
-  const featuredProducts = await loadLookbookProducts();
+  const requestNow = new Date();
+  const { products: featuredProducts, pricingRule } = await loadLookbookProducts(requestNow);
   const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
   const listTracking = buildProductListTracking({
     products: featuredProducts,
     list: { listId: "lookbook-edit", listName: "Lookbook edit" },
+    pricingRule,
   });
   const chapter1Product = productsWithMedia[0];
   const chapter1Image = chapter1Product?.media?.primary ?? null;
@@ -148,6 +158,7 @@ export default async function LookbookPage() {
                 name={product.name}
                 media={product.media}
                 variants={product.variants}
+                pricingRule={pricingRule}
                 selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
                 tone={tones[index % tones.length]!}
               />

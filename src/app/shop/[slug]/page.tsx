@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import {
   getConfiguredStorefrontProductBySlug,
   listConfiguredRelatedStorefrontProducts,
+  resolveStorefrontPricingRuleForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
@@ -45,10 +46,15 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   if (!product) notFound();
 
-  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
+  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product, requestNow);
+  const relatedPricingRule = await resolveStorefrontPricingRuleForProducts({
+    products: relatedProducts,
+    now: requestNow,
+  });
   const relatedTracking = buildProductListTracking({
     products: relatedProducts,
     list: { listId: "related-products", listName: "Hoàn thiện phối đồ" },
+    pricingRule: relatedPricingRule,
   });
   const options = product.projection.options;
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
@@ -169,6 +175,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                 name={related.name}
                 media={related.media}
                 variants={related.variants}
+                pricingRule={relatedPricingRule}
                 selectEvent={relatedTracking.selectEventBySlug.get(related.slug) ?? null}
                 tone={relatedTones[index % relatedTones.length]!}
               />
