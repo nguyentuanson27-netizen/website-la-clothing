@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+import { MobileNav } from "./mobile-nav";
+
 const primaryNav = [
   { href: "/shop", label: "Cửa hàng" },
   { href: "/new-arrivals", label: "Hàng mới" },
   { href: "/collections", label: "Bộ sưu tập" },
   { href: "/lookbook", label: "Lookbook" },
-];
+] as const;
 
 export function SiteHeader() {
   return (
@@ -27,20 +29,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="mobile-nav">
-          <details>
-            <summary>Menu</summary>
-            <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
-              {primaryNav.map((item) => (
-                <Link key={item.href} href={item.href}>
-                  {item.label}
-                </Link>
-              ))}
-              <Link href="/search">Tìm kiếm</Link>
-              <Link href="/account">Tài khoản</Link>
-            </nav>
-          </details>
-        </div>
+        <MobileNav primaryNav={primaryNav} />
 
         <nav className="utility-nav" aria-label="Tiện ích">
           <Link href="/search">Tìm kiếm</Link>
