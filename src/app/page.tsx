@@ -10,6 +10,7 @@ import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-disc
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
@@ -46,10 +47,11 @@ async function loadHomepageProductEdit(now: Date) {
     return {
       products: page.products,
       pricingRule: page.pricingRule,
+      refreshAfterMs: page.refreshAfterMs,
     };
   } catch (error) {
     if (error instanceof PancakeConfigError) {
-      return { products: [], pricingRule: undefined };
+      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
     }
     throw error;
   }
@@ -58,7 +60,7 @@ async function loadHomepageProductEdit(now: Date) {
 export default async function HomePage() {
   await connection();
   const requestNow = new Date();
-  const [{ products: featuredProducts, pricingRule }, publishedCollections] = await Promise.all([
+  const [{ products: featuredProducts, pricingRule, refreshAfterMs }, publishedCollections] = await Promise.all([
     loadHomepageProductEdit(requestNow),
     collectionRepository.listHomepageMerchandising(),
   ]);
@@ -79,6 +81,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <section className="campaign-hero" aria-labelledby="campaign-title">
         {heroImage ? (
           <div className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]">
